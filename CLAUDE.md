@@ -7,7 +7,7 @@ agentic RAG chatbot showcase. Read this before writing code, every slice.
 
 1. **PRD & TRD** (Claude Doc — link this repo's README to it): numbered
    requirements (`CH-`, `TR-`, `SR-`, `TX-`, `AC-`, `AD-`). Reference the ID
-   in commits and PR descriptions when a change implements or touches one.
+   in commit bodies when a change implements or touches one.
 2. **This file** — conventions and non-negotiables that apply across slices.
 3. **`docs/design-system.md`** — visual language and components for
    `apps/web`. Follow it for anything with a UI; don't improvise a look.
@@ -19,7 +19,7 @@ agentic RAG chatbot showcase. Read this before writing code, every slice.
    answered the same way across slices and sessions:
    `react.md`, `python.md`, `testing.md`, `playwright.md`, `git.md`.
    Read the relevant one before adding a new component, package, test,
-   e2e spec, or opening a branch/PR.
+   e2e spec, or opening a branch.
 
 If a change would contradict the PRD/TRD, don't silently diverge — flag it
 and propose the change against the doc first.

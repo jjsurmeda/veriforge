@@ -25,3 +25,10 @@ cdk.out/
 *.swp
 .idea/
 .vscode/
+
+# Agent tooling state
+.sisyphus/
+.codegraph/
+
+# graphify generated artifacts (regenerate with: graphify, /graphify --update)
+graphify-out/

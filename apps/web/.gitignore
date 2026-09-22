@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# Generated API client (npm run codegen) — never hand-edit, never commit
+src/generated/*
+!src/generated/.gitkeep
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
