@@ -1,0 +1,15 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-ink: #10131a;
+  --color-graphite: #1a1f29;
+  --color-mist: #2b3140;
+  --color-ember: #ff6a2c;
+  --color-patina: #1fa37e;
+  --color-rust: #c1432b;
+  --color-amber-verdict: #e8a33d;
+  --color-paper: #f3f4f1;
+
+  --font-display: 'Space Grotesk', sans-serif;
+  --font-body: 'IBM Plex Sans', sans-serif;
+}

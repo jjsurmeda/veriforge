@@ -1,0 +1,57 @@
+[project]
+name = "veriforge-api"
+version = "0.1.0"
+description = "Veriforge API — adaptive agentic RAG chatbot (see PRD/TRD)"
+requires-python = ">=3.12,<3.15"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.5",
+    "sqlalchemy[asyncio]>=2.0",
+    "asyncpg>=0.30",
+    "pgvector>=0.3",
+    "alembic>=1.14",
+    "procrastinate>=3.2",
+    "langgraph>=0.4",
+    "litellm>=1.60",
+    "httpx>=0.28",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.9",
+    "mypy>=1.14",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.25",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["."]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "ASYNC", "S"]
+ignore = ["S101"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S"]
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+mypy_path = "."
+plugins = ["pydantic.mypy"]
+exclude = ["\\.venv", "tests/fixtures"]
+
+[[tool.mypy.overrides]]
+module = ["litellm.*", "procrastinate.*", "langgraph.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
