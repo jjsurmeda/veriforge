@@ -96,12 +96,12 @@ that don't reflect how a person actually uses it.
   surface grows enough that regressions are slipping through review.
 - **Cross-browser matrix**: Chromium only for v1 CI; Playwright's
   cross-browser support is available if a real bug report ever demands
-  it, but running the full matrix on every PR isn't worth the CI time at
-  this stage.
+  it, but running the full matrix on every e2e run isn't worth the CI
+  time at this stage.
 
 ## CI
 
-The e2e suite runs on PRs touching `apps/web`, `apps/api` routes, or
+The e2e suite runs on pushes touching `apps/web`, `apps/api` routes, or
 `e2e/**` itself — not on every push, since it's slower than the unit
 suite. It runs against a freshly built container stack (the same
 `docker compose` config used locally), not against a deployed

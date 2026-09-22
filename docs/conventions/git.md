@@ -9,13 +9,14 @@ than a typical single-sitting project's history would.
 ## Branching
 
 - `main` is always deployable — it's what CI/CD in TRD §16 pushes to
-  production. Nothing lands on it without CI green (unit tests, and the
-  eval gate where it applies).
+  production. Run the CI checks locally (unit tests, and the eval gate
+  where it applies) before merging into it; CI validates every push to
+  `main`, and a red run there is fixed forward immediately.
 - One branch per slice: `slice/03-retrieval-fast-mode`,
   `slice/04-decisions-auto`, matching the slice names in TRD §17. A slice
-  branch can have several PRs into it if the slice is broken into smaller
-  reviewable chunks, but the slice only merges to `main` once its
-  acceptance criteria (TRD §17) are met.
+  branch can have several commits if the slice is broken into smaller
+  chunks, but the slice only merges to `main` once its acceptance
+  criteria (TRD §17) are met.
 - Fix-forward branches off `main` for anything found after a slice has
   merged: `fix/quota-double-charge-on-cancel`, not a new slice branch.
 - No long-lived branches beyond the current slice — a slice branch that's
@@ -56,19 +57,27 @@ references it the same way (`Follows ADR-001.`). A commit that changes a
 prompt bumps its version header (`python.md`) and says so in the body,
 since that's what an eval diff will later need to explain a score change.
 
+Do not add `Co-Authored-By` (or any other co-author) trailers anywhere in
+commits — subject, body, or trailers.
+
 Small, single-purpose commits over one large slice-sized commit — a
 reviewer (or a later Claude Code session) should be able to `git log
 --oneline` a slice branch and read it as a story, not have to open the
 diff to know what happened.
 
-## Pull requests
+## Merging to `main` — local, no pull requests
 
-Every PR description starts with the slice and the requirement IDs it
-covers, in the shape `CLAUDE.md` already asks for ("a short plan... that
-lists the requirement IDs it covers"):
+No pull requests are raised. The merge decision is made locally: once a
+slice branch's acceptance criteria pass on your machine, merge it into
+`main` yourself and push `main` from local.
+
+The squash commit message (see Merge strategy) carries the record a PR
+description would have — the slice and the requirement IDs it covers, in
+the shape `CLAUDE.md` already asks for ("a short plan... that lists the
+requirement IDs it covers"):
 
 ```markdown
-## Slice 4 — Decision layer and Auto mode
+feat: slice 4 — decision layer and Auto mode
 
 Implements: CH-1, CH-2, TR-4, TR-5, TX-1, SR-5
 Follows: ADR-001 (RunBus usage in the retry loop)
@@ -80,29 +89,37 @@ Follows: ADR-001 (RunBus usage in the retry loop)
 - Trace panel (frontend)
 
 ### Verification
-- [ ] Unit tests pass (retrieval/quota/decisions at tier-1 coverage)
-- [ ] Eval gate: faithfulness / abstention accuracy vs. baseline (paste
-      the CI comment or numbers)
-- [ ] Manually verified: Auto mode meets TRD §5 latency targets locally
+- [x] Unit tests pass (retrieval/quota/decisions at tier-1 coverage)
+- [x] Eval gate: faithfulness / abstention accuracy vs. baseline
+      (faithfulness 0.87 → 0.89, abstention 12/20 → 18/20)
+- [x] Manually verified: Auto mode meets TRD §5 latency targets locally
 ```
 
-PRs into `main` from a completed slice branch require the eval gate
-result pasted or linked, not just a green check — the number itself
-(faithfulness delta, abstention accuracy) is what the next slice's author
-needs to see, and CI's pass/fail alone doesn't show a regression that's
-still within threshold but worth knowing about.
+A merge from a completed slice branch requires the eval gate result in
+that message, not just "tests pass" — the number itself (faithfulness
+delta, abstention accuracy) is what the next slice's author needs to see,
+and pass/fail alone doesn't show a regression that's still within
+threshold but worth knowing about.
 
-A PR that only touches `docs/`, `infra/cdk` config, or non-behavioural
+A merge that only touches `docs/`, `infra/cdk` config, or non-behavioural
 chores doesn't need the eval-gate checklist item — mark it clearly as
-such in the description so reviewers don't go looking for numbers that
-don't apply.
+such in the commit message so nobody goes looking for numbers that don't
+apply.
 
 ## Merge strategy
 
-- **Squash merge** slice/fix branches into `main`. The PR description
-  becomes the squash commit message, which is why it needs the
-  requirement IDs and verification section — that's the permanent record
-  for that change once individual commits are gone.
+- **Squash merge** slice/fix branches into `main`, locally:
+
+  ```sh
+  git checkout main
+  git merge --squash slice/04-decisions-auto
+  git commit  # paste the slice/IDs/verification message from above
+  git push origin main
+  ```
+
+  The squash commit message is the permanent record for that change once
+  individual commits are gone — which is why it needs the requirement
+  IDs and verification section.
 - **No squash** for the rare case of merging two independent slices that
   were developed in parallel and need their own separate history — use a
   regular merge commit there instead, but this should be uncommon given
@@ -120,11 +137,12 @@ way to answer "what did slice 4 actually change."
 
 ## What doesn't get committed
 
-- Nothing under `apps/web/src/generated/` diverges from what `openapi-ts`
-  produces from the current backend — it's committed (so CI and other
-  contributors don't need to regenerate it to build), but a PR that hand-
-  edits a generated file instead of the source Pydantic model gets
-  rejected in review, not just discouraged (`CLAUDE.md`).
+- Nothing under `apps/web/src/generated/` is committed — it's gitignored
+  and regenerated with `npm run codegen` against a running API
+  (`react.md`), never hand-edited: if a generated type is wrong, the
+  source Pydantic model is wrong — fix it there and regenerate
+  (`CLAUDE.md`). When a later slice's CI build imports the client, give
+  CI a codegen step rather than committing the output.
 - No secrets, ever, including in `infra/cdk` — provider keys and anything
   in SSM Parameter Store (TRD §11) stay out of the repo entirely, not
   even in an ignored-but-present `.env.example` with a real-looking

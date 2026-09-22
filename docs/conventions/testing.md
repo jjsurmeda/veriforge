@@ -14,8 +14,8 @@ Coverage targets follow risk, not a blanket number.
 | Standard | `apps/api/graph`, `apps/api/ingest`, `apps/api/runbus`, `apps/web/src/features/*` | 70–80% | Normal correctness bar |
 | Light | `apps/api/admin` routes (thin CRUD over already-tested services), generated code, `apps/web/src/components/ui` (shadcn primitives) | Smoke-tested only | Low complexity, low blast radius |
 
-A PR that lowers Critical-tier coverage fails CI; Standard and Light tiers
-are reviewed by eye, not gated by a number.
+A change that lowers Critical-tier coverage fails CI; Standard and Light
+tiers are reviewed by eye, not gated by a number.
 
 ## Layout and naming
 
@@ -78,7 +78,7 @@ source as `ComponentName.test.tsx` / `useHook.test.ts`, not in a parallel
 
 Unit tests (`pytest`, `vitest`) run on every push, fast (<3 min total on
 this repo's expected size). They are separate from and run before the
-20-item eval gate (TRD §15), which only runs on PRs touching
+20-item eval gate (TRD §15), which only runs on pushes touching
 `graph`/`retrieval`/`decisions`/prompts and is slower — don't conflate
-the two in CI config or in a PR description; "tests pass" and "eval gate
-passes" are reported and required separately.
+the two in CI config or in the slice's squash commit message; "tests
+pass" and "eval gate passes" are reported and required separately.

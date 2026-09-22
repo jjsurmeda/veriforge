@@ -638,8 +638,9 @@ gate in section 15.
 
 **Working agreement for Claude Code**
 
-- Start each slice from a short plan in the PR description that lists the
-  requirement IDs it covers.
+- Start each slice from a short plan that lists the requirement IDs it
+  covers; the plan's record lives in the slice's squash commit message
+  (see `docs/conventions/git.md` — merges happen locally, no PRs).
 - Tests first for the retrieval SQL, quota gate and ownership filters;
   these are the riskiest correctness code.
 - Prompts live in `apps/api/prompts/*.md` with a version header, so eval

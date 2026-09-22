@@ -3,7 +3,7 @@
 Adaptive agentic RAG chatbot showcase. See [`CLAUDE.md`](CLAUDE.md) for
 working instructions and [`docs/PRD.md`](docs/PRD.md) / [`docs/TRD.md`](docs/TRD.md)
 for the numbered requirements (`CH-`, `TR-`, `SR-`, `TX-`, `AC-`, `AD-`)
-referenced in commits and PRs.
+referenced in commits.
 
 ## Layout
 
