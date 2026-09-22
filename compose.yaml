@@ -1,0 +1,48 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: veriforge
+      POSTGRES_PASSWORD: veriforge
+      POSTGRES_DB: veriforge
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U veriforge -d veriforge"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  api:
+    image: ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+    working_dir: /app
+    command: uv run uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    environment:
+      DATABASE_URL: postgresql+asyncpg://veriforge:veriforge@db:5432/veriforge
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - ./apps/api:/app
+      - api_venv:/app/.venv
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    image: node:22-alpine
+    working_dir: /app
+    command: sh -c "npm ci && npm run dev -- --host"
+    ports:
+      - "${WEB_PORT:-5173}:5173"
+    volumes:
+      - ./apps/web:/app
+      - web_node_modules:/app/node_modules
+
+volumes:
+  db_data:
+  api_venv:
+  web_node_modules:
