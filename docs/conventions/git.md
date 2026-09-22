@@ -110,9 +110,11 @@ don't apply.
 
 ## Tags and releases
 
-Tag `main` at the end of each slice once it's deployed and its acceptance
-criteria verified in production: `v0.4.0-slice4`. This gives a rollback
-point per slice (relevant given TRD §16's single-box deployment) and a
+Tag `main` at the end of each slice once it's merged and its acceptance
+criteria verified — locally for slices 0–8, in production from slice 9
+on (see `CLAUDE.md`'s Build order: no AWS deployment happens before
+slice 9): `v0.4.0-slice4`. This gives a rollback point per slice (relevant
+once slice 9 makes TRD §16's single-box deployment real) and a
 changelog anchor — `git log v0.3.0-slice3..v0.4.0-slice4` is the fastest
 way to answer "what did slice 4 actually change."
 
