@@ -10,6 +10,7 @@
   --color-amber-verdict: #e8a33d;
   --color-paper: #f3f4f1;
 
-  --font-display: 'Space Grotesk', sans-serif;
+  --font-display: 'Space Grotesk Variable', 'Space Grotesk', sans-serif;
   --font-body: 'IBM Plex Sans', sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
 }

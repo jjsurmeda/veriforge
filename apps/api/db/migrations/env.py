@@ -5,6 +5,7 @@ from alembic import context
 from sqlalchemy import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 
+import db.models
 from config import get_settings
 
 config = context.config
@@ -12,8 +13,7 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# ponytail: None until db/models.py lands with the first real tables.
-target_metadata = None
+target_metadata = db.models.Base.metadata
 
 
 def _run_migrations(connection: Connection) -> None:

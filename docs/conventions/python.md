@@ -15,6 +15,9 @@ apps/api/
   quota/         Ledger, gate, reserve/settle (TRD §14)
   evals/         Eval runner, dataset loaders, CI gate (TRD §15)
   admin/         Admin API routes only — no business logic lives here
+  auth/          Signup/login, JWT + refresh rotation, OAuth, password reset
+  chats/         Chat CRUD, messages listing, run creation routes
+  runs/          Run stream (SSE) and cancel routes
   runbus/        RunBus interface + PostgresRunBus / RedisRunBus (ADR-001)
   schemas/       Pydantic models: API request/response + SSE event union
   prompts/       Versioned prompt files (*.md), loaded by graph/ and decisions/

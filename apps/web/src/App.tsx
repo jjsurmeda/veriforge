@@ -1,8 +1,15 @@
+import { QueryClientProvider } from '@tanstack/react-query'
+import { RouterProvider } from '@tanstack/react-router'
+
+import './lib/api'
+import { queryClient } from './lib/queryClient'
+import { router } from './router'
+
 function App() {
   return (
-    <main className="min-h-screen bg-ink text-paper font-body">
-      <h1 className="font-display">Veriforge</h1>
-    </main>
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>
   )
 }
 

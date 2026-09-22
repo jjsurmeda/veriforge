@@ -18,11 +18,18 @@ services:
   api:
     image: ghcr.io/astral-sh/uv:python3.12-bookworm-slim
     working_dir: /app
-    command: uv run uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    command: sh -c "uv sync && uv run alembic upgrade head && uv run uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
     environment:
       DATABASE_URL: postgresql+asyncpg://veriforge:veriforge@db:5432/veriforge
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-}
+      JWT_SECRET: ${JWT_SECRET:-dev-only-insecure-secret-change-me}
+      WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:5173}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
     ports:
       - "${API_PORT:-8000}:8000"
     volumes:
@@ -35,7 +42,10 @@ services:
   web:
     image: node:22-alpine
     working_dir: /app
-    command: sh -c "npm ci && npm run dev -- --host"
+    command: sh -c "npm install --legacy-peer-deps --no-package-lock && API_PROXY_TARGET=http://api:8000 npm run dev -- --host"
+    # --no-package-lock: resolve fresh for the container platform — a
+    # macOS-generated lockfile makes npm skip rolldown's musl optional
+    # binding (npm/cli#4828) and vite crashes on startup.
     ports:
       - "${WEB_PORT:-5173}:5173"
     volumes:
