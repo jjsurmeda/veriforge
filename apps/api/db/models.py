@@ -349,6 +349,32 @@ class Chunk(Base):
     )
 
 
+class Claim(Base):
+    """Reviewer claim (TRD §13 claims, written first in slice 6).
+
+    One atomic claim extracted from an assistant message; citation_ns are
+    the [n] markers the claim carried. engine records jev|fallback for the
+    verdict decision (or "n/a" for uncited claims, which skip Jev).
+    """
+
+    __tablename__ = "claims"
+    __table_args__ = (Index("ix_claims_message", "message_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid7)
+    message_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("messages.id", ondelete="CASCADE"), nullable=False
+    )
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    citation_ns: Mapped[list[int]] = mapped_column(JSONB, nullable=False, default=list)
+    is_factual: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    verdict: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    p_supported: Mapped[float | None] = mapped_column(nullable=True)
+    engine: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class Citation(Base):
     __tablename__ = "citations"
     __table_args__ = (

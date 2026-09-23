@@ -10,6 +10,9 @@ Usage:
 Credits are recorded as token counts until slice 7's ledger (TRD §14).
 Slice 4 routes items through graph/auto.py — abstention accuracy is a real
 check now (the slice-3 pass-through is removed in evals/gate.py).
+Slice 6: faithfulness and citation precision are Reviewer-computed
+(graph/review.py, TR-2/TR-3) — the interim judge is retired from the gate;
+numbers are rebaselined against slice 5's stored baseline.
 """
 
 import argparse
@@ -33,6 +36,7 @@ from evals.loader import EVAL_USER_EMAIL, STATE_FILE
 from graph.auto import AutoRunInput, finalize_auto_run, prepare_auto_run
 from graph.deep import DeepRunInput, finalize_deep_run, prepare_deep_run
 from graph.generate import build_grounded_messages
+from graph.review import review_answer
 from retrieval.context import count_tokens
 from retrieval.filters import ClientFilters
 
@@ -40,6 +44,7 @@ logger = logging.getLogger(__name__)
 
 SEED_DIR = Path(__file__).resolve().parents[3] / "evals" / "seed"
 BASELINE_FILE = SEED_DIR / "baseline.json"
+BASELINE_FAST20_FILE = SEED_DIR / "baseline_fast20.json"
 GENERATOR_MODEL = "openrouter/openai/gpt-4o-mini"
 SMALL_MODEL = "openrouter/anthropic/claude-haiku-4.5"
 CONTEXT_WINDOW = 128_000
@@ -72,11 +77,12 @@ async def _run_item(
         message_id = assistant_message.id
     started = time.monotonic()
     engine = DecisionEngine()
+    pipeline_run_id = uuid7()
     if mode == "deep":
         deep_run = await prepare_deep_run(
             factory,
             DeepRunInput(
-                run_id=uuid7(),
+                run_id=pipeline_run_id,
                 message_id=message_id,
                 chat_id=chat_id,
                 user_id=user.id,
@@ -114,7 +120,7 @@ async def _run_item(
         run = await prepare_auto_run(
             factory,
             AutoRunInput(
-                run_id=uuid7(),
+                run_id=pipeline_run_id,
                 message_id=message_id,
                 chat_id=chat_id,
                 user_id=user.id,
@@ -141,6 +147,28 @@ async def _run_item(
         abstained = run.abstain_event is not None
         contexts = run.contexts
 
+    # Slice 6: faithfulness and citation precision come from the real
+    # Reviewer (TR-2/TR-3) — this is the rebaseline that matters. The
+    # post-hoc judge only scores context precision/recall (TRD §10 keeps
+    # the two mechanisms separate). Abstentions assert nothing: 1.0.
+    faithfulness: float | None = None
+    citation_precision: float | None = None
+    if not abstained:
+        review = await review_answer(
+            engine=engine,
+            run_id=str(pipeline_run_id),
+            answer=answer,
+            contexts=contexts,
+            citation_count=len(contexts),
+            small_model=SMALL_MODEL,
+            litellm_model=GENERATOR_MODEL,
+        )
+        if review.scores is not None:
+            faithfulness = review.scores.faithfulness
+            citation_precision = review.scores.citation_precision
+    else:
+        faithfulness = 1.0
+        citation_precision = 1.0
     scores = await judge_answer(
         question=item.question,
         reference_answer=item.reference_answer,
@@ -152,8 +180,8 @@ async def _run_item(
         eval_run_id=eval_run_id,
         item_id=item.id,
         answer=answer,
-        faithfulness=scores.faithfulness if scores else None,
-        citation_precision=scores.citation_precision if scores else None,
+        faithfulness=faithfulness,
+        citation_precision=citation_precision,
         context_precision=scores.context_precision if scores else None,
         context_recall=scores.context_recall if scores else None,
         abstained=abstained,
@@ -185,12 +213,16 @@ async def run_eval(
             await session.execute(select(EvalDataset).where(EvalDataset.name == "seed"))
         ).scalar_one()
         items = (
-            await session.execute(
-                select(EvalItem)
-                .where(EvalItem.dataset_id == dataset.id)
-                .order_by(EvalItem.created_at, EvalItem.id)
+            (
+                await session.execute(
+                    select(EvalItem)
+                    .where(EvalItem.dataset_id == dataset.id)
+                    .order_by(EvalItem.created_at, EvalItem.id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         if subset == "fast20":
             items = [i for i in items if seed_ids.get(i.question) in fast20]
         if category is not None:
@@ -202,14 +234,28 @@ async def run_eval(
 
     results: list[tuple[EvalItem, EvalResult]] = []
     for item in items:
-        result = await _run_item(
-            factory,
-            user=user,
-            collection_id=collection_id,
-            eval_run_id=eval_run_id,
-            item=item,
-            mode=mode,
-        )
+        try:
+            result = await _run_item(
+                factory,
+                user=user,
+                collection_id=collection_id,
+                eval_run_id=eval_run_id,
+                item=item,
+                mode=mode,
+            )
+        except Exception:
+            # One flaky item (e.g. Jev + fallback both fail on a decision)
+            # records as unscored instead of aborting the remaining items.
+            logger.exception(
+                "eval item failed",
+                extra={"item": seed_ids.get(item.question, str(item.id))},
+            )
+            result = EvalResult(
+                eval_run_id=eval_run_id,
+                item_id=item.id,
+                answer="",
+                latency_ms=0,
+            )
         results.append((item, result))
         logger.info(
             "eval item done",
@@ -235,9 +281,7 @@ def aggregate(results: list[tuple[EvalItem, EvalResult]]) -> dict[str, float | N
     context_recall = mean([r.context_recall for _, r in results if r.context_recall is not None])
     abstain_items = [(i, r) for i, r in results if i.should_abstain]
     abstention_accuracy = (
-        mean([1.0 if r.abstained else 0.0 for _, r in abstain_items])
-        if abstain_items
-        else None
+        mean([1.0 if r.abstained else 0.0 for _, r in abstain_items]) if abstain_items else None
     )
     latencies = sorted(r.latency_ms for _, r in results)
     p50 = float(statistics.median(latencies)) if latencies else None
@@ -266,6 +310,15 @@ async def main() -> None:
     if args.baseline:
         BASELINE_FILE.write_text(json.dumps(summary, indent=2) + "\n")
         print(f"baseline written to {BASELINE_FILE}")
+        # The gate runs the fast20 subset; comparing it against a full-50
+        # baseline fails on sampling noise (abstention is ~6 Bernoulli
+        # trials in the subset). Store a like-for-like subset baseline too.
+        fast20 = set(json.loads((SEED_DIR / "items.json").read_text()).get("fast20_ids", []))
+        seed_ids = _seed_ids(json.loads((SEED_DIR / "items.json").read_text()))
+        subset = [(i, r) for i, r in results if seed_ids.get(i.question) in fast20]
+        subset_summary = aggregate(subset)
+        BASELINE_FAST20_FILE.write_text(json.dumps(subset_summary, indent=2) + "\n")
+        print(f"fast20 baseline written to {BASELINE_FAST20_FILE}")
 
 
 if __name__ == "__main__":

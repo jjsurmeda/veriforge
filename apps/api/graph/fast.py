@@ -1,7 +1,8 @@
 """Fast mode pipeline (TRD §7 mode table): rewrite → single retrieval →
-generate, streamed. No multi-query, no retry loop, no hops, no inline
-review — the async-after-delivery review is a slice-6 addition; Fast mode
-delivers and that deferral is recorded here.
+generate, streamed. No multi-query, no retry loop, no hops. Slice 6
+resolved the slice-3 deferral: review now runs after delivery (TR-6) —
+deltas stream first, then the Reviewer verifies claims before the
+terminal event, so citation chips recolour while the answer is on screen.
 
 Slice 4 routes Auto through graph/auto.py; Fast remains for the explicit
 Fast mode picker. Both share the same retrieval/generate primitives.

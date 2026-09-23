@@ -6,6 +6,8 @@ import type {
   Decision,
   Metrics,
   RetrievedChunk,
+  ReviewClaim,
+  Revision,
   StepCompleted,
   StepStarted,
 } from '../../generated/types.gen'
@@ -32,6 +34,10 @@ export interface RunLive {
   thinking: string
   abstain: Abstain | null
   conflict: Conflict | null
+  claims: ReviewClaim[]
+  hold: boolean
+  revision: Revision | null
+  suggestions: string[]
 }
 
 interface ChatRunStore {
@@ -39,7 +45,6 @@ interface ChatRunStore {
   begin: (runId: string, messageId?: string | null) => void
   applyEvent: (runId: string, event: StreamEvent) => void
   setConnectionLost: (runId: string) => void
-  clear: (runId: string) => void
 }
 
 const empty: RunLive = {
@@ -55,6 +60,10 @@ const empty: RunLive = {
   thinking: '',
   abstain: null,
   conflict: null,
+  claims: [],
+  hold: false,
+  revision: null,
+  suggestions: [],
 }
 
 export const useChatRunStore = create<ChatRunStore>()((set) => ({
@@ -62,17 +71,16 @@ export const useChatRunStore = create<ChatRunStore>()((set) => ({
 
   begin: (runId, messageId = null) =>
     set((state) => {
+      // Resume (same run): keep accumulated progress so lastSeq replay
+      // works. New run: replace the map — one entry at a time, kept after
+      // the run completes so the Metrics tab, verdicts and suggestions
+      // stay visible (slice-1's clear-on-terminal made the trust UI
+      // vanish the moment the answer landed).
       const existing = state.runs[runId]
-      // Keep progress across reconnects so resume() replays from lastSeq.
-      const base = existing
-        ? { ...existing, status: 'connecting' as RunStatus }
-        : { ...empty }
-      return {
-        runs: {
-          ...state.runs,
-          [runId]: { ...base, messageId: messageId ?? base.messageId },
-        },
+      if (existing) {
+        return { runs: { [runId]: { ...existing, status: 'connecting' as RunStatus } } }
       }
+      return { runs: { [runId]: { ...empty, messageId: messageId ?? null } } }
     }),
 
   applyEvent: (runId, event) =>
@@ -106,6 +114,21 @@ export const useChatRunStore = create<ChatRunStore>()((set) => ({
           next.status = 'streaming'
           next.text += event.text
           break
+        case 'answer.hold':
+          next.hold = true
+          break
+        case 'review.claim':
+          next.claims = [
+            ...next.claims.filter((c) => c.claim_id !== event.claim_id),
+            event,
+          ]
+          break
+        case 'revision':
+          next.revision = event
+          break
+        case 'suggestions':
+          next.suggestions = event.questions ?? []
+          break
         case 'metrics':
           next.metrics = event
           break
@@ -133,12 +156,5 @@ export const useChatRunStore = create<ChatRunStore>()((set) => ({
       return {
         runs: { ...state.runs, [runId]: { ...current, status: 'connection_lost' } },
       }
-    }),
-
-  clear: (runId) =>
-    set((state) => {
-      const runs = { ...state.runs }
-      delete runs[runId]
-      return { runs }
     }),
 }))

@@ -3,8 +3,11 @@ stored baseline. Fails (exit 1) when faithfulness drops by more than 0.03,
 abstention accuracy drops by more than 5 points, or p50 latency rises by
 more than 20%.
 
-Slice 4: abstention accuracy is a real check — graph/auto.py produces an
-explicit Abstain event (TR-4), replacing slice 3's no-op pass-through.
+Slice 6: the comparison is like-for-like — `baseline_fast20.json`
+(written by `evals.runner --baseline` alongside the full-50
+`baseline.json`) baselines the same subset the gate runs. The previous
+full-50-vs-fast20 comparison failed on sampling noise: with ~6 abstain
+items in the subset, abstention accuracy swings ±25 points between runs.
 
 Usage: uv run python -m evals.gate
 """
@@ -14,7 +17,7 @@ import json
 import sys
 
 from evals.loader import STATE_FILE
-from evals.runner import BASELINE_FILE, aggregate, run_eval
+from evals.runner import BASELINE_FAST20_FILE, BASELINE_FILE, aggregate, run_eval
 
 FAITHFULNESS_DROP = 0.03
 ABSTENTION_DROP_POINTS = 5.0
@@ -45,14 +48,22 @@ async def main() -> None:
     if not STATE_FILE.exists():
         print("eval gate skipped: seed corpus not loaded (run evals.loader first)")
         return
-    if not BASELINE_FILE.exists():
-        print("eval gate skipped: no baseline.json (run evals.runner --baseline first)")
+    baseline_path = BASELINE_FAST20_FILE
+    if not baseline_path.exists():
+        baseline_path = BASELINE_FILE
+    if not baseline_path.exists():
+        print("eval gate skipped: no baseline (run evals.runner --baseline first)")
         return
-    baseline = json.loads(BASELINE_FILE.read_text())
+    baseline = json.loads(baseline_path.read_text())
     _, results = await run_eval(subset="fast20", baseline=False)
     current = aggregate(results)
     failures = compare(baseline, current)
-    print(json.dumps({"baseline": baseline, "current": current}, indent=2))
+    print(
+        json.dumps(
+            {"baseline_file": baseline_path.name, "baseline": baseline, "current": current},
+            indent=2,
+        )
+    )
     if failures:
         for failure in failures:
             print(f"GATE FAIL: {failure}", file=sys.stderr)

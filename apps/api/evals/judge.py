@@ -1,10 +1,11 @@
-"""Interim eval judges (TRD §15).
+"""Post-hoc LLM judge (TRD §10 "Async scoring (worker)", TRD §15).
 
-TODO(slice-6): faithfulness here is a single-shot LLM-judge score
-(answer + citations → judge call). Slice 6's Reviewer replaces this with
-real claim-level extraction/verdict scoring (TRD §10) — replace this file,
-don't add to it. The interim judge also emits citation precision and
-context precision/recall so the slice-3 gate has the full metric set.
+Slice 6: the interim single-call judge's TODO(slice-6) is resolved —
+faithfulness and citation precision are now computed by the real Reviewer
+(graph/review.py). What remains here is the *different mechanism* the TRD
+keeps separate: context precision, context recall (when a reference
+exists) and answer relevance, judged after the run and pushed to Langfuse
+as trace scores. They never block delivery and never gate evals.
 """
 
 import json
@@ -17,10 +18,9 @@ from providers.llm import complete
 
 @dataclass(frozen=True)
 class JudgeScores:
-    faithfulness: float | None
-    citation_precision: float | None
     context_precision: float | None
     context_recall: float | None
+    answer_relevance: float | None
 
 
 _FENCE_RE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
@@ -37,10 +37,9 @@ def parse_judge_response(response: str) -> JudgeScores | None:
         return None
     try:
         return JudgeScores(
-            faithfulness=float(data["faithfulness"]),
-            citation_precision=float(data["citation_precision"]),
             context_precision=float(data["context_precision"]),
             context_recall=float(data["context_recall"]),
+            answer_relevance=float(data["answer_relevance"]),
         )
     except (KeyError, TypeError, ValueError):
         return None
@@ -59,7 +58,7 @@ async def judge_answer(
     prompt = (
         load_prompt("eval_judge.md")
         .replace("{question}", question)
-        .replace("{reference}", reference_answer or "(no reference — item expects abstention)")
+        .replace("{reference}", reference_answer or "(no reference answer)")
         .replace("{answer}", answer)
         .replace("{passages}", numbered or "(no passages were retrieved)")
     )

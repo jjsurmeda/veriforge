@@ -200,10 +200,17 @@ async def list_messages(
                 p_supported=citation.p_supported,
             )
         )
+    runs = (
+        await session.execute(select(Run).where(Run.message_id.in_([m.id for m in messages])))
+    ).scalars().all()
+    metrics_by_message: dict[UUID, dict[str, object] | None] = {
+        run.message_id: run.metrics for run in runs
+    }
     return [
         message_out(
             m.id, m.chat_id, m.role, m.content, m.status, m.created_at,
             by_message.get(m.id, []),
+            metrics_by_message.get(m.id),
         )
         for m in messages
     ]

@@ -21,13 +21,17 @@ export function ChatView({ chatId }: { chatId: string }) {
   const cancelRun = useCancelRun()
 
   const [activeRunId, setActiveRunId] = useState<string | null>(null)
+  // Keep the last run id after the backend nulls active_run_id so the
+  // trace panel, metrics and suggestions stay visible post-completion.
+  const [traceRunId, setTraceRunId] = useState<string | null>(null)
   useEffect(() => {
     setActiveRunId(chat.data?.active_run_id ?? null)
+    if (chat.data?.active_run_id) setTraceRunId(chat.data.active_run_id)
   }, [chat.data?.active_run_id])
 
   const { resume } = useRunStream(activeRunId, chatId)
   const live = useChatRunStore((s) => (activeRunId ? s.runs[activeRunId] : undefined))
-  const trace = useTrace(activeRunId)
+  const trace = useTrace(traceRunId)
   const streaming =
     live !== undefined && (live.status === 'connecting' || live.status === 'streaming')
 
@@ -35,14 +39,10 @@ export function ChatView({ chatId }: { chatId: string }) {
     message: string,
     options: { mode: RunMode; source: RunSource },
   ) => {
-    // Deep routes to Auto in slice 4 — slice 5 replaces the fallback with
-    // the real Plan/Hop/Controller path (TRD §17 row 5). The composer
-    // already surfaced the notice; we forward 'auto' here.
-    const wireMode = options.mode === 'deep' ? 'auto' : options.mode
     const run = await createRun.mutateAsync({
       message,
       modelId: chat.data?.model_id,
-      mode: wireMode,
+      mode: options.mode,
       source: options.source,
     })
     useChatRunStore.getState().begin(run!.run_id, run!.message_id)
@@ -58,7 +58,13 @@ export function ChatView({ chatId }: { chatId: string }) {
         ) : (
           <>
             <div className="flex-1 overflow-y-auto">
-              <MessageList messages={messages.data ?? []} live={live} />
+              <MessageList
+                messages={messages.data ?? []}
+                live={live}
+                onSuggestion={(question) =>
+                  void onSend(question, { mode: 'auto', source: 'auto' })
+                }
+              />
               {live?.status === 'connection_lost' && (
                 <div className="mx-auto max-w-[72ch] px-4 pb-4">
                   <button
@@ -89,6 +95,9 @@ export function ChatView({ chatId }: { chatId: string }) {
           decisions={trace.decisions}
           thinking={trace.thinking}
           streaming={trace.streaming}
+          chunks={trace.chunks}
+          metrics={trace.metrics}
+          hold={trace.hold}
         />
       )}
     </div>

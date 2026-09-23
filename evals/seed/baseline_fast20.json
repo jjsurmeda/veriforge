@@ -1,0 +1,7 @@
+{
+  "faithfulness": 0.9875,
+  "context_recall": 1.0,
+  "abstention_accuracy": 0.25,
+  "p50_latency_ms": 14384.5,
+  "items": 20.0
+}

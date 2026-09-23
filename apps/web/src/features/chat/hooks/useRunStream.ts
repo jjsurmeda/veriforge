@@ -58,7 +58,8 @@ export function useRunStream(runId: string | null, chatId: string | null): UseRu
           void queryClient.invalidateQueries({ queryKey: ['messages', chatId] })
           void queryClient.invalidateQueries({ queryKey: ['chats'] })
           void queryClient.invalidateQueries({ queryKey: ['chat', chatId] })
-          useChatRunStore.getState().clear(runId)
+          // No store clear: the trace panel, verdicts, metrics and
+          // suggestions stay visible after completion (store.ts begin()).
         }
       },
       onerror: (error) => {

@@ -81,6 +81,7 @@ class AutoRun:
     latency_ms: dict[str, int]
     context_used: int
     ingress: IngressOutcome
+    sufficiency_p: float = 0.0
 
     async def stream_answer(self) -> AsyncIterator[str]:
         if self.abstain_event is not None:
@@ -556,6 +557,7 @@ async def prepare_auto_run(
         latency_ms=latency_ms,
         context_used=context_used,
         ingress=ingress,
+        sufficiency_p=p_sufficient_final,
     )
 
 

@@ -44,6 +44,9 @@ class MessageOut(BaseModel):
     status: str | None
     created_at: datetime
     citations: list[CitationOut] = []
+    # runs.metrics (latency by stage, tokens, credits, scores) for the
+    # answer footer (TX-4); assistant messages only.
+    metrics: dict[str, object] | None = None
 
 
 class RunFilters(BaseModel):
@@ -104,6 +107,7 @@ def message_out(
     status: str | None,
     created_at: datetime,
     citations: list[CitationOut] | None = None,
+    metrics: dict[str, object] | None = None,
 ) -> MessageOut:
     return MessageOut(
         id=str(row_id),
@@ -113,4 +117,5 @@ def message_out(
         status=status,
         created_at=created_at,
         citations=citations or [],
+        metrics=metrics,
     )

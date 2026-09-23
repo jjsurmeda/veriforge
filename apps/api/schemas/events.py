@@ -1,4 +1,4 @@
-"""SSE event union (TRD §12) — slices 1+3 subsets.
+"""SSE event union (TRD §12) — slices 1+3+6 subsets.
 
 New event types land here first, then the TS union is regenerated; never
 invent an event shape ad hoc in a component (CLAUDE.md). Events this slice
@@ -143,6 +143,40 @@ class RunCancelled(RunEvent):
     message_id: str
 
 
+class ReviewClaim(RunEvent):
+    """One claim's verification result (TRD §12 review.claim, slice 6)."""
+
+    type: Literal["review.claim"] = "review.claim"
+    claim_id: str
+    text: str
+    citation_ids: list[str] = []
+    verdict: str | None = None  # supported | partial | unsupported | contradicted
+    p_supported: float | None = None
+
+
+class AnswerHold(RunEvent):
+    """High-risk answers are verified before delivery; the UI shows
+    'Verifying…' with the trace live until the reviewed answer lands."""
+
+    type: Literal["answer.hold"] = "answer.hold"
+    reason: str = "verifying"
+
+
+class Revision(RunEvent):
+    """The reviewer rewrote flagged claims (TRD §10, max one pass)."""
+
+    type: Literal["revision"] = "revision"
+    revised_text: str
+    diff: str
+
+
+class Suggestions(RunEvent):
+    """Three suggested follow-up questions (CH-9)."""
+
+    type: Literal["suggestions"] = "suggestions"
+    questions: list[str] = []
+
+
 class RunFailed(RunEvent):
     type: Literal["run.failed"] = "run.failed"
     error_code: str
@@ -160,6 +194,10 @@ RunStreamEvent = Annotated[
     | AnswerDelta
     | Abstain
     | Conflict
+    | ReviewClaim
+    | AnswerHold
+    | Revision
+    | Suggestions
     | Metrics
     | Heartbeat
     | RunCompleted

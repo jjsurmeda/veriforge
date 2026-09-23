@@ -69,6 +69,7 @@ module = [
     "filetype.*",
     "psycopg.*",
     "psycopg_pool.*",
+    "langfuse.*",
 ]
 ignore_missing_imports = true
 

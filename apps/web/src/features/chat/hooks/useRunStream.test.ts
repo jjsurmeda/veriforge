@@ -52,7 +52,7 @@ describe('useRunStream', () => {
     useChatRunStore.setState({ runs: {} })
   })
 
-  it('applies a fixture stream into the store and clears it on completion', async () => {
+  it('applies a fixture stream into the store and keeps it after completion', async () => {
     const queryClient = new QueryClient()
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
     const { result, unmount } = renderHook(() => useRunStream(RUN_ID, CHAT_ID), {
@@ -77,7 +77,9 @@ describe('useRunStream', () => {
     })
 
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['messages', CHAT_ID] })
-    expect(useChatRunStore.getState().runs[RUN_ID]).toBeUndefined()
+    // Kept (not cleared) so the trust UI survives past the terminal event.
+    const finished = useChatRunStore.getState().runs[RUN_ID]
+    expect(finished.status).toBe('completed')
 
     unmount()
     expect(result.current.resume).toBeTypeOf('function')
@@ -132,6 +134,10 @@ describe('useRunStream', () => {
           thinking: '',
           abstain: null,
           conflict: null,
+          claims: [],
+          hold: false,
+          revision: null,
+          suggestions: [],
         },
       },
     })

@@ -1,108 +1,1660 @@
 {
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Veriforge API",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/auth/signup": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Signup",
+        "operationId": "signup_auth_signup_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Login",
+        "operationId": "login_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/refresh": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Refresh",
+        "operationId": "refresh_auth_refresh_post",
+        "parameters": [
+          {
+            "name": "vf_refresh",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Vf Refresh"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Logout",
+        "operationId": "logout_auth_logout_post",
+        "parameters": [
+          {
+            "name": "vf_refresh",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Vf Refresh"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/google/login": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Google Login",
+        "operationId": "google_login_auth_google_login_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/google/callback": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Google Callback",
+        "operationId": "google_callback_auth_google_callback_get",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Code"
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            }
+          },
+          {
+            "name": "vf_oauth_state",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Vf Oauth State"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/forgot-password": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Forgot Password",
+        "operationId": "forgot_password_auth_forgot_password_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForgotPasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Forgot Password Auth Forgot Password Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/reset-password": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Reset Password",
+        "operationId": "reset_password_auth_reset_password_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetPasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me": {
+      "get": {
+        "tags": [
+          "me"
+        ],
+        "summary": "Me",
+        "operationId": "me_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserPublic"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/chats": {
+      "get": {
+        "tags": [
+          "chats"
+        ],
+        "summary": "List Chats",
+        "operationId": "list_chats_chats_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ChatOut"
+                  },
+                  "type": "array",
+                  "title": "Response List Chats Chats Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "chats"
+        ],
+        "summary": "Create Chat",
+        "operationId": "create_chat_chats_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/chats/{chat_id}": {
+      "get": {
+        "tags": [
+          "chats"
+        ],
+        "summary": "Get Chat",
+        "operationId": "get_chat_chats__chat_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "chat_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Chat Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "chats"
+        ],
+        "summary": "Patch Chat",
+        "operationId": "patch_chat_chats__chat_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "chat_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Chat Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatPatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "chats"
+        ],
+        "summary": "Delete Chat",
+        "operationId": "delete_chat_chats__chat_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "chat_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Chat Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/chats/{chat_id}/messages": {
+      "get": {
+        "tags": [
+          "chats"
+        ],
+        "summary": "List Messages",
+        "operationId": "list_messages_chats__chat_id__messages_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "chat_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Chat Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MessageOut"
+                  },
+                  "title": "Response List Messages Chats  Chat Id  Messages Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/chats/{chat_id}/runs": {
+      "post": {
+        "tags": [
+          "chats"
+        ],
+        "summary": "Create Run",
+        "operationId": "create_run_chats__chat_id__runs_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "chat_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Chat Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunCreateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/{run_id}/stream": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "summary": "Stream Run",
+        "operationId": "stream_run_runs__run_id__stream_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "after_seq",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "After Seq"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SSE event stream",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunStreamResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/{run_id}/cancel": {
+      "post": {
+        "tags": [
+          "runs"
+        ],
+        "summary": "Cancel Run",
+        "operationId": "cancel_run_runs__run_id__cancel_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunCancelResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/models": {
+      "get": {
+        "tags": [
+          "models"
+        ],
+        "summary": "List Models",
+        "operationId": "list_models_models_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ModelOut"
+                  },
+                  "type": "array",
+                  "title": "Response List Models Models Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/model-roles": {
+      "get": {
+        "tags": [
+          "models"
+        ],
+        "summary": "List Model Roles",
+        "operationId": "list_model_roles_model_roles_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ModelRoleOut"
+                  },
+                  "type": "array",
+                  "title": "Response List Model Roles Model Roles Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/collections": {
+      "get": {
+        "tags": [
+          "sources"
+        ],
+        "summary": "List Collections",
+        "operationId": "list_collections_collections_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CollectionOut"
+                  },
+                  "type": "array",
+                  "title": "Response List Collections Collections Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "sources"
+        ],
+        "summary": "Create Collection",
+        "operationId": "create_collection_collections_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CollectionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/collections/{collection_id}": {
+      "get": {
+        "tags": [
+          "sources"
+        ],
+        "summary": "Get Collection",
+        "operationId": "get_collection_collections__collection_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "collection_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Collection Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "sources"
+        ],
+        "summary": "Patch Collection",
+        "operationId": "patch_collection_collections__collection_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "collection_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Collection Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CollectionPatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "sources"
+        ],
+        "summary": "Delete Collection",
+        "operationId": "delete_collection_collections__collection_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "collection_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Collection Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/collections/{collection_id}/documents": {
+      "post": {
+        "tags": [
+          "sources"
+        ],
+        "summary": "Upload Document",
+        "operationId": "upload_document_collections__collection_id__documents_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "collection_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Collection Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_document_collections__collection_id__documents_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentUploadOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "sources"
+        ],
+        "summary": "Get Collection Documents",
+        "operationId": "get_collection_documents_collections__collection_id__documents_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "collection_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Collection Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DocumentOut"
+                  },
+                  "title": "Response Get Collection Documents Collections  Collection Id  Documents Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/documents/{document_id}": {
+      "get": {
+        "tags": [
+          "sources"
+        ],
+        "summary": "Get Document",
+        "operationId": "get_document_documents__document_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Document Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "sources"
+        ],
+        "summary": "Patch Document",
+        "operationId": "patch_document_documents__document_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Document Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentPatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "sources"
+        ],
+        "summary": "Delete Document",
+        "operationId": "delete_document_documents__document_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Document Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/documents/{document_id}/reindex": {
+      "post": {
+        "tags": [
+          "sources"
+        ],
+        "summary": "Reindex Document",
+        "operationId": "reindex_document_documents__document_id__reindex_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Document Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/documents/{document_id}/chunks": {
+      "get": {
+        "tags": [
+          "sources"
+        ],
+        "summary": "Get Document Chunks",
+        "operationId": "get_document_chunks_documents__document_id__chunks_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Document Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ChunkOut"
+                  },
+                  "title": "Response Get Document Chunks Documents  Document Id  Chunks Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/web-sources/{web_page_id}/pin": {
+      "post": {
+        "tags": [
+          "web-sources"
+        ],
+        "summary": "Pin Web Source",
+        "operationId": "pin_web_source_web_sources__web_page_id__pin_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "web_page_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Web Page Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PinRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PinResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/healthz": {
+      "get": {
+        "summary": "Healthz",
+        "operationId": "healthz_healthz_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    }
+  },
   "components": {
     "schemas": {
       "Abstain": {
         "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "default": ""
+          },
+          "seq": {
+            "type": "integer",
+            "title": "Seq",
+            "default": 0
+          },
+          "ts": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Ts"
+          },
+          "type": {
+            "type": "string",
+            "const": "abstain",
+            "title": "Type",
+            "default": "abstain"
+          },
           "found_summary": {
-            "title": "Found Summary",
-            "type": "string"
+            "type": "string",
+            "title": "Found Summary"
           },
           "missing_summary": {
-            "title": "Missing Summary",
-            "type": "string"
+            "type": "string",
+            "title": "Missing Summary"
           },
           "offered_actions": {
-            "default": [],
             "items": {
               "type": "string"
             },
+            "type": "array",
             "title": "Offered Actions",
-            "type": "array"
-          },
-          "run_id": {
-            "default": "",
-            "title": "Run Id",
-            "type": "string"
-          },
-          "seq": {
-            "default": 0,
-            "title": "Seq",
-            "type": "integer"
-          },
-          "ts": {
-            "format": "date-time",
-            "title": "Ts",
-            "type": "string"
-          },
-          "type": {
-            "const": "abstain",
-            "default": "abstain",
-            "title": "Type",
-            "type": "string"
+            "default": []
           }
         },
+        "type": "object",
         "required": [
           "found_summary",
           "missing_summary"
         ],
-        "title": "Abstain",
-        "type": "object"
+        "title": "Abstain"
       },
       "AnswerDelta": {
         "properties": {
           "run_id": {
-            "default": "",
+            "type": "string",
             "title": "Run Id",
-            "type": "string"
+            "default": ""
           },
           "seq": {
-            "default": 0,
+            "type": "integer",
             "title": "Seq",
-            "type": "integer"
-          },
-          "text": {
-            "title": "Text",
-            "type": "string"
+            "default": 0
           },
           "ts": {
+            "type": "string",
             "format": "date-time",
-            "title": "Ts",
-            "type": "string"
+            "title": "Ts"
           },
           "type": {
+            "type": "string",
             "const": "answer.delta",
-            "default": "answer.delta",
             "title": "Type",
-            "type": "string"
+            "default": "answer.delta"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
           }
         },
+        "type": "object",
         "required": [
           "text"
         ],
-        "title": "AnswerDelta",
-        "type": "object"
+        "title": "AnswerDelta"
+      },
+      "AnswerHold": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "default": ""
+          },
+          "seq": {
+            "type": "integer",
+            "title": "Seq",
+            "default": 0
+          },
+          "ts": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Ts"
+          },
+          "type": {
+            "type": "string",
+            "const": "answer.hold",
+            "title": "Type",
+            "default": "answer.hold"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason",
+            "default": "verifying"
+          }
+        },
+        "type": "object",
+        "title": "AnswerHold",
+        "description": "High-risk answers are verified before delivery; the UI shows\n'Verifying\u2026' with the trace live until the reviewed answer lands."
       },
       "Body_upload_document_collections__collection_id__documents_post": {
         "properties": {
           "file": {
+            "type": "string",
             "contentMediaType": "application/octet-stream",
-            "title": "File",
-            "type": "string"
+            "title": "File"
           }
         },
+        "type": "object",
         "required": [
           "file"
         ],
-        "title": "Body_upload_document_collections__collection_id__documents_post",
-        "type": "object"
+        "title": "Body_upload_document_collections__collection_id__documents_post"
       },
       "ChatCreate": {
         "properties": {
           "title": {
             "anyOf": [
               {
-                "maxLength": 200,
-                "type": "string"
+                "type": "string",
+                "maxLength": 200
               },
               {
                 "type": "null"
@@ -111,11 +1663,39 @@
             "title": "Title"
           }
         },
-        "title": "ChatCreate",
-        "type": "object"
+        "type": "object",
+        "title": "ChatCreate"
       },
       "ChatOut": {
         "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "pinned": {
+            "type": "boolean",
+            "title": "Pinned"
+          },
+          "model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
           "active_run_id": {
             "anyOf": [
               {
@@ -126,36 +1706,9 @@
               }
             ],
             "title": "Active Run Id"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "model_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Model Id"
-          },
-          "pinned": {
-            "title": "Pinned",
-            "type": "boolean"
-          },
-          "title": {
-            "title": "Title",
-            "type": "string"
           }
         },
+        "type": "object",
         "required": [
           "id",
           "title",
@@ -163,22 +1716,21 @@
           "model_id",
           "created_at"
         ],
-        "title": "ChatOut",
-        "type": "object"
+        "title": "ChatOut"
       },
       "ChatPatch": {
         "properties": {
-          "model_id": {
+          "title": {
             "anyOf": [
               {
-                "maxLength": 128,
-                "type": "string"
+                "type": "string",
+                "maxLength": 200
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Model Id"
+            "title": "Title"
           },
           "pinned": {
             "anyOf": [
@@ -191,40 +1743,35 @@
             ],
             "title": "Pinned"
           },
-          "title": {
+          "model_id": {
             "anyOf": [
               {
-                "maxLength": 200,
-                "type": "string"
+                "type": "string",
+                "maxLength": 128
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Title"
+            "title": "Model Id"
           }
         },
-        "title": "ChatPatch",
-        "type": "object"
+        "type": "object",
+        "title": "ChatPatch"
       },
       "ChunkOut": {
         "properties": {
-          "heading_path": {
-            "title": "Heading Path",
-            "type": "string"
-          },
           "id": {
-            "title": "Id",
-            "type": "string"
+            "type": "string",
+            "title": "Id"
           },
-          "metadata": {
-            "additionalProperties": true,
-            "title": "Metadata",
-            "type": "object"
+          "section_id": {
+            "type": "string",
+            "title": "Section Id"
           },
           "ord": {
-            "title": "Ord",
-            "type": "integer"
+            "type": "integer",
+            "title": "Ord"
           },
           "page": {
             "anyOf": [
@@ -237,15 +1784,21 @@
             ],
             "title": "Page"
           },
-          "section_id": {
-            "title": "Section Id",
-            "type": "string"
+          "heading_path": {
+            "type": "string",
+            "title": "Heading Path"
           },
           "text": {
-            "title": "Text",
-            "type": "string"
+            "type": "string",
+            "title": "Text"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata"
           }
         },
+        "type": "object",
         "required": [
           "id",
           "section_id",
@@ -255,11 +1808,14 @@
           "text",
           "metadata"
         ],
-        "title": "ChunkOut",
-        "type": "object"
+        "title": "ChunkOut"
       },
       "CitationOut": {
         "properties": {
+          "n": {
+            "type": "integer",
+            "title": "N"
+          },
           "chunk_id": {
             "anyOf": [
               {
@@ -293,32 +1849,6 @@
             ],
             "title": "Document Name"
           },
-          "excerpt": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Excerpt"
-          },
-          "n": {
-            "title": "N",
-            "type": "integer"
-          },
-          "p_supported": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "P Supported"
-          },
           "page": {
             "anyOf": [
               {
@@ -329,6 +1859,17 @@
               }
             ],
             "title": "Page"
+          },
+          "excerpt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Excerpt"
           },
           "rerank_score": {
             "anyOf": [
@@ -351,47 +1892,53 @@
               }
             ],
             "title": "Verdict"
+          },
+          "p_supported": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P Supported"
           }
         },
+        "type": "object",
         "required": [
           "n"
         ],
-        "title": "CitationOut",
-        "type": "object"
+        "title": "CitationOut"
       },
       "CollectionCreate": {
         "properties": {
           "name": {
+            "type": "string",
             "maxLength": 200,
             "minLength": 1,
-            "title": "Name",
-            "type": "string"
+            "title": "Name"
           }
         },
+        "type": "object",
         "required": [
           "name"
         ],
-        "title": "CollectionCreate",
-        "type": "object"
+        "title": "CollectionCreate"
       },
       "CollectionOut": {
         "properties": {
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "document_count": {
-            "title": "Document Count",
-            "type": "integer"
-          },
           "id": {
-            "title": "Id",
-            "type": "string"
+            "type": "string",
+            "title": "Id"
           },
           "name": {
-            "title": "Name",
-            "type": "string"
+            "type": "string",
+            "title": "Name"
+          },
+          "visibility": {
+            "type": "string",
+            "title": "Visibility"
           },
           "starter_questions": {
             "anyOf": [
@@ -407,11 +1954,17 @@
             ],
             "title": "Starter Questions"
           },
-          "visibility": {
-            "title": "Visibility",
-            "type": "string"
+          "document_count": {
+            "type": "integer",
+            "title": "Document Count"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
           }
         },
+        "type": "object",
         "required": [
           "id",
           "name",
@@ -420,17 +1973,16 @@
           "document_count",
           "created_at"
         ],
-        "title": "CollectionOut",
-        "type": "object"
+        "title": "CollectionOut"
       },
       "CollectionPatch": {
         "properties": {
           "name": {
             "anyOf": [
               {
+                "type": "string",
                 "maxLength": 200,
-                "minLength": 1,
-                "type": "string"
+                "minLength": 1
               },
               {
                 "type": "null"
@@ -441,8 +1993,8 @@
           "visibility": {
             "anyOf": [
               {
-                "pattern": "^(private|shared)$",
-                "type": "string"
+                "type": "string",
+                "pattern": "^(private|shared)$"
               },
               {
                 "type": "null"
@@ -451,76 +2003,107 @@
             "title": "Visibility"
           }
         },
-        "title": "CollectionPatch",
-        "type": "object"
+        "type": "object",
+        "title": "CollectionPatch"
       },
       "Conflict": {
         "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "default": ""
+          },
+          "seq": {
+            "type": "integer",
+            "title": "Seq",
+            "default": 0
+          },
+          "ts": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Ts"
+          },
+          "type": {
+            "type": "string",
+            "const": "conflict",
+            "title": "Type",
+            "default": "conflict"
+          },
           "citation_ids_left": {
             "items": {
               "type": "string"
             },
-            "title": "Citation Ids Left",
-            "type": "array"
+            "type": "array",
+            "title": "Citation Ids Left"
           },
           "citation_ids_right": {
             "items": {
               "type": "string"
             },
-            "title": "Citation Ids Right",
-            "type": "array"
+            "type": "array",
+            "title": "Citation Ids Right"
           },
           "rule_applied": {
-            "title": "Rule Applied",
-            "type": "string"
-          },
-          "run_id": {
-            "default": "",
-            "title": "Run Id",
-            "type": "string"
-          },
-          "seq": {
-            "default": 0,
-            "title": "Seq",
-            "type": "integer"
-          },
-          "ts": {
-            "format": "date-time",
-            "title": "Ts",
-            "type": "string"
-          },
-          "type": {
-            "const": "conflict",
-            "default": "conflict",
-            "title": "Type",
-            "type": "string"
+            "type": "string",
+            "title": "Rule Applied"
           }
         },
+        "type": "object",
         "required": [
           "citation_ids_left",
           "citation_ids_right",
           "rule_applied"
         ],
-        "title": "Conflict",
-        "type": "object"
+        "title": "Conflict"
       },
       "Decision": {
         "properties": {
-          "engine": {
-            "enum": [
-              "jev",
-              "fallback"
-            ],
-            "title": "Engine",
-            "type": "string"
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "default": ""
           },
-          "latency_ms": {
-            "title": "Latency Ms",
-            "type": "integer"
+          "seq": {
+            "type": "integer",
+            "title": "Seq",
+            "default": 0
+          },
+          "ts": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Ts"
+          },
+          "type": {
+            "type": "string",
+            "const": "decision",
+            "title": "Type",
+            "default": "decision"
           },
           "name": {
-            "title": "Name",
-            "type": "string"
+            "type": "string",
+            "title": "Name"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Value"
+          },
+          "probability": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Probability"
           },
           "probabilities": {
             "anyOf": [
@@ -536,16 +2119,17 @@
             ],
             "title": "Probabilities"
           },
-          "probability": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
+          "engine": {
+            "type": "string",
+            "enum": [
+              "jev",
+              "fallback"
             ],
-            "title": "Probability"
+            "title": "Engine"
+          },
+          "latency_ms": {
+            "type": "integer",
+            "title": "Latency Ms"
           },
           "reasoning": {
             "anyOf": [
@@ -557,82 +2141,42 @@
               }
             ],
             "title": "Reasoning"
-          },
-          "run_id": {
-            "default": "",
-            "title": "Run Id",
-            "type": "string"
-          },
-          "seq": {
-            "default": 0,
-            "title": "Seq",
-            "type": "integer"
-          },
-          "ts": {
-            "format": "date-time",
-            "title": "Ts",
-            "type": "string"
-          },
-          "type": {
-            "const": "decision",
-            "default": "decision",
-            "title": "Type",
-            "type": "string"
-          },
-          "value": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "number"
-              }
-            ],
-            "title": "Value"
           }
         },
+        "type": "object",
         "required": [
           "name",
           "value",
           "engine",
           "latency_ms"
         ],
-        "title": "Decision",
-        "type": "object"
+        "title": "Decision"
       },
       "DocumentOut": {
         "properties": {
-          "collection_id": {
-            "title": "Collection Id",
-            "type": "string"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Error"
-          },
           "id": {
-            "title": "Id",
-            "type": "string"
+            "type": "string",
+            "title": "Id"
           },
-          "mime": {
-            "title": "Mime",
-            "type": "string"
+          "collection_id": {
+            "type": "string",
+            "title": "Collection Id"
           },
           "name": {
-            "title": "Name",
-            "type": "string"
+            "type": "string",
+            "title": "Name"
+          },
+          "mime": {
+            "type": "string",
+            "title": "Mime"
+          },
+          "sha256": {
+            "type": "string",
+            "title": "Sha256"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
           },
           "page_flags": {
             "anyOf": [
@@ -648,22 +2192,31 @@
             ],
             "title": "Page Flags"
           },
-          "sha256": {
-            "title": "Sha256",
-            "type": "string"
-          },
-          "status": {
-            "title": "Status",
-            "type": "string"
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
           },
           "tags": {
             "items": {
               "type": "string"
             },
-            "title": "Tags",
-            "type": "array"
+            "type": "array",
+            "title": "Tags"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
           }
         },
+        "type": "object",
         "required": [
           "id",
           "collection_id",
@@ -676,8 +2229,7 @@
           "tags",
           "created_at"
         ],
-        "title": "DocumentOut",
-        "type": "object"
+        "title": "DocumentOut"
       },
       "DocumentPatch": {
         "properties": {
@@ -685,55 +2237,42 @@
             "items": {
               "type": "string"
             },
+            "type": "array",
             "maxItems": 50,
-            "title": "Tags",
-            "type": "array"
+            "title": "Tags"
           }
         },
+        "type": "object",
         "required": [
           "tags"
         ],
-        "title": "DocumentPatch",
-        "type": "object"
+        "title": "DocumentPatch"
       },
       "DocumentUploadOut": {
         "properties": {
-          "collection_id": {
-            "title": "Collection Id",
-            "type": "string"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "deduped": {
-            "default": false,
-            "title": "Deduped",
-            "type": "boolean"
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Error"
-          },
           "id": {
-            "title": "Id",
-            "type": "string"
+            "type": "string",
+            "title": "Id"
           },
-          "mime": {
-            "title": "Mime",
-            "type": "string"
+          "collection_id": {
+            "type": "string",
+            "title": "Collection Id"
           },
           "name": {
-            "title": "Name",
-            "type": "string"
+            "type": "string",
+            "title": "Name"
+          },
+          "mime": {
+            "type": "string",
+            "title": "Mime"
+          },
+          "sha256": {
+            "type": "string",
+            "title": "Sha256"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
           },
           "page_flags": {
             "anyOf": [
@@ -749,22 +2288,36 @@
             ],
             "title": "Page Flags"
           },
-          "sha256": {
-            "title": "Sha256",
-            "type": "string"
-          },
-          "status": {
-            "title": "Status",
-            "type": "string"
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
           },
           "tags": {
             "items": {
               "type": "string"
             },
-            "title": "Tags",
-            "type": "array"
+            "type": "array",
+            "title": "Tags"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "deduped": {
+            "type": "boolean",
+            "title": "Deduped",
+            "default": false
           }
         },
+        "type": "object",
         "required": [
           "id",
           "collection_id",
@@ -777,22 +2330,21 @@
           "tags",
           "created_at"
         ],
-        "title": "DocumentUploadOut",
-        "type": "object"
+        "title": "DocumentUploadOut"
       },
       "ForgotPasswordRequest": {
         "properties": {
           "email": {
+            "type": "string",
             "format": "email",
-            "title": "Email",
-            "type": "string"
+            "title": "Email"
           }
         },
+        "type": "object",
         "required": [
           "email"
         ],
-        "title": "ForgotPasswordRequest",
-        "type": "object"
+        "title": "ForgotPasswordRequest"
       },
       "HTTPValidationError": {
         "properties": {
@@ -800,91 +2352,78 @@
             "items": {
               "$ref": "#/components/schemas/ValidationError"
             },
-            "title": "Detail",
-            "type": "array"
+            "type": "array",
+            "title": "Detail"
           }
         },
-        "title": "HTTPValidationError",
-        "type": "object"
+        "type": "object",
+        "title": "HTTPValidationError"
       },
       "Heartbeat": {
         "properties": {
           "run_id": {
-            "default": "",
+            "type": "string",
             "title": "Run Id",
-            "type": "string"
+            "default": ""
           },
           "seq": {
-            "default": 0,
+            "type": "integer",
             "title": "Seq",
-            "type": "integer"
+            "default": 0
           },
           "ts": {
+            "type": "string",
             "format": "date-time",
-            "title": "Ts",
-            "type": "string"
+            "title": "Ts"
           },
           "type": {
+            "type": "string",
             "const": "heartbeat",
-            "default": "heartbeat",
             "title": "Type",
-            "type": "string"
+            "default": "heartbeat"
           }
         },
-        "title": "Heartbeat",
-        "type": "object"
+        "type": "object",
+        "title": "Heartbeat"
       },
       "LoginRequest": {
         "properties": {
           "email": {
+            "type": "string",
             "format": "email",
-            "title": "Email",
-            "type": "string"
+            "title": "Email"
           },
           "password": {
+            "type": "string",
             "maxLength": 1024,
             "minLength": 1,
-            "title": "Password",
-            "type": "string"
+            "title": "Password"
           }
         },
+        "type": "object",
         "required": [
           "email",
           "password"
         ],
-        "title": "LoginRequest",
-        "type": "object"
+        "title": "LoginRequest"
       },
       "MessageOut": {
         "properties": {
-          "chat_id": {
-            "title": "Chat Id",
-            "type": "string"
-          },
-          "citations": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/CitationOut"
-            },
-            "title": "Citations",
-            "type": "array"
-          },
-          "content": {
-            "title": "Content",
-            "type": "string"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
           "id": {
-            "title": "Id",
-            "type": "string"
+            "type": "string",
+            "title": "Id"
+          },
+          "chat_id": {
+            "type": "string",
+            "title": "Chat Id"
           },
           "role": {
-            "title": "Role",
-            "type": "string"
+            "type": "string",
+            "title": "Role"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
           },
           "status": {
             "anyOf": [
@@ -896,8 +2435,34 @@
               }
             ],
             "title": "Status"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/CitationOut"
+            },
+            "type": "array",
+            "title": "Citations",
+            "default": []
+          },
+          "metrics": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metrics"
           }
         },
+        "type": "object",
         "required": [
           "id",
           "chat_id",
@@ -906,25 +2471,63 @@
           "status",
           "created_at"
         ],
-        "title": "MessageOut",
-        "type": "object"
+        "title": "MessageOut"
       },
       "Metrics": {
         "properties": {
-          "context_used": {
-            "default": 0,
-            "title": "Context Used",
-            "type": "integer"
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "default": ""
           },
-          "context_window": {
-            "default": 0,
-            "title": "Context Window",
-            "type": "integer"
+          "seq": {
+            "type": "integer",
+            "title": "Seq",
+            "default": 0
+          },
+          "ts": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Ts"
+          },
+          "type": {
+            "type": "string",
+            "const": "metrics",
+            "title": "Type",
+            "default": "metrics"
+          },
+          "latency_ms": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Latency Ms",
+            "default": {}
+          },
+          "tokens_in": {
+            "type": "integer",
+            "title": "Tokens In",
+            "default": 0
+          },
+          "tokens_out": {
+            "type": "integer",
+            "title": "Tokens Out",
+            "default": 0
           },
           "credits": {
-            "default": 0,
+            "type": "integer",
             "title": "Credits",
-            "type": "integer"
+            "default": 0
+          },
+          "context_used": {
+            "type": "integer",
+            "title": "Context Used",
+            "default": 0
+          },
+          "context_window": {
+            "type": "integer",
+            "title": "Context Window",
+            "default": 0
           },
           "faithfulness": {
             "anyOf": [
@@ -937,14 +2540,6 @@
             ],
             "title": "Faithfulness"
           },
-          "latency_ms": {
-            "additionalProperties": {
-              "type": "integer"
-            },
-            "default": {},
-            "title": "Latency Ms",
-            "type": "object"
-          },
           "min_support": {
             "anyOf": [
               {
@@ -955,74 +2550,20 @@
               }
             ],
             "title": "Min Support"
-          },
-          "run_id": {
-            "default": "",
-            "title": "Run Id",
-            "type": "string"
-          },
-          "seq": {
-            "default": 0,
-            "title": "Seq",
-            "type": "integer"
-          },
-          "tokens_in": {
-            "default": 0,
-            "title": "Tokens In",
-            "type": "integer"
-          },
-          "tokens_out": {
-            "default": 0,
-            "title": "Tokens Out",
-            "type": "integer"
-          },
-          "ts": {
-            "format": "date-time",
-            "title": "Ts",
-            "type": "string"
-          },
-          "type": {
-            "const": "metrics",
-            "default": "metrics",
-            "title": "Type",
-            "type": "string"
           }
         },
-        "title": "Metrics",
-        "type": "object"
+        "type": "object",
+        "title": "Metrics"
       },
       "ModelOut": {
         "properties": {
-          "capabilities": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Capabilities"
-          },
-          "context_window": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Context Window"
-          },
-          "enabled": {
-            "title": "Enabled",
-            "type": "boolean"
-          },
           "model_id": {
-            "title": "Model Id",
-            "type": "string"
+            "type": "string",
+            "title": "Model Id"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
           },
           "price_in": {
             "anyOf": [
@@ -1046,11 +2587,35 @@
             ],
             "title": "Price Out"
           },
-          "provider": {
-            "title": "Provider",
-            "type": "string"
+          "context_window": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Window"
+          },
+          "capabilities": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capabilities"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
           }
         },
+        "type": "object",
         "required": [
           "model_id",
           "provider",
@@ -1060,11 +2625,18 @@
           "capabilities",
           "enabled"
         ],
-        "title": "ModelOut",
-        "type": "object"
+        "title": "ModelOut"
       },
       "ModelRoleOut": {
         "properties": {
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "model_id": {
+            "type": "string",
+            "title": "Model Id"
+          },
           "fallback_model_id": {
             "anyOf": [
               {
@@ -1075,178 +2647,196 @@
               }
             ],
             "title": "Fallback Model Id"
-          },
-          "model_id": {
-            "title": "Model Id",
-            "type": "string"
-          },
-          "role": {
-            "title": "Role",
-            "type": "string"
           }
         },
+        "type": "object",
         "required": [
           "role",
           "model_id",
           "fallback_model_id"
         ],
-        "title": "ModelRoleOut",
-        "type": "object"
+        "title": "ModelRoleOut"
       },
       "PageFlag": {
         "properties": {
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
           "flags": {
             "items": {
               "type": "string"
             },
-            "title": "Flags",
-            "type": "array"
-          },
-          "page": {
-            "title": "Page",
-            "type": "integer"
+            "type": "array",
+            "title": "Flags"
           }
         },
+        "type": "object",
         "required": [
           "page",
           "flags"
         ],
-        "title": "PageFlag",
-        "type": "object"
+        "title": "PageFlag"
       },
       "PinRequest": {
         "properties": {
           "collection_id": {
+            "type": "string",
             "format": "uuid",
-            "title": "Collection Id",
-            "type": "string"
+            "title": "Collection Id"
           }
         },
+        "type": "object",
         "required": [
           "collection_id"
         ],
-        "title": "PinRequest",
-        "type": "object"
+        "title": "PinRequest"
       },
       "PinResponse": {
         "properties": {
           "document_id": {
-            "title": "Document Id",
-            "type": "string"
+            "type": "string",
+            "title": "Document Id"
           }
         },
+        "type": "object",
         "required": [
           "document_id"
         ],
-        "title": "PinResponse",
-        "type": "object"
+        "title": "PinResponse"
+      },
+      "Plan": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "default": ""
+          },
+          "seq": {
+            "type": "integer",
+            "title": "Seq",
+            "default": 0
+          },
+          "ts": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Ts"
+          },
+          "type": {
+            "type": "string",
+            "const": "plan",
+            "title": "Type",
+            "default": "plan"
+          },
+          "sub_questions": {
+            "items": {
+              "$ref": "#/components/schemas/SubQuestion"
+            },
+            "type": "array",
+            "title": "Sub Questions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sub_questions"
+        ],
+        "title": "Plan"
       },
       "PlanPublic": {
         "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
           "credits_5h": {
-            "title": "Credits 5H",
-            "type": "integer"
+            "type": "integer",
+            "title": "Credits 5H"
           },
           "credits_month": {
-            "title": "Credits Month",
-            "type": "integer"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
+            "type": "integer",
+            "title": "Credits Month"
           }
         },
+        "type": "object",
         "required": [
           "name",
           "credits_5h",
           "credits_month"
         ],
-        "title": "PlanPublic",
-        "type": "object"
+        "title": "PlanPublic"
       },
       "ResetPasswordRequest": {
         "properties": {
+          "token": {
+            "type": "string",
+            "title": "Token"
+          },
           "password": {
+            "type": "string",
             "maxLength": 1024,
             "minLength": 8,
-            "title": "Password",
-            "type": "string"
-          },
-          "token": {
-            "title": "Token",
-            "type": "string"
+            "title": "Password"
           }
         },
+        "type": "object",
         "required": [
           "token",
           "password"
         ],
-        "title": "ResetPasswordRequest",
-        "type": "object"
+        "title": "ResetPasswordRequest"
       },
       "Retrieval": {
         "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "default": ""
+          },
+          "seq": {
+            "type": "integer",
+            "title": "Seq",
+            "default": 0
+          },
+          "ts": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Ts"
+          },
+          "type": {
+            "type": "string",
+            "const": "retrieval",
+            "title": "Type",
+            "default": "retrieval"
+          },
+          "hop": {
+            "type": "integer",
+            "title": "Hop",
+            "default": 0
+          },
+          "query": {
+            "type": "string",
+            "title": "Query"
+          },
           "chunks": {
-            "default": [],
             "items": {
               "$ref": "#/components/schemas/RetrievedChunk"
             },
+            "type": "array",
             "title": "Chunks",
-            "type": "array"
-          },
-          "hop": {
-            "default": 0,
-            "title": "Hop",
-            "type": "integer"
-          },
-          "query": {
-            "title": "Query",
-            "type": "string"
-          },
-          "run_id": {
-            "default": "",
-            "title": "Run Id",
-            "type": "string"
-          },
-          "seq": {
-            "default": 0,
-            "title": "Seq",
-            "type": "integer"
-          },
-          "ts": {
-            "format": "date-time",
-            "title": "Ts",
-            "type": "string"
-          },
-          "type": {
-            "const": "retrieval",
-            "default": "retrieval",
-            "title": "Type",
-            "type": "string"
+            "default": []
           }
         },
+        "type": "object",
         "required": [
           "query"
         ],
-        "title": "Retrieval",
-        "type": "object"
+        "title": "Retrieval"
       },
       "RetrievedChunk": {
         "properties": {
-          "bm25_score": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Bm25 Score"
-          },
           "chunk_id": {
-            "title": "Chunk Id",
-            "type": "string"
+            "type": "string",
+            "title": "Chunk Id"
           },
           "document_id": {
             "anyOf": [
@@ -1270,20 +2860,16 @@
             ],
             "title": "Document Name"
           },
-          "dropped": {
-            "default": false,
-            "title": "Dropped",
-            "type": "boolean"
-          },
-          "excerpt": {
-            "default": "",
-            "title": "Excerpt",
-            "type": "string"
-          },
-          "fused_score": {
-            "default": 0.0,
-            "title": "Fused Score",
-            "type": "number"
+          "page": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page"
           },
           "heading_path": {
             "anyOf": [
@@ -1296,16 +2882,42 @@
             ],
             "title": "Heading Path"
           },
-          "page": {
+          "source_type": {
+            "type": "string",
+            "title": "Source Type",
+            "default": "document"
+          },
+          "excerpt": {
+            "type": "string",
+            "title": "Excerpt",
+            "default": ""
+          },
+          "vector_score": {
             "anyOf": [
               {
-                "type": "integer"
+                "type": "number"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Page"
+            "title": "Vector Score"
+          },
+          "bm25_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bm25 Score"
+          },
+          "fused_score": {
+            "type": "number",
+            "title": "Fused Score",
+            "default": 0.0
           },
           "rerank_score": {
             "anyOf": [
@@ -1318,12 +2930,69 @@
             ],
             "title": "Rerank Score"
           },
-          "source_type": {
-            "default": "document",
-            "title": "Source Type",
-            "type": "string"
+          "dropped": {
+            "type": "boolean",
+            "title": "Dropped",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "chunk_id"
+        ],
+        "title": "RetrievedChunk"
+      },
+      "ReviewClaim": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "default": ""
           },
-          "vector_score": {
+          "seq": {
+            "type": "integer",
+            "title": "Seq",
+            "default": 0
+          },
+          "ts": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Ts"
+          },
+          "type": {
+            "type": "string",
+            "const": "review.claim",
+            "title": "Type",
+            "default": "review.claim"
+          },
+          "claim_id": {
+            "type": "string",
+            "title": "Claim Id"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "citation_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Citation Ids",
+            "default": []
+          },
+          "verdict": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verdict"
+          },
+          "p_supported": {
             "anyOf": [
               {
                 "type": "number"
@@ -1332,114 +3001,186 @@
                 "type": "null"
               }
             ],
-            "title": "Vector Score"
+            "title": "P Supported"
           }
         },
+        "type": "object",
         "required": [
-          "chunk_id"
+          "claim_id",
+          "text"
         ],
-        "title": "RetrievedChunk",
-        "type": "object"
+        "title": "ReviewClaim",
+        "description": "One claim's verification result (TRD \u00a712 review.claim, slice 6)."
+      },
+      "Revision": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "default": ""
+          },
+          "seq": {
+            "type": "integer",
+            "title": "Seq",
+            "default": 0
+          },
+          "ts": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Ts"
+          },
+          "type": {
+            "type": "string",
+            "const": "revision",
+            "title": "Type",
+            "default": "revision"
+          },
+          "revised_text": {
+            "type": "string",
+            "title": "Revised Text"
+          },
+          "diff": {
+            "type": "string",
+            "title": "Diff"
+          }
+        },
+        "type": "object",
+        "required": [
+          "revised_text",
+          "diff"
+        ],
+        "title": "Revision",
+        "description": "The reviewer rewrote flagged claims (TRD \u00a710, max one pass)."
       },
       "RunCancelResponse": {
         "properties": {
           "run_id": {
-            "title": "Run Id",
-            "type": "string"
+            "type": "string",
+            "title": "Run Id"
           },
           "status": {
-            "title": "Status",
-            "type": "string"
+            "type": "string",
+            "title": "Status"
           }
         },
+        "type": "object",
         "required": [
           "run_id",
           "status"
         ],
-        "title": "RunCancelResponse",
-        "type": "object"
+        "title": "RunCancelResponse"
       },
       "RunCancelled": {
         "properties": {
-          "message_id": {
-            "title": "Message Id",
-            "type": "string"
-          },
           "run_id": {
-            "default": "",
+            "type": "string",
             "title": "Run Id",
-            "type": "string"
+            "default": ""
           },
           "seq": {
-            "default": 0,
+            "type": "integer",
             "title": "Seq",
-            "type": "integer"
+            "default": 0
           },
           "ts": {
+            "type": "string",
             "format": "date-time",
-            "title": "Ts",
-            "type": "string"
+            "title": "Ts"
           },
           "type": {
+            "type": "string",
             "const": "run.cancelled",
-            "default": "run.cancelled",
             "title": "Type",
-            "type": "string"
+            "default": "run.cancelled"
+          },
+          "message_id": {
+            "type": "string",
+            "title": "Message Id"
           }
         },
+        "type": "object",
         "required": [
           "message_id"
         ],
-        "title": "RunCancelled",
-        "type": "object"
+        "title": "RunCancelled"
       },
       "RunCompleted": {
         "properties": {
-          "message_id": {
-            "title": "Message Id",
-            "type": "string"
-          },
           "run_id": {
-            "default": "",
+            "type": "string",
             "title": "Run Id",
-            "type": "string"
+            "default": ""
           },
           "seq": {
-            "default": 0,
+            "type": "integer",
             "title": "Seq",
-            "type": "integer"
-          },
-          "status": {
-            "default": "completed",
-            "title": "Status",
-            "type": "string"
+            "default": 0
           },
           "ts": {
+            "type": "string",
             "format": "date-time",
-            "title": "Ts",
-            "type": "string"
+            "title": "Ts"
           },
           "type": {
+            "type": "string",
             "const": "run.completed",
-            "default": "run.completed",
             "title": "Type",
-            "type": "string"
+            "default": "run.completed"
+          },
+          "message_id": {
+            "type": "string",
+            "title": "Message Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "completed"
           }
         },
+        "type": "object",
         "required": [
           "message_id"
         ],
-        "title": "RunCompleted",
-        "type": "object"
+        "title": "RunCompleted"
       },
       "RunCreateRequest": {
         "properties": {
+          "message": {
+            "type": "string",
+            "maxLength": 32000,
+            "minLength": 1,
+            "title": "Message"
+          },
+          "model_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Id"
+          },
+          "mode": {
+            "type": "string",
+            "pattern": "^(fast|auto|deep)$",
+            "title": "Mode",
+            "default": "fast"
+          },
+          "source": {
+            "type": "string",
+            "pattern": "^(auto|upload|web|both)$",
+            "title": "Source",
+            "default": "auto"
+          },
           "collection_ids": {
             "anyOf": [
               {
                 "items": {
-                  "format": "uuid",
-                  "type": "string"
+                  "type": "string",
+                  "format": "uuid"
                 },
                 "type": "array"
               },
@@ -1458,109 +3199,119 @@
                 "type": "null"
               }
             ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "title": "RunCreateRequest"
+      },
+      "RunCreateResponse": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "message_id": {
+            "type": "string",
+            "title": "Message Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "message_id"
+        ],
+        "title": "RunCreateResponse"
+      },
+      "RunFailed": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "default": ""
+          },
+          "seq": {
+            "type": "integer",
+            "title": "Seq",
+            "default": 0
+          },
+          "ts": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Ts"
+          },
+          "type": {
+            "type": "string",
+            "const": "run.failed",
+            "title": "Type",
+            "default": "run.failed"
+          },
+          "error_code": {
+            "type": "string",
+            "title": "Error Code"
           },
           "message": {
-            "maxLength": 32000,
-            "minLength": 1,
+            "type": "string",
             "title": "Message",
-            "type": "string"
-          },
-          "mode": {
-            "default": "fast",
-            "pattern": "^(fast|auto|deep)$",
-            "title": "Mode",
-            "type": "string"
-          },
-          "model_id": {
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "error_code"
+        ],
+        "title": "RunFailed"
+      },
+      "RunFilters": {
+        "properties": {
+          "source_type": {
             "anyOf": [
               {
-                "maxLength": 128,
-                "type": "string"
+                "type": "string",
+                "pattern": "^(document|web)$"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Model Id"
+            "title": "Source Type"
           },
-          "source": {
-            "default": "auto",
-            "pattern": "^(auto|web|collections)$",
-            "title": "Source",
-            "type": "string"
-          }
-        },
-        "required": [
-          "message"
-        ],
-        "title": "RunCreateRequest",
-        "type": "object"
-      },
-      "RunCreateResponse": {
-        "properties": {
-          "message_id": {
-            "title": "Message Id",
-            "type": "string"
+          "document_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Ids"
           },
-          "run_id": {
-            "title": "Run Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "run_id",
-          "message_id"
-        ],
-        "title": "RunCreateResponse",
-        "type": "object"
-      },
-      "RunFailed": {
-        "properties": {
-          "error_code": {
-            "title": "Error Code",
-            "type": "string"
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags"
           },
-          "message": {
-            "default": "",
-            "title": "Message",
-            "type": "string"
-          },
-          "run_id": {
-            "default": "",
-            "title": "Run Id",
-            "type": "string"
-          },
-          "seq": {
-            "default": 0,
-            "title": "Seq",
-            "type": "integer"
-          },
-          "ts": {
-            "format": "date-time",
-            "title": "Ts",
-            "type": "string"
-          },
-          "type": {
-            "const": "run.failed",
-            "default": "run.failed",
-            "title": "Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "error_code"
-        ],
-        "title": "RunFailed",
-        "type": "object"
-      },
-      "RunFilters": {
-        "description": "Client filters on a run (TRD \u00a712); every field can only narrow the\nserver-side ownership scope (TRD \u00a79.2).",
-        "properties": {
           "date_from": {
             "anyOf": [
               {
-                "format": "date-time",
-                "type": "string"
+                "type": "string",
+                "format": "date-time"
               },
               {
                 "type": "null"
@@ -1571,29 +3322,14 @@
           "date_to": {
             "anyOf": [
               {
-                "format": "date-time",
-                "type": "string"
+                "type": "string",
+                "format": "date-time"
               },
               {
                 "type": "null"
               }
             ],
             "title": "Date To"
-          },
-          "document_ids": {
-            "anyOf": [
-              {
-                "items": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Document Ids"
           },
           "mime": {
             "anyOf": [
@@ -1609,66 +3345,57 @@
           "page": {
             "anyOf": [
               {
-                "minimum": 1.0,
-                "type": "integer"
+                "type": "integer",
+                "minimum": 1.0
               },
               {
                 "type": "null"
               }
             ],
             "title": "Page"
-          },
-          "source_type": {
-            "anyOf": [
-              {
-                "pattern": "^(document|web)$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Source Type"
-          },
-          "tags": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Tags"
           }
         },
+        "type": "object",
         "title": "RunFilters",
-        "type": "object"
+        "description": "Client filters on a run (TRD \u00a712); every field can only narrow the\nserver-side ownership scope (TRD \u00a79.2)."
       },
       "RunStarted": {
         "properties": {
-          "mode": {
-            "default": "fast",
-            "title": "Mode",
-            "type": "string"
-          },
-          "model": {
-            "default": "",
-            "title": "Model",
-            "type": "string"
-          },
           "run_id": {
-            "default": "",
+            "type": "string",
             "title": "Run Id",
-            "type": "string"
+            "default": ""
           },
           "seq": {
-            "default": 0,
+            "type": "integer",
             "title": "Seq",
-            "type": "integer"
+            "default": 0
+          },
+          "ts": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Ts"
+          },
+          "type": {
+            "type": "string",
+            "const": "run.started",
+            "title": "Type",
+            "default": "run.started"
+          },
+          "mode": {
+            "type": "string",
+            "title": "Mode",
+            "default": "fast"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source",
+            "default": "auto"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "default": ""
           },
           "settings_version": {
             "anyOf": [
@@ -1680,48 +3407,12 @@
               }
             ],
             "title": "Settings Version"
-          },
-          "source": {
-            "default": "auto",
-            "title": "Source",
-            "type": "string"
-          },
-          "ts": {
-            "format": "date-time",
-            "title": "Ts",
-            "type": "string"
-          },
-          "type": {
-            "const": "run.started",
-            "default": "run.started",
-            "title": "Type",
-            "type": "string"
           }
         },
-        "title": "RunStarted",
-        "type": "object"
+        "type": "object",
+        "title": "RunStarted"
       },
       "RunStreamResponse": {
-        "description": "References the union so it lands in OpenAPI (TRD \u00a712: the TS union is\ngenerated from the schema, never hand-rolled).",
-        "discriminator": {
-          "mapping": {
-            "abstain": "#/components/schemas/Abstain",
-            "answer.delta": "#/components/schemas/AnswerDelta",
-            "conflict": "#/components/schemas/Conflict",
-            "decision": "#/components/schemas/Decision",
-            "heartbeat": "#/components/schemas/Heartbeat",
-            "metrics": "#/components/schemas/Metrics",
-            "retrieval": "#/components/schemas/Retrieval",
-            "run.cancelled": "#/components/schemas/RunCancelled",
-            "run.completed": "#/components/schemas/RunCompleted",
-            "run.failed": "#/components/schemas/RunFailed",
-            "run.started": "#/components/schemas/RunStarted",
-            "step.completed": "#/components/schemas/StepCompleted",
-            "step.started": "#/components/schemas/StepStarted",
-            "thinking.delta": "#/components/schemas/ThinkingDelta"
-          },
-          "propertyName": "type"
-        },
         "oneOf": [
           {
             "$ref": "#/components/schemas/RunStarted"
@@ -1739,6 +3430,9 @@
             "$ref": "#/components/schemas/ThinkingDelta"
           },
           {
+            "$ref": "#/components/schemas/Plan"
+          },
+          {
             "$ref": "#/components/schemas/Retrieval"
           },
           {
@@ -1749,6 +3443,18 @@
           },
           {
             "$ref": "#/components/schemas/Conflict"
+          },
+          {
+            "$ref": "#/components/schemas/ReviewClaim"
+          },
+          {
+            "$ref": "#/components/schemas/AnswerHold"
+          },
+          {
+            "$ref": "#/components/schemas/Revision"
+          },
+          {
+            "$ref": "#/components/schemas/Suggestions"
           },
           {
             "$ref": "#/components/schemas/Metrics"
@@ -1766,205 +3472,285 @@
             "$ref": "#/components/schemas/RunFailed"
           }
         ],
-        "title": "RunStreamResponse"
+        "title": "RunStreamResponse",
+        "description": "References the union so it lands in OpenAPI (TRD \u00a712: the TS union is\ngenerated from the schema, never hand-rolled).",
+        "discriminator": {
+          "propertyName": "type",
+          "mapping": {
+            "abstain": "#/components/schemas/Abstain",
+            "answer.delta": "#/components/schemas/AnswerDelta",
+            "answer.hold": "#/components/schemas/AnswerHold",
+            "conflict": "#/components/schemas/Conflict",
+            "decision": "#/components/schemas/Decision",
+            "heartbeat": "#/components/schemas/Heartbeat",
+            "metrics": "#/components/schemas/Metrics",
+            "plan": "#/components/schemas/Plan",
+            "retrieval": "#/components/schemas/Retrieval",
+            "review.claim": "#/components/schemas/ReviewClaim",
+            "revision": "#/components/schemas/Revision",
+            "run.cancelled": "#/components/schemas/RunCancelled",
+            "run.completed": "#/components/schemas/RunCompleted",
+            "run.failed": "#/components/schemas/RunFailed",
+            "run.started": "#/components/schemas/RunStarted",
+            "step.completed": "#/components/schemas/StepCompleted",
+            "step.started": "#/components/schemas/StepStarted",
+            "suggestions": "#/components/schemas/Suggestions",
+            "thinking.delta": "#/components/schemas/ThinkingDelta"
+          }
+        }
       },
       "SignupRequest": {
         "properties": {
           "email": {
+            "type": "string",
             "format": "email",
-            "title": "Email",
-            "type": "string"
+            "title": "Email"
           },
           "password": {
+            "type": "string",
             "maxLength": 1024,
             "minLength": 8,
-            "title": "Password",
-            "type": "string"
+            "title": "Password"
           }
         },
+        "type": "object",
         "required": [
           "email",
           "password"
         ],
-        "title": "SignupRequest",
-        "type": "object"
+        "title": "SignupRequest"
       },
       "StepCompleted": {
         "properties": {
-          "duration_ms": {
-            "title": "Duration Ms",
-            "type": "integer"
-          },
-          "label": {
-            "title": "Label",
-            "type": "string"
-          },
-          "node": {
-            "title": "Node",
-            "type": "string"
-          },
           "run_id": {
-            "default": "",
+            "type": "string",
             "title": "Run Id",
-            "type": "string"
+            "default": ""
           },
           "seq": {
-            "default": 0,
+            "type": "integer",
             "title": "Seq",
-            "type": "integer"
+            "default": 0
           },
           "ts": {
+            "type": "string",
             "format": "date-time",
-            "title": "Ts",
-            "type": "string"
+            "title": "Ts"
           },
           "type": {
+            "type": "string",
             "const": "step.completed",
-            "default": "step.completed",
             "title": "Type",
-            "type": "string"
+            "default": "step.completed"
+          },
+          "node": {
+            "type": "string",
+            "title": "Node"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "duration_ms": {
+            "type": "integer",
+            "title": "Duration Ms"
           }
         },
+        "type": "object",
         "required": [
           "node",
           "label",
           "duration_ms"
         ],
-        "title": "StepCompleted",
-        "type": "object"
+        "title": "StepCompleted"
       },
       "StepStarted": {
         "properties": {
-          "label": {
-            "title": "Label",
-            "type": "string"
-          },
-          "node": {
-            "title": "Node",
-            "type": "string"
-          },
           "run_id": {
-            "default": "",
+            "type": "string",
             "title": "Run Id",
-            "type": "string"
+            "default": ""
           },
           "seq": {
-            "default": 0,
+            "type": "integer",
             "title": "Seq",
-            "type": "integer"
+            "default": 0
           },
           "ts": {
+            "type": "string",
             "format": "date-time",
-            "title": "Ts",
-            "type": "string"
+            "title": "Ts"
           },
           "type": {
+            "type": "string",
             "const": "step.started",
-            "default": "step.started",
             "title": "Type",
-            "type": "string"
+            "default": "step.started"
+          },
+          "node": {
+            "type": "string",
+            "title": "Node"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
           }
         },
+        "type": "object",
         "required": [
           "node",
           "label"
         ],
-        "title": "StepStarted",
-        "type": "object"
+        "title": "StepStarted"
+      },
+      "SubQuestion": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "question": {
+            "type": "string",
+            "title": "Question"
+          },
+          "depends_on": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Depends On",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "question"
+        ],
+        "title": "SubQuestion"
+      },
+      "Suggestions": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "default": ""
+          },
+          "seq": {
+            "type": "integer",
+            "title": "Seq",
+            "default": 0
+          },
+          "ts": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Ts"
+          },
+          "type": {
+            "type": "string",
+            "const": "suggestions",
+            "title": "Type",
+            "default": "suggestions"
+          },
+          "questions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Questions",
+            "default": []
+          }
+        },
+        "type": "object",
+        "title": "Suggestions",
+        "description": "Three suggested follow-up questions (CH-9)."
       },
       "ThinkingDelta": {
         "properties": {
           "run_id": {
-            "default": "",
+            "type": "string",
             "title": "Run Id",
-            "type": "string"
+            "default": ""
           },
           "seq": {
-            "default": 0,
+            "type": "integer",
             "title": "Seq",
-            "type": "integer"
-          },
-          "text": {
-            "title": "Text",
-            "type": "string"
+            "default": 0
           },
           "ts": {
+            "type": "string",
             "format": "date-time",
-            "title": "Ts",
-            "type": "string"
+            "title": "Ts"
           },
           "type": {
+            "type": "string",
             "const": "thinking.delta",
-            "default": "thinking.delta",
             "title": "Type",
-            "type": "string"
+            "default": "thinking.delta"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
           }
         },
+        "type": "object",
         "required": [
           "text"
         ],
-        "title": "ThinkingDelta",
-        "type": "object"
+        "title": "ThinkingDelta"
       },
       "TokenResponse": {
         "properties": {
           "access_token": {
-            "title": "Access Token",
-            "type": "string"
+            "type": "string",
+            "title": "Access Token"
           },
           "token_type": {
-            "default": "bearer",
+            "type": "string",
             "title": "Token Type",
-            "type": "string"
+            "default": "bearer"
           },
           "user": {
             "$ref": "#/components/schemas/UserPublic"
           }
         },
+        "type": "object",
         "required": [
           "access_token",
           "user"
         ],
-        "title": "TokenResponse",
-        "type": "object"
+        "title": "TokenResponse"
       },
       "UserPublic": {
         "properties": {
-          "email": {
-            "format": "email",
-            "title": "Email",
-            "type": "string"
-          },
           "id": {
-            "title": "Id",
-            "type": "string"
+            "type": "string",
+            "title": "Id"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
           },
           "plan": {
             "$ref": "#/components/schemas/PlanPublic"
-          },
-          "role": {
-            "title": "Role",
-            "type": "string"
           }
         },
+        "type": "object",
         "required": [
           "id",
           "email",
           "role",
           "plan"
         ],
-        "title": "UserPublic",
-        "type": "object"
+        "title": "UserPublic"
       },
       "ValidationError": {
         "properties": {
-          "ctx": {
-            "title": "Context",
-            "type": "object"
-          },
-          "input": {
-            "title": "Input"
-          },
           "loc": {
             "items": {
               "anyOf": [
@@ -1976,1550 +3762,38 @@
                 }
               ]
             },
-            "title": "Location",
-            "type": "array"
+            "type": "array",
+            "title": "Location"
           },
           "msg": {
-            "title": "Message",
-            "type": "string"
+            "type": "string",
+            "title": "Message"
           },
           "type": {
-            "title": "Error Type",
-            "type": "string"
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
           }
         },
+        "type": "object",
         "required": [
           "loc",
           "msg",
           "type"
         ],
-        "title": "ValidationError",
-        "type": "object"
+        "title": "ValidationError"
       }
     },
     "securitySchemes": {
       "HTTPBearer": {
-        "scheme": "bearer",
-        "type": "http"
-      }
-    }
-  },
-  "info": {
-    "title": "Veriforge API",
-    "version": "0.1.0"
-  },
-  "openapi": "3.1.0",
-  "paths": {
-    "/auth/forgot-password": {
-      "post": {
-        "operationId": "forgot_password_auth_forgot_password_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ForgotPasswordRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "202": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "title": "Response Forgot Password Auth Forgot Password Post",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Forgot Password",
-        "tags": [
-          "auth"
-        ]
-      }
-    },
-    "/auth/google/callback": {
-      "get": {
-        "operationId": "google_callback_auth_google_callback_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "code",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Code"
-            }
-          },
-          {
-            "in": "query",
-            "name": "state",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "State"
-            }
-          },
-          {
-            "in": "cookie",
-            "name": "vf_oauth_state",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Vf Oauth State"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Google Callback",
-        "tags": [
-          "auth"
-        ]
-      }
-    },
-    "/auth/google/login": {
-      "get": {
-        "operationId": "google_login_auth_google_login_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Google Login",
-        "tags": [
-          "auth"
-        ]
-      }
-    },
-    "/auth/login": {
-      "post": {
-        "operationId": "login_auth_login_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/LoginRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TokenResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Login",
-        "tags": [
-          "auth"
-        ]
-      }
-    },
-    "/auth/logout": {
-      "post": {
-        "operationId": "logout_auth_logout_post",
-        "parameters": [
-          {
-            "in": "cookie",
-            "name": "vf_refresh",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Vf Refresh"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Logout",
-        "tags": [
-          "auth"
-        ]
-      }
-    },
-    "/auth/refresh": {
-      "post": {
-        "operationId": "refresh_auth_refresh_post",
-        "parameters": [
-          {
-            "in": "cookie",
-            "name": "vf_refresh",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Vf Refresh"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TokenResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Refresh",
-        "tags": [
-          "auth"
-        ]
-      }
-    },
-    "/auth/reset-password": {
-      "post": {
-        "operationId": "reset_password_auth_reset_password_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ResetPasswordRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Reset Password",
-        "tags": [
-          "auth"
-        ]
-      }
-    },
-    "/auth/signup": {
-      "post": {
-        "operationId": "signup_auth_signup_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SignupRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TokenResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Signup",
-        "tags": [
-          "auth"
-        ]
-      }
-    },
-    "/chats": {
-      "get": {
-        "operationId": "list_chats_chats_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/ChatOut"
-                  },
-                  "title": "Response List Chats Chats Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "List Chats",
-        "tags": [
-          "chats"
-        ]
-      },
-      "post": {
-        "operationId": "create_chat_chats_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ChatCreate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ChatOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Create Chat",
-        "tags": [
-          "chats"
-        ]
-      }
-    },
-    "/chats/{chat_id}": {
-      "delete": {
-        "operationId": "delete_chat_chats__chat_id__delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "chat_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Chat Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Delete Chat",
-        "tags": [
-          "chats"
-        ]
-      },
-      "get": {
-        "operationId": "get_chat_chats__chat_id__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "chat_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Chat Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ChatOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Get Chat",
-        "tags": [
-          "chats"
-        ]
-      },
-      "patch": {
-        "operationId": "patch_chat_chats__chat_id__patch",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "chat_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Chat Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ChatPatch"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ChatOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Patch Chat",
-        "tags": [
-          "chats"
-        ]
-      }
-    },
-    "/chats/{chat_id}/messages": {
-      "get": {
-        "operationId": "list_messages_chats__chat_id__messages_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "chat_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Chat Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/MessageOut"
-                  },
-                  "title": "Response List Messages Chats  Chat Id  Messages Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "List Messages",
-        "tags": [
-          "chats"
-        ]
-      }
-    },
-    "/chats/{chat_id}/runs": {
-      "post": {
-        "operationId": "create_run_chats__chat_id__runs_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "chat_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Chat Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RunCreateRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RunCreateResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Create Run",
-        "tags": [
-          "chats"
-        ]
-      }
-    },
-    "/collections": {
-      "get": {
-        "operationId": "list_collections_collections_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/CollectionOut"
-                  },
-                  "title": "Response List Collections Collections Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "List Collections",
-        "tags": [
-          "sources"
-        ]
-      },
-      "post": {
-        "operationId": "create_collection_collections_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CollectionCreate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CollectionOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Create Collection",
-        "tags": [
-          "sources"
-        ]
-      }
-    },
-    "/collections/{collection_id}": {
-      "delete": {
-        "operationId": "delete_collection_collections__collection_id__delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "collection_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Collection Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Delete Collection",
-        "tags": [
-          "sources"
-        ]
-      },
-      "get": {
-        "operationId": "get_collection_collections__collection_id__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "collection_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Collection Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CollectionOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Get Collection",
-        "tags": [
-          "sources"
-        ]
-      },
-      "patch": {
-        "operationId": "patch_collection_collections__collection_id__patch",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "collection_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Collection Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CollectionPatch"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CollectionOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Patch Collection",
-        "tags": [
-          "sources"
-        ]
-      }
-    },
-    "/collections/{collection_id}/documents": {
-      "get": {
-        "operationId": "get_collection_documents_collections__collection_id__documents_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "collection_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Collection Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/DocumentOut"
-                  },
-                  "title": "Response Get Collection Documents Collections  Collection Id  Documents Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Get Collection Documents",
-        "tags": [
-          "sources"
-        ]
-      },
-      "post": {
-        "operationId": "upload_document_collections__collection_id__documents_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "collection_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Collection Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "multipart/form-data": {
-              "schema": {
-                "$ref": "#/components/schemas/Body_upload_document_collections__collection_id__documents_post"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DocumentUploadOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Upload Document",
-        "tags": [
-          "sources"
-        ]
-      }
-    },
-    "/documents/{document_id}": {
-      "delete": {
-        "operationId": "delete_document_documents__document_id__delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "document_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Document Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Delete Document",
-        "tags": [
-          "sources"
-        ]
-      },
-      "get": {
-        "operationId": "get_document_documents__document_id__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "document_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Document Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DocumentOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Get Document",
-        "tags": [
-          "sources"
-        ]
-      },
-      "patch": {
-        "operationId": "patch_document_documents__document_id__patch",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "document_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Document Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DocumentPatch"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DocumentOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Patch Document",
-        "tags": [
-          "sources"
-        ]
-      }
-    },
-    "/documents/{document_id}/chunks": {
-      "get": {
-        "operationId": "get_document_chunks_documents__document_id__chunks_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "document_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Document Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/ChunkOut"
-                  },
-                  "title": "Response Get Document Chunks Documents  Document Id  Chunks Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Get Document Chunks",
-        "tags": [
-          "sources"
-        ]
-      }
-    },
-    "/documents/{document_id}/reindex": {
-      "post": {
-        "operationId": "reindex_document_documents__document_id__reindex_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "document_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Document Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DocumentOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Reindex Document",
-        "tags": [
-          "sources"
-        ]
-      }
-    },
-    "/healthz": {
-      "get": {
-        "operationId": "healthz_healthz_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Healthz"
-      }
-    },
-    "/me": {
-      "get": {
-        "operationId": "me_me_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UserPublic"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Me",
-        "tags": [
-          "me"
-        ]
-      }
-    },
-    "/model-roles": {
-      "get": {
-        "operationId": "list_model_roles_model_roles_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/ModelRoleOut"
-                  },
-                  "title": "Response List Model Roles Model Roles Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "List Model Roles",
-        "tags": [
-          "models"
-        ]
-      }
-    },
-    "/models": {
-      "get": {
-        "operationId": "list_models_models_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/ModelOut"
-                  },
-                  "title": "Response List Models Models Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "List Models",
-        "tags": [
-          "models"
-        ]
-      }
-    },
-    "/runs/{run_id}/cancel": {
-      "post": {
-        "operationId": "cancel_run_runs__run_id__cancel_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "run_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Run Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RunCancelResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Cancel Run",
-        "tags": [
-          "runs"
-        ]
-      }
-    },
-    "/runs/{run_id}/stream": {
-      "get": {
-        "operationId": "stream_run_runs__run_id__stream_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "run_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Run Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "after_seq",
-            "required": false,
-            "schema": {
-              "default": 0,
-              "minimum": 0,
-              "title": "After Seq",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RunStreamResponse"
-                }
-              }
-            },
-            "description": "SSE event stream"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Stream Run",
-        "tags": [
-          "runs"
-        ]
-      }
-    },
-    "/web-sources/{web_page_id}/pin": {
-      "post": {
-        "operationId": "pin_web_source_web_sources__web_page_id__pin_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "web_page_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Web Page Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PinRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PinResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Pin Web Source",
-        "tags": [
-          "web-sources"
-        ]
+        "type": "http",
+        "scheme": "bearer"
       }
     }
   }

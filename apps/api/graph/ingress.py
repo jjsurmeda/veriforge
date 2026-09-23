@@ -4,10 +4,11 @@ in parallel with rewrite (one round trip, TRD §7).
 
 On block verdict (injection or jailbreak ≥ block threshold) the run
 refuses without calling retrieval. Warn verdicts (PII, off-topic, lower
-injection/jailbreak scores) annotate the run and continue; redaction of
-PII strings is deferred to slice 6 (TRD §11 does not specify a
-substitution policy and we do not invent one — the warn surface, the
-threshold, and the SSE event all ship now).
+injection/jailbreak scores) annotate the run and continue. Slice 6
+resolved the deferred string-substitution redaction for *output* leaks
+(decisions/output_guard.py, [REDACTED:*] format); user-message PII here
+stays warn-only — TRD §11: "PII in the user's own documents is not
+blocked", and redacting the question would corrupt retrieval.
 """
 
 import asyncio

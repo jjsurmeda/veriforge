@@ -6,30 +6,28 @@ from evals.gate import compare
 from evals.judge import parse_judge_response
 
 GOOD = """```json
-{"faithfulness": 0.87, "citation_precision": 0.9,
- "context_precision": 0.6, "context_recall": 0.75}
+{"context_precision": 0.6, "context_recall": 0.75, "answer_relevance": 0.9}
 ```"""
 
 
 def test_parse_judge_response_valid_json() -> None:
     scores = parse_judge_response(
-        '{"faithfulness": 0.5, "citation_precision": 0.6,'
-        ' "context_precision": 0.7, "context_recall": 0.8}'
+        '{"context_precision": 0.7, "context_recall": 0.8, "answer_relevance": 0.9}'
     )
     assert scores is not None
-    assert scores.faithfulness == pytest.approx(0.5)
+    assert scores.answer_relevance == pytest.approx(0.9)
     assert scores.context_recall == pytest.approx(0.8)
 
 
 def test_parse_judge_response_strips_fence() -> None:
     scores = parse_judge_response(GOOD)
-    assert scores is not None and scores.faithfulness == pytest.approx(0.87)
+    assert scores is not None and scores.context_precision == pytest.approx(0.6)
 
 
 def test_parse_judge_response_rejects_garbage() -> None:
     assert parse_judge_response("not json") is None
-    assert parse_judge_response('{"faithfulness": "high"}') is None
-    assert parse_judge_response('{"faithfulness": 1}') is None
+    assert parse_judge_response('{"context_precision": "high"}') is None
+    assert parse_judge_response('{"context_precision": 1}') is None
 
 
 def test_gate_passes_within_thresholds() -> None:
