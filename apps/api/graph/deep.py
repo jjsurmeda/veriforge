@@ -25,11 +25,13 @@ from graph.ingress import IngressOutcome, run_ingress
 from graph.planner import generate_followup, plan_question
 from graph.timing import EventPublisher, make_step_timer
 from providers.llm import complete
+from quota.usage import get_usage_context
 from retrieval.context import count_tokens, trim_context
 from retrieval.expand import ExpandedContext, dedupe_adjacent, expand_context
 from retrieval.filters import ClientFilters
 from retrieval.hybrid import ScoredChunk
 from retrieval.web import ensure_web_chunks
+from runtime import runtime_value
 from schemas.decisions import Answer
 from schemas.events import Abstain, Decision, Plan, Retrieval, SubQuestion
 
@@ -113,12 +115,16 @@ async def _history(
     session: AsyncSession, chat_id: UUID, exclude_message_id: UUID
 ) -> list[tuple[str, str]]:
     messages = (
-        await session.execute(
-            select(Message)
-            .where(Message.chat_id == chat_id, Message.id != exclude_message_id)
-            .order_by(Message.created_at)
+        (
+            await session.execute(
+                select(Message)
+                .where(Message.chat_id == chat_id, Message.id != exclude_message_id)
+                .order_by(Message.created_at)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return [(m.role, m.content) for m in messages if m.content]
 
 
@@ -150,6 +156,11 @@ async def prepare_deep_run(
     gate between hops) + trim; returns everything the runner needs to
     stream the answer."""
     settings = get_settings()
+    hop_limit = int(runtime_value("retrieval.hop_limit", settings.deep_max_hops))
+    usage_context = get_usage_context()
+    credit_budget = float(runtime_value("deep.per_run_credit_cap", settings.deep_credit_budget))
+    if usage_context is not None and usage_context.remaining_5h is not None:
+        credit_budget = min(credit_budget, float(usage_context.remaining_5h))
     decision_events: list[Decision] = []
     retrieval_events: list[Retrieval] = []
     latency_ms: dict[str, int] = {}
@@ -229,8 +240,7 @@ async def prepare_deep_run(
         plan_event = Plan(
             run_id=str(params.run_id),
             sub_questions=[
-                SubQuestion(id=sq.id, question=sq.question, depends_on=sq.depends_on)
-                for sq in plan
+                SubQuestion(id=sq.id, question=sq.question, depends_on=sq.depends_on) for sq in plan
             ],
         )
 
@@ -244,7 +254,9 @@ async def prepare_deep_run(
         followup_count = 0
         dynamic_plan = list(plan)
 
-        while hop_index < settings.deep_max_hops and credits_used < settings.deep_credit_budget:
+        while hop_index < hop_limit and (
+            usage_context is None or usage_context.credits < credit_budget
+        ):
             batch = ready_sub_questions(dynamic_plan, answered_ids)
             if not batch:
                 if hop_index == 0:
@@ -297,7 +309,8 @@ async def prepare_deep_run(
                 retrieval_events.append(hop_note.retrieval_event)
                 for name, answer in hop_note.decision_answers.items():
                     decision_events.append(_decision_event(params.run_id, name, answer))
-                credits_used += count_tokens(hop_note.note)
+                if usage_context is None:
+                    credits_used += count_tokens(hop_note.note)
 
             sufficient, controller_answer = await _step(
                 f"controller_{hop_index}",

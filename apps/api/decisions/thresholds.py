@@ -8,11 +8,12 @@ defaults here come from TRD §8's catalogue; `settings.data.thresholds`
 
 from typing import Literal
 
+from runtime import get_runtime_settings
+
 Engine = Literal["jev", "fallback"]
 
 # decision name -> engine -> threshold. Missing cells mean "use the other
-# engine's value" — Jev is the reference scale, fallback inherits until
-# slice 7's admin UI tunes it against shadow-mode data.
+# engine's value" — Jev is the reference scale, with admin overrides per engine.
 _DEFAULTS: dict[str, dict[Engine, float]] = {
     "guard_injection_block": {"jev": 0.85, "fallback": 0.85},
     "guard_injection_warn": {"jev": 0.60, "fallback": 0.60},
@@ -37,6 +38,11 @@ def threshold(
     name: str, engine: Engine, overrides: dict[str, dict[str, float]] | None = None
 ) -> float:
     """Look up a threshold. `overrides` is settings.data['thresholds']."""
+    runtime = get_runtime_settings()
+    if overrides is None and runtime is not None:
+        value = runtime.get("thresholds", {})
+        if isinstance(value, dict):
+            overrides = value
     if overrides and name in overrides and engine in overrides[name]:
         return overrides[name][engine]
     try:

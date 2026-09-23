@@ -24,6 +24,8 @@ from db.models import (
 from db.session import get_session
 from errors import AppError
 from graph import runner
+from quota.service import gate_and_reserve
+from runtime import load_active_runtime
 from schemas.chats import (
     ChatCreate,
     ChatOut,
@@ -87,15 +89,11 @@ async def list_chats(
     )
     rows = (
         await session.execute(
-            select(Chat, active_run)
-            .where(Chat.user_id == user.id)
-            .order_by(Chat.created_at.desc())
+            select(Chat, active_run).where(Chat.user_id == user.id).order_by(Chat.created_at.desc())
         )
     ).all()
     return [
-        chat_out(
-            chat.id, chat.title, chat.pinned, chat.model_id, chat.created_at, active
-        )
+        chat_out(chat.id, chat.title, chat.pinned, chat.model_id, chat.created_at, active)
         for chat, active in rows
     ]
 
@@ -162,6 +160,7 @@ async def delete_chat(
 ) -> None:
     chat = await _owned_chat(session, user, chat_id)
     await session.delete(chat)
+    await session.flush()
 
 
 @router.get("/chats/{chat_id}/messages", response_model=list[MessageOut])
@@ -172,10 +171,14 @@ async def list_messages(
 ) -> list[MessageOut]:
     await _owned_chat(session, user, chat_id)
     messages = (
-        await session.execute(
-            select(Message).where(Message.chat_id == chat_id).order_by(Message.created_at)
+        (
+            await session.execute(
+                select(Message).where(Message.chat_id == chat_id).order_by(Message.created_at)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     citations = (
         await session.execute(
             select(Citation, Chunk, Document)
@@ -201,14 +204,21 @@ async def list_messages(
             )
         )
     runs = (
-        await session.execute(select(Run).where(Run.message_id.in_([m.id for m in messages])))
-    ).scalars().all()
+        (await session.execute(select(Run).where(Run.message_id.in_([m.id for m in messages]))))
+        .scalars()
+        .all()
+    )
     metrics_by_message: dict[UUID, dict[str, object] | None] = {
         run.message_id: run.metrics for run in runs
     }
     return [
         message_out(
-            m.id, m.chat_id, m.role, m.content, m.status, m.created_at,
+            m.id,
+            m.chat_id,
+            m.role,
+            m.content,
+            m.status,
+            m.created_at,
             by_message.get(m.id, []),
             metrics_by_message.get(m.id),
         )
@@ -240,9 +250,9 @@ async def _small_model_litellm(session: AsyncSession, fallback: str) -> str:
         return fallback
     row = (
         await session.execute(
-            select(LlmProvider.kind).join(Model, Model.provider_id == LlmProvider.id).where(
-                Model.model_id == role.model_id
-            )
+            select(LlmProvider.kind)
+            .join(Model, Model.provider_id == LlmProvider.id)
+            .where(Model.model_id == role.model_id)
         )
     ).scalar_one_or_none()
     if row is None:
@@ -286,6 +296,19 @@ async def create_run(
         heartbeat_at=None,
     )
     session.add(run)
+    await session.flush()
+    runtime = await load_active_runtime(session)
+    reservation = await gate_and_reserve(
+        session,
+        user_id=user.id,
+        run_id=run.id,
+        mode=body.mode,
+        settings=runtime.data,
+    )
+    run.settings_version = runtime.version
+    small_litellm_model = await _small_model_litellm(
+        session, f"{provider.kind}/{model_id}"
+    )
     await session.commit()
 
     runner.start_run(
@@ -296,9 +319,7 @@ async def create_run(
         chat_id=chat.id,
         user_id=user.id,
         litellm_model=f"{provider.kind}/{model_id}",
-        small_litellm_model=await _small_model_litellm(
-            session, f"{provider.kind}/{model_id}"
-        ),
+        small_litellm_model=small_litellm_model,
         model_id=model_id,
         context_window=model.context_window or 128_000,
         mode=body.mode,
@@ -306,5 +327,7 @@ async def create_run(
         user_message=body.message,
         run_filters=body.filters,
         collection_ids=effective,
+        quota_remaining_5h=reservation.remaining_5h,
+        settings_version=runtime.version,
     )
     return RunCreateResponse(run_id=str(run.id), message_id=str(assistant_message.id))

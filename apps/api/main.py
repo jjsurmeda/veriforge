@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from admin import router as admin_router
 from auth import router as auth_router
 from chats import router as chats_router
 from config import get_settings
@@ -20,6 +21,7 @@ from graph import runner
 from ingest import router as sources_router
 from ingest.queue import app as queue_app
 from providers import router as providers_router
+from quota import router as quota_router
 from retrieval import router as retrieval_router
 from runbus.postgres import PostgresRunBus
 from runs import router as runs_router
@@ -61,9 +63,11 @@ app.add_middleware(
 
 app.include_router(auth_router.router)
 app.include_router(auth_router.me_router)
+app.include_router(admin_router.router)
 app.include_router(chats_router.router)
 app.include_router(runs_router.router)
 app.include_router(providers_router.router)
+app.include_router(quota_router.router)
 app.include_router(sources_router.router)
 app.include_router(retrieval_router.router)
 
@@ -81,9 +85,7 @@ async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
 
 
 @app.exception_handler(RequestValidationError)
-async def validation_error_handler(
-    request: Request, exc: RequestValidationError
-) -> JSONResponse:
+async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
     return JSONResponse(status_code=422, content=_error_body("invalid_request", str(exc.errors())))
 
 

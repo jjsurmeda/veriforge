@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config import get_settings
 from retrieval.errors import RetrievalTimeout
 from retrieval.filters import ClientFilters, Ownership, build_scope
+from runtime import runtime_value
 
 logger = logging.getLogger(__name__)
 
@@ -101,14 +102,18 @@ async def hybrid_search(
     """Run the §9.2 query; returns up to FUSED_LIMIT chunks, fused order."""
     settings = get_settings()
     weight = lexical_weight
+    vec_limit = int(runtime_value("retrieval.vec_limit", VEC_LIMIT))
+    lex_limit = int(runtime_value("retrieval.lex_limit", LEX_LIMIT))
+    fused_limit = int(runtime_value("retrieval.fused_limit", FUSED_LIMIT))
+    rrf_k = int(runtime_value("retrieval.rrf_k", RRF_K))
     scope, params = build_scope(ownership, filters or ClientFilters())
     params.update(
         {
             "emb": "[" + ",".join(repr(v) for v in query_embedding) + "]",
             "q": query_text,
-            "vec_limit": VEC_LIMIT,
-            "lex_limit": LEX_LIMIT,
-            "fused_limit": FUSED_LIMIT,
+            "vec_limit": vec_limit,
+            "lex_limit": lex_limit,
+            "fused_limit": fused_limit,
             "vec_w": 1.0 - weight,
             "lex_w": weight,
         }
@@ -118,9 +123,7 @@ async def hybrid_search(
         text(f"SET LOCAL statement_timeout = {int(settings.retrieval_statement_timeout_ms)}")
     )
     try:
-        rows = await session.execute(
-            text(_QUERY.format(scope=scope, rrf_k=RRF_K)), params
-        )
+        rows = await session.execute(text(_QUERY.format(scope=scope, rrf_k=rrf_k)), params)
     except DBAPIError as exc:
         if isinstance(exc.orig, asyncpg.QueryCanceledError):
             logger.warning("retrieval statement timeout")

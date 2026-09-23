@@ -13,6 +13,7 @@ const proxy = Object.fromEntries(
     '/models',
     '/model-roles',
     '/me',
+    '/admin/',
     '/healthz',
     '/collections',
     '/documents',

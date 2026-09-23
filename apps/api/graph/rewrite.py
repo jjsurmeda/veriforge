@@ -44,7 +44,7 @@ async def rewrite_query(
             },
             {"role": "user", "content": question},
         ],
-        metadata={},
+        metadata={"role": "rewriter"},
     )
     rewritten = response.strip()
     if not rewritten:
@@ -63,20 +63,22 @@ async def maybe_refresh_summary(
 ) -> None:
     """Regenerate chats.summary when the turn count hits a multiple of 10."""
     count = (
-        await session.execute(
-            select(func.count(Message.id)).where(Message.chat_id == chat_id)
-        )
+        await session.execute(select(func.count(Message.id)).where(Message.chat_id == chat_id))
     ).scalar_one()
     if count == 0 or count % SUMMARY_INTERVAL_TURNS != 0:
         return
     messages = (
-        await session.execute(
-            select(Message)
-            .where(Message.chat_id == chat_id)
-            .order_by(Message.created_at.desc())
-            .limit(SUMMARY_INTERVAL_TURNS)
+        (
+            await session.execute(
+                select(Message)
+                .where(Message.chat_id == chat_id)
+                .order_by(Message.created_at.desc())
+                .limit(SUMMARY_INTERVAL_TURNS)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     recent = "\n".join(f"{m.role}: {m.content[:500]}" for m in reversed(messages))
     response = await complete_fn(
         litellm_model=small_model,
@@ -89,7 +91,7 @@ async def maybe_refresh_summary(
             },
             {"role": "user", "content": recent[-2000:]},
         ],
-        metadata={},
+        metadata={"role": "rewriter"},
     )
     if response.strip():
         await session.execute(

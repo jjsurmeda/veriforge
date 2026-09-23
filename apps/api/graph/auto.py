@@ -34,6 +34,7 @@ from retrieval.filters import ClientFilters, Ownership
 from retrieval.hybrid import ScoredChunk, hybrid_search
 from retrieval.rerank import apply_rerank, get_reranker
 from retrieval.web import ensure_web_chunks
+from runtime import runtime_value
 from schemas.decisions import Noul
 from schemas.events import (
     Abstain,
@@ -110,12 +111,16 @@ async def _history(
     from sqlalchemy import select
 
     messages = (
-        await session.execute(
-            select(Message)
-            .where(Message.chat_id == chat_id, Message.id != exclude_message_id)
-            .order_by(Message.created_at)
+        (
+            await session.execute(
+                select(Message)
+                .where(Message.chat_id == chat_id, Message.id != exclude_message_id)
+                .order_by(Message.created_at)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return [(m.role, m.content) for m in messages if m.content]
 
 
@@ -142,7 +147,7 @@ async def _generate_query_variants(
     response = await complete_fn(
         litellm_model=small_model,
         messages=[{"role": "system", "content": prompt}, {"role": "user", "content": question}],
-        metadata={},
+        metadata={"role": "rewriter"},
     )
     variants = [question]
     for line in response.strip().splitlines():
@@ -177,9 +182,10 @@ def _fuse_multi_query(result_sets: list[list[ScoredChunk]]) -> list[ScoredChunk]
 
 
 def _sufficient_question(question: str, top_chunks: list[ScoredChunk]) -> Noul:
-    evidence = "\n\n".join(
-        f"[{i + 1}] {chunk.text[:400]}" for i, chunk in enumerate(top_chunks)
-    ) or "(no evidence retrieved)"
+    evidence = (
+        "\n\n".join(f"[{i + 1}] {chunk.text[:400]}" for i, chunk in enumerate(top_chunks))
+        or "(no evidence retrieved)"
+    )
     return Noul(
         prompt=(
             "Do the following retrieved chunks together contain enough "
@@ -192,8 +198,7 @@ def _sufficient_question(question: str, top_chunks: list[ScoredChunk]) -> Noul:
 
 def _conflict_question(top_chunks: list[ScoredChunk]) -> Noul:
     evidence = "\n\n".join(
-        f"[{i + 1}] (doc: {chunk.document_name or chunk.source_type}) "
-        f"{chunk.text[:400]}"
+        f"[{i + 1}] (doc: {chunk.document_name or chunk.source_type}) {chunk.text[:400]}"
         for i, chunk in enumerate(top_chunks)
     )
     return Noul(
@@ -262,9 +267,7 @@ async def prepare_auto_run(
             )
 
         async def ingress_and_rewrite() -> tuple[IngressOutcome, str]:
-            ingress_result, rewritten_result = await asyncio.gather(
-                ingress_work(), rewrite_work()
-            )
+            ingress_result, rewritten_result = await asyncio.gather(ingress_work(), rewrite_work())
             return ingress_result, rewritten_result
 
         ingress, rewritten = await _step("ingress+rewrite", ingress_and_rewrite)
@@ -300,9 +303,7 @@ async def prepare_auto_run(
             source_filter = ingress.source
 
         if source_filter in {"web", "both"}:
-            await ensure_web_chunks(
-                session, query=params.question, chat_id=params.chat_id
-            )
+            await ensure_web_chunks(session, query=params.question, chat_id=params.chat_id)
 
         async def retrieval_work() -> tuple[list[ScoredChunk], list[Retrieval]]:
             variants = await _generate_query_variants(
@@ -356,9 +357,7 @@ async def prepare_auto_run(
 
         kept, dropped, sanitize_answers = await _step(
             "sanitize",
-            lambda: sanitize_chunks(
-                engine, run_id=str(params.run_id), chunks=fused
-            ),
+            lambda: sanitize_chunks(engine, run_id=str(params.run_id), chunks=fused),
         )
         for name, answer in sanitize_answers.items():
             decision_events.append(
@@ -379,18 +378,19 @@ async def prepare_auto_run(
                 if chunk.chunk_id in {str(c) for c in dropped_ids}:
                     chunk.dropped = True
 
-        retries_left = MAX_SUFFICIENT_RETRIES
+        retry_limit = int(runtime_value("retrieval.retry_limit", MAX_SUFFICIENT_RETRIES))
+        retries_left = retry_limit
         current_query = rewritten
         while True:
             winners = dedupe_adjacent(
                 await apply_rerank(get_reranker(), query=current_query, chunks=kept)
             )
-            top_for_check = winners[:TOP_CHUNKS_FOR_SUFFICIENT]
+            top_for_check = winners[
+                : int(runtime_value("retrieval.top_k", TOP_CHUNKS_FOR_SUFFICIENT))
+            ]
             sufficient_answer = await engine.decide(
                 state={"run_id": str(params.run_id), "kind": "sufficient"},
-                questions={
-                    "sufficient": _sufficient_question(current_query, top_for_check)
-                },
+                questions={"sufficient": _sufficient_question(current_query, top_for_check)},
             )
             sufficient = sufficient_answer["sufficient"]
             decision_events.append(
@@ -456,7 +456,7 @@ async def prepare_auto_run(
                 retrieval_events.append(
                     Retrieval(
                         run_id=str(params.run_id),
-                        hop=MAX_SUFFICIENT_RETRIES - retries_left,
+                        hop=retry_limit - retries_left,
                         query=current_query,
                         chunks=[
                             RetrievedChunk(
@@ -523,7 +523,7 @@ async def prepare_auto_run(
                     run_id=str(params.run_id),
                     citation_ids_left=[str(d) for d in doc_list[:midpoint]],
                     citation_ids_right=[str(d) for d in doc_list[midpoint:]],
-                    rule_applied="user_documents_outrank_web",
+                    rule_applied=str(runtime_value("source_priority", "documents_first")),
                 )
 
         history_tokens = sum(count_tokens(text) for _, text in history[-6:])

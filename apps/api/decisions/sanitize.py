@@ -12,6 +12,7 @@ from typing import Any
 
 from decisions import DecisionEngine, threshold
 from retrieval.hybrid import ScoredChunk
+from runtime import runtime_value
 from schemas.decisions import Answer, Choice, Noul, Score
 
 logger = logging.getLogger(__name__)
@@ -38,8 +39,8 @@ async def sanitize_chunks(
 ) -> tuple[list[ScoredChunk], list[ScoredChunk], dict[str, Answer]]:
     """Split (kept, dropped) chunks; the third tuple element carries the
     per-chunk answers so callers can emit decision events."""
-    if not chunks:
-        return [], [], {}
+    if not chunks or not bool(runtime_value("guardrails.enabled", True)):
+        return list(chunks), [], {}
     questions: dict[str, Noul | Choice | Score] = {
         f"chunk_injection_{i}": _question_for(c, i) for i, c in enumerate(chunks)
     }
@@ -57,7 +58,9 @@ async def sanitize_chunks(
         if float(answer.value) >= drop_threshold:
             logger.info(
                 "sanitizer dropped chunk %s (p=%.3f, engine=%s)",
-                chunk.chunk_id, answer.value, answer.engine,
+                chunk.chunk_id,
+                answer.value,
+                answer.engine,
             )
             dropped.append(chunk)
         else:

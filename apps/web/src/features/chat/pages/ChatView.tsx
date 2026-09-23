@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { useChat, useMessages } from '../hooks/useChat'
 import { useCancelRun, useCreateRun } from '../hooks/useRuns'
 import { useRunStream } from '../hooks/useRunStream'
+import { useQuota } from '../hooks/useQuota'
 import { usePatchChat } from '../hooks/useChatList'
 import { useChatRunStore } from '../store'
 import { ChatComposer } from '../components/ChatComposer'
@@ -13,17 +14,29 @@ import type { RunSource } from '../components/SourcePicker'
 import { TracePanel } from '../../trace/components/TracePanel'
 import { useTrace } from '../../trace/hooks/useTrace'
 
+function errorMessage(error: unknown): string {
+  if (typeof error === 'object' && error !== null && 'data' in error) {
+    const data = (error as { data?: unknown }).data
+    if (typeof data === 'object' && data !== null && 'message' in data) {
+      const message = (data as { message?: unknown }).message
+      if (typeof message === 'string') return message
+    }
+  }
+  if (error instanceof Error) return error.message
+  return 'The question could not be started. Try again.'
+}
+
 export function ChatView({ chatId }: { chatId: string }) {
   const chat = useChat(chatId)
   const messages = useMessages(chatId)
   const patchChat = usePatchChat()
   const createRun = useCreateRun(chatId)
   const cancelRun = useCancelRun()
+  const quota = useQuota()
 
   const [activeRunId, setActiveRunId] = useState<string | null>(null)
-  // Keep the last run id after the backend nulls active_run_id so the
-  // trace panel, metrics and suggestions stay visible post-completion.
   const [traceRunId, setTraceRunId] = useState<string | null>(null)
+  const [sendError, setSendError] = useState<string | null>(null)
   useEffect(() => {
     setActiveRunId(chat.data?.active_run_id ?? null)
     if (chat.data?.active_run_id) setTraceRunId(chat.data.active_run_id)
@@ -39,14 +52,21 @@ export function ChatView({ chatId }: { chatId: string }) {
     message: string,
     options: { mode: RunMode; source: RunSource },
   ) => {
-    const run = await createRun.mutateAsync({
-      message,
-      modelId: chat.data?.model_id,
-      mode: options.mode,
-      source: options.source,
-    })
-    useChatRunStore.getState().begin(run!.run_id, run!.message_id)
-    setActiveRunId(run!.run_id)
+    setSendError(null)
+    try {
+      const run = await createRun.mutateAsync({
+        message,
+        modelId: chat.data?.model_id,
+        mode: options.mode,
+        source: options.source,
+      })
+      useChatRunStore.getState().begin(run!.run_id, run!.message_id)
+      setActiveRunId(run!.run_id)
+      void quota.refetch()
+    } catch (error) {
+      setSendError(errorMessage(error))
+      void quota.refetch()
+    }
   }
 
   return (
@@ -80,6 +100,8 @@ export function ChatView({ chatId }: { chatId: string }) {
             <ChatComposer
               streaming={streaming}
               modelId={chat.data?.model_id ?? null}
+              quota={quota.data}
+              error={sendError}
               onModelChange={(modelId) =>
                 void patchChat.mutateAsync({ chatId, patch: { model_id: modelId } })
               }

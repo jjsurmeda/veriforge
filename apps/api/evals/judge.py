@@ -65,6 +65,6 @@ async def judge_answer(
     response = await complete(
         litellm_model=small_model,
         messages=[{"role": "system", "content": prompt}, {"role": "user", "content": question}],
-        metadata={"job": "eval_judge"},
+        metadata={"job": "eval_judge", "role": "async_judge"},
     )
     return parse_judge_response(response)

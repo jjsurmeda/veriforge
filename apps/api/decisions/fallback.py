@@ -80,19 +80,18 @@ def _render_prompt(state: str, questions: dict[str, Question]) -> str:
     for name, q in questions.items():
         if isinstance(q, Noul):
             lines.append(f"- {name} (noul): {q.prompt}")
-            lines.append("  → {\"probability\": <0..1>, \"reasoning\": <str>}")
+            lines.append('  → {"probability": <0..1>, "reasoning": <str>}')
         elif isinstance(q, Choice):
             lines.append(f"- {name} (choice): {q.prompt}")
             lines.append(f"  options: {', '.join(q.options)}")
             if q.criteria:
                 lines.append(f"  criteria: {q.criteria}")
             lines.append(
-                '  → {"probabilities": {<option>: <0..1>, ...} summing to 1,'
-                ' "reasoning": <str>}'
+                '  → {"probabilities": {<option>: <0..1>, ...} summing to 1, "reasoning": <str>}'
             )
         elif isinstance(q, Score):
             lines.append(f"- {name} (score {q.min}..{q.max}): {q.prompt}")
-            lines.append(f"  → {{\"value\": <{q.min}..{q.max}>, \"reasoning\": <str>}}")
+            lines.append(f'  → {{"value": <{q.min}..{q.max}>, "reasoning": <str>}}')
     lines.append("")
     lines.append("Respond with a single JSON object keyed by question name.")
     return "\n".join(lines)
@@ -132,9 +131,7 @@ def _parse_answers(
                 total = sum(float(v) for v in raw_probs.values())
                 if total <= 0:
                     raise FallbackError(f"choice {name!r} probabilities sum to {total}")
-                probabilities = {
-                    str(k): float(v) / total for k, v in raw_probs.items()
-                }
+                probabilities = {str(k): float(v) / total for k, v in raw_probs.items()}
                 missing = set(q.options) - set(probabilities)
                 if missing:
                     raise FallbackError(f"choice {name!r} missing options {missing}")
@@ -180,7 +177,7 @@ class FallbackEngine:
         response = await self._complete(
             litellm_model=settings.fallback_model,
             messages=[{"role": "system", "content": prompt}],
-            metadata={"job": "decision_fallback"},
+            metadata={"job": "decision_fallback", "role": "decision_fallback"},
         )
         latency_ms = int((time.monotonic() - started) * 1000)
         try:

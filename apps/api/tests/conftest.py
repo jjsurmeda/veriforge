@@ -37,9 +37,7 @@ def _create_test_database() -> None:
     async def run() -> None:
         conn = await asyncpg.connect(f"{base}/veriforge")
         try:
-            exists = await conn.fetchval(
-                "SELECT 1 FROM pg_database WHERE datname = $1", dbname
-            )
+            exists = await conn.fetchval("SELECT 1 FROM pg_database WHERE datname = $1", dbname)
             if not exists:
                 await conn.execute(f'CREATE DATABASE "{dbname}"')
         finally:
@@ -69,9 +67,10 @@ from runbus.postgres import PostgresRunBus  # noqa: E402
 
 ALL_TABLES = ", ".join(f'"{t.name}"' for t in reversed(Base.metadata.sorted_tables))
 
-_catalogue: list[tuple[str, int]] = [
-    ("openai/gpt-4o-mini", 128000),
-    ("anthropic/claude-haiku-4.5", 200000),
+_catalogue: list[tuple[str, int, float, float]] = [
+    ("openai/gpt-4o-mini", 128000, 0.15, 0.60),
+    ("anthropic/claude-haiku-4.5", 200000, 1.00, 5.00),
+    ("typesafe/jev-1.13", 32768, 0.000001, 0.000001),
 ]
 
 
@@ -86,24 +85,38 @@ async def seed_base_rows(session: AsyncSession) -> None:
     provider = LlmProvider(name="openrouter", kind="openrouter", enabled=True)
     session.add(provider)
     await session.flush()
-    for model_id, ctx in _catalogue:
+    for model_id, ctx, price_in, price_out in _catalogue:
         session.add(
             Model(
                 provider_id=provider.id,
                 model_id=model_id,
+                price_in=price_in,
+                price_out=price_out,
                 context_window=ctx,
-                capabilities={"streaming": True},
+                capabilities=(
+                    {"decision": True}
+                    if model_id == "typesafe/jev-1.13"
+                    else {"streaming": True}
+                ),
                 enabled=True,
             )
         )
-    session.add(
-        ModelRole(
-            role="generator",
-            model_id="openai/gpt-4o-mini",
-            fallback_model_id="anthropic/claude-haiku-4.5",
-        )
+    session.add_all(
+        [
+            ModelRole(
+                role="generator",
+                model_id="openai/gpt-4o-mini",
+                fallback_model_id="anthropic/claude-haiku-4.5",
+            ),
+            ModelRole(role="small", model_id="anthropic/claude-haiku-4.5"),
+            ModelRole(role="planner", model_id="openai/gpt-4o-mini"),
+            ModelRole(role="rewriter", model_id="anthropic/claude-haiku-4.5"),
+            ModelRole(role="claim_extractor", model_id="anthropic/claude-haiku-4.5"),
+            ModelRole(role="suggester", model_id="anthropic/claude-haiku-4.5"),
+            ModelRole(role="decision_engine", model_id="typesafe/jev-1.13"),
+            ModelRole(role="decision_fallback", model_id="anthropic/claude-haiku-4.5"),
+        ]
     )
-    session.add(ModelRole(role="small", model_id="anthropic/claude-haiku-4.5"))
     await session.commit()
 
 
@@ -156,9 +169,7 @@ async def make_run_row(session: AsyncSession, *, stale: bool = False) -> tuple[U
     """User → chat → messages → one running run, for runbus/sweep tests."""
     from db.ids import uuid7
 
-    plan_id = (
-        await session.execute(text("SELECT id FROM plans WHERE name = 'free'"))
-    ).scalar_one()
+    plan_id = (await session.execute(text("SELECT id FROM plans WHERE name = 'free'"))).scalar_one()
     user = User(id=uuid7(), email=f"u{uuid7().hex[:8]}@test.dev", role="user", plan_id=plan_id)
     chat = Chat(id=uuid7(), user_id=user.id, title="t")
     user_msg = Message(id=uuid7(), chat_id=chat.id, role="user", content="hi", status="complete")
@@ -171,9 +182,7 @@ async def make_run_row(session: AsyncSession, *, stale: bool = False) -> tuple[U
     await session.flush()
     session.add_all([user_msg, assistant_msg])
     await session.flush()
-    heartbeat = (
-        datetime.now(UTC) - timedelta(hours=1) if stale else datetime.now(UTC)
-    )
+    heartbeat = datetime.now(UTC) - timedelta(hours=1) if stale else datetime.now(UTC)
     run = Run(
         id=uuid7(),
         message_id=assistant_msg.id,

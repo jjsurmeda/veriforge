@@ -22,6 +22,7 @@ The response format is one answer per question name:
 Tests use recorded fixtures from `tests/fixtures/jev/` — no live calls.
 """
 
+import json
 import logging
 import time
 from typing import Any
@@ -30,6 +31,7 @@ import httpx
 from pydantic import ValidationError
 
 from config import get_settings
+from quota.usage import get_usage_context
 from retrieval.context import count_tokens
 from schemas.decisions import Answer, Choice, Noul, Question, Score
 
@@ -127,14 +129,20 @@ class JevClient:
         self, *, state: dict[str, Any] | str, questions: dict[str, Question]
     ) -> dict[str, Answer]:
         settings = get_settings()
-        if not settings.openrouter_api_key:
+        model = settings.jev_model
+        api_key = settings.openrouter_api_key
+        usage_context = get_usage_context()
+        if usage_context is not None:
+            model = await usage_context.resolve_model(model, "decision_engine")
+            api_key = usage_context.api_key_for(model) or api_key
+        if not api_key:
             raise JevError("OPENROUTER_API_KEY not set")
         payload = {
-            "model": settings.jev_model,
+            "model": model,
             "state": _truncate_state(state, settings.jev_max_state_tokens),
             "questions": {name: _question_spec(q) for name, q in questions.items()},
         }
-        headers = {"Authorization": f"Bearer {settings.openrouter_api_key}"}
+        headers = {"Authorization": f"Bearer {api_key}"}
         started = time.monotonic()
         try:
             if self._client is not None:
@@ -145,9 +153,7 @@ class JevClient:
                     timeout=settings.jev_timeout_ms / 1000,
                 )
             else:
-                async with httpx.AsyncClient(
-                    timeout=settings.jev_timeout_ms / 1000
-                ) as client:
+                async with httpx.AsyncClient(timeout=settings.jev_timeout_ms / 1000) as client:
                     response = await client.post(
                         settings.openrouter_systemone_url,
                         json=payload,
@@ -163,6 +169,13 @@ class JevClient:
             answers = data["answers"]
         except (ValueError, KeyError) as exc:
             raise JevError(f"jev bad payload: {exc}") from exc
+        if usage_context is not None:
+            await usage_context.record_call(
+                model_id=model,
+                role="decision_engine",
+                tokens_in=count_tokens(json.dumps(payload)),
+                tokens_out=count_tokens(json.dumps(data)),
+            )
         return {
             name: _parse_answer(name, q, answers.get(name, {}), latency_ms)
             for name, q in questions.items()

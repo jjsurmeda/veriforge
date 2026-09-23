@@ -7,6 +7,7 @@ import {
 } from '@tanstack/react-router'
 
 import { ensureSession } from './lib/auth'
+import { AdminPage } from './features/admin/AdminPage'
 import { ForgotPasswordPage } from './features/auth/pages/ForgotPasswordPage'
 import { LoginPage } from './features/auth/pages/LoginPage'
 import { OAuthCallbackPage } from './features/auth/pages/OAuthCallbackPage'
@@ -79,13 +80,19 @@ const sourcesRoute = createRoute({
   component: SourcesPage,
 })
 
+const adminRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: '/admin',
+  component: AdminPage,
+})
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
   signupRoute,
   forgotPasswordRoute,
   resetPasswordRoute,
   oauthCallbackRoute,
-  appLayoutRoute.addChildren([indexRoute, chatRoute, sourcesRoute]),
+  appLayoutRoute.addChildren([indexRoute, chatRoute, sourcesRoute, adminRoute]),
 ])
 
 export const router = createRouter({ routeTree })

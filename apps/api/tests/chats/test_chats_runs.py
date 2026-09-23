@@ -121,7 +121,7 @@ async def test_model_picker_endpoints(client: AsyncClient) -> None:
         "openai/gpt-4o-mini",
     ]
     roles = await client.get("/model-roles", headers=headers)
-    assert {r["role"] for r in roles.json()} == {"generator", "small"}
+    assert {r["role"] for r in roles.json()} >= {"generator", "small", "planner", "rewriter"}
 
 
 async def test_chats_are_isolated_per_user(client: AsyncClient) -> None:

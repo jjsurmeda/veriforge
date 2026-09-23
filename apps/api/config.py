@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://veriforge:veriforge@localhost:5432/veriforge"
     openrouter_api_key: str = ""
     litellm_master_key: str = ""
+    provider_encryption_key: str = ""
+    reference_model_id: str = "anthropic/claude-haiku-4.5"
 
     # Auth (TRD §11): access JWT 15 min in memory; rotating 30-day refresh
     # token in an httpOnly, Secure, SameSite=Strict cookie.
@@ -41,9 +43,7 @@ class Settings(BaseSettings):
     ingest_pause_active_runs: int = 3
     ingest_pause_retry_seconds: int = 30
     # Procrastinate uses psycopg (not asyncpg); `queue` schema via search_path.
-    procrastinate_conninfo: str = (
-        "postgresql://veriforge:veriforge@localhost:5432/veriforge"
-    )
+    procrastinate_conninfo: str = "postgresql://veriforge:veriforge@localhost:5432/veriforge"
 
     # Retrieval (TRD §9.2-9.4). Empty keys fall back to local behaviour:
     # fused-order rerank instead of Cohere, web search disabled.
@@ -68,8 +68,7 @@ class Settings(BaseSettings):
     breaker_cooldown_seconds: float = 60.0
     shadow_sample_rate: float = 0.02
 
-    # Deep mode (TRD §7 row 5, CH-4). Per-run cap; real quota-aware
-    # "remaining allowance" arrives in slice 7 (real credits ledger).
+    # Environment fallback; active runtime settings can override these values.
     deep_max_hops: int = 4
     deep_credit_budget: int = 40_000
 

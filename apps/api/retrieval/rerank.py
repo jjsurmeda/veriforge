@@ -13,6 +13,7 @@ import httpx
 
 from config import get_settings
 from retrieval.hybrid import ScoredChunk
+from runtime import runtime_value
 
 logger = logging.getLogger(__name__)
 
@@ -22,9 +23,7 @@ RerankResult = list[tuple[int, float]]
 
 
 class RerankProvider(Protocol):
-    async def rerank(
-        self, *, query: str, documents: list[str], top_n: int
-    ) -> RerankResult:
+    async def rerank(self, *, query: str, documents: list[str], top_n: int) -> RerankResult:
         """Return (document index, relevance score) pairs, best first."""
         ...
 
@@ -35,9 +34,7 @@ class CohereRerank:
         self._model = model
         self._client = client
 
-    async def rerank(
-        self, *, query: str, documents: list[str], top_n: int
-    ) -> RerankResult:
+    async def rerank(self, *, query: str, documents: list[str], top_n: int) -> RerankResult:
         async def call(client: httpx.AsyncClient) -> httpx.Response:
             return await client.post(
                 "https://api.cohere.com/v2/rerank",
@@ -77,13 +74,13 @@ class CohereRerank:
 class FusedOrderRerank:
     """Local fallback: identity ranking over the fused order (score = fused)."""
 
-    async def rerank(
-        self, *, query: str, documents: list[str], top_n: int
-    ) -> RerankResult:
+    async def rerank(self, *, query: str, documents: list[str], top_n: int) -> RerankResult:
         return [(i, 1.0 / (1 + i)) for i in range(min(top_n, len(documents)))]
 
 
 def get_reranker() -> RerankProvider:
+    if not bool(runtime_value("retrieval.rerank", True)):
+        return FusedOrderRerank()
     settings = get_settings()
     if settings.cohere_api_key:
         return CohereRerank(settings.cohere_api_key, settings.cohere_rerank_model)
@@ -100,6 +97,9 @@ async def apply_rerank(
     """top 40 fused → provider rerank → top n, rerank_score attached (§9.2)."""
     if not chunks:
         return []
+    if not bool(runtime_value("retrieval.rerank", True)):
+        return chunks[: int(runtime_value("retrieval.top_k", top_n))]
+    if top_n == RERANK_TOP_N:
+        top_n = int(runtime_value("retrieval.top_k", top_n))
     ranked = await provider.rerank(query=query, documents=[c.text for c in chunks], top_n=top_n)
     return [chunks[index].with_rerank(score) for index, score in ranked]
-

@@ -30,6 +30,7 @@ from ingest.chunk import chunk_document
 from ingest.repository import get_owned_collection
 from providers.llm import embed_batch
 from retrieval.cache import get_web_results, put_web_results
+from runtime import runtime_value
 
 logger = logging.getLogger(__name__)
 
@@ -118,11 +119,21 @@ class BraveSearch:
 
 def _providers() -> list[WebSearchProvider]:
     settings = get_settings()
+    provider_name = str(runtime_value("web_search_provider", "tavily"))
+    keys = runtime_value("web_search_keys", {})
+    if not isinstance(keys, dict):
+        keys = {}
+    tavily_key = str(keys.get("tavily") or settings.tavily_api_key)
+    brave_key = str(keys.get("brave") or settings.brave_api_key)
     providers: list[WebSearchProvider] = []
-    if settings.tavily_api_key:
-        providers.append(TavilySearch(settings.tavily_api_key))
-    if settings.brave_api_key:
-        providers.append(BraveSearch(settings.brave_api_key))
+    if provider_name == "brave" and brave_key:
+        return [BraveSearch(brave_key)]
+    if provider_name == "tavily" and tavily_key:
+        return [TavilySearch(tavily_key)]
+    if tavily_key:
+        providers.append(TavilySearch(tavily_key))
+    if brave_key:
+        providers.append(BraveSearch(brave_key))
     return providers
 
 
@@ -167,7 +178,9 @@ async def ensure_web_chunks(session: AsyncSession, *, query: str, chat_id: UUID)
             pages += 1
             continue
         page = WebPage(
-            chat_id=chat_id, url=str(result["url"]), title=str(result["title"]),
+            chat_id=chat_id,
+            url=str(result["url"]),
+            title=str(result["title"]),
             expires_at=expires,
         )
         session.add(page)
@@ -210,16 +223,20 @@ async def pin_web_page(
         raise AppError("collection_not_found", "Collection not found", status_code=404)
 
     chunks = (
-        await session.execute(
-            select(Chunk)
-            .where(
-                Chunk.source_type == "web",
-                Chunk.chat_id == page.chat_id,
-                Chunk.chunk_metadata["web_page_id"].astext == str(page.id),
+        (
+            await session.execute(
+                select(Chunk)
+                .where(
+                    Chunk.source_type == "web",
+                    Chunk.chat_id == page.chat_id,
+                    Chunk.chunk_metadata["web_page_id"].astext == str(page.id),
+                )
+                .order_by(Chunk.ord)
             )
-            .order_by(Chunk.ord)
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     if not chunks:
         raise AppError("web_source_not_found", "Web source not found", status_code=404)
 
@@ -237,7 +254,10 @@ async def pin_web_page(
     session.add(document)
     await session.flush()
     section = Section(
-        document_id=document.id, heading_path="", ord=0, text=text_all,
+        document_id=document.id,
+        heading_path="",
+        ord=0,
+        text=text_all,
         tokens=sum(len(c.text) // 4 for c in chunks),
     )
     session.add(section)
@@ -262,8 +282,8 @@ async def sweep_expired_web_chunks(session: AsyncSession) -> int:
     """Delete expired temp chunks and their page rows (nightly job, TRD §13)."""
     now = datetime.now(UTC)
     pages = (
-        await session.execute(select(WebPage).where(WebPage.expires_at <= now))
-    ).scalars().all()
+        (await session.execute(select(WebPage).where(WebPage.expires_at <= now))).scalars().all()
+    )
     for page in pages:
         await session.execute(
             delete(Chunk).where(

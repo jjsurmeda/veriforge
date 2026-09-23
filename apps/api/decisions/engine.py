@@ -20,6 +20,7 @@ from config import get_settings
 from decisions.breaker import CircuitBreaker
 from decisions.fallback import FallbackEngine, FallbackError
 from decisions.jev import JevClient, JevError
+from runtime import RuntimeSettings
 from schemas.decisions import Answer, Choice, Noul, Question, Score
 
 logger = logging.getLogger(__name__)
@@ -41,9 +42,7 @@ ShadowWriter = Callable[[str, str, Answer, Answer, bool], Awaitable[None]]
 
 
 class DecisionEngine:
-    """One DecisionEngine per process. Mode/breaker state are process-local —
-    single-worker Stage 1 makes that safe (slice 9 multi-worker noted in
-    breaker.py)."""
+    """One DecisionEngine per run; mutable mode and event routing stay local."""
 
     def __init__(
         self,
@@ -67,9 +66,7 @@ class DecisionEngine:
         )
         self._mode: EngineMode = mode
         self._shadow_sample_rate = (
-            shadow_sample_rate
-            if shadow_sample_rate is not None
-            else settings.shadow_sample_rate
+            shadow_sample_rate if shadow_sample_rate is not None else settings.shadow_sample_rate
         )
         self._shadow_writer = shadow_writer
         self._emitter = event_emitter
@@ -84,10 +81,14 @@ class DecisionEngine:
     def set_mode(self, mode: EngineMode) -> None:
         self._mode = mode
 
+    def configure(self, settings: RuntimeSettings) -> None:
+        mode = settings.get("decision_engine_mode", "auto")
+        if mode in {"auto", "jev_only", "fallback_only"}:
+            self._mode = mode
+        self._shadow_sample_rate = float(settings.get("shadow_sample_rate", 0.02))
+
     def set_event_emitter(self, emitter: DecisionEventEmitter | None) -> None:
-        """Rebind the per-run emitter. One DecisionEngine is process-local;
-        the runner rebinds before each run so decision events route to the
-        correct run's RunBus topic."""
+        """Bind the emitter for the run that owns this engine instance."""
         self._emitter = emitter
 
     async def _emit(self, name: str, answer: Answer) -> None:
@@ -188,8 +189,7 @@ def _run_id_from_state(state: dict[str, Any] | str) -> str:
 
 
 def _answers_agree(question: Question, jev: Answer, fallback: Answer) -> bool:
-    """Loose agreement test per question type. Tolerances chosen so shadow
-    data is useful, not noisy — admin can tighten in slice 7."""
+    """Loose agreement test per question type; admins can tune shadow data later."""
     if isinstance(question, Noul):
         j = float(jev.value)
         f = float(fallback.value)

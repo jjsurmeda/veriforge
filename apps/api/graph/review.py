@@ -150,7 +150,7 @@ async def extract_claims(
     response = await complete_fn(
         litellm_model=small_model,
         messages=[{"role": "system", "content": prompt}, {"role": "user", "content": answer}],
-        metadata={"job": "claim_extraction"},
+        metadata={"job": "claim_extraction", "role": "claim_extractor"},
     )
     return parse_claims(response)
 
@@ -282,7 +282,7 @@ async def revise_answer(
     revised = await complete_fn(
         litellm_model=litellm_model,
         messages=[{"role": "system", "content": prompt}],
-        metadata={"job": "revision"},
+        metadata={"job": "revision", "role": "rewriter"},
     )
     revised_text = str(revised).strip()
     if not revised_text or revised_text == answer.strip():

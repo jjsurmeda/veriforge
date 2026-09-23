@@ -40,16 +40,20 @@ export function LoginPage() {
         <h1 className="font-display text-xl">Veriforge</h1>
         <form onSubmit={(e) => void onSubmit(e)} className="mt-4 flex flex-col gap-3">
           <input
-            name="email"
-            type="email"
+             name="email"
+             aria-label="Email"
+             type="email"
+
             required
             autoComplete="email"
             placeholder="Email"
             className="rounded border border-mist bg-ink px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-ember"
           />
           <input
-            name="password"
-            type="password"
+             name="password"
+             aria-label="Password"
+             type="password"
+
             required
             autoComplete="current-password"
             placeholder="Password"

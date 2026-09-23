@@ -43,6 +43,7 @@ documentstatus = Enum(
     "queued", "parsing", "embedding", "ready", "failed", name="documentstatus", create_type=True
 )
 chunksource = Enum("document", "web", name="chunksource", create_type=True)
+usageledgerstatus = Enum("reserved", "settled", name="usageledgerstatus", create_type=True)
 
 
 class Base(DeclarativeBase):
@@ -69,7 +70,7 @@ class User(Base):
     # Null for OAuth-only accounts.
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     role: Mapped[str] = mapped_column(userrole, nullable=False, default="user")
-    # Live FK now; the quota gate that reads it arrives in slice 7 (TRD §17).
+    # Live plan FK used by the quota gate and admin overrides.
     plan_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("plans.id"), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
     created_at: Mapped[datetime] = mapped_column(
@@ -121,8 +122,7 @@ class Chat(Base):
     title: Mapped[str] = mapped_column(String(200), nullable=False, default="New chat")
     pinned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # Catalogue model id (e.g. "openai/gpt-4o-mini"), not an FK: catalogue
-    # rows are managed by admin (slice 7) and chats must survive catalogue
-    # changes.
+    # rows are mutable admin records and chats must survive catalogue changes.
     model_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     collection_ids: Mapped[list[uuid.UUID] | None] = mapped_column(JSONB, nullable=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -203,8 +203,7 @@ class LlmProvider(Base):
     name: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     kind: Mapped[str] = mapped_column(String(32), nullable=False, default="openrouter")
     base_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    # Encrypted at rest from slice 7 (TRD §11 Fernet); slice 1 uses the
-    # OPENROUTER_API_KEY env var.
+    # Fernet ciphertext; plaintext provider keys never enter the database.
     api_key_enc: Mapped[str | None] = mapped_column(String(512), nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -239,6 +238,64 @@ class ModelRole(Base):
     role: Mapped[str] = mapped_column(String(32), nullable=False)
     model_id: Mapped[str] = mapped_column(String(128), nullable=False)
     fallback_model_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class UserQuotaOverride(Base):
+    __tablename__ = "user_quota_overrides"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    credits_5h: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    credits_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class UsageLedger(Base):
+    __tablename__ = "usage_ledger"
+    __table_args__ = (
+        Index("ix_usage_ledger_user_ts", "user_id", "ts"),
+        Index("ix_usage_ledger_run_status", "run_id", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid7)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("runs.id", ondelete="CASCADE"), nullable=False
+    )
+    model: Mapped[str] = mapped_column(String(128), nullable=False)
+    role: Mapped[str] = mapped_column(String(64), nullable=False)
+    tokens_in: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    tokens_out: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    credits: Mapped[float] = mapped_column(Numeric(20, 6), nullable=False, default=0)
+    status: Mapped[str] = mapped_column(usageledgerstatus, nullable=False, default="reserved")
+    ts: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_log"
+    __table_args__ = (Index("ix_audit_log_created", "created_at"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid7)
+    actor_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    action: Mapped[str] = mapped_column(String(64), nullable=False)
+    target: Mapped[str] = mapped_column(String(255), nullable=False)
+    before: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    after: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

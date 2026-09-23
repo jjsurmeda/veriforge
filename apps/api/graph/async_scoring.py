@@ -6,10 +6,14 @@ delivery, never touches the inline Reviewer's claim verification.
 
 import asyncio
 import logging
+import random
 from uuid import UUID
 
+from config import get_settings
 from evals.judge import judge_answer
+from quota.usage import get_usage_context
 from retrieval.expand import ExpandedContext
+from runtime import runtime_value
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +41,11 @@ async def score_run_async(
     contexts: list[ExpandedContext],
     reference_answer: str | None = None,
 ) -> None:
+    if random.random() > float(runtime_value("trace_sample_rate", 1.0)):  # noqa: S311
+        return
+    usage = get_usage_context()
+    if not get_settings().openrouter_api_key and (usage is None or not usage.api_keys):
+        return
     try:
         judged = await judge_answer(
             question=question,

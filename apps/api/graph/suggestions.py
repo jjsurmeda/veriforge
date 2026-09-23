@@ -52,6 +52,6 @@ async def generate_suggestions(
     response = await complete_fn(
         litellm_model=small_model,
         messages=[{"role": "system", "content": prompt}],
-        metadata={"job": "suggestions"},
+        metadata={"job": "suggestions", "role": "suggester"},
     )
     return parse_suggestions(response)

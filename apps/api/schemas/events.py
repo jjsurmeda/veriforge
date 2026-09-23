@@ -66,8 +66,7 @@ class Metrics(RunEvent):
     latency_ms: dict[str, int] = {}
     tokens_in: int = 0
     tokens_out: int = 0
-    # Token counts until the ledger lands (slice 7, TRD §14).
-    credits: int = 0
+    credits: float = 0
     context_used: int = 0
     context_window: int = 0
     faithfulness: float | None = None

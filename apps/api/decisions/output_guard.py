@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 
 from decisions import threshold
 from decisions.engine import EngineProtocol
+from runtime import runtime_value
 from schemas.decisions import Answer, Noul
 
 logger = logging.getLogger(__name__)
@@ -82,7 +83,7 @@ def _secrets_noul(text: str) -> Noul:
 
 async def guard_output(engine: EngineProtocol, *, run_id: str, text: str) -> OutputGuardResult:
     result = OutputGuardResult(redacted_text=text)
-    if not text.strip():
+    if not text.strip() or not bool(runtime_value("guardrails.enabled", True)):
         return result
 
     answers = await engine.decide(
@@ -105,8 +106,9 @@ async def guard_output(engine: EngineProtocol, *, run_id: str, text: str) -> Out
     result.secrets_answer = secrets
 
     if toxicity is not None:
+        toxicity_action = str(runtime_value("guardrails.actions.toxicity", "block"))
         block_threshold = threshold("output_toxicity_block", toxicity.engine)
-        if float(toxicity.value) >= block_threshold:
+        if toxicity_action == "block" and float(toxicity.value) >= block_threshold:
             result.blocked = True
             logger.warning(
                 "output guard blocked text (p=%.3f, engine=%s)",
@@ -115,7 +117,11 @@ async def guard_output(engine: EngineProtocol, *, run_id: str, text: str) -> Out
             )
             return result
 
-    redacted, findings = redact_secrets(text)
+    secrets_action = str(runtime_value("guardrails.actions.secrets", "redact"))
+    if secrets_action == "redact":
+        redacted, findings = redact_secrets(text)
+    else:
+        redacted, findings = text, []
     result.redacted_text = redacted
     result.findings = findings
     if secrets is not None:

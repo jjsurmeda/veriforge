@@ -25,7 +25,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from config import get_settings
-from db.models import Citation, Claim, Message, Run
+from db.models import Citation, Claim, LlmProvider, Message, Model, ModelRole, Run
 from decisions import DecisionEngine, make_shadow_writer
 from decisions.output_guard import OutputGuardResult, guard_output
 from decisions.thresholds import threshold
@@ -41,9 +41,18 @@ from graph.review import (
     review_answer,
 )
 from graph.suggestions import generate_suggestions
+from providers.credentials import decrypt_provider_key
+from quota.service import settle_run
+from quota.usage import UsageContext, get_usage_context, reset_usage_context, set_usage_context
 from retrieval.context import count_tokens
 from retrieval.expand import ExpandedContext
 from runbus.postgres import PostgresRunBus
+from runtime import (
+    RuntimeSettings,
+    load_runtime_version,
+    reset_runtime_settings,
+    set_runtime_settings,
+)
 from schemas.chats import RunFilters
 from schemas.decisions import Answer
 from schemas.events import (
@@ -72,21 +81,34 @@ _REVIEW_REFUSAL = (
 
 _active_tasks: dict[UUID, asyncio.Task[None]] = {}
 
-_decision_engine: DecisionEngine | None = None
 
-
-def get_decision_engine(session_factory: async_sessionmaker[AsyncSession]) -> DecisionEngine:
-    """Process-local engine, built on first use so tests can monkeypatch."""
-    global _decision_engine
-    if _decision_engine is None:
-        _decision_engine = DecisionEngine(shadow_writer=make_shadow_writer(session_factory))
-    return _decision_engine
-
-
-def reset_decision_engine() -> None:
-    """Test hook: drop the cached engine between tests."""
-    global _decision_engine
-    _decision_engine = None
+async def _runtime_context(
+    session_factory: async_sessionmaker[AsyncSession], settings_version: int | None
+) -> tuple[RuntimeSettings, dict[str, str], dict[str, str]]:
+    async with session_factory() as session:
+        runtime = await load_runtime_version(session, settings_version)
+        rows = (
+            await session.execute(
+                select(
+                    ModelRole.role,
+                    ModelRole.model_id,
+                    LlmProvider.kind,
+                    LlmProvider.api_key_enc,
+                )
+                .join(Model, Model.model_id == ModelRole.model_id)
+                .join(LlmProvider, LlmProvider.id == Model.provider_id)
+                .where(Model.enabled, LlmProvider.enabled)
+            )
+        ).all()
+    roles = {role: f"{kind}/{model_id}" for role, model_id, kind, _key in rows}
+    api_keys = {
+        f"{kind}/{model_id}": decrypt_provider_key(key)
+        for _role, model_id, kind, key in rows
+        if key
+    }
+    if "rewriter" not in roles and "small" in roles:
+        roles["rewriter"] = roles["small"]
+    return runtime, roles, api_keys
 
 
 def register_with_bus(bus: PostgresRunBus) -> None:
@@ -136,8 +158,13 @@ async def _finalize(
     status: str,
     text: str,
     metrics: dict[str, object] | None = None,
+    settle_usage: bool = True,
 ) -> None:
     async def work(session: AsyncSession) -> None:
+        if settle_usage:
+            context = get_usage_context()
+            snapshot = context.snapshot() if context is not None else None
+            await settle_run(session, run_id, snapshot)
         message = await session.get(Message, message_id)
         if message is not None:
             message.content = text
@@ -151,9 +178,9 @@ async def _finalize(
         # runs.status enum has no "abstained" — that's a message status.
         run_status = "completed" if status in ("complete", "abstained") else status
         await session.execute(
-            update(Run).where(Run.id == run_id, Run.status == "running").values(
-                status=run_status, **values
-            )
+            update(Run)
+            .where(Run.id == run_id, Run.status == "running")
+            .values(status=run_status, **values)
         )
 
     await _with_session(session_factory, work)
@@ -333,6 +360,8 @@ def start_run(
     user_message: str,
     run_filters: RunFilters | None = None,
     collection_ids: list[UUID] | None = None,
+    quota_remaining_5h: float | None = None,
+    settings_version: int | None = None,
 ) -> None:
     task = asyncio.create_task(
         execute_run(
@@ -351,10 +380,28 @@ def start_run(
             user_message=user_message,
             run_filters=run_filters,
             collection_ids=collection_ids or [],
+            quota_remaining_5h=quota_remaining_5h,
+            settings_version=settings_version,
         )
     )
     _active_tasks[run_id] = task
     task.add_done_callback(lambda _: _active_tasks.pop(run_id, None))
+
+
+async def _settle_after_scoring(
+    session_factory: async_sessionmaker[AsyncSession],
+    run_id: UUID,
+    scoring_task: asyncio.Task[None],
+) -> None:
+    try:
+        await scoring_task
+    finally:
+        async def work(session: AsyncSession) -> None:
+            context = get_usage_context()
+            snapshot = context.snapshot() if context is not None else None
+            await settle_run(session, run_id, snapshot)
+
+        await _with_session(session_factory, work)
 
 
 async def _finish_answer(
@@ -374,7 +421,6 @@ async def _finish_answer(
     small_model: str,
     tokens_in: int,
     generate_ms: int,
-    extra_credits: int,
     abstained: bool,
     plan: str,
 ) -> None:
@@ -408,10 +454,17 @@ async def _finish_answer(
         # blocked verdict replaces the persisted content, which is what a
         # reload shows (TRD §11 "output toxicity (block)").
 
-    tokens_out = count_tokens(final_text)
+    context = get_usage_context()
+    credits: float
+    if context is None:
+        tokens_out = count_tokens(final_text)
+        credits = 0.0
+    else:
+        tokens_in = context.tokens_in
+        tokens_out = context.tokens_out
+        credits = context.credits
     latency = {**latency_ms, "generate": generate_ms}
     scores = review.scores if review is not None else None
-    credits = extra_credits + tokens_in + tokens_out
     await bus.publish(
         run_id,
         Metrics(
@@ -440,13 +493,27 @@ async def _finish_answer(
         "suggestions": suggestions,
     }
     status = "abstained" if abstained else "complete"
-    await _finalize(
-        session_factory, run_id, message_id, status=status, text=final_text, metrics=metrics
-    )
-    if not abstained:
-        asyncio.get_running_loop().create_task(
+    scoring_task = (
+        None
+        if abstained
+        else asyncio.create_task(
             score_run_async(run_id=run_id, question=question, answer=final_text, contexts=contexts)
         )
+    )
+    await _finalize(
+        session_factory,
+        run_id,
+        message_id,
+        status=status,
+        text=final_text,
+        metrics=metrics,
+        settle_usage=scoring_task is None,
+    )
+    if scoring_task is not None:
+        settle_task = asyncio.create_task(
+            _settle_after_scoring(session_factory, run_id, scoring_task)
+        )
+        settle_task.add_done_callback(lambda _: None)
     await bus.publish(
         run_id,
         RunCompleted(
@@ -474,12 +541,59 @@ async def execute_run(
     user_message: str,
     run_filters: RunFilters | None = None,
     collection_ids: list[UUID] | None = None,
+    quota_remaining_5h: float | None = None,
+    settings_version: int | None = None,
 ) -> None:
-    settings = get_settings()
     text = ""
     try:
+        settings = get_settings()
+        runtime, model_roles, api_keys = await _runtime_context(
+            session_factory, settings_version
+        )
+        usage_context = UsageContext(
+            session_factory=session_factory,
+            user_id=user_id,
+            run_id=run_id,
+            model_roles=model_roles,
+            api_keys=api_keys,
+            remaining_5h=quota_remaining_5h,
+        )
+        runtime_token = set_runtime_settings(runtime)
+        usage_token = set_usage_context(usage_context)
+        engine = DecisionEngine(shadow_writer=make_shadow_writer(session_factory))
+        engine.configure(runtime)
+    except asyncio.CancelledError:
+        await _finalize(session_factory, run_id, message_id, status="cancelled", text="")
+        raise
+    except AppError as exc:
+        await _finalize(session_factory, run_id, message_id, status="failed", text="")
         await bus.publish(
-            run_id, RunStarted(run_id=str(run_id), mode=mode, source=source, model=model_id)
+            run_id,
+            RunFailed(run_id=str(run_id), error_code=exc.error_code, message=exc.message),
+        )
+        return
+    except Exception:
+        logger.exception("run setup failed", extra={"run_id": str(run_id)})
+        await _finalize(session_factory, run_id, message_id, status="failed", text="")
+        await bus.publish(
+            run_id,
+            RunFailed(
+                run_id=str(run_id),
+                error_code="run_setup_failed",
+                message="The run could not be initialized",
+            ),
+        )
+        return
+    try:
+        await bus.publish(
+            run_id,
+            RunStarted(
+                run_id=str(run_id),
+                mode=mode,
+                source=source,
+                model=model_id,
+                settings_version=settings_version,
+            ),
         )
         await _touch_heartbeat(session_factory, run_id)
 
@@ -499,7 +613,6 @@ async def execute_run(
             )
 
         if mode == "auto":
-            engine = get_decision_engine(session_factory)
             engine.set_event_emitter(emit_decision)
             auto_run = await prepare_auto_run(
                 session_factory,
@@ -584,14 +697,12 @@ async def execute_run(
                 small_model=small_litellm_model,
                 tokens_in=prompt_tokens,
                 generate_ms=generate_ms,
-                extra_credits=0,
                 abstained=auto_run.abstain_event is not None,
                 plan=plan,
             )
             return
 
         if mode == "deep":
-            engine = get_decision_engine(session_factory)
             engine.set_event_emitter(emit_decision)
 
             async def _publish_step(rid: UUID, event: RunStreamEvent) -> None:
@@ -674,7 +785,6 @@ async def execute_run(
                 small_model=small_litellm_model,
                 tokens_in=prompt_tokens,
                 generate_ms=generate_ms,
-                extra_credits=deep_run.credits_used,
                 abstained=deep_run.abstain_event is not None,
                 plan=plan,
             )
@@ -701,7 +811,6 @@ async def execute_run(
         # Fast reviews async after delivery (TR-6): deltas stream now, the
         # Reviewer runs in _finish_answer before the terminal event so chips
         # recolour while the answer is on screen.
-        engine = get_decision_engine(session_factory)
         engine.set_event_emitter(emit_decision)
 
         batcher = _DeltaBatcher()
@@ -750,7 +859,6 @@ async def execute_run(
             small_model=small_litellm_model,
             tokens_in=prompt_tokens,
             generate_ms=generate_ms,
-            extra_credits=0,
             abstained=False,
             plan="stream",
         )
@@ -782,6 +890,10 @@ async def execute_run(
             ),
         )
 
+    finally:
+        reset_usage_context(usage_token)
+        reset_runtime_settings(runtime_token)
+
 
 async def sweep_stale_runs(
     bus: PostgresRunBus, session_factory: async_sessionmaker[AsyncSession]
@@ -803,6 +915,7 @@ async def sweep_stale_runs(
             message = await session.get(Message, message_id)
             if message is not None and message.status is None:
                 message.status = "failed"
+            await settle_run(session, run_id, None)
             await session.execute(update(Run).where(Run.id == run_id).values(status="failed"))
         return [(r[0], r[1]) for r in stale]
 

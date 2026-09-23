@@ -15,8 +15,8 @@ SOURCE_MAX_CHARS = 6000
 
 
 def _escape_attr(value: str) -> str:
-    return value.replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;").replace(
-        ">", "&gt;"
+    return (
+        value.replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;").replace(">", "&gt;")
     )
 
 
@@ -75,7 +75,7 @@ async def stream_grounded_answer(
     async for token in stream_completion(
         litellm_model=litellm_model,
         messages=build_grounded_messages(question, contexts, history),
-        metadata=metadata,
+        metadata={**metadata, "role": "generator"},
         on_reasoning=on_reasoning,
     ):
         yield token

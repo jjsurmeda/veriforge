@@ -7,7 +7,8 @@ Usage:
   uv run python -m evals.runner --subset fast20 # the CI gate subset
   uv run python -m evals.runner --baseline      # store baseline.json
 
-Credits are recorded as token counts until slice 7's ledger (TRD §14).
+Interactive run credits are metered by the shared quota UsageContext; this
+harness keeps its own token counters for eval-result reporting.
 Slice 4 routes items through graph/auto.py — abstention accuracy is a real
 check now (the slice-3 pass-through is removed in evals/gate.py).
 Slice 6: faithfulness and citation precision are Reviewer-computed

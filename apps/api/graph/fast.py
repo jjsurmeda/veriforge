@@ -21,6 +21,7 @@ from db.models import Chat, Citation, Message
 from graph import rewrite as rewrite_node
 from graph.generate import stream_grounded_answer
 from providers.llm import complete
+from quota.usage import get_usage_context
 from retrieval.cache import get_query_embedding
 from retrieval.context import count_tokens, trim_context
 from retrieval.expand import ExpandedContext, dedupe_adjacent, expand_context
@@ -218,12 +219,13 @@ async def finalize_fast_run(
             small_model=run.params.small_model,
             complete_fn=complete,
         )
+    usage = get_usage_context()
     return Metrics(
         run_id=str(run.params.run_id),
         latency_ms={**run.latency_ms, "generate": generate_ms},
         tokens_in=tokens_in,
         tokens_out=tokens_out,
-        credits=tokens_in + tokens_out,
+        credits=usage.credits if usage is not None else 0.0,
         context_used=run.context_used,
         context_window=run.params.context_window,
     )

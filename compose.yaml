@@ -31,6 +31,8 @@ services:
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-openrouter/openai/text-embedding-3-small}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-}
+      PROVIDER_ENCRYPTION_KEY: ${PROVIDER_ENCRYPTION_KEY:-}
+      REFERENCE_MODEL_ID: ${REFERENCE_MODEL_ID:-anthropic/claude-haiku-4.5}
       JWT_SECRET: ${JWT_SECRET:-dev-only-insecure-secret-change-me}
       WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:5173}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}

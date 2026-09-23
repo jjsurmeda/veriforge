@@ -19,6 +19,7 @@ from uuid import UUID
 
 from decisions import DecisionEngine, threshold
 from decisions.thresholds import Engine
+from runtime import runtime_value
 from schemas.decisions import Answer, Choice, Noul, Score
 
 logger = logging.getLogger(__name__)
@@ -57,12 +58,19 @@ class IngressOutcome:
 def _guard_verdict(
     probability: float, engine: Engine, warn_name: str, block_name: str | None
 ) -> GuardVerdict:
-    warn_threshold = threshold(warn_name, engine)
-    if block_name is not None:
-        block_threshold = threshold(block_name, engine)
-        if probability >= block_threshold:
-            return "block"
-    if probability >= warn_threshold:
+    if not bool(runtime_value("guardrails.enabled", True)):
+        return "pass"
+    guard_name = warn_name.removeprefix("guard_").removesuffix("_warn")
+    action = str(runtime_value(f"guardrails.actions.{guard_name}", "block"))
+    if action in {"off", "disabled"}:
+        return "pass"
+    if (
+        action == "block"
+        and block_name is not None
+        and probability >= threshold(block_name, engine)
+    ):
+        return "block"
+    if probability >= threshold(warn_name, engine):
         return "warn"
     return "pass"
 
@@ -174,9 +182,7 @@ def interpret_answers(answers: dict[str, Answer]) -> IngressOutcome:
     return IngressOutcome(
         intent=_pick_choice(answers["intent"], INTENT_OPTIONS, INTENT_DEFAULT),
         source=_pick_choice(answers["source"], SOURCE_OPTIONS, SOURCE_DEFAULT),
-        complexity=_pick_choice(
-            answers["complexity"], COMPLEXITY_OPTIONS, COMPLEXITY_DEFAULT
-        ),
+        complexity=_pick_choice(answers["complexity"], COMPLEXITY_OPTIONS, COMPLEXITY_DEFAULT),
         risk=_pick_choice(answers["risk"], RISK_OPTIONS, RISK_DEFAULT),
         lexical_weight=float(lexical_answer.value),
         guard_injection=_guard_verdict(

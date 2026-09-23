@@ -34,3 +34,16 @@ async def get_current_user(
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
+
+
+class Forbidden(AppError):
+    status_code = 403
+
+
+async def get_admin_user(user: CurrentUser) -> User:
+    if user.role != "admin":
+        raise Forbidden("admin_required", "Administrator access is required")
+    return user
+
+
+AdminUser = Annotated[User, Depends(get_admin_user)]

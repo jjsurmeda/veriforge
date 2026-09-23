@@ -49,7 +49,7 @@ async def run_starter_questions(collection_id: UUID) -> None:
             {"role": "system", "content": _starter_prompt()},
             {"role": "user", "content": excerpts},
         ],
-        metadata={"job": "starter_questions"},
+        metadata={"job": "starter_questions", "role": "suggester"},
     )
     questions = _parse_questions(response)
     if questions is None:

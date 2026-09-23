@@ -75,7 +75,7 @@ async def plan_question(
         response = await complete_fn(
             litellm_model=small_model,
             messages=[{"role": "system", "content": prompt}],
-            metadata={},
+            metadata={"role": "planner"},
         )
     except Exception:
         logger.exception("planner call failed, falling back to single sub-question")
@@ -102,15 +102,13 @@ async def generate_followup(
     supposed to drive the next sub-question, not just gate stopping) —
     returns None (caller should abstain) only if this call itself fails."""
     prompt = (
-        load_prompt("plan_followup.md")
-        .replace("{question}", question)
-        .replace("{notes}", notes)
+        load_prompt("plan_followup.md").replace("{question}", question).replace("{notes}", notes)
     )
     try:
         response = await complete_fn(
             litellm_model=small_model,
             messages=[{"role": "system", "content": prompt}],
-            metadata={},
+            metadata={"role": "planner"},
         )
     except Exception:
         logger.exception("followup planner call failed")

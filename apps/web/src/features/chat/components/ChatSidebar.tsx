@@ -1,6 +1,7 @@
 import { useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
 
+import { useMe } from '../../auth/hooks/useMe'
 import { logout } from '../../../lib/auth'
 import { queryClient } from '../../../lib/queryClient'
 import { useChatList, useCreateChat, useDeleteChat } from '../hooks/useChatList'
@@ -10,6 +11,7 @@ export function ChatSidebar({ currentChatId }: { currentChatId: string | null })
   const { data: chats } = useChatList()
   const createChat = useCreateChat()
   const deleteChat = useDeleteChat()
+  const me = useMe()
   const [creating, setCreating] = useState(false)
 
   const onNewChat = async () => {
@@ -69,13 +71,24 @@ export function ChatSidebar({ currentChatId }: { currentChatId: string | null })
         ))}
       </nav>
       <div className="flex items-center justify-between border-t border-mist px-4 py-3">
-        <button
-          type="button"
-          onClick={() => void navigate({ to: '/sources' })}
-          className="text-xs text-paper/50 hover:text-paper focus-visible:outline-2 focus-visible:outline-ember"
-        >
-          Sources
-        </button>
+        <div className="flex items-center gap-3">
+          {me.data?.role === 'admin' && (
+            <button
+              type="button"
+              onClick={() => void navigate({ to: '/admin' })}
+              className="text-xs text-ember hover:text-paper focus-visible:outline-2 focus-visible:outline-ember"
+            >
+              Admin
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => void navigate({ to: '/sources' })}
+            className="text-xs text-paper/50 hover:text-paper focus-visible:outline-2 focus-visible:outline-ember"
+          >
+            Sources
+          </button>
+        </div>
         <button
           type="button"
           onClick={() => void onLogout()}

@@ -1,5 +1,5 @@
 """Model catalogue read endpoints (CH-8): the picker reads these;
-admin CRUD arrives in slice 7."""
+administrators use the separate /admin catalogue routes."""
 
 from typing import Annotated
 
@@ -39,6 +39,7 @@ async def list_models(
             enabled=model.enabled,
         )
         for model, provider in rows
+        if not (model.capabilities or {}).get("decision", False)
     ]
 
 
