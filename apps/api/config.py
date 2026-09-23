@@ -68,6 +68,11 @@ class Settings(BaseSettings):
     breaker_cooldown_seconds: float = 60.0
     shadow_sample_rate: float = 0.02
 
+    # Deep mode (TRD §7 row 5, CH-4). Per-run cap; real quota-aware
+    # "remaining allowance" arrives in slice 7 (real credits ledger).
+    deep_max_hops: int = 4
+    deep_credit_budget: int = 40_000
+
 
 @lru_cache
 def get_settings() -> Settings:

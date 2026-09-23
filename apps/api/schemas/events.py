@@ -113,6 +113,17 @@ class ThinkingDelta(RunEvent):
     text: str
 
 
+class SubQuestion(BaseModel):
+    id: str
+    question: str
+    depends_on: list[str] = []
+
+
+class Plan(RunEvent):
+    type: Literal["plan"] = "plan"
+    sub_questions: list[SubQuestion]
+
+
 class Abstain(RunEvent):
     type: Literal["abstain"] = "abstain"
     found_summary: str
@@ -144,6 +155,7 @@ RunStreamEvent = Annotated[
     | StepCompleted
     | Decision
     | ThinkingDelta
+    | Plan
     | Retrieval
     | AnswerDelta
     | Abstain

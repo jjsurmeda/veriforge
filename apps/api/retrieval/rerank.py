@@ -56,8 +56,10 @@ class CohereRerank:
             async with httpx.AsyncClient(timeout=10) as client:
                 response = await call(client)
         # Trial-tier Cohere keys rate-limit aggressively; back off and retry
-        # a couple of times rather than failing the whole retrieval path.
-        for attempt in range(3):
+        # rather than failing the whole retrieval path. Deep mode runs
+        # several hops' reranks concurrently, so this needs more headroom
+        # than a single-hop Auto/Fast call ever hits.
+        for attempt in range(6):
             if response.status_code != 429:
                 break
             wait_s = float(response.headers.get("retry-after", 2 * (attempt + 1)))

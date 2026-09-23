@@ -6,8 +6,8 @@ heartbeat sweep marks orphaned runs failed. Every DB step uses its own
 short-lived session (python.md: no ad hoc long-lived sessions in tasks).
 
 Slice 4 dispatches on mode: fast (slice 3) → graph/fast.py; auto →
-graph/auto.py; deep → auto with a notice (slice 5 replaces this fallback
-with the real Plan/Hop/Controller path).
+graph/auto.py; deep → graph/deep.py (slice 5: real Plan/Hop/Controller
+path, replacing slice 4's auto-with-a-notice fallback).
 """
 
 import asyncio
@@ -25,6 +25,7 @@ from db.models import Message, Run
 from decisions import DecisionEngine, make_shadow_writer
 from errors import AppError
 from graph.auto import AutoRunInput, finalize_auto_run, prepare_auto_run
+from graph.deep import DeepRunInput, finalize_deep_run, prepare_deep_run
 from graph.fast import FastRunInput, finalize_fast_run, prepare_fast_run, to_client_filters
 from graph.generate import build_grounded_messages
 from retrieval.context import count_tokens
@@ -35,10 +36,13 @@ from schemas.events import (
     AnswerDelta,
     Decision,
     Heartbeat,
+    Metrics,
     RunCancelled,
     RunCompleted,
     RunFailed,
     RunStarted,
+    RunStreamEvent,
+    ThinkingDelta,
 )
 
 logger = logging.getLogger(__name__)
@@ -220,7 +224,7 @@ async def execute_run(
                 ),
             )
 
-        if mode in {"auto", "deep"}:
+        if mode == "auto":
             engine = get_decision_engine(session_factory)
             engine.set_event_emitter(emit_decision)
             auto_run = await prepare_auto_run(
@@ -287,6 +291,96 @@ async def execute_run(
                     run_id=str(run_id),
                     message_id=str(message_id),
                     status="abstained" if auto_run.abstain_event is not None else "completed",
+                ),
+            )
+            return
+
+        if mode == "deep":
+            engine = get_decision_engine(session_factory)
+            engine.set_event_emitter(emit_decision)
+            async def _publish_step(rid: UUID, event: RunStreamEvent) -> None:
+                await bus.publish(rid, event)
+
+            deep_run = await prepare_deep_run(
+                session_factory,
+                DeepRunInput(
+                    run_id=run_id,
+                    message_id=message_id,
+                    chat_id=chat_id,
+                    user_id=user_id,
+                    question=user_message,
+                    litellm_model=litellm_model,
+                    small_model=small_litellm_model,
+                    context_window=context_window,
+                    source=source,
+                    client_filters=to_client_filters(run_filters),
+                    collection_ids=collection_ids or [],
+                ),
+                engine,
+                publish=_publish_step,
+            )
+            await bus.publish(run_id, deep_run.plan_event)
+            for event in deep_run.retrieval_events:
+                await bus.publish(run_id, event)
+            if deep_run.abstain_event is not None:
+                await bus.publish(run_id, deep_run.abstain_event)
+
+            batcher = _DeltaBatcher()
+            last_heartbeat = time.monotonic()
+            generate_start = time.monotonic()
+
+            async for kind, token in deep_run.stream_answer_with_thinking():
+                if kind == "thinking":
+                    await bus.publish(run_id, ThinkingDelta(run_id=str(run_id), text=token))
+                    continue
+                text += token
+                batcher.add(token)
+                if batcher.due():
+                    await bus.publish(
+                        run_id, AnswerDelta(run_id=str(run_id), text=batcher.take())
+                    )
+                    if time.monotonic() - last_heartbeat >= settings.heartbeat_interval_seconds:
+                        await bus.publish(run_id, Heartbeat(run_id=str(run_id)))
+                        await _touch_heartbeat(session_factory, run_id)
+                        last_heartbeat = time.monotonic()
+            if batcher.buffer:
+                await bus.publish(run_id, AnswerDelta(run_id=str(run_id), text=batcher.take()))
+
+            generate_ms = int((time.monotonic() - generate_start) * 1000)
+            prompt_tokens = sum(
+                count_tokens(m["content"])
+                for m in build_grounded_messages(
+                    deep_run.rewritten, deep_run.contexts, deep_run.history
+                )
+            )
+            tokens_out = count_tokens(text)
+            await finalize_deep_run(
+                session_factory,
+                deep_run,
+                generate_ms=generate_ms,
+                tokens_in=prompt_tokens,
+                tokens_out=tokens_out,
+            )
+            await bus.publish(
+                run_id,
+                Metrics(
+                    run_id=str(run_id),
+                    latency_ms={**deep_run.latency_ms, "generate": generate_ms},
+                    tokens_in=prompt_tokens,
+                    tokens_out=tokens_out,
+                    credits=deep_run.credits_used + prompt_tokens + tokens_out,
+                    context_used=deep_run.context_used,
+                    context_window=context_window,
+                ),
+            )
+            final_status = "abstained" if deep_run.abstain_event is not None else "complete"
+            await _finalize(session_factory, run_id, message_id, status=final_status, text=text)
+            await bus.publish(
+                run_id,
+                RunCompleted(
+                    run_id=str(run_id),
+                    message_id=str(message_id),
+                    status="abstained" if deep_run.abstain_event is not None else "completed",
                 ),
             )
             return

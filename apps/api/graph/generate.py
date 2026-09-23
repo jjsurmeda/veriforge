@@ -5,7 +5,7 @@ sources are wrapped in structural `<source>` tags with ingestion-time
 escaping of any such tags inside chunk text (TRD §11 layers 1-3).
 """
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 
 from prompts.load import load_prompt
 from providers.llm import stream_completion
@@ -70,10 +70,12 @@ async def stream_grounded_answer(
     contexts: list[ExpandedContext],
     history: list[tuple[str, str]],
     metadata: dict[str, str],
+    on_reasoning: Callable[[str], Awaitable[None]] | None = None,
 ) -> AsyncIterator[str]:
     async for token in stream_completion(
         litellm_model=litellm_model,
         messages=build_grounded_messages(question, contexts, history),
         metadata=metadata,
+        on_reasoning=on_reasoning,
     ):
         yield token

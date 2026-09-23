@@ -31,6 +31,7 @@ from decisions import DecisionEngine
 from evals.judge import judge_answer
 from evals.loader import EVAL_USER_EMAIL, STATE_FILE
 from graph.auto import AutoRunInput, finalize_auto_run, prepare_auto_run
+from graph.deep import DeepRunInput, finalize_deep_run, prepare_deep_run
 from graph.generate import build_grounded_messages
 from retrieval.context import count_tokens
 from retrieval.filters import ClientFilters
@@ -51,6 +52,7 @@ async def _run_item(
     collection_id: UUID,
     eval_run_id: UUID,
     item: EvalItem,
+    mode: str = "auto",
 ) -> EvalResult:
     async with factory() as session, session.begin():
         chat = Chat(
@@ -70,42 +72,82 @@ async def _run_item(
         message_id = assistant_message.id
     started = time.monotonic()
     engine = DecisionEngine()
-    run = await prepare_auto_run(
-        factory,
-        AutoRunInput(
-            run_id=uuid7(),
-            message_id=message_id,
-            chat_id=chat_id,
-            user_id=user.id,
-            question=item.question,
-            litellm_model=GENERATOR_MODEL,
-            small_model=SMALL_MODEL,
-            context_window=CONTEXT_WINDOW,
-            source="auto",
-            client_filters=ClientFilters(),
-            collection_ids=[collection_id],
-        ),
-        engine,
-    )
-    answer = "".join([token async for token in run.stream_answer()])
-    tokens_in = sum(
-        count_tokens(m["content"])
-        for m in build_grounded_messages(run.rewritten, run.contexts, run.history)
-    )
-    tokens_out = count_tokens(answer)
-    latency_ms = int((time.monotonic() - started) * 1000)
-    await finalize_auto_run(
-        factory, run, generate_ms=0, tokens_in=tokens_in, tokens_out=tokens_out
-    )
+    if mode == "deep":
+        deep_run = await prepare_deep_run(
+            factory,
+            DeepRunInput(
+                run_id=uuid7(),
+                message_id=message_id,
+                chat_id=chat_id,
+                user_id=user.id,
+                question=item.question,
+                litellm_model=GENERATOR_MODEL,
+                small_model=SMALL_MODEL,
+                context_window=CONTEXT_WINDOW,
+                source="auto",
+                client_filters=ClientFilters(),
+                collection_ids=[collection_id],
+            ),
+            engine,
+        )
+        answer = "".join(
+            [
+                token
+                async for kind, token in deep_run.stream_answer_with_thinking()
+                if kind == "content"
+            ]
+        )
+        tokens_in = sum(
+            count_tokens(m["content"])
+            for m in build_grounded_messages(
+                deep_run.rewritten, deep_run.contexts, deep_run.history
+            )
+        )
+        tokens_out = count_tokens(answer)
+        latency_ms = int((time.monotonic() - started) * 1000)
+        await finalize_deep_run(
+            factory, deep_run, generate_ms=0, tokens_in=tokens_in, tokens_out=tokens_out
+        )
+        abstained = deep_run.abstain_event is not None
+        contexts = deep_run.contexts
+    else:
+        run = await prepare_auto_run(
+            factory,
+            AutoRunInput(
+                run_id=uuid7(),
+                message_id=message_id,
+                chat_id=chat_id,
+                user_id=user.id,
+                question=item.question,
+                litellm_model=GENERATOR_MODEL,
+                small_model=SMALL_MODEL,
+                context_window=CONTEXT_WINDOW,
+                source="auto",
+                client_filters=ClientFilters(),
+                collection_ids=[collection_id],
+            ),
+            engine,
+        )
+        answer = "".join([token async for token in run.stream_answer()])
+        tokens_in = sum(
+            count_tokens(m["content"])
+            for m in build_grounded_messages(run.rewritten, run.contexts, run.history)
+        )
+        tokens_out = count_tokens(answer)
+        latency_ms = int((time.monotonic() - started) * 1000)
+        await finalize_auto_run(
+            factory, run, generate_ms=0, tokens_in=tokens_in, tokens_out=tokens_out
+        )
+        abstained = run.abstain_event is not None
+        contexts = run.contexts
 
     scores = await judge_answer(
         question=item.question,
         reference_answer=item.reference_answer,
         answer=answer,
-        passages=[context.context_text for context in run.contexts],
+        passages=[context.context_text for context in contexts],
         small_model=SMALL_MODEL,
     )
-    abstained = run.abstain_event is not None
     result = EvalResult(
         eval_run_id=eval_run_id,
         item_id=item.id,
@@ -125,7 +167,7 @@ async def _run_item(
 
 
 async def run_eval(
-    *, subset: str | None, baseline: bool
+    *, subset: str | None, baseline: bool, mode: str = "auto", category: str | None = None
 ) -> tuple[EvalRun, list[tuple[EvalItem, EvalResult]]]:
     if not STATE_FILE.exists():
         raise SystemExit("run `uv run python -m evals.loader` first")
@@ -151,7 +193,9 @@ async def run_eval(
         ).scalars().all()
         if subset == "fast20":
             items = [i for i in items if seed_ids.get(i.question) in fast20]
-        eval_run = EvalRun(dataset_id=dataset.id, mode="auto", is_baseline=baseline)
+        if category is not None:
+            items = [i for i in items if i.category == category]
+        eval_run = EvalRun(dataset_id=dataset.id, mode=mode, is_baseline=baseline)
         session.add(eval_run)
         await session.flush()
         eval_run_id = eval_run.id
@@ -164,6 +208,7 @@ async def run_eval(
             collection_id=collection_id,
             eval_run_id=eval_run_id,
             item=item,
+            mode=mode,
         )
         results.append((item, result))
         logger.info(
@@ -187,6 +232,7 @@ def aggregate(results: list[tuple[EvalItem, EvalResult]]) -> dict[str, float | N
         return statistics.mean(values) if values else None
 
     faithfulness = mean([r.faithfulness for _, r in results if r.faithfulness is not None])
+    context_recall = mean([r.context_recall for _, r in results if r.context_recall is not None])
     abstain_items = [(i, r) for i, r in results if i.should_abstain]
     abstention_accuracy = (
         mean([1.0 if r.abstained else 0.0 for _, r in abstain_items])
@@ -197,6 +243,7 @@ def aggregate(results: list[tuple[EvalItem, EvalResult]]) -> dict[str, float | N
     p50 = float(statistics.median(latencies)) if latencies else None
     return {
         "faithfulness": faithfulness,
+        "context_recall": context_recall,
         "abstention_accuracy": abstention_accuracy,
         "p50_latency_ms": p50,
         "items": float(len(results)),
@@ -207,9 +254,13 @@ async def main() -> None:
     parser = argparse.ArgumentParser(description="Veriforge eval runner")
     parser.add_argument("--subset", choices=["fast20"], default=None)
     parser.add_argument("--baseline", action="store_true")
+    parser.add_argument("--mode", choices=["auto", "deep"], default="auto")
+    parser.add_argument("--category", default=None)
     args = parser.parse_args()
 
-    eval_run, results = await run_eval(subset=args.subset, baseline=args.baseline)
+    eval_run, results = await run_eval(
+        subset=args.subset, baseline=args.baseline, mode=args.mode, category=args.category
+    )
     summary = aggregate(results)
     print(json.dumps({"eval_run": str(eval_run.id), **summary}, indent=2))
     if args.baseline:

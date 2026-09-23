@@ -26,6 +26,7 @@ _DEFAULTS: dict[str, dict[Engine, float]] = {
     "sufficient_abstain": {"jev": 0.35, "fallback": 0.35},
     "conflict_disclose": {"jev": 0.60, "fallback": 0.60},
     "output_toxicity_block": {"jev": 0.85, "fallback": 0.85},
+    "controller_sufficient": {"jev": 0.60, "fallback": 0.60},
 }
 
 

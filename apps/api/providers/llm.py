@@ -5,7 +5,7 @@ every completion is forwarded as a Langfuse generation (TRD §15).
 """
 
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 
 import litellm
 
@@ -34,10 +34,15 @@ async def stream_completion(
     litellm_model: str,
     messages: list[dict[str, str]],
     metadata: dict[str, str],
+    on_reasoning: Callable[[str], Awaitable[None]] | None = None,
 ) -> AsyncIterator[str]:
     """Yield content deltas from one streamed chat completion.
 
     litellm_model is the fully-qualified id ("openrouter/<model_id>").
+    `on_reasoning`, when given, is called with each native reasoning delta
+    (litellm normalises provider-specific chain-of-thought fields to
+    `delta.reasoning_content`) — existing callers that don't pass it see
+    no behaviour change.
     """
     _configure_langfuse()
     response = await litellm.acompletion(
@@ -52,11 +57,18 @@ async def stream_completion(
     )
     async for chunk in response:
         try:
-            delta = chunk["choices"][0]["delta"].get("content")
+            delta = chunk["choices"][0]["delta"]
         except (KeyError, IndexError, TypeError):
             continue
-        if delta:
-            yield str(delta)
+        if on_reasoning is not None:
+            reasoning = getattr(delta, "reasoning_content", None) or delta.get(
+                "reasoning_content"
+            )
+            if reasoning:
+                await on_reasoning(str(reasoning))
+        content = delta.get("content")
+        if content:
+            yield str(content)
 
 
 async def complete(

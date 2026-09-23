@@ -3,18 +3,15 @@
 sufficient-check retry loop → conflict check → generate. On insufficient
 evidence after retries the run abstains (TR-4).
 
-TRD §7 puts Plan/Hop/Controller in Auto when ingress returns
-`complexity=multi`; TRD §17 row 5 scopes that machinery to slice 5. This
-slice resolves the tension by falling back to the single-hop path with
-multi-query fusion regardless of the complexity verdict — the fallback is
-documented in the merge commit so slice 5 knows it is replacing a
-fallback, not adding a new mode.
+Auto always runs this single-hop-with-multi-query-fusion path regardless
+of ingress's `complexity` verdict — Plan/Hop/Controller multi-hop lives in
+Deep mode (graph/deep.py, TRD §17 row 5), which the user reaches directly
+via the mode picker rather than through an Auto complexity branch.
 """
 
 import asyncio
 import logging
-import time
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -24,9 +21,11 @@ from db.models import Chat, Citation, Message
 from decisions import DecisionEngine, threshold
 from decisions.sanitize import sanitize_chunks
 from graph import rewrite as rewrite_node
+from graph.abstain import build_abstain_event, stream_abstention
 from graph.generate import stream_grounded_answer
 from graph.ingress import IngressOutcome, run_ingress
 from graph.rewrite import CompleteFn
+from graph.timing import EventPublisher, make_step_timer
 from providers.llm import complete
 from retrieval.cache import get_query_embedding
 from retrieval.context import count_tokens, trim_context
@@ -42,8 +41,6 @@ from schemas.events import (
     Decision,
     Retrieval,
     RetrievedChunk,
-    StepCompleted,
-    StepStarted,
 )
 
 logger = logging.getLogger(__name__)
@@ -52,8 +49,6 @@ EXCERPT_CHARS = 240
 MULTI_QUERY_VARIANTS = 3
 MAX_SUFFICIENT_RETRIES = 2
 TOP_CHUNKS_FOR_SUFFICIENT = 5
-
-EventPublisher = Callable[[UUID, object], Awaitable[None]]
 
 
 @dataclass(frozen=True)
@@ -224,18 +219,9 @@ async def prepare_auto_run(
     retrieval_events: list[Retrieval] = []
     latency_ms: dict[str, int] = {}
 
-    async def _step(label: str, work):  # type: ignore[no-untyped-def]
-        if publish is not None:
-            await publish(params.run_id, StepStarted(node="auto", label=label))
-        started = time.monotonic()
-        result = await work()
-        duration = int((time.monotonic() - started) * 1000)
-        latency_ms[label] = duration
-        if publish is not None:
-            await publish(
-                params.run_id, StepCompleted(node="auto", label=label, duration_ms=duration)
-            )
-        return result
+    _step = make_step_timer(
+        node="auto", run_id=params.run_id, latency_ms=latency_ms, publish=publish
+    )
 
     async with session_factory() as session, session.begin():
         chat = await session.get(Chat, params.chat_id)
@@ -504,19 +490,8 @@ async def prepare_auto_run(
         contexts: list[ExpandedContext] = []
 
         if p_sufficient_final < threshold("sufficient_abstain", "jev"):
-            found = "\n".join(
-                f"- {c.document_name or c.source_type} p.{c.page or '?'}"
-                for c in kept[:3]
-            ) or "(no sources found)"
-            missing = (
-                "The retrieved sources do not contain enough evidence to "
-                "answer this question."
-            )
-            abstain_event = Abstain(
-                run_id=str(params.run_id),
-                found_summary=found,
-                missing_summary=missing,
-                offered_actions=["web", "deep"],
+            abstain_event = build_abstain_event(
+                str(params.run_id), kept, offered_actions=["web", "deep"]
             )
         else:
             contexts = await expand_context(session, winners)
@@ -585,20 +560,10 @@ async def prepare_auto_run(
 
 
 async def _stream_abstention(run: AutoRun) -> AsyncIterator[str]:
-    """TR-4 fixed template: what was found (cited), what's missing, offer
-    Web/Deep as follow-up actions. The generator only renders the template."""
-    abstain = run.abstain_event
-    if abstain is None:
+    if run.abstain_event is None:
         return
-    text = (
-        "I could not find enough evidence to answer that question.\n\n"
-        f"What I found:\n{abstain.found_summary}\n\n"
-        f"What is missing:\n{abstain.missing_summary}\n\n"
-        "You can try:\n"
-        "- Searching the web (click the source picker and choose Web or Both)\n"
-        "- Deep mode (multi-step reasoning across documents)\n"
-    )
-    yield text
+    async for token in stream_abstention(run.abstain_event):
+        yield token
 
 
 async def finalize_auto_run(
