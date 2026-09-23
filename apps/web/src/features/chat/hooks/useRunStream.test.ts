@@ -118,7 +118,17 @@ describe('useRunStream', () => {
   it('resumes from the last seen sequence number', async () => {
     const queryClient = new QueryClient()
     useChatRunStore.setState({
-      runs: { [RUN_ID]: { status: 'streaming', text: 'Hello ', lastSeq: 2, messageId: null, error: null } },
+      runs: {
+        [RUN_ID]: {
+          status: 'streaming',
+          text: 'Hello ',
+          lastSeq: 2,
+          messageId: null,
+          error: null,
+          chunks: [],
+          metrics: null,
+        },
+      },
     })
     renderHook(() => useRunStream(RUN_ID, CHAT_ID), { wrapper: makeWrapper(queryClient) })
     await flush()

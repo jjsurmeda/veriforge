@@ -18,8 +18,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from config import get_settings
 from db.models import Message, Run
-from graph.plain import stream_plain_answer
+from errors import AppError
+from graph.fast import FastRunInput, finalize_fast_run, prepare_fast_run, to_client_filters
+from graph.generate import build_grounded_messages
+from retrieval.context import count_tokens
 from runbus.postgres import PostgresRunBus
+from schemas.chats import RunFilters
 from schemas.events import AnswerDelta, Heartbeat, RunCancelled, RunCompleted, RunFailed, RunStarted
 
 logger = logging.getLogger(__name__)
@@ -92,22 +96,6 @@ async def _finalize(
     await _with_session(session_factory, work)
 
 
-async def _load_history(
-    session_factory: async_sessionmaker[AsyncSession], chat_id: UUID, exclude_message_id: UUID
-) -> list[tuple[str, str]]:
-    async def work(session: AsyncSession) -> list[tuple[str, str]]:
-        messages = (
-            await session.execute(
-                select(Message)
-                .where(Message.chat_id == chat_id, Message.id != exclude_message_id)
-                .order_by(Message.created_at)
-            )
-        ).scalars().all()
-        return [(m.role, m.content) for m in messages if m.content]
-
-    return await _with_session(session_factory, work)
-
-
 async def _touch_heartbeat(
     session_factory: async_sessionmaker[AsyncSession], run_id: UUID
 ) -> None:
@@ -128,10 +116,14 @@ def start_run(
     chat_id: UUID,
     user_id: UUID,
     litellm_model: str,
+    small_litellm_model: str,
     model_id: str,
+    context_window: int,
     mode: str,
     source: str,
     user_message: str,
+    run_filters: RunFilters | None = None,
+    collection_ids: list[UUID] | None = None,
 ) -> None:
     task = asyncio.create_task(
         execute_run(
@@ -142,10 +134,14 @@ def start_run(
             chat_id=chat_id,
             user_id=user_id,
             litellm_model=litellm_model,
+            small_litellm_model=small_litellm_model,
             model_id=model_id,
+            context_window=context_window,
             mode=mode,
             source=source,
             user_message=user_message,
+            run_filters=run_filters,
+            collection_ids=collection_ids or [],
         )
     )
     _active_tasks[run_id] = task
@@ -161,10 +157,14 @@ async def execute_run(
     chat_id: UUID,
     user_id: UUID,
     litellm_model: str,
+    small_litellm_model: str,
     model_id: str,
+    context_window: int,
     mode: str,
     source: str,
     user_message: str,
+    run_filters: RunFilters | None = None,
+    collection_ids: list[UUID] | None = None,
 ) -> None:
     settings = get_settings()
     text = ""
@@ -173,17 +173,29 @@ async def execute_run(
             run_id, RunStarted(run_id=str(run_id), mode=mode, source=source, model=model_id)
         )
         await _touch_heartbeat(session_factory, run_id)
-        history = await _load_history(session_factory, chat_id, message_id)
+        fast_run = await prepare_fast_run(
+            session_factory,
+            FastRunInput(
+                run_id=run_id,
+                message_id=message_id,
+                chat_id=chat_id,
+                user_id=user_id,
+                question=user_message,
+                litellm_model=litellm_model,
+                small_model=small_litellm_model,
+                context_window=context_window,
+                source=source,
+                client_filters=to_client_filters(run_filters),
+                collection_ids=collection_ids or [],
+            ),
+        )
+        await bus.publish(run_id, fast_run.retrieval_event)
 
         batcher = _DeltaBatcher()
         last_heartbeat = time.monotonic()
+        generate_start = time.monotonic()
 
-        async for token in stream_plain_answer(
-            litellm_model=litellm_model,
-            history=history,
-            user_message=user_message,
-            metadata={"run_id": str(run_id), "user_id": str(user_id)},
-        ):
+        async for token in fast_run.stream_answer():
             text += token
             batcher.add(token)
             if batcher.due():
@@ -197,6 +209,21 @@ async def execute_run(
         if batcher.buffer:
             await bus.publish(run_id, AnswerDelta(run_id=str(run_id), text=batcher.take()))
 
+        generate_ms = int((time.monotonic() - generate_start) * 1000)
+        prompt_tokens = sum(
+            count_tokens(m["content"])
+            for m in build_grounded_messages(
+                fast_run.rewritten, fast_run.contexts, fast_run.history
+            )
+        )
+        metrics_event = await finalize_fast_run(
+            session_factory,
+            fast_run,
+            generate_ms=generate_ms,
+            tokens_in=prompt_tokens,
+            tokens_out=count_tokens(text),
+        )
+        await bus.publish(run_id, metrics_event)
         await _finalize(session_factory, run_id, message_id, status="complete", text=text)
         await bus.publish(run_id, RunCompleted(run_id=str(run_id), message_id=str(message_id)))
 
@@ -208,6 +235,18 @@ async def execute_run(
             )
         finally:
             raise
+
+    except AppError as exc:
+        logger.error(
+            "run failed", extra={"run_id": str(run_id), "error_code": exc.error_code}
+        )
+        await _finalize(session_factory, run_id, message_id, status="failed", text=text)
+        await bus.publish(
+            run_id,
+            RunFailed(
+                run_id=str(run_id), error_code=exc.error_code, message=exc.message
+            ),
+        )
 
     except Exception:
         logger.exception("run failed", extra={"run_id": str(run_id)})

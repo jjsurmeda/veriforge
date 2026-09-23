@@ -1,6 +1,8 @@
 import type {
   AnswerDelta,
   Heartbeat,
+  Metrics,
+  Retrieval,
   RunCancelled,
   RunCompleted,
   RunFailed,
@@ -9,7 +11,9 @@ import type {
 
 export type StreamEvent =
   | RunStarted
+  | Retrieval
   | AnswerDelta
+  | Metrics
   | Heartbeat
   | RunCompleted
   | RunCancelled

@@ -20,6 +20,7 @@ from graph import runner
 from ingest import router as sources_router
 from ingest.queue import app as queue_app
 from providers import router as providers_router
+from retrieval import router as retrieval_router
 from runbus.postgres import PostgresRunBus
 from runs import router as runs_router
 
@@ -64,6 +65,7 @@ app.include_router(chats_router.router)
 app.include_router(runs_router.router)
 app.include_router(providers_router.router)
 app.include_router(sources_router.router)
+app.include_router(retrieval_router.router)
 
 
 def _error_body(error_code: str, message: str, detail: object = None) -> dict[str, object]:

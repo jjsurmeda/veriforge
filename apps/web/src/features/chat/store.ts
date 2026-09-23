@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 
+import type { Metrics, RetrievedChunk } from '../../generated/types.gen'
 import type { StreamEvent } from './types'
 
 export type RunStatus =
@@ -16,6 +17,8 @@ export interface RunLive {
   lastSeq: number
   messageId: string | null
   error: string | null
+  chunks: RetrievedChunk[]
+  metrics: Metrics | null
 }
 
 interface ChatRunStore {
@@ -32,6 +35,8 @@ const empty: RunLive = {
   lastSeq: 0,
   messageId: null,
   error: null,
+  chunks: [],
+  metrics: null,
 }
 
 export const useChatRunStore = create<ChatRunStore>()((set) => ({
@@ -60,9 +65,15 @@ export const useChatRunStore = create<ChatRunStore>()((set) => ({
         case 'run.started':
           next.status = 'streaming'
           break
+        case 'retrieval':
+          next.chunks = event.chunks ?? []
+          break
         case 'answer.delta':
           next.status = 'streaming'
           next.text += event.text
+          break
+        case 'metrics':
+          next.metrics = event
           break
         case 'heartbeat':
           break

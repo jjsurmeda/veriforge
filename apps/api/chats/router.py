@@ -9,7 +9,18 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.deps import CurrentUser
-from db.models import Chat, LlmProvider, Message, Model, ModelRole, Run, User
+from db.models import (
+    Chat,
+    Chunk,
+    Citation,
+    Document,
+    LlmProvider,
+    Message,
+    Model,
+    ModelRole,
+    Run,
+    User,
+)
 from db.session import get_session
 from errors import AppError
 from graph import runner
@@ -17,6 +28,7 @@ from schemas.chats import (
     ChatCreate,
     ChatOut,
     ChatPatch,
+    CitationOut,
     MessageOut,
     RunCreateRequest,
     RunCreateResponse,
@@ -164,8 +176,36 @@ async def list_messages(
             select(Message).where(Message.chat_id == chat_id).order_by(Message.created_at)
         )
     ).scalars().all()
+    citations = (
+        await session.execute(
+            select(Citation, Chunk, Document)
+            .join(Chunk, Citation.chunk_id == Chunk.id, isouter=True)
+            .join(Document, Chunk.document_id == Document.id, isouter=True)
+            .where(Citation.message_id.in_([m.id for m in messages]))
+            .order_by(Citation.message_id, Citation.n)
+        )
+    ).all()
+    by_message: dict[UUID, list[CitationOut]] = {}
+    for citation, chunk, document in citations:
+        by_message.setdefault(citation.message_id, []).append(
+            CitationOut(
+                n=citation.n,
+                chunk_id=str(chunk.id) if chunk is not None else None,
+                document_id=str(document.id) if document is not None else None,
+                document_name=document.name if document is not None else None,
+                page=chunk.page if chunk is not None else None,
+                excerpt=(chunk.text[:240] if chunk is not None else None),
+                rerank_score=citation.rerank_score,
+                verdict=citation.verdict,
+                p_supported=citation.p_supported,
+            )
+        )
     return [
-        message_out(m.id, m.chat_id, m.role, m.content, m.status, m.created_at) for m in messages
+        message_out(
+            m.id, m.chat_id, m.role, m.content, m.status, m.created_at,
+            by_message.get(m.id, []),
+        )
+        for m in messages
     ]
 
 
@@ -185,6 +225,24 @@ async def _assert_model_available(
     return model, provider
 
 
+async def _small_model_litellm(session: AsyncSession, fallback: str) -> str:
+    role = (
+        await session.execute(select(ModelRole).where(ModelRole.role == "small"))
+    ).scalar_one_or_none()
+    if role is None:
+        return fallback
+    row = (
+        await session.execute(
+            select(LlmProvider.kind).join(Model, Model.provider_id == LlmProvider.id).where(
+                Model.model_id == role.model_id
+            )
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        return fallback
+    return f"{row}/{role.model_id}"
+
+
 @router.post("/chats/{chat_id}/runs", response_model=RunCreateResponse, status_code=201)
 async def create_run(
     chat_id: UUID,
@@ -197,7 +255,7 @@ async def create_run(
     model_id = body.model_id or chat.model_id
     if model_id is None:
         model_id = await _default_model_id(session)
-    _, provider = await _assert_model_available(session, model_id)
+    model, provider = await _assert_model_available(session, model_id)
 
     user_message = Message(chat_id=chat.id, role="user", content=body.message, status="complete")
     assistant_message = Message(chat_id=chat.id, role="assistant", content="", status=None)
@@ -205,10 +263,17 @@ async def create_run(
     session.add(assistant_message)
     await session.flush()
 
+    if body.collection_ids is not None:
+        # Run-scoped narrowing of the chat's collections; the retrieval SQL
+        # re-validates ownership regardless of what arrives here.
+        effective = list(body.collection_ids)
+    else:
+        effective = list(chat.collection_ids or [])
+
     run = Run(
         message_id=assistant_message.id,
         mode=body.mode,
-        source="auto",
+        source=body.source,
         model_id=model_id,
         status="running",
         heartbeat_at=None,
@@ -224,9 +289,15 @@ async def create_run(
         chat_id=chat.id,
         user_id=user.id,
         litellm_model=f"{provider.kind}/{model_id}",
+        small_litellm_model=await _small_model_litellm(
+            session, f"{provider.kind}/{model_id}"
+        ),
         model_id=model_id,
+        context_window=model.context_window or 128_000,
         mode=body.mode,
-        source="auto",
+        source=body.source,
         user_message=body.message,
+        run_filters=body.filters,
+        collection_ids=effective,
     )
     return RunCreateResponse(run_id=str(run.id), message_id=str(assistant_message.id))

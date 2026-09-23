@@ -317,11 +317,13 @@ class Chunk(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid7)
-    document_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("documents.id", ondelete="CASCADE"), nullable=False
+    # Nullable from migration 0005: web chunks (TRD §9.3) have no document or
+    # parent section; small-to-big expansion skips them.
+    document_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), nullable=True
     )
-    section_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("sections.id", ondelete="CASCADE"), nullable=False
+    section_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("sections.id", ondelete="CASCADE"), nullable=True
     )
     ord: Mapped[int] = mapped_column(Integer, nullable=False)
     page: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -342,6 +344,137 @@ class Chunk(Base):
     expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class Citation(Base):
+    __tablename__ = "citations"
+    __table_args__ = (
+        UniqueConstraint("message_id", "n"),
+        Index("ix_citations_message", "message_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid7)
+    message_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("messages.id", ondelete="CASCADE"), nullable=False
+    )
+    n: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Null after the chunk expires (web chunks, 7-day TTL — ondelete SET NULL).
+    chunk_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("chunks.id", ondelete="SET NULL"), nullable=True
+    )
+    rerank_score: Mapped[float | None] = mapped_column(nullable=True)
+    # Reviewer fields — null until slice 6 (TRD §10).
+    verdict: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    p_supported: Mapped[float | None] = mapped_column(nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class QueryCache(Base):
+    __tablename__ = "query_cache"
+
+    query_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    embedding: Mapped[list[float]] = mapped_column(Vector(1536), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class WebCache(Base):
+    __tablename__ = "web_cache"
+
+    query_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    results: Mapped[list[dict[str, object]]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class WebPage(Base):
+    __tablename__ = "web_pages"
+    __table_args__ = (Index("ix_web_pages_chat", "chat_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid7)
+    chat_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("chats.id", ondelete="CASCADE"), nullable=False
+    )
+    url: Mapped[str] = mapped_column(Text, nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class EvalDataset(Base):
+    __tablename__ = "eval_datasets"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid7)
+    name: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class EvalItem(Base):
+    __tablename__ = "eval_items"
+    __table_args__ = (Index("ix_eval_items_dataset", "dataset_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid7)
+    dataset_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("eval_datasets.id", ondelete="CASCADE"), nullable=False
+    )
+    category: Mapped[str] = mapped_column(String(32), nullable=False)
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    reference_answer: Mapped[str] = mapped_column(Text, nullable=False)
+    expected_citations: Mapped[list[dict[str, object]] | None] = mapped_column(
+        JSONB, nullable=True
+    )
+    should_abstain: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class EvalRun(Base):
+    __tablename__ = "eval_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid7)
+    dataset_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("eval_datasets.id", ondelete="CASCADE"), nullable=False
+    )
+    mode: Mapped[str] = mapped_column(String(8), nullable=False)
+    settings_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    is_baseline: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class EvalResult(Base):
+    __tablename__ = "eval_results"
+    __table_args__ = (Index("ix_eval_results_run", "eval_run_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid7)
+    eval_run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("eval_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    item_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("eval_items.id", ondelete="CASCADE"), nullable=False
+    )
+    answer: Mapped[str] = mapped_column(Text, nullable=False)
+    faithfulness: Mapped[float | None] = mapped_column(nullable=True)
+    citation_precision: Mapped[float | None] = mapped_column(nullable=True)
+    context_precision: Mapped[float | None] = mapped_column(nullable=True)
+    context_recall: Mapped[float | None] = mapped_column(nullable=True)
+    abstained: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    latency_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    tokens_in: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    tokens_out: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

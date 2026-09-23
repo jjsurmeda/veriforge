@@ -45,6 +45,20 @@ class Settings(BaseSettings):
         "postgresql://veriforge:veriforge@localhost:5432/veriforge"
     )
 
+    # Retrieval (TRD §9.2-9.4). Empty keys fall back to local behaviour:
+    # fused-order rerank instead of Cohere, web search disabled.
+    tavily_api_key: str = ""
+    brave_api_key: str = ""
+    cohere_api_key: str = ""
+    cohere_rerank_model: str = "rerank-v3.5"
+    retrieval_statement_timeout_ms: int = 1500
+    # TODO(slice-4): replaced by the DecisionEngine `lexical_weight` score
+    # from ingress (TRD §9.2). Fixed default until then.
+    default_lexical_weight: float = 0.5
+    query_cache_ttl_days: int = 30
+    web_cache_ttl_hours: int = 24
+    web_chunk_ttl_days: int = 7
+
 
 @lru_cache
 def get_settings() -> Settings:

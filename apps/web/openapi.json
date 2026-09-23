@@ -211,6 +211,107 @@
         "title": "ChunkOut",
         "type": "object"
       },
+      "CitationOut": {
+        "properties": {
+          "chunk_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chunk Id"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "document_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Name"
+          },
+          "excerpt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Excerpt"
+          },
+          "n": {
+            "title": "N",
+            "type": "integer"
+          },
+          "p_supported": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "P Supported"
+          },
+          "page": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page"
+          },
+          "rerank_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rerank Score"
+          },
+          "verdict": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verdict"
+          }
+        },
+        "required": [
+          "n"
+        ],
+        "title": "CitationOut",
+        "type": "object"
+      },
       "CollectionCreate": {
         "properties": {
           "name": {
@@ -567,6 +668,14 @@
             "title": "Chat Id",
             "type": "string"
           },
+          "citations": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/CitationOut"
+            },
+            "title": "Citations",
+            "type": "array"
+          },
           "content": {
             "title": "Content",
             "type": "string"
@@ -605,6 +714,88 @@
           "created_at"
         ],
         "title": "MessageOut",
+        "type": "object"
+      },
+      "Metrics": {
+        "properties": {
+          "context_used": {
+            "default": 0,
+            "title": "Context Used",
+            "type": "integer"
+          },
+          "context_window": {
+            "default": 0,
+            "title": "Context Window",
+            "type": "integer"
+          },
+          "credits": {
+            "default": 0,
+            "title": "Credits",
+            "type": "integer"
+          },
+          "faithfulness": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Faithfulness"
+          },
+          "latency_ms": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "default": {},
+            "title": "Latency Ms",
+            "type": "object"
+          },
+          "min_support": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Support"
+          },
+          "run_id": {
+            "default": "",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "default": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "tokens_in": {
+            "default": 0,
+            "title": "Tokens In",
+            "type": "integer"
+          },
+          "tokens_out": {
+            "default": 0,
+            "title": "Tokens Out",
+            "type": "integer"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "metrics",
+            "default": "metrics",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "title": "Metrics",
         "type": "object"
       },
       "ModelOut": {
@@ -730,6 +921,33 @@
         "title": "PageFlag",
         "type": "object"
       },
+      "PinRequest": {
+        "properties": {
+          "collection_id": {
+            "format": "uuid",
+            "title": "Collection Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "collection_id"
+        ],
+        "title": "PinRequest",
+        "type": "object"
+      },
+      "PinResponse": {
+        "properties": {
+          "document_id": {
+            "title": "Document Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "document_id"
+        ],
+        "title": "PinResponse",
+        "type": "object"
+      },
       "PlanPublic": {
         "properties": {
           "credits_5h": {
@@ -771,6 +989,163 @@
           "password"
         ],
         "title": "ResetPasswordRequest",
+        "type": "object"
+      },
+      "Retrieval": {
+        "properties": {
+          "chunks": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/RetrievedChunk"
+            },
+            "title": "Chunks",
+            "type": "array"
+          },
+          "hop": {
+            "default": 0,
+            "title": "Hop",
+            "type": "integer"
+          },
+          "query": {
+            "title": "Query",
+            "type": "string"
+          },
+          "run_id": {
+            "default": "",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "default": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "retrieval",
+            "default": "retrieval",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "Retrieval",
+        "type": "object"
+      },
+      "RetrievedChunk": {
+        "properties": {
+          "bm25_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bm25 Score"
+          },
+          "chunk_id": {
+            "title": "Chunk Id",
+            "type": "string"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "document_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Name"
+          },
+          "dropped": {
+            "default": false,
+            "title": "Dropped",
+            "type": "boolean"
+          },
+          "excerpt": {
+            "default": "",
+            "title": "Excerpt",
+            "type": "string"
+          },
+          "fused_score": {
+            "default": 0.0,
+            "title": "Fused Score",
+            "type": "number"
+          },
+          "heading_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Heading Path"
+          },
+          "page": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page"
+          },
+          "rerank_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rerank Score"
+          },
+          "source_type": {
+            "default": "document",
+            "title": "Source Type",
+            "type": "string"
+          },
+          "vector_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vector Score"
+          }
+        },
+        "required": [
+          "chunk_id"
+        ],
+        "title": "RetrievedChunk",
         "type": "object"
       },
       "RunCancelResponse": {
@@ -866,6 +1241,31 @@
       },
       "RunCreateRequest": {
         "properties": {
+          "collection_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Collection Ids"
+          },
+          "filters": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunFilters"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "message": {
             "maxLength": 32000,
             "minLength": 1,
@@ -889,6 +1289,12 @@
               }
             ],
             "title": "Model Id"
+          },
+          "source": {
+            "default": "auto",
+            "pattern": "^(auto|web|collections)$",
+            "title": "Source",
+            "type": "string"
           }
         },
         "required": [
@@ -954,6 +1360,101 @@
         "title": "RunFailed",
         "type": "object"
       },
+      "RunFilters": {
+        "description": "Client filters on a run (TRD \u00a712); every field can only narrow the\nserver-side ownership scope (TRD \u00a79.2).",
+        "properties": {
+          "date_from": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date From"
+          },
+          "date_to": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date To"
+          },
+          "document_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Ids"
+          },
+          "mime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mime"
+          },
+          "page": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page"
+          },
+          "source_type": {
+            "anyOf": [
+              {
+                "pattern": "^(document|web)$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Type"
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags"
+          }
+        },
+        "title": "RunFilters",
+        "type": "object"
+      },
       "RunStarted": {
         "properties": {
           "mode": {
@@ -1013,6 +1514,8 @@
           "mapping": {
             "answer.delta": "#/components/schemas/AnswerDelta",
             "heartbeat": "#/components/schemas/Heartbeat",
+            "metrics": "#/components/schemas/Metrics",
+            "retrieval": "#/components/schemas/Retrieval",
             "run.cancelled": "#/components/schemas/RunCancelled",
             "run.completed": "#/components/schemas/RunCompleted",
             "run.failed": "#/components/schemas/RunFailed",
@@ -1025,7 +1528,13 @@
             "$ref": "#/components/schemas/RunStarted"
           },
           {
+            "$ref": "#/components/schemas/Retrieval"
+          },
+          {
             "$ref": "#/components/schemas/AnswerDelta"
+          },
+          {
+            "$ref": "#/components/schemas/Metrics"
           },
           {
             "$ref": "#/components/schemas/Heartbeat"
@@ -2618,6 +3127,64 @@
         "summary": "Stream Run",
         "tags": [
           "runs"
+        ]
+      }
+    },
+    "/web-sources/{web_page_id}/pin": {
+      "post": {
+        "operationId": "pin_web_source_web_sources__web_page_id__pin_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "web_page_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Web Page Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PinRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PinResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Pin Web Source",
+        "tags": [
+          "web-sources"
         ]
       }
     }

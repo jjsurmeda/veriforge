@@ -25,20 +25,37 @@ async def _make_chat(client: AsyncClient, headers: dict[str, str]) -> str:
     return str(chat.json()["id"])
 
 
+def _patch_fast_seams(
+    monkeypatch: pytest.MonkeyPatch, stream: Any, complete_response: str = "rewritten"
+) -> None:
+    async def fake_complete(
+        *, litellm_model: str, messages: list[dict[str, str]], metadata: dict[str, str]
+    ) -> str:
+        return complete_response
+
+    async def fake_embed(*, texts: list[str]) -> list[list[float]]:
+        return [[0.01] * 1536 for _ in texts]
+
+    monkeypatch.setattr("graph.fast.stream_grounded_answer", stream)
+    monkeypatch.setattr("graph.fast.complete", fake_complete)
+    monkeypatch.setattr("retrieval.cache.embed_batch", fake_embed)
+
+
 @pytest.fixture
 def fake_llm(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_stream(
         *,
         litellm_model: str,
+        question: str,
+        contexts: list[object],
         history: list[tuple[str, str]],
-        user_message: str,
         metadata: dict[str, str],
     ) -> AsyncIterator[str]:
         for token in TOKENS:
             await asyncio.sleep(0.03)
             yield token
 
-    monkeypatch.setattr("graph.runner.stream_plain_answer", fake_stream)
+    _patch_fast_seams(monkeypatch, fake_stream)
 
 
 @pytest.fixture
@@ -46,8 +63,9 @@ def fake_llm_slow(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_stream(
         *,
         litellm_model: str,
+        question: str,
+        contexts: list[object],
         history: list[tuple[str, str]],
-        user_message: str,
         metadata: dict[str, str],
     ) -> AsyncIterator[str]:
         yield "Hello"
@@ -55,7 +73,7 @@ def fake_llm_slow(monkeypatch: pytest.MonkeyPatch) -> None:
         yield " "
         await asyncio.Event().wait()  # holds until the cancel task cancels it
 
-    monkeypatch.setattr("graph.runner.stream_plain_answer", fake_stream)
+    _patch_fast_seams(monkeypatch, fake_stream)
 
 
 async def _parse_sse(
@@ -147,7 +165,9 @@ async def test_run_streams_to_completion_and_saves_message(
             if event_type == "run.completed":
                 break
     assert seen[0] == "run.started"
+    assert seen[1] == "retrieval"  # Fast mode: retrieval event precedes deltas
     assert "answer.delta" in seen
+    assert "metrics" in seen
     assert seen[-1] == "run.completed"
 
     messages = (await client.get(f"/chats/{chat_id}/messages", headers=headers)).json()

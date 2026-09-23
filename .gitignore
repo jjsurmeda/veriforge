@@ -35,3 +35,4 @@ graphify-out/
 
 # playwright-mcp tool state
 .playwright-mcp/
+evals/seed/.loaded.json

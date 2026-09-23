@@ -12,7 +12,9 @@ jobs:
         working-directory: apps/api
     services:
       postgres:
-        image: pgvector/pgvector:pg16
+        # ParadeDB ships pgvector + pg_search; retrieval tests (slice 3,
+        # TRD §9.2) need the BM25 index from pg_search.
+        image: paradedb/paradedb:0.25.9-pg16
         env:
           POSTGRES_USER: veriforge
           POSTGRES_PASSWORD: veriforge
@@ -37,6 +39,54 @@ jobs:
       # this fails the build when a schema change forgets to regenerate.
       - run: uv run python scripts/export_openapi.py
       - run: git diff --exit-code ../web/openapi.json
+
+  eval-gate:
+    # TRD §15: 20-item fast subset on every push to main that touches
+    # graph, retrieval, decisions or prompts. Skips cleanly when the
+    # OpenRouter secret is absent (forks) or no baseline exists yet.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    env:
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+    services:
+      postgres:
+        image: paradedb/paradedb:0.25.9-pg16
+        env:
+          POSTGRES_USER: veriforge
+          POSTGRES_PASSWORD: veriforge
+          POSTGRES_DB: veriforge
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U veriforge -d veriforge"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Check whether the gate applies to this push
+        id: scope
+        run: |
+          if git diff --name-only HEAD~1 HEAD | grep -Eq '^(apps/api/(graph|retrieval|decisions|prompts)/)'; then
+            echo "applies=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "applies=false" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.scope.outputs.applies == 'true' && env.OPENROUTER_API_KEY != ''
+        run: uv sync --frozen
+      - if: steps.scope.outputs.applies == 'true' && env.OPENROUTER_API_KEY != ''
+        run: DATABASE_URL=postgresql+asyncpg://veriforge:veriforge@localhost:5432/veriforge uv run alembic upgrade head
+      - if: steps.scope.outputs.applies == 'true' && env.OPENROUTER_API_KEY != ''
+        run: DATABASE_URL=postgresql+asyncpg://veriforge:veriforge@localhost:5432/veriforge uv run python -m evals.loader
+      - if: steps.scope.outputs.applies == 'true' && env.OPENROUTER_API_KEY != ''
+        run: DATABASE_URL=postgresql+asyncpg://veriforge:veriforge@localhost:5432/veriforge uv run python -m evals.gate
+      - if: steps.scope.outputs.applies != 'true' || env.OPENROUTER_API_KEY == ''
+        run: echo "eval gate skipped (no graph/retrieval/decisions/prompts change, or no key)"
 
   web:
     runs-on: ubuntu-latest
