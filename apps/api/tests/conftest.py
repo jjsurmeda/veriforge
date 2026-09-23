@@ -71,7 +71,7 @@ ALL_TABLES = ", ".join(f'"{t.name}"' for t in reversed(Base.metadata.sorted_tabl
 
 _catalogue: list[tuple[str, int]] = [
     ("openai/gpt-4o-mini", 128000),
-    ("anthropic/claude-3.5-haiku", 200000),
+    ("anthropic/claude-haiku-4.5", 200000),
 ]
 
 
@@ -100,10 +100,10 @@ async def seed_base_rows(session: AsyncSession) -> None:
         ModelRole(
             role="generator",
             model_id="openai/gpt-4o-mini",
-            fallback_model_id="anthropic/claude-3.5-haiku",
+            fallback_model_id="anthropic/claude-haiku-4.5",
         )
     )
-    session.add(ModelRole(role="small", model_id="anthropic/claude-3.5-haiku"))
+    session.add(ModelRole(role="small", model_id="anthropic/claude-haiku-4.5"))
     await session.commit()
 
 

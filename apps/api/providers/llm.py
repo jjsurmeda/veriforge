@@ -57,3 +57,35 @@ async def stream_completion(
             continue
         if delta:
             yield str(delta)
+
+
+async def complete(
+    *,
+    litellm_model: str,
+    messages: list[dict[str, str]],
+    metadata: dict[str, str],
+) -> str:
+    """One non-streamed completion; returns the assistant message content.
+
+    For simple background LLM calls (e.g. starter-question regeneration,
+    TRD §9.1 step 6) — routing/scoring/verification decisions go through
+    DecisionEngine instead (CLAUDE.md non-negotiable, slice 4+).
+    """
+    _configure_langfuse()
+    response = await litellm.acompletion(
+        model=litellm_model,
+        messages=messages,
+        metadata={
+            "trace_id": metadata.get("job", ""),
+            "user_id": metadata.get("user_id", ""),
+        },
+    )
+    content = response["choices"][0]["message"].get("content")
+    return str(content) if content else ""
+
+
+async def embed_batch(*, texts: list[str]) -> list[list[float]]:
+    """Embed a batch of texts with the configured embedding model (TRD §9.1)."""
+    _configure_langfuse()
+    response = await litellm.aembedding(model=get_settings().embedding_model, input=texts)
+    return [list(map(float, item["embedding"])) for item in response.data]

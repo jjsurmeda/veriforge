@@ -32,3 +32,6 @@ cdk.out/
 
 # graphify generated artifacts (regenerate with: graphify, /graphify --update)
 graphify-out/
+
+# playwright-mcp tool state
+.playwright-mcp/

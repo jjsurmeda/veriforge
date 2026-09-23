@@ -1,6 +1,9 @@
 services:
   db:
-    image: pgvector/pgvector:pg16
+    # ParadeDB ships pgvector + pg_search in one image (TRD §13: HNSW and
+    # BM25 indexes live in Postgres). Existing pgvector-image volumes must
+    # be recreated: `docker compose down -v`.
+    image: paradedb/paradedb:0.25.9-pg16
     environment:
       POSTGRES_USER: veriforge
       POSTGRES_PASSWORD: veriforge
@@ -18,9 +21,14 @@ services:
   api:
     image: ghcr.io/astral-sh/uv:python3.12-bookworm-slim
     working_dir: /app
-    command: sh -c "uv sync && uv run alembic upgrade head && uv run uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
+    # schema --apply is a one-shot base installer (not idempotent); the
+    # || guard keeps reboots against an already-initialised DB green.
+    command: sh -c "uv sync && uv run alembic upgrade head && (uv run python -m procrastinate --app=ingest.worker.app schema --apply || echo 'procrastinate schema already applied') && uv run uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
     environment:
       DATABASE_URL: postgresql+asyncpg://veriforge:veriforge@db:5432/veriforge
+      PROCRASTINATE_CONNINFO: postgresql://veriforge:veriforge@db:5432/veriforge
+      OBJECT_STORAGE_DIR: /data/objects
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-openrouter/openai/text-embedding-3-small}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-}
       JWT_SECRET: ${JWT_SECRET:-dev-only-insecure-secret-change-me}
@@ -35,6 +43,52 @@ services:
     volumes:
       - ./apps/api:/app
       - api_venv:/app/.venv
+      - object_data:/data/objects
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # TRD §9.1 resource limits: 1 ingestion job at a time plus 1 light job —
+  # one single-concurrency worker per queue. restart: on-failure covers a
+  # worker racing the api service's schema apply on first boot.
+  worker-ingest:
+    image: ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+    working_dir: /app
+    command: sh -c "uv sync && uv run python -m procrastinate --app=ingest.worker.app worker --queues=ingest --concurrency=1"
+    restart: on-failure
+    environment:
+      DATABASE_URL: postgresql+asyncpg://veriforge:veriforge@db:5432/veriforge
+      PROCRASTINATE_CONNINFO: postgresql://veriforge:veriforge@db:5432/veriforge
+      OBJECT_STORAGE_DIR: /data/objects
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-openrouter/openai/text-embedding-3-small}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+    volumes:
+      - ./apps/api:/app
+      - worker_ingest_venv:/app/.venv
+      - object_data:/data/objects
+    depends_on:
+      db:
+        condition: service_healthy
+
+  worker-light:
+    image: ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+    working_dir: /app
+    command: sh -c "uv sync && uv run python -m procrastinate --app=ingest.worker.app worker --queues=light --concurrency=1"
+    restart: on-failure
+    environment:
+      DATABASE_URL: postgresql+asyncpg://veriforge:veriforge@db:5432/veriforge
+      PROCRASTINATE_CONNINFO: postgresql://veriforge:veriforge@db:5432/veriforge
+      OBJECT_STORAGE_DIR: /data/objects
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-openrouter/openai/text-embedding-3-small}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+    volumes:
+      - ./apps/api:/app
+      - worker_light_venv:/app/.venv
+      - object_data:/data/objects
     depends_on:
       db:
         condition: service_healthy
@@ -55,4 +109,7 @@ services:
 volumes:
   db_data:
   api_venv:
+  worker_ingest_venv:
+  worker_light_venv:
   web_node_modules:
+  object_data:

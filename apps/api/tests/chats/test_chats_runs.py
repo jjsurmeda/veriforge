@@ -81,13 +81,13 @@ async def test_chat_crud_and_model_persistence(client: AsyncClient) -> None:
     assert created.json()["model_id"] == "openai/gpt-4o-mini"
 
     patched = await client.patch(
-        f"/chats/{chat_id}", json={"model_id": "anthropic/claude-3.5-haiku"}, headers=headers
+        f"/chats/{chat_id}", json={"model_id": "anthropic/claude-haiku-4.5"}, headers=headers
     )
-    assert patched.json()["model_id"] == "anthropic/claude-3.5-haiku"
+    assert patched.json()["model_id"] == "anthropic/claude-haiku-4.5"
 
     listed = await client.get("/chats", headers=headers)
     assert [c["id"] for c in listed.json()] == [chat_id]
-    assert listed.json()[0]["model_id"] == "anthropic/claude-3.5-haiku"
+    assert listed.json()[0]["model_id"] == "anthropic/claude-haiku-4.5"
 
     deleted = await client.delete(f"/chats/{chat_id}", headers=headers)
     assert deleted.status_code == 204
@@ -99,7 +99,7 @@ async def test_model_picker_endpoints(client: AsyncClient) -> None:
     models = await client.get("/models", headers=headers)
     assert models.status_code == 200
     assert [m["model_id"] for m in models.json()] == [
-        "anthropic/claude-3.5-haiku",
+        "anthropic/claude-haiku-4.5",
         "openai/gpt-4o-mini",
     ]
     roles = await client.get("/model-roles", headers=headers)

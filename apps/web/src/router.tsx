@@ -14,6 +14,7 @@ import { ResetPasswordPage } from './features/auth/pages/ResetPasswordPage'
 import { SignupPage } from './features/auth/pages/SignupPage'
 import { ChatIndexPage } from './features/chat/pages/ChatIndexPage'
 import { ChatView } from './features/chat/pages/ChatView'
+import { SourcesPage } from './features/sources/pages/SourcesPage'
 
 const rootRoute = createRootRoute({ component: Outlet })
 
@@ -72,6 +73,11 @@ const chatRoute = createRoute({
     return <ChatView chatId={chatId} />
   },
 })
+const sourcesRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: '/sources',
+  component: SourcesPage,
+})
 
 const routeTree = rootRoute.addChildren([
   loginRoute,
@@ -79,7 +85,7 @@ const routeTree = rootRoute.addChildren([
   forgotPasswordRoute,
   resetPasswordRoute,
   oauthCallbackRoute,
-  appLayoutRoute.addChildren([indexRoute, chatRoute]),
+  appLayoutRoute.addChildren([indexRoute, chatRoute, sourcesRoute]),
 ])
 
 export const router = createRouter({ routeTree })

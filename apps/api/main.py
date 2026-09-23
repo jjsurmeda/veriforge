@@ -17,6 +17,8 @@ from config import get_settings
 from db.session import get_session
 from errors import AppError
 from graph import runner
+from ingest import router as sources_router
+from ingest.queue import app as queue_app
 from providers import router as providers_router
 from runbus.postgres import PostgresRunBus
 from runs import router as runs_router
@@ -38,8 +40,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.session_factory = session_factory
     app.state.bus = bus
     sweep = asyncio.create_task(runner.sweep_loop(bus, session_factory))
+    await queue_app.open_async()
     yield
     sweep.cancel()
+    await queue_app.close_async()
     await bus.stop()
     await engine.dispose()
 
@@ -59,6 +63,7 @@ app.include_router(auth_router.me_router)
 app.include_router(chats_router.router)
 app.include_router(runs_router.router)
 app.include_router(providers_router.router)
+app.include_router(sources_router.router)
 
 
 def _error_body(error_code: str, message: str, detail: object = None) -> dict[str, object]:

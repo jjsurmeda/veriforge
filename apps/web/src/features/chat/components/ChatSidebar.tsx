@@ -68,7 +68,14 @@ export function ChatSidebar({ currentChatId }: { currentChatId: string | null })
           </div>
         ))}
       </nav>
-      <div className="border-t border-mist px-4 py-3">
+      <div className="flex items-center justify-between border-t border-mist px-4 py-3">
+        <button
+          type="button"
+          onClick={() => void navigate({ to: '/sources' })}
+          className="text-xs text-paper/50 hover:text-paper focus-visible:outline-2 focus-visible:outline-ember"
+        >
+          Sources
+        </button>
         <button
           type="button"
           onClick={() => void onLogout()}

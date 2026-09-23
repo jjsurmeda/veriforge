@@ -6,10 +6,17 @@ import { defineConfig } from 'vite'
 const apiTarget = process.env.API_PROXY_TARGET ?? 'http://localhost:8000'
 
 const proxy = Object.fromEntries(
-  ['/auth', '/chats', '/runs', '/models', '/model-roles', '/me', '/healthz'].map((p) => [
-    p,
-    { target: apiTarget, changeOrigin: true },
-  ]),
+  [
+    '/auth',
+    '/chats',
+    '/runs',
+    '/models',
+    '/model-roles',
+    '/me',
+    '/healthz',
+    '/collections',
+    '/documents',
+  ].map((p) => [p, { target: apiTarget, changeOrigin: true }]),
 )
 
 export default defineConfig({

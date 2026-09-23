@@ -31,6 +31,20 @@ class Settings(BaseSettings):
     heartbeat_interval_seconds: int = 15
     heartbeat_sweep_seconds: int = 60
 
+    # Ingestion (TRD §9.1). Object storage is a local directory at Stage 1;
+    # slice 9 points the same ObjectStore interface at S3.
+    object_storage_dir: str = ".data/objects"
+    max_upload_bytes: int = 20 * 1024 * 1024
+    embedding_model: str = "openrouter/openai/text-embedding-3-small"
+    embedding_batch_size: int = 100
+    # New ingestion jobs pause (self-retry) while more chat runs are active.
+    ingest_pause_active_runs: int = 3
+    ingest_pause_retry_seconds: int = 30
+    # Procrastinate uses psycopg (not asyncpg); `queue` schema via search_path.
+    procrastinate_conninfo: str = (
+        "postgresql://veriforge:veriforge@localhost:5432/veriforge"
+    )
+
 
 @lru_cache
 def get_settings() -> Settings:
