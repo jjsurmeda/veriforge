@@ -4,9 +4,10 @@ vec CTE (top 50 cosine, scope-filtered), lex CTE (top 50 pg_search BM25,
 same scope), fused = Σ weight_i / (60 + rank_i), top 40 out. Rerank,
 dedupe and small-to-big expansion live in rerank.py/expand.py.
 
-The ownership scope is always injected (filters.build_scope) — the fusion
-weight is the fixed default until DecisionEngine lands (TODO(slice-4),
-TRD §9.2: w = lexical_weight from ingress).
+The ownership scope is always injected (filters.build_scope); the fusion
+weight is the `lexical_weight` Score decision from ingress (TRD §8). The
+parameter is required — there is no default, so a caller that has not
+run ingress cannot accidentally fuse with an arbitrary weight.
 """
 
 import logging
@@ -95,11 +96,11 @@ async def hybrid_search(
     query_embedding: list[float],
     ownership: Ownership,
     filters: ClientFilters | None = None,
-    lexical_weight: float | None = None,
+    lexical_weight: float,
 ) -> list[ScoredChunk]:
     """Run the §9.2 query; returns up to FUSED_LIMIT chunks, fused order."""
     settings = get_settings()
-    weight = settings.default_lexical_weight if lexical_weight is None else lexical_weight
+    weight = lexical_weight
     scope, params = build_scope(ownership, filters or ClientFilters())
     params.update(
         {

@@ -35,7 +35,7 @@ messagestatus = Enum(
 )
 runstatus = Enum("running", "completed", "cancelled", "failed", name="runstatus", create_type=True)
 runmode = Enum("fast", "auto", "deep", name="runmode", create_type=True)
-runsource = Enum("auto", "web", "collections", name="runsource", create_type=True)
+runsource = Enum("auto", "web", "upload", "both", name="runsource", create_type=True)
 collectionvisibility = Enum(
     "private", "shared", name="collectionvisibility", create_type=True
 )
@@ -475,6 +475,41 @@ class EvalResult(Base):
     latency_ms: Mapped[int] = mapped_column(Integer, nullable=False)
     tokens_in: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     tokens_out: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class DecisionShadow(Base):
+    __tablename__ = "decision_shadow"
+    __table_args__ = (
+        Index("ix_decision_shadow_run", "run_id"),
+        Index("ix_decision_shadow_agree", "agree"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid7)
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("runs.id", ondelete="CASCADE"), nullable=False
+    )
+    decision: Mapped[str] = mapped_column(String(64), nullable=False)
+    jev_answer: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+    fallback_answer: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+    agree: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class Setting(Base):
+    __tablename__ = "settings"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid7)
+    version: Mapped[int] = mapped_column(Integer, unique=True, nullable=False)
+    data: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

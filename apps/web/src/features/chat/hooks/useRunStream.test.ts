@@ -127,6 +127,11 @@ describe('useRunStream', () => {
           error: null,
           chunks: [],
           metrics: null,
+          steps: [],
+          decisions: [],
+          thinking: '',
+          abstain: null,
+          conflict: null,
         },
       },
     })

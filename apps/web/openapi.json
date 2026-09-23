@@ -1,6 +1,53 @@
 {
   "components": {
     "schemas": {
+      "Abstain": {
+        "properties": {
+          "found_summary": {
+            "title": "Found Summary",
+            "type": "string"
+          },
+          "missing_summary": {
+            "title": "Missing Summary",
+            "type": "string"
+          },
+          "offered_actions": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Offered Actions",
+            "type": "array"
+          },
+          "run_id": {
+            "default": "",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "default": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "abstain",
+            "default": "abstain",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "found_summary",
+          "missing_summary"
+        ],
+        "title": "Abstain",
+        "type": "object"
+      },
       "AnswerDelta": {
         "properties": {
           "run_id": {
@@ -405,6 +452,152 @@
           }
         },
         "title": "CollectionPatch",
+        "type": "object"
+      },
+      "Conflict": {
+        "properties": {
+          "citation_ids_left": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Citation Ids Left",
+            "type": "array"
+          },
+          "citation_ids_right": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Citation Ids Right",
+            "type": "array"
+          },
+          "rule_applied": {
+            "title": "Rule Applied",
+            "type": "string"
+          },
+          "run_id": {
+            "default": "",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "default": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "conflict",
+            "default": "conflict",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "citation_ids_left",
+          "citation_ids_right",
+          "rule_applied"
+        ],
+        "title": "Conflict",
+        "type": "object"
+      },
+      "Decision": {
+        "properties": {
+          "engine": {
+            "enum": [
+              "jev",
+              "fallback"
+            ],
+            "title": "Engine",
+            "type": "string"
+          },
+          "latency_ms": {
+            "title": "Latency Ms",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "probabilities": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Probabilities"
+          },
+          "probability": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Probability"
+          },
+          "reasoning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoning"
+          },
+          "run_id": {
+            "default": "",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "default": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "decision",
+            "default": "decision",
+            "title": "Type",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "name",
+          "value",
+          "engine",
+          "latency_ms"
+        ],
+        "title": "Decision",
         "type": "object"
       },
       "DocumentOut": {
@@ -1512,14 +1705,20 @@
         "description": "References the union so it lands in OpenAPI (TRD \u00a712: the TS union is\ngenerated from the schema, never hand-rolled).",
         "discriminator": {
           "mapping": {
+            "abstain": "#/components/schemas/Abstain",
             "answer.delta": "#/components/schemas/AnswerDelta",
+            "conflict": "#/components/schemas/Conflict",
+            "decision": "#/components/schemas/Decision",
             "heartbeat": "#/components/schemas/Heartbeat",
             "metrics": "#/components/schemas/Metrics",
             "retrieval": "#/components/schemas/Retrieval",
             "run.cancelled": "#/components/schemas/RunCancelled",
             "run.completed": "#/components/schemas/RunCompleted",
             "run.failed": "#/components/schemas/RunFailed",
-            "run.started": "#/components/schemas/RunStarted"
+            "run.started": "#/components/schemas/RunStarted",
+            "step.completed": "#/components/schemas/StepCompleted",
+            "step.started": "#/components/schemas/StepStarted",
+            "thinking.delta": "#/components/schemas/ThinkingDelta"
           },
           "propertyName": "type"
         },
@@ -1528,10 +1727,28 @@
             "$ref": "#/components/schemas/RunStarted"
           },
           {
+            "$ref": "#/components/schemas/StepStarted"
+          },
+          {
+            "$ref": "#/components/schemas/StepCompleted"
+          },
+          {
+            "$ref": "#/components/schemas/Decision"
+          },
+          {
+            "$ref": "#/components/schemas/ThinkingDelta"
+          },
+          {
             "$ref": "#/components/schemas/Retrieval"
           },
           {
             "$ref": "#/components/schemas/AnswerDelta"
+          },
+          {
+            "$ref": "#/components/schemas/Abstain"
+          },
+          {
+            "$ref": "#/components/schemas/Conflict"
           },
           {
             "$ref": "#/components/schemas/Metrics"
@@ -1570,6 +1787,123 @@
           "password"
         ],
         "title": "SignupRequest",
+        "type": "object"
+      },
+      "StepCompleted": {
+        "properties": {
+          "duration_ms": {
+            "title": "Duration Ms",
+            "type": "integer"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "node": {
+            "title": "Node",
+            "type": "string"
+          },
+          "run_id": {
+            "default": "",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "default": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "step.completed",
+            "default": "step.completed",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node",
+          "label",
+          "duration_ms"
+        ],
+        "title": "StepCompleted",
+        "type": "object"
+      },
+      "StepStarted": {
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "node": {
+            "title": "Node",
+            "type": "string"
+          },
+          "run_id": {
+            "default": "",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "default": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "step.started",
+            "default": "step.started",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node",
+          "label"
+        ],
+        "title": "StepStarted",
+        "type": "object"
+      },
+      "ThinkingDelta": {
+        "properties": {
+          "run_id": {
+            "default": "",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "default": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "thinking.delta",
+            "default": "thinking.delta",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "ThinkingDelta",
         "type": "object"
       },
       "TokenResponse": {

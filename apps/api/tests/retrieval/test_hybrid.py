@@ -25,7 +25,7 @@ async def _search(
     db: AsyncSession,
     ownership: Ownership,
     filters: ClientFilters | None = None,
-    lexical_weight: float | None = None,
+    lexical_weight: float = 0.5,
 ) -> list[ScoredChunk]:
     return await hybrid_search(
         db,

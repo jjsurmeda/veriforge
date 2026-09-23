@@ -44,7 +44,8 @@ class RetrievedChunk(BaseModel):
     bm25_score: float | None = None
     fused_score: float = 0.0
     rerank_score: float | None = None
-    # Always false until the sanitizer exists (slice 4) — never faked.
+    # True when the sanitizer's chunk_injection decision dropped this chunk
+    # (TRD §11 layer 4); displayed greyed in the Sources tab.
     dropped: bool = False
 
 
@@ -83,6 +84,49 @@ class RunCompleted(RunEvent):
     status: str = "completed"
 
 
+class StepStarted(RunEvent):
+    type: Literal["step.started"] = "step.started"
+    node: str
+    label: str
+
+
+class StepCompleted(RunEvent):
+    type: Literal["step.completed"] = "step.completed"
+    node: str
+    label: str
+    duration_ms: int
+
+
+class Decision(RunEvent):
+    type: Literal["decision"] = "decision"
+    name: str
+    value: str | float
+    probability: float | None = None
+    probabilities: dict[str, float] | None = None
+    engine: Literal["jev", "fallback"]
+    latency_ms: int
+    reasoning: str | None = None
+
+
+class ThinkingDelta(RunEvent):
+    type: Literal["thinking.delta"] = "thinking.delta"
+    text: str
+
+
+class Abstain(RunEvent):
+    type: Literal["abstain"] = "abstain"
+    found_summary: str
+    missing_summary: str
+    offered_actions: list[str] = []
+
+
+class Conflict(RunEvent):
+    type: Literal["conflict"] = "conflict"
+    citation_ids_left: list[str]
+    citation_ids_right: list[str]
+    rule_applied: str
+
+
 class RunCancelled(RunEvent):
     type: Literal["run.cancelled"] = "run.cancelled"
     message_id: str
@@ -96,8 +140,14 @@ class RunFailed(RunEvent):
 
 RunStreamEvent = Annotated[
     RunStarted
+    | StepStarted
+    | StepCompleted
+    | Decision
+    | ThinkingDelta
     | Retrieval
     | AnswerDelta
+    | Abstain
+    | Conflict
     | Metrics
     | Heartbeat
     | RunCompleted

@@ -3,8 +3,8 @@ generate, streamed. No multi-query, no retry loop, no hops, no inline
 review — the async-after-delivery review is a slice-6 addition; Fast mode
 delivers and that deferral is recorded here.
 
-TODO(slice-4): auto/deep route here too until their graphs land; replace
-with real mode routing when ingress/DecisionEngine exists.
+Slice 4 routes Auto through graph/auto.py; Fast remains for the explicit
+Fast mode picker. Both share the same retrieval/generate primitives.
 """
 
 import logging
@@ -48,6 +48,7 @@ class FastRunInput:
     source: str
     client_filters: ClientFilters
     collection_ids: list[UUID]
+    lexical_weight: float = 0.5
 
 
 def to_client_filters(filters: RunFilters | None) -> ClientFilters:
@@ -134,6 +135,7 @@ async def prepare_fast_run(
             query_embedding=embedding,
             ownership=ownership,
             filters=params.client_filters,
+            lexical_weight=params.lexical_weight,
         )
         winners = dedupe_adjacent(
             await apply_rerank(get_reranker(), query=rewritten, chunks=fused)

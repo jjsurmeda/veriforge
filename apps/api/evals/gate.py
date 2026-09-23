@@ -3,8 +3,8 @@ stored baseline. Fails (exit 1) when faithfulness drops by more than 0.03,
 abstention accuracy drops by more than 5 points, or p50 latency rises by
 more than 20%.
 
-TODO(slice-4): abstention accuracy is recorded but pass-through — no
-abstention decision exists until ingress lands.
+Slice 4: abstention accuracy is a real check — graph/auto.py produces an
+explicit Abstain event (TR-4), replacing slice 3's no-op pass-through.
 
 Usage: uv run python -m evals.gate
 """
@@ -26,7 +26,6 @@ def compare(baseline: dict[str, float | None], current: dict[str, float | None])
     base_f, curr_f = baseline.get("faithfulness"), current.get("faithfulness")
     if base_f is not None and curr_f is not None and curr_f < base_f - FAITHFULNESS_DROP:
         failures.append(f"faithfulness {base_f:.3f} → {curr_f:.3f} (drop > {FAITHFULNESS_DROP})")
-    # TODO(slice-4): no abstention decision yet — check is a pass-through.
     base_a, curr_a = baseline.get("abstention_accuracy"), current.get("abstention_accuracy")
     if (
         base_a is not None

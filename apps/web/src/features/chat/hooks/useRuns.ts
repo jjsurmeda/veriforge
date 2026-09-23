@@ -5,12 +5,24 @@ import {
   createRunChatsChatIdRunsPost,
 } from '../../../generated/sdk.gen'
 
+interface CreateRunOptions {
+  message: string
+  modelId?: string | null
+  mode?: 'fast' | 'auto' | 'deep'
+  source?: 'auto' | 'upload' | 'web' | 'both'
+}
+
 export function useCreateRun(chatId: string) {
   return useMutation({
-    mutationFn: async ({ message, modelId }: { message: string; modelId?: string | null }) => {
+    mutationFn: async ({ message, modelId, mode, source }: CreateRunOptions) => {
       const { data, error } = await createRunChatsChatIdRunsPost({
         path: { chat_id: chatId },
-        body: { message, model_id: modelId ?? null, mode: 'fast' },
+        body: {
+          message,
+          model_id: modelId ?? null,
+          mode: mode ?? 'auto',
+          source: source ?? 'auto',
+        },
       })
       if (error) throw error
       return data

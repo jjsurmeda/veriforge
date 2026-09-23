@@ -52,12 +52,21 @@ class Settings(BaseSettings):
     cohere_api_key: str = ""
     cohere_rerank_model: str = "rerank-v3.5"
     retrieval_statement_timeout_ms: int = 1500
-    # TODO(slice-4): replaced by the DecisionEngine `lexical_weight` score
-    # from ingress (TRD §9.2). Fixed default until then.
-    default_lexical_weight: float = 0.5
     query_cache_ttl_days: int = 30
     web_cache_ttl_hours: int = 24
     web_chunk_ttl_days: int = 7
+
+    # DecisionEngine (TRD §8). Jev via OpenRouter System One; Haiku-class
+    # LiteLLM fallback; circuit breaker opens after 3 failures in 60 s.
+    openrouter_systemone_url: str = "https://openrouter.ai/api/v1/systemone"
+    jev_model: str = "typesafe/jev-1.13"
+    jev_timeout_ms: int = 2000
+    jev_max_state_tokens: int = 28_000
+    fallback_model: str = "openrouter/anthropic/claude-haiku-4.5"
+    breaker_failure_threshold: int = 3
+    breaker_window_seconds: float = 60.0
+    breaker_cooldown_seconds: float = 60.0
+    shadow_sample_rate: float = 0.02
 
 
 @lru_cache

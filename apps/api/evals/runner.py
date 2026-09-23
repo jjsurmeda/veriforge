@@ -1,5 +1,5 @@
-"""Eval runner (TRD §15): executes each dataset item through the real Fast
-mode pipeline and records scores into eval_runs/eval_results.
+"""Eval runner (TRD §15): executes each dataset item through the real Auto
+pipeline and records scores into eval_runs/eval_results.
 
 Usage:
   uv run python -m evals.loader                 # once: items + corpus
@@ -8,8 +8,8 @@ Usage:
   uv run python -m evals.runner --baseline      # store baseline.json
 
 Credits are recorded as token counts until slice 7's ledger (TRD §14).
-The abstention metric is recorded but the gate treats it as pass-through
-until slice 4 lands abstention as a decision (TRD §17 build order).
+Slice 4 routes items through graph/auto.py — abstention accuracy is a real
+check now (the slice-3 pass-through is removed in evals/gate.py).
 """
 
 import argparse
@@ -27,9 +27,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from db.ids import uuid7
 from db.models import Chat, EvalDataset, EvalItem, EvalResult, EvalRun, Message, User
 from db.session import get_session_factory
+from decisions import DecisionEngine
 from evals.judge import judge_answer
 from evals.loader import EVAL_USER_EMAIL, STATE_FILE
-from graph.fast import FastRunInput, finalize_fast_run, prepare_fast_run
+from graph.auto import AutoRunInput, finalize_auto_run, prepare_auto_run
 from graph.generate import build_grounded_messages
 from retrieval.context import count_tokens
 from retrieval.filters import ClientFilters
@@ -68,9 +69,10 @@ async def _run_item(
         await session.flush()
         message_id = assistant_message.id
     started = time.monotonic()
-    run = await prepare_fast_run(
+    engine = DecisionEngine()
+    run = await prepare_auto_run(
         factory,
-        FastRunInput(
+        AutoRunInput(
             run_id=uuid7(),
             message_id=message_id,
             chat_id=chat_id,
@@ -83,6 +85,7 @@ async def _run_item(
             client_filters=ClientFilters(),
             collection_ids=[collection_id],
         ),
+        engine,
     )
     answer = "".join([token async for token in run.stream_answer()])
     tokens_in = sum(
@@ -91,7 +94,7 @@ async def _run_item(
     )
     tokens_out = count_tokens(answer)
     latency_ms = int((time.monotonic() - started) * 1000)
-    await finalize_fast_run(
+    await finalize_auto_run(
         factory, run, generate_ms=0, tokens_in=tokens_in, tokens_out=tokens_out
     )
 
@@ -102,7 +105,7 @@ async def _run_item(
         passages=[context.context_text for context in run.contexts],
         small_model=SMALL_MODEL,
     )
-    abstained = not run.contexts or "no sources" in answer.lower()
+    abstained = run.abstain_event is not None
     result = EvalResult(
         eval_run_id=eval_run_id,
         item_id=item.id,
@@ -148,7 +151,7 @@ async def run_eval(
         ).scalars().all()
         if subset == "fast20":
             items = [i for i in items if seed_ids.get(i.question) in fast20]
-        eval_run = EvalRun(dataset_id=dataset.id, mode="fast", is_baseline=baseline)
+        eval_run = EvalRun(dataset_id=dataset.id, mode="auto", is_baseline=baseline)
         session.add(eval_run)
         await session.flush()
         eval_run_id = eval_run.id

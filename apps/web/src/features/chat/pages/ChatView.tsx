@@ -8,6 +8,10 @@ import { useChatRunStore } from '../store'
 import { ChatComposer } from '../components/ChatComposer'
 import { ChatSidebar } from '../components/ChatSidebar'
 import { MessageList } from '../components/MessageList'
+import type { RunMode } from '../components/ModePicker'
+import type { RunSource } from '../components/SourcePicker'
+import { TracePanel } from '../../trace/components/TracePanel'
+import { useTrace } from '../../trace/hooks/useTrace'
 
 export function ChatView({ chatId }: { chatId: string }) {
   const chat = useChat(chatId)
@@ -23,11 +27,24 @@ export function ChatView({ chatId }: { chatId: string }) {
 
   const { resume } = useRunStream(activeRunId, chatId)
   const live = useChatRunStore((s) => (activeRunId ? s.runs[activeRunId] : undefined))
+  const trace = useTrace(activeRunId)
   const streaming =
     live !== undefined && (live.status === 'connecting' || live.status === 'streaming')
 
-  const onSend = async (message: string) => {
-    const run = await createRun.mutateAsync({ message, modelId: chat.data?.model_id })
+  const onSend = async (
+    message: string,
+    options: { mode: RunMode; source: RunSource },
+  ) => {
+    // Deep routes to Auto in slice 4 — slice 5 replaces the fallback with
+    // the real Plan/Hop/Controller path (TRD §17 row 5). The composer
+    // already surfaced the notice; we forward 'auto' here.
+    const wireMode = options.mode === 'deep' ? 'auto' : options.mode
+    const run = await createRun.mutateAsync({
+      message,
+      modelId: chat.data?.model_id,
+      mode: wireMode,
+      source: options.source,
+    })
     useChatRunStore.getState().begin(run!.run_id, run!.message_id)
     setActiveRunId(run!.run_id)
   }
@@ -60,12 +77,20 @@ export function ChatView({ chatId }: { chatId: string }) {
               onModelChange={(modelId) =>
                 void patchChat.mutateAsync({ chatId, patch: { model_id: modelId } })
               }
-              onSend={(message) => void onSend(message)}
+              onSend={(message, options) => void onSend(message, options)}
               onStop={() => activeRunId && cancelRun.mutate(activeRunId)}
             />
           </>
         )}
       </main>
+      {trace && (
+        <TracePanel
+          steps={trace.steps}
+          decisions={trace.decisions}
+          thinking={trace.thinking}
+          streaming={trace.streaming}
+        />
+      )}
     </div>
   )
 }

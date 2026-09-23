@@ -153,8 +153,8 @@ async def test_grounded_messages_wrap_sources_as_data() -> None:
     )
     messages = build_grounded_messages("q?", [ExpandedContext(chunk, "chunk text")], [])
     user_content = messages[-1]["content"]
-    assert user_content.startswith("[Source 1] document: manual.pdf page: 12")
-    assert "[/Source 1]" in user_content
+    assert user_content.startswith('<source id="1" doc="manual.pdf" page="12">')
+    assert "</source>" in user_content
     assert "[Question]\nq?" in user_content
 
 

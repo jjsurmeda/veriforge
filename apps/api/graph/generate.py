@@ -1,8 +1,8 @@
 """Generate node (TRD §7): streams the grounded answer with [n] markers.
 
-The generator has no tools and never sees unescaped instruction text —
-sources are wrapped as quoted data (TRD §11); the real sanitizer and
-structural-injection defence land in slice 4.
+The generator has no tools and never sees unescaped instruction text --
+sources are wrapped in structural `<source>` tags with ingestion-time
+escaping of any such tags inside chunk text (TRD §11 layers 1-3).
 """
 
 from collections.abc import AsyncIterator
@@ -14,14 +14,20 @@ from retrieval.expand import ExpandedContext
 SOURCE_MAX_CHARS = 6000
 
 
+def _escape_attr(value: str) -> str:
+    return value.replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;").replace(
+        ">", "&gt;"
+    )
+
+
 def _source_block(n: int, context: ExpandedContext) -> str:
     chunk = context.chunk
-    header = f"[Source {n}]"
+    attrs = [f'id="{n}"']
     if chunk.document_name:
-        header += f" document: {chunk.document_name}"
+        attrs.append(f'doc="{_escape_attr(chunk.document_name)}"')
     if chunk.page is not None:
-        header += f" page: {chunk.page}"
-    return f"{header}\n{context.context_text[:SOURCE_MAX_CHARS]}\n[/Source {n}]"
+        attrs.append(f'page="{chunk.page}"')
+    return f"<source {' '.join(attrs)}>\n{context.context_text[:SOURCE_MAX_CHARS]}\n</source>"
 
 
 def build_grounded_messages(

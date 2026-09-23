@@ -63,7 +63,7 @@ class RunCreateRequest(BaseModel):
     message: str = Field(min_length=1, max_length=32000)
     model_id: str | None = Field(default=None, max_length=128)
     mode: str = Field(default="fast", pattern="^(fast|auto|deep)$")
-    source: str = Field(default="auto", pattern="^(auto|web|collections)$")
+    source: str = Field(default="auto", pattern="^(auto|upload|web|both)$")
     collection_ids: list[uuid.UUID] | None = None
     filters: RunFilters | None = None
 

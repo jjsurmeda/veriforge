@@ -1,6 +1,14 @@
 import { create } from 'zustand'
 
-import type { Metrics, RetrievedChunk } from '../../generated/types.gen'
+import type {
+  Abstain,
+  Conflict,
+  Decision,
+  Metrics,
+  RetrievedChunk,
+  StepCompleted,
+  StepStarted,
+} from '../../generated/types.gen'
 import type { StreamEvent } from './types'
 
 export type RunStatus =
@@ -19,6 +27,11 @@ export interface RunLive {
   error: string | null
   chunks: RetrievedChunk[]
   metrics: Metrics | null
+  steps: Array<StepStarted | StepCompleted>
+  decisions: Decision[]
+  thinking: string
+  abstain: Abstain | null
+  conflict: Conflict | null
 }
 
 interface ChatRunStore {
@@ -37,6 +50,11 @@ const empty: RunLive = {
   error: null,
   chunks: [],
   metrics: null,
+  steps: [],
+  decisions: [],
+  thinking: '',
+  abstain: null,
+  conflict: null,
 }
 
 export const useChatRunStore = create<ChatRunStore>()((set) => ({
@@ -65,8 +83,24 @@ export const useChatRunStore = create<ChatRunStore>()((set) => ({
         case 'run.started':
           next.status = 'streaming'
           break
+        case 'step.started':
+        case 'step.completed':
+          next.steps = [...next.steps, event]
+          break
+        case 'decision':
+          next.decisions = [...next.decisions, event]
+          break
+        case 'thinking.delta':
+          next.thinking += event.text
+          break
         case 'retrieval':
           next.chunks = event.chunks ?? []
+          break
+        case 'abstain':
+          next.abstain = event
+          break
+        case 'conflict':
+          next.conflict = event
           break
         case 'answer.delta':
           next.status = 'streaming'

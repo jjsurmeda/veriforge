@@ -12,6 +12,16 @@ ENCODING_MODEL = "gpt-4o-mini"
 
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*#*\s*$")
 
+# TRD §11 layer 2: any literal `<source ...>` / `</source>` inside chunk
+# text must be escaped so the generator's structural delimiter cannot be
+# forged by an attacker-controlled document. HTML-escape the angle
+# brackets; the original text is preserved for readers (renderers decode).
+_SOURCE_TAG_RE = re.compile(r"</?source\b", re.IGNORECASE)
+
+
+def escape_source_tags(text: str) -> str:
+    return _SOURCE_TAG_RE.sub(lambda m: m.group(0).replace("<", "&lt;").replace(">", "&gt;"), text)
+
 
 @dataclass(frozen=True)
 class ChunkDraft:
@@ -86,7 +96,7 @@ def _blocks(markdown: str) -> list[_Block]:
         for part in re.split(r"\n\s*\n", text):
             part = part.strip()
             if part:
-                blocks.append(_Block(" > ".join(path), part))
+                blocks.append(_Block(" > ".join(path), escape_source_tags(part)))
 
     for line in markdown.splitlines():
         match = _HEADING_RE.match(line)
