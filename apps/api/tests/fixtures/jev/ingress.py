@@ -1,17 +1,15 @@
 """Hand-written Jev response fixture for tests. testing.md forbids live
-calls; this shape mirrors decisions/jev.py's module docstring contract."""
+calls; this shape mirrors OpenRouter System One's real response contract
+(verified 2026-09-23 against the live endpoint — see decisions/jev.py)."""
 
 INGRESS_RESPONSE = {
     "answers": {
-        "guard_injection": {
-            "probability": 0.04,
-            "reasoning": "no instruction override attempts detected",
-        },
-        "guard_jailbreak": {"probability": 0.02},
-        "guard_pii": {"probability": 0.10},
-        "off_topic": {"probability": 0.05},
+        "guard_injection": {"noul": 0.04},
+        "guard_jailbreak": {"noul": 0.02},
+        "guard_pii": {"noul": 0.10},
+        "off_topic": {"noul": 0.05},
         "intent": {
-            "value": "lookup",
+            "choice": "lookup",
             "probabilities": {
                 "chitchat": 0.02,
                 "lookup": 0.78,
@@ -22,14 +20,14 @@ INGRESS_RESPONSE = {
             },
         },
         "source": {
-            "value": "both",
+            "choice": "both",
             "probabilities": {"upload": 0.20, "web": 0.10, "both": 0.70},
         },
         "complexity": {
-            "value": "single",
+            "choice": "single",
             "probabilities": {"single": 0.90, "multi": 0.10},
         },
-        "risk": {"value": "low", "probabilities": {"low": 0.95, "high": 0.05}},
-        "lexical_weight": {"value": 0.35, "reasoning": "natural-language question"},
+        "risk": {"choice": "low", "probabilities": {"low": 0.95, "high": 0.05}},
+        "lexical_weight": {"score": 0.35},
     }
 }

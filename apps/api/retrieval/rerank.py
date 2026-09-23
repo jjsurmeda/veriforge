@@ -5,6 +5,7 @@ order passes through unchanged (local dev), which the fused_score doubles
 as the rerank score. Rerank results are never cached (TRD §9.4).
 """
 
+import asyncio
 import logging
 from typing import Protocol
 
@@ -54,6 +55,18 @@ class CohereRerank:
         else:
             async with httpx.AsyncClient(timeout=10) as client:
                 response = await call(client)
+        # Trial-tier Cohere keys rate-limit aggressively; back off and retry
+        # a couple of times rather than failing the whole retrieval path.
+        for attempt in range(3):
+            if response.status_code != 429:
+                break
+            wait_s = float(response.headers.get("retry-after", 2 * (attempt + 1)))
+            await asyncio.sleep(wait_s)
+            if self._client is not None:
+                response = await call(self._client)
+            else:
+                async with httpx.AsyncClient(timeout=10) as client:
+                    response = await call(client)
         response.raise_for_status()
         results = response.json()["results"]
         return [(int(r["index"]), float(r["relevance_score"])) for r in results]

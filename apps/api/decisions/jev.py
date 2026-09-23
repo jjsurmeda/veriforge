@@ -41,18 +41,28 @@ class JevError(Exception):
 
 
 def _question_spec(q: Question) -> dict[str, Any]:
+    # Wire format is OpenRouter System One's, not ours: "instructions" not
+    # "prompt", and options live as keys of a "criteria" record (choice) or
+    # a >=1-item legend array (score) — the API rejects the shape our
+    # internal Question models use directly.
     if isinstance(q, Noul):
-        return {"type": "noul", "prompt": q.prompt}
+        return {"type": "noul", "instructions": q.prompt}
     if isinstance(q, Choice):
-        return {
-            "type": "choice",
-            "prompt": q.prompt,
-            "options": q.options,
-            "criteria": q.criteria,
-        }
+        criteria = {opt: (q.criteria or opt) for opt in q.options}
+        return {"type": "choice", "instructions": q.prompt, "criteria": criteria}
     if isinstance(q, Score):
-        return {"type": "score", "prompt": q.prompt, "min": q.min, "max": q.max}
+        return {
+            "type": "score",
+            "instructions": q.prompt,
+            "criteria": [f"low end ({q.min})", f"high end ({q.max})"],
+        }
     raise TypeError(f"unknown question type: {type(q).__name__}")
+
+
+def _scale_score(fraction: float, q: Score) -> float:
+    """Score answers come back as a 0..1 fraction across the criteria
+    legend, not in [q.min, q.max] — scale to the question's declared range."""
+    return q.min + fraction * (q.max - q.min)
 
 
 def _truncate_state(state: dict[str, Any] | str, max_tokens: int) -> str:
@@ -73,7 +83,7 @@ def _parse_answer(name: str, q: Question, raw: dict[str, Any], latency_ms: int) 
     reasoning = raw.get("reasoning")
     try:
         if isinstance(q, Noul):
-            probability = float(raw["probability"])
+            probability = float(raw["noul"])
             return Answer(
                 engine="jev",
                 latency_ms=latency_ms,
@@ -84,7 +94,7 @@ def _parse_answer(name: str, q: Question, raw: dict[str, Any], latency_ms: int) 
         if isinstance(q, Choice):
             probabilities = {str(k): float(v) for k, v in raw["probabilities"].items()}
             argmax = max(probabilities.items(), key=lambda kv: kv[1])[0]
-            choice_value = str(raw.get("value") or argmax)
+            choice_value = str(raw.get("choice") or argmax)
             return Answer(
                 engine="jev",
                 latency_ms=latency_ms,
@@ -94,7 +104,7 @@ def _parse_answer(name: str, q: Question, raw: dict[str, Any], latency_ms: int) 
                 reasoning=reasoning,
             )
         if isinstance(q, Score):
-            score_value = float(raw["value"])
+            score_value = _scale_score(float(raw["score"]), q)
             return Answer(
                 engine="jev",
                 latency_ms=latency_ms,
