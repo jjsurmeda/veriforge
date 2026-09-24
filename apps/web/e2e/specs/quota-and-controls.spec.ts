@@ -8,8 +8,8 @@ test('shows quota windows and keeps the picker catalogue bounded', async ({ page
   await signUp(page, user)
   await createChat(page)
 
-  await expect(page.getByText(/5h\s+.*\/\s+.*resets/)).toBeVisible()
-  await expect(page.getByText(/month\s+.*\/\s+.*resets/)).toBeVisible()
+  await expect(page.getByRole('group', { name: '5h quota' })).toContainText(/5h.*\/.*resets/)
+  await expect(page.getByRole('group', { name: 'month quota' })).toContainText(/month.*\/.*resets/)
 
   const model = page.locator('select').first()
   await expect(model.locator('option')).toHaveCount(2)

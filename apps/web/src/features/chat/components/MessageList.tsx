@@ -68,13 +68,25 @@ function renderWithCitations(
 
 function StatusLabel({ status }: { status: string | null }) {
   if (status === 'cancelled') {
-    return <span className="ml-2 text-xs text-paper/50">Cancelled</span>
+    return (
+      <span className="ml-2 inline-flex items-center gap-1 text-xs text-paper/60">
+        <span aria-hidden="true">—</span> Cancelled
+      </span>
+    )
   }
   if (status === 'failed') {
-    return <span className="ml-2 text-xs text-rust">Failed</span>
+    return (
+      <span className="ml-2 inline-flex items-center gap-1 text-xs text-rust">
+        <span aria-hidden="true">!</span> Failed
+      </span>
+    )
   }
   if (status === 'abstained') {
-    return <span className="ml-2 text-xs text-amber-verdict">Abstained</span>
+    return (
+      <span className="ml-2 inline-flex items-center gap-1 text-xs text-amber-verdict">
+        <span aria-hidden="true">~</span> Abstained
+      </span>
+    )
   }
   return null
 }
@@ -101,7 +113,7 @@ function AnswerFooter({ metrics }: { metrics: Record<string, unknown> | null | u
     tokensIn !== undefined
   if (!hasAnything) return null
   return (
-    <div className="mt-3 flex flex-wrap items-baseline gap-x-4 gap-y-1 border-t border-mist/40 pt-2 font-mono text-[0.65rem] text-paper/50">
+    <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 border-t border-mist/40 pt-2 font-mono text-[0.65rem] text-paper/60">
       {faithfulness !== null && faithfulness !== undefined && (
         <span>
           faithful <span className="text-patina">{fmt(faithfulness)}</span>
@@ -126,15 +138,34 @@ function AnswerFooter({ metrics }: { metrics: Record<string, unknown> | null | u
   )
 }
 
+function DiffLine({ line }: { line: string }) {
+  const isAddition = line.startsWith('+') && !line.startsWith('+++')
+  const isRemoval = line.startsWith('-') && !line.startsWith('---')
+  const isHunk = line.startsWith('@@')
+  const tone = isAddition
+    ? 'bg-patina/5 text-patina'
+    : isRemoval
+      ? 'bg-rust/5 text-rust'
+      : isHunk
+        ? 'text-amber-verdict'
+        : 'text-paper/60'
+  return <span className={`block whitespace-pre-wrap px-3 ${tone}`}>{line || ' '}</span>
+}
+
 function RevisionBanner({ diff }: { diff: string }) {
   return (
-    <details className="mt-3 rounded border border-amber-verdict/60">
-      <summary className="cursor-pointer px-4 py-2 text-xs text-amber-verdict">
-        Reviewer revised this answer — show what changed
+    <details className="group mt-3 overflow-hidden rounded-sm border border-mist border-l-2 border-l-amber-verdict/80 bg-ink/35 open:bg-ink/55">
+      <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-xs text-amber-verdict transition-colors duration-150 hover:bg-amber-verdict/5 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-amber-verdict motion-reduce:transition-none [&::-webkit-details-marker]:hidden">
+        <span>Reviewer revised this answer — show what changed</span>
+        <span aria-hidden="true" className="text-[0.65rem] text-amber-verdict/60 transition-transform duration-150 group-open:rotate-180 motion-reduce:transition-none">
+          ⌄
+        </span>
       </summary>
-      <pre className="overflow-x-auto whitespace-pre-wrap px-4 py-2 font-mono text-[0.65rem] leading-5 text-paper/70">
-        {diff}
-      </pre>
+      <div className="max-h-48 overflow-auto border-t border-mist/50 py-2 font-mono text-[0.65rem] leading-5">
+        {diff.split('\n').map((line, index) => (
+          <DiffLine key={`${index}-${line}`} line={line} />
+        ))}
+      </div>
     </details>
   )
 }
@@ -147,15 +178,17 @@ function SuggestionsRow({
   onSelect: (question: string) => void
 }) {
   return (
-    <div className="mx-auto max-w-[72ch] px-4 pb-2">
+    <div className="mx-auto max-w-[72ch] px-4 pb-3">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs text-paper/40">Suggested follow-ups:</span>
+        <span className="font-mono text-[0.65rem] uppercase tracking-[0.1em] text-paper/45">
+          Suggested follow-ups:
+        </span>
         {questions.map((question) => (
           <button
             key={question}
             type="button"
             onClick={() => onSelect(question)}
-            className="rounded border border-mist bg-graphite px-2.5 py-1 text-xs text-paper/80 hover:border-paper/50 focus-visible:outline-2 focus-visible:outline-ember"
+            className="min-h-8 rounded-sm border border-mist bg-ink/40 px-2.5 py-1.5 text-left text-xs text-paper/80 transition-[background-color,border-color,transform] duration-150 hover:border-paper/50 hover:bg-mist/30 active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ember motion-reduce:transition-none"
           >
             {question}
           </button>
@@ -173,15 +206,20 @@ function AbstentionActions({
   onSelect: (action: AbstainAction) => void
 }) {
   return (
-    <div className="mx-auto max-w-[72ch] px-4 pb-2" role="group" aria-label="Abstention actions">
-      <p className="mb-1 text-xs text-paper/50">Try another path:</p>
+    <div
+      className="mx-auto max-w-[72ch] border-l-2 border-amber-verdict/60 px-4 pb-3 pl-5"
+      role="group"
+      aria-label="Abstention actions"
+    >
+      <p className="mb-2 text-xs text-paper/55">Try another path:</p>
       <div className="flex flex-wrap gap-2">
         {actions.includes('web') && (
           <button
             type="button"
             onClick={() => onSelect('web')}
-            className="rounded border border-mist bg-graphite px-2.5 py-1 text-xs text-paper/80 hover:border-paper/50 focus-visible:outline-2 focus-visible:outline-ember"
+            className="inline-flex min-h-9 items-center gap-2 rounded-sm border border-amber-verdict/50 bg-amber-verdict/5 px-3 py-1.5 text-xs text-amber-verdict transition-[background-color,border-color,transform] duration-150 hover:border-amber-verdict hover:bg-amber-verdict/10 active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ember motion-reduce:transition-none"
           >
+            <span aria-hidden="true">↗</span>
             Searching the web
           </button>
         )}
@@ -189,8 +227,9 @@ function AbstentionActions({
           <button
             type="button"
             onClick={() => onSelect('deep')}
-            className="rounded border border-mist bg-graphite px-2.5 py-1 text-xs text-paper/80 hover:border-paper/50 focus-visible:outline-2 focus-visible:outline-ember"
+            className="inline-flex min-h-9 items-center gap-2 rounded-sm border border-amber-verdict/50 bg-amber-verdict/5 px-3 py-1.5 text-xs text-amber-verdict transition-[background-color,border-color,transform] duration-150 hover:border-amber-verdict hover:bg-amber-verdict/10 active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ember motion-reduce:transition-none"
           >
+            <span aria-hidden="true">＋</span>
             Deep mode
           </button>
         )}
@@ -262,16 +301,16 @@ export function MessageList({ messages, live, onSuggestion, onAbstainAction }: P
             </div>
             {revisionDiff && <RevisionBanner diff={revisionDiff} />}
             {isLivePlaceholder && live.chunks.length > 0 && (
-              <details className="mt-3 rounded border border-mist/60">
-                <summary className="cursor-pointer px-4 py-2 font-mono text-xs text-paper/60">
+              <details className="mt-3 overflow-hidden rounded-sm border border-mist/70 bg-ink/20 open:bg-ink/40">
+                <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 font-mono text-xs text-paper/65 transition-colors duration-150 hover:bg-mist/30 hover:text-paper focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ember motion-reduce:transition-none [&::-webkit-details-marker]:hidden">
                   Sources ({live.chunks.length})
                 </summary>
                 <SourcesTab chunks={live.chunks} />
               </details>
             )}
             {!isLivePlaceholder && citations.length > 0 && (
-              <details className="mt-3 rounded border border-mist/60">
-                <summary className="cursor-pointer px-4 py-2 font-mono text-xs text-paper/60">
+              <details className="mt-3 overflow-hidden rounded-sm border border-mist/70 bg-ink/20 open:bg-ink/40">
+                <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 font-mono text-xs text-paper/65 transition-colors duration-150 hover:bg-mist/30 hover:text-paper focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ember motion-reduce:transition-none [&::-webkit-details-marker]:hidden">
                   Sources ({citations.length})
                 </summary>
                 <ol className="divide-y divide-mist/50">
@@ -313,7 +352,17 @@ export function MessageList({ messages, live, onSuggestion, onAbstainAction }: P
         <AbstentionActions actions={abstainActions} onSelect={onAbstainAction} />
       )}
       {messages.length === 0 && (
-        <p className="px-4 text-sm text-paper/40">Ask anything to start the conversation.</p>
+        <div className="flex min-h-[42vh] items-center px-4">
+          <div className="w-full max-w-[52ch] border-l-2 border-mist pl-5">
+            <p className="font-mono text-[0.65rem] uppercase tracking-[0.12em] text-paper/45">
+              Workspace ready
+            </p>
+            <p className="mt-2 text-sm text-paper/70">Ask anything to start the conversation.</p>
+            <p className="mt-1 text-xs leading-5 text-paper/45">
+              Citations, reviewer verdicts, and source details stay one step away while you work.
+            </p>
+          </div>
+        </div>
       )}
       {showSuggestions && (
         <SuggestionsRow questions={suggestions} onSelect={onSuggestion!} />

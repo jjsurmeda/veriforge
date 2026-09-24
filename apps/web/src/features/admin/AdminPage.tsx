@@ -55,8 +55,8 @@ function isDecisionModel(model: AdminModelOut): boolean {
 
 function Panel({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="border border-mist bg-graphite">
-      <h2 className="border-b border-mist px-4 py-3 font-mono text-xs uppercase tracking-[0.18em] text-paper/60">
+    <section className="overflow-hidden rounded-sm border border-mist/80 bg-graphite/80">
+      <h2 className="border-b border-mist/80 bg-ink/20 px-4 py-2.5 font-mono text-[0.65rem] uppercase tracking-[0.14em] text-paper/55">
         {title}
       </h2>
       <div className="p-4">{children}</div>
@@ -66,17 +66,34 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className="flex flex-col gap-1 text-xs text-paper/60">
-      <span>{label}</span>
+    <label className="flex flex-col gap-1.5 text-xs text-paper/60">
+      <span className="font-mono text-[0.65rem] uppercase tracking-[0.08em] text-paper/45">{label}</span>
       {children}
     </label>
   )
 }
 
+function TableHeader({ left, right }: { left: string; right: string }) {
+  return (
+    <div className="mb-1 grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-mist/70 px-1 pb-2 font-mono text-[0.65rem] uppercase tracking-[0.1em] text-paper/40">
+      <span>{left}</span>
+      <span>{right}</span>
+    </div>
+  )
+}
+
+function TableRow({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  return (
+    <div className={`grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-mist/50 px-1 py-2.5 last:border-b-0 hover:bg-mist/20 ${className}`}>
+      {children}
+    </div>
+  )
+}
+
 const inputClass =
-  'rounded border border-mist bg-ink px-2.5 py-1.5 text-sm text-paper focus-visible:outline-2 focus-visible:outline-ember'
+  'h-9 min-w-0 rounded-sm border border-mist bg-ink px-2.5 text-xs text-paper transition-colors duration-150 hover:border-paper/40 focus-visible:border-ember focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember focus-visible:ring-offset-2 focus-visible:ring-offset-ink disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none'
 const buttonClass =
-  'rounded border border-mist px-3 py-1.5 text-xs text-paper hover:border-paper/50 focus-visible:outline-2 focus-visible:outline-ember disabled:cursor-not-allowed disabled:opacity-50'
+  'inline-flex min-h-8 items-center justify-center rounded-sm border border-mist bg-ink/30 px-2.5 py-1.5 text-xs text-paper transition-[background-color,border-color,transform] duration-150 hover:border-paper/50 hover:bg-mist/30 active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ember disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none'
 
 export function AdminPage() {
   const me = useMe()
@@ -314,32 +331,32 @@ export function AdminPage() {
 
   return (
     <main className="min-h-screen bg-ink text-paper">
-      <header className="border-b border-mist bg-graphite px-6 py-4">
-        <div className="mx-auto flex max-w-6xl items-center justify-between">
+      <header className="border-b border-mist bg-graphite px-5 py-4 sm:px-8">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
           <div>
-            <p className="font-mono text-xs uppercase tracking-[0.2em] text-ember">Veriforge / Admin</p>
+            <p className="font-mono text-xs uppercase tracking-[0.16em] text-ember">Veriforge / Admin</p>
             <h1 className="mt-1 font-display text-2xl">System control room</h1>
           </div>
-          <span className="font-mono text-xs text-paper/50">{me.data.email}</span>
+          <span className="hidden font-mono text-xs text-paper/50 sm:block">{me.data.email}</span>
         </div>
       </header>
-      <div className="mx-auto grid max-w-6xl gap-6 p-6 lg:grid-cols-[180px_1fr]">
-        <nav className="flex gap-2 overflow-x-auto lg:flex-col" aria-label="Admin sections">
+      <div className="mx-auto grid max-w-7xl gap-5 p-5 sm:p-8 lg:grid-cols-[12rem_minmax(0,1fr)] lg:gap-8">
+        <nav className="flex gap-1 overflow-x-auto rounded-sm border border-mist/70 bg-graphite/60 p-1 lg:sticky lg:top-5 lg:flex-col lg:self-start" aria-label="Admin sections">
           {tabs.map(([id, label]) => (
             <button
               key={id}
               type="button"
               onClick={() => setSection(id)}
-              className={`whitespace-nowrap rounded px-3 py-2 text-left text-sm focus-visible:outline-2 focus-visible:outline-ember ${
-                section === id ? 'bg-mist text-paper' : 'text-paper/55 hover:bg-mist/50 hover:text-paper'
-              }`}
+               className={`min-h-9 whitespace-nowrap rounded-sm px-3 py-2 text-left text-xs transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ember motion-reduce:transition-none ${
+                 section === id ? 'bg-mist text-paper' : 'text-paper/55 hover:bg-mist/50 hover:text-paper'
+               }`}
             >
               {label}
             </button>
           ))}
         </nav>
         <div className="min-w-0 space-y-4">
-          {notice && <p role="status" className="border border-patina/50 bg-patina/10 px-3 py-2 text-sm text-patina">{notice}</p>}
+          {notice && <p role="status" className="rounded-sm border border-patina/50 bg-patina/10 px-3 py-2 text-sm text-patina">{notice}</p>}
           {section === 'settings' && (
             <>
               <Panel title="Runtime settings">
@@ -371,16 +388,16 @@ export function AdminPage() {
                   <Field label="Source priority"><select className={inputClass} value={settingsDraft.source_priority} onChange={(e) => setSettingsDraft({ ...settingsDraft, source_priority: e.target.value })}><option value="documents_first">Documents first</option><option value="web_first">Web first</option></select></Field>
                   <Field label="Trace sample rate"><input className={inputClass} type="number" min={0} max={1} step="0.01" value={settingsDraft.trace_sample_rate} onChange={(e) => setSettingsDraft({ ...settingsDraft, trace_sample_rate: Number(e.target.value) })} /></Field>
                 </div>
-                <p className="mt-3 text-xs text-paper/50">Active v{current?.version ?? '—'} · top-k {currentTopK} · threshold {currentThreshold} · {currentMode}</p>
+                <p className="mt-3 font-mono text-[0.65rem] text-paper/45">Active v{current?.version ?? '—'} · top-k {currentTopK} · threshold {currentThreshold} · {currentMode}</p>
                 <button type="button" className={`${buttonClass} mt-4`} onClick={() => settingsSave.mutate()} disabled={settingsSave.isPending}>Create version</button>
               </Panel>
               <Panel title="Versions / rollback">
                 <div className="divide-y divide-mist">
                   {(versions.data ?? []).map((version: SettingsOut) => (
-                    <div key={version.version} className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
-                      <div><span className="font-mono text-sm">v{version.version}</span><span className="ml-2 text-xs text-paper/50">{version.active ? 'active' : 'inactive'}</span></div>
-                      {!version.active && <button type="button" className={buttonClass} onClick={() => rollback.mutate(version.version)} disabled={rollback.isPending}>Activate</button>}
-                    </div>
+                     <div key={version.version} className="flex items-center justify-between gap-3 border-b border-mist/50 px-1 py-2.5 last:border-b-0">
+                       <div className="flex items-baseline gap-2"><span className="font-mono text-sm text-paper">v{version.version}</span><span className="text-xs text-paper/50">{version.active ? 'active' : 'inactive'}</span></div>
+                       {!version.active && <button type="button" className={buttonClass} onClick={() => rollback.mutate(version.version)} disabled={rollback.isPending}>Activate</button>}
+                     </div>
                   ))}
                 </div>
               </Panel>
@@ -395,14 +412,23 @@ export function AdminPage() {
                 <Field label="API key"><input className={inputClass} type="password" value={providerForm.api_key ?? ''} onChange={(e) => setProviderForm({ ...providerForm, api_key: e.target.value })} /></Field>
               </div>
               <button type="button" className={`${buttonClass} mt-4`} onClick={() => providerCreate.mutate(providerForm)} disabled={providerCreate.isPending}>Add provider</button>
-              <div className="mt-5 divide-y divide-mist border-t border-mist pt-2">
-                {(providers.data ?? []).map((provider: ProviderOut) => (
-                  <div key={provider.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
-                    <div><span className="font-mono text-sm">{provider.name}</span><span className="ml-2 text-xs text-paper/50">{provider.kind} · {provider.enabled ? 'enabled' : 'disabled'} · key {provider.has_api_key ? 'stored' : 'missing'}</span></div>
-                    <div className="flex gap-2"><button type="button" className={buttonClass} onClick={() => providerTest.mutate(provider.id)}>Test</button><button type="button" className={buttonClass} onClick={() => providerUpdate.mutate({ id: provider.id, body: { enabled: !provider.enabled } })}>{provider.enabled ? 'Disable' : 'Enable'}</button></div>
-                  </div>
-                ))}
-              </div>
+               <div className="mt-5 border-t border-mist/70 pt-3">
+                 <TableHeader left="Provider / status" right="Actions" />
+                 {(providers.data ?? []).map((provider: ProviderOut) => (
+                   <TableRow key={provider.id}>
+                     <div className="min-w-0">
+                       <div className="truncate font-mono text-sm text-paper">{provider.name}</div>
+                       <div className="mt-0.5 truncate text-xs text-paper/50">
+                         {provider.kind} · {provider.enabled ? 'enabled' : 'disabled'} · key {provider.has_api_key ? 'stored' : 'missing'}
+                       </div>
+                     </div>
+                     <div className="flex gap-2">
+                       <button type="button" className={buttonClass} onClick={() => providerTest.mutate(provider.id)}>Test</button>
+                       <button type="button" className={buttonClass} onClick={() => providerUpdate.mutate({ id: provider.id, body: { enabled: !provider.enabled } })}>{provider.enabled ? 'Disable' : 'Enable'}</button>
+                     </div>
+                   </TableRow>
+                 ))}
+               </div>
             </Panel>
           )}
           {section === 'models' && (
@@ -415,46 +441,70 @@ export function AdminPage() {
                 <Field label="Output price"><input className={inputClass} type="number" step="0.000001" value={modelForm.price_out ?? ''} onChange={(e) => setModelForm({ ...modelForm, price_out: Number(e.target.value) })} /></Field>
               </div>
               <button type="button" className={`${buttonClass} mt-4`} onClick={() => modelCreate.mutate(modelForm)} disabled={modelCreate.isPending || !modelForm.provider_id || !modelForm.model_id}>Add model</button>
-              <div className="mt-5 divide-y divide-mist border-t border-mist pt-2">
-                {(models.data ?? []).filter((model: AdminModelOut) => !isDecisionModel(model)).map((model: AdminModelOut) => (
-                  <div key={model.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
-                    <div><span className="font-mono text-sm">{model.model_id}</span><span className="ml-2 text-xs text-paper/50">{model.context_window ?? '—'} tokens · in {model.price_in ?? '—'} / out {model.price_out ?? '—'}</span></div>
-                    <button type="button" className={buttonClass} onClick={() => modelUpdate.mutate({ id: model.id, body: { enabled: !model.enabled } })}>{model.enabled ? 'Disable' : 'Enable'}</button>
-                  </div>
-                ))}
-              </div>
+               <div className="mt-5 border-t border-mist/70 pt-3">
+                 <TableHeader left="Model / limits" right="Actions" />
+                 {(models.data ?? []).filter((model: AdminModelOut) => !isDecisionModel(model)).map((model: AdminModelOut) => (
+                   <TableRow key={model.id}>
+                     <div className="min-w-0">
+                       <div className="truncate font-mono text-sm text-paper">{model.model_id}</div>
+                       <div className="mt-0.5 text-xs text-paper/50">
+                         {model.context_window ?? '—'} tokens · in {model.price_in ?? '—'} / out {model.price_out ?? '—'}
+                       </div>
+                     </div>
+                     <button type="button" className={buttonClass} onClick={() => modelUpdate.mutate({ id: model.id, body: { enabled: !model.enabled } })}>{model.enabled ? 'Disable' : 'Enable'}</button>
+                   </TableRow>
+                 ))}
+               </div>
             </Panel>
           )}
           {section === 'roles' && (
-            <Panel title="Model roles">
-              <div className="divide-y divide-mist">
-                {(roles.data ?? []).map((role: RoleOut) => (
-                  <div key={role.role} className="flex flex-wrap items-center justify-between gap-3 py-3">
-                    <span className="font-mono text-sm">{role.role}</span>
-                    <select className={inputClass} value={role.model_id} onChange={(e) => roleSave.mutate({ role: role.role, model_id: e.target.value, fallback_model_id: role.fallback_model_id ?? undefined })}>
-                      {(models.data ?? []).map((model: AdminModelOut) => <option key={model.id} value={model.model_id}>{model.model_id}</option>)}
-                    </select>
-                  </div>
-                ))}
-              </div>
-            </Panel>
+             <Panel title="Model roles">
+               <div className="border-t border-mist/70 pt-3">
+                 <TableHeader left="Role" right="Assigned model" />
+                 {(roles.data ?? []).map((role: RoleOut) => (
+                   <TableRow key={role.role}>
+                     <span className="min-w-0 truncate font-mono text-sm text-paper">{role.role}</span>
+                     <select className={inputClass} value={role.model_id} onChange={(e) => roleSave.mutate({ role: role.role, model_id: e.target.value, fallback_model_id: role.fallback_model_id ?? undefined })}>
+                       {(models.data ?? []).map((model: AdminModelOut) => <option key={model.id} value={model.model_id}>{model.model_id}</option>)}
+                     </select>
+                   </TableRow>
+                 ))}
+               </div>
+             </Panel>
           )}
           {section === 'plans' && (
             <Panel title="Plans and quota overrides">
               <div className="grid gap-3 sm:grid-cols-3"><Field label="Name"><input className={inputClass} value={planForm.name} onChange={(e) => setPlanForm({ ...planForm, name: e.target.value })} /></Field><Field label="5h credits"><input className={inputClass} type="number" value={planForm.credits_5h} onChange={(e) => setPlanForm({ ...planForm, credits_5h: Number(e.target.value) })} /></Field><Field label="Monthly credits"><input className={inputClass} type="number" value={planForm.credits_month} onChange={(e) => setPlanForm({ ...planForm, credits_month: Number(e.target.value) })} /></Field></div>
               <button type="button" className={`${buttonClass} mt-4`} onClick={() => planCreate.mutate()} disabled={planCreate.isPending}>Add plan</button>
-              <div className="mt-5 divide-y divide-mist border-t border-mist pt-2">{(plans.data ?? []).map((plan: PlanOut) => <PlanRow key={plan.id} plan={plan} onSave={(body) => planUpdate.mutate({ id: plan.id, body })} />)}</div>
+               <div className="mt-5 border-t border-mist/70 pt-3">
+                 <TableHeader left="Plan / 5h credits" right="Monthly / action" />
+                 {(plans.data ?? []).map((plan: PlanOut) => <PlanRow key={plan.id} plan={plan} onSave={(body) => planUpdate.mutate({ id: plan.id, body })} />)}
+               </div>
             </Panel>
           )}
           {section === 'users' && (
-            <Panel title="Users">
-              <div className="divide-y divide-mist">{(users.data ?? []).map((user: UserOut) => <UserRow key={user.id} user={user} onUpdate={(body) => userUpdate.mutate({ id: user.id, body })} />)}</div>
-            </Panel>
+             <Panel title="Users">
+               <div className="border-t border-mist/70 pt-3">
+                 <TableHeader left="User / role" right="Overrides" />
+                 {(users.data ?? []).map((user: UserOut) => <UserRow key={user.id} user={user} onUpdate={(body) => userUpdate.mutate({ id: user.id, body })} />)}
+               </div>
+             </Panel>
           )}
           {section === 'audit' && (
-            <Panel title="Audit log">
-              <div className="divide-y divide-mist">{(audit.data ?? []).map((row: AuditOut) => <div key={row.id} className="py-3"><div className="flex justify-between gap-3 text-sm"><span className="font-mono">{row.action}</span><span className="text-xs text-paper/40">{new Date(row.created_at).toLocaleString()}</span></div><p className="mt-1 text-xs text-paper/50">{row.target}</p></div>)}</div>
-            </Panel>
+             <Panel title="Audit log">
+               <div className="border-t border-mist/70 pt-3">
+                 <TableHeader left="Action / target" right="Time" />
+                 {(audit.data ?? []).map((row: AuditOut) => (
+                   <TableRow key={row.id}>
+                     <div className="min-w-0">
+                       <div className="truncate font-mono text-sm text-paper">{row.action}</div>
+                       <div className="mt-0.5 truncate text-xs text-paper/50">{row.target}</div>
+                     </div>
+                     <span className="shrink-0 text-xs text-paper/40">{new Date(row.created_at).toLocaleString()}</span>
+                   </TableRow>
+                 ))}
+               </div>
+             </Panel>
           )}
         </div>
       </div>
@@ -466,20 +516,34 @@ function UserRow({ user, onUpdate }: { user: UserOut; onUpdate: (body: UserPatch
   const [fiveHour, setFiveHour] = useState(user.credits_5h ?? 0)
   const [monthly, setMonthly] = useState(user.credits_month ?? 0)
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 py-3">
-      <div><span className="text-sm">{user.email}</span><span className="ml-2 text-xs text-paper/50">{user.role} · {user.status}</span></div>
-      <div className="flex flex-wrap items-center gap-2">
+    <TableRow>
+      <div className="min-w-0">
+        <div className="truncate text-sm text-paper">{user.email}</div>
+        <div className="mt-0.5 text-xs text-paper/50">{user.role} · {user.status}</div>
+      </div>
+      <div className="flex flex-wrap items-center justify-end gap-2">
         <input aria-label={`${user.email} 5h override`} className={inputClass} type="number" min={0} value={fiveHour} onChange={(e) => setFiveHour(Number(e.target.value))} />
         <input aria-label={`${user.email} monthly override`} className={inputClass} type="number" min={0} value={monthly} onChange={(e) => setMonthly(Number(e.target.value))} />
         <button type="button" className={buttonClass} onClick={() => onUpdate({ credits_5h: fiveHour, credits_month: monthly })}>Save quota</button>
         <select aria-label={`${user.email} role`} className={inputClass} value={user.role} onChange={(e) => onUpdate({ role: e.target.value as UserPatch['role'] })}><option value="user">user</option><option value="admin">admin</option><option value="demo">demo</option></select>
         <button type="button" className={buttonClass} onClick={() => onUpdate({ status: user.status === 'active' ? 'disabled' : 'active' })}>{user.status === 'active' ? 'Disable' : 'Enable'}</button>
       </div>
-    </div>
+    </TableRow>
   )
 }
 
 function PlanRow({ plan, onSave }: { plan: PlanOut; onSave: (body: PlanPatch) => void }) {
   const [month, setMonth] = useState(plan.credits_month)
-  return <div className="flex flex-wrap items-center justify-between gap-3 py-3"><div><span className="font-mono text-sm">{plan.name}</span><span className="ml-2 text-xs text-paper/50">5h {plan.credits_5h}</span></div><div className="flex gap-2"><input className={inputClass} type="number" value={month} onChange={(e) => setMonth(Number(e.target.value))} /><button type="button" className={buttonClass} onClick={() => onSave({ credits_month: month })}>Save</button></div></div>
+  return (
+    <TableRow>
+      <div className="min-w-0">
+        <div className="truncate font-mono text-sm text-paper">{plan.name}</div>
+        <div className="mt-0.5 text-xs text-paper/50">5h {plan.credits_5h}</div>
+      </div>
+      <div className="flex items-center gap-2">
+        <input aria-label={`${plan.name} monthly credits`} className={inputClass} type="number" value={month} onChange={(e) => setMonth(Number(e.target.value))} />
+        <button type="button" className={buttonClass} onClick={() => onSave({ credits_month: month })}>Save</button>
+      </div>
+    </TableRow>
+  )
 }

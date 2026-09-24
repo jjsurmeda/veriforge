@@ -14,7 +14,15 @@ function Score({ label, value }: { label: string; value: number | null | undefin
 
 export function SourcesTab({ chunks }: Props) {
   if (chunks.length === 0) {
-    return <p className="px-4 py-3 text-xs text-paper/40">No sources were retrieved.</p>
+    return (
+      <div className="border-y border-mist/50 px-4 py-5">
+        <p className="font-mono text-[0.65rem] uppercase tracking-[0.12em] text-paper/45">Sources</p>
+        <p className="mt-2 text-xs text-paper/70">No sources were retrieved.</p>
+        <p className="mt-1 text-xs leading-5 text-paper/45">
+          Evidence will appear here when retrieval finds a matching document or web source.
+        </p>
+      </div>
+    )
   }
   return (
     <ol className="divide-y divide-mist/50">

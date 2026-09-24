@@ -12,11 +12,11 @@ test('shows citation evidence and a non-colour verdict cue', async ({ page, requ
   const { chatId } = await startSeededRun(request, user, question)
 
   await page.goto(`/chat/${chatId}`)
-  const chip = page.locator('sup[aria-label^="Citation"]').first()
+  const chip = page.locator('sup[aria-label^="Citation"]').filter({ hasText: /[✓~×]/ }).first()
   await expect(chip).toBeVisible({ timeout: 110_000 })
   await chip.hover()
 
-  const tooltip = page.locator('[role="tooltip"]').filter({ hasText: 'faq.md' })
+  const tooltip = page.locator('[role="tooltip"]:visible').filter({ hasText: 'faq.md' })
   await expect(tooltip).toBeVisible()
   await expect(tooltip).toContainText('rerank')
   await expect(tooltip).toContainText(/supported|partial|unsupported/)

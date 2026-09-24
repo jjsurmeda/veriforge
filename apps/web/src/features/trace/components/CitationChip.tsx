@@ -1,3 +1,5 @@
+import { useLayoutEffect, useRef, useState } from 'react'
+
 import type { CitationOut, RetrievedChunk } from '../../../generated/types.gen'
 
 export interface ChipSource {
@@ -97,15 +99,59 @@ interface Props {
   verdict?: string | null
 }
 
+type TooltipPlacement = 'above' | 'below'
+type TooltipAlignment = 'center' | 'left' | 'right'
+
 export function CitationChip({ n, source, verdict }: Props) {
   const tone = verdictTone(verdict ?? source?.verdict ?? null)
   const glyph = TONE_GLYPH[tone]
+  const [hovered, setHovered] = useState(false)
+  const [focused, setFocused] = useState(false)
+  const [placement, setPlacement] = useState<TooltipPlacement>('above')
+  const [alignment, setAlignment] = useState<TooltipAlignment>('center')
+  const tooltipRef = useRef<HTMLSpanElement>(null)
+  const open = hovered || focused
+
+  useLayoutEffect(() => {
+    if (!open) return
+
+    const updatePosition = () => {
+      const tooltip = tooltipRef.current
+      if (!tooltip) return
+      const rect = tooltip.getBoundingClientRect()
+      setPlacement(rect.top < 8 ? 'below' : 'above')
+      if (rect.left < 8) setAlignment('left')
+      else if (rect.right > window.innerWidth - 8) setAlignment('right')
+      else setAlignment('center')
+    }
+
+    updatePosition()
+    window.addEventListener('resize', updatePosition)
+    window.addEventListener('scroll', updatePosition, true)
+    return () => {
+      window.removeEventListener('resize', updatePosition)
+      window.removeEventListener('scroll', updatePosition, true)
+    }
+  }, [open])
+
+  const placementClass = placement === 'above' ? 'bottom-full mb-2' : 'top-full mt-2'
+  const alignmentClass =
+    alignment === 'left'
+      ? 'left-0 translate-x-0'
+      : alignment === 'right'
+        ? 'right-0 translate-x-0'
+        : 'left-1/2 -translate-x-1/2'
+
   return (
-    <span className="group relative inline">
+    <span className="relative inline-block align-baseline">
       <sup
         tabIndex={0}
         aria-label={`Citation ${n}: ${TONE_LABEL[tone]}`}
-        className={`ml-0.5 cursor-help rounded-sm font-mono text-xs transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-ember ${TONE_TEXT[tone]} ${
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        className={`ml-0.5 cursor-help rounded-sm font-mono text-xs transition-colors duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ember ${TONE_TEXT[tone]} ${
           tone === 'unsupported' ? 'underline decoration-dotted underline-offset-2' : ''
         }`}
       >
@@ -118,8 +164,10 @@ export function CitationChip({ n, source, verdict }: Props) {
         ]
       </sup>
       <span
+        ref={tooltipRef}
         role="tooltip"
-        className="pointer-events-none invisible absolute bottom-full left-1/2 z-20 mb-2 w-80 -translate-x-1/2 rounded border border-mist bg-graphite p-3 text-left opacity-0 shadow-lg transition-opacity group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
+        aria-hidden={!open}
+        className={`pointer-events-none absolute z-30 w-80 max-w-[calc(100vw-1rem)] rounded-sm border border-mist bg-graphite p-3 text-left shadow-lg transition-opacity duration-150 motion-reduce:transition-none ${open ? 'visible opacity-100' : 'invisible opacity-0'} ${placementClass} ${alignmentClass}`}
       >
         <span className="mb-1 flex items-baseline justify-between gap-2">
           <span className="truncate font-mono text-xs text-paper">

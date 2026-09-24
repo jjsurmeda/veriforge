@@ -45,8 +45,8 @@ export function ChatIndexPage() {
   return (
     <div className="flex h-screen bg-ink text-paper">
       <ChatSidebar currentChatId={null} />
-      <main className="flex flex-1 items-start p-10">
-        <div>
+      <main className="flex flex-1 items-center justify-center overflow-y-auto p-6 sm:p-10">
+        <section className="w-full max-w-[56ch] border-l-2 border-mist pl-5 sm:pl-6">
           <h1 className="font-display text-2xl text-paper">No chat selected</h1>
           <p className="mt-2 max-w-[52ch] text-sm text-paper/60">
             Start a chat to ask a question — answers stream with citations, and
@@ -63,7 +63,7 @@ export function ChatIndexPage() {
                     key={question}
                     type="button"
                     onClick={() => void onStart(question, collectionId)}
-                    className="rounded border border-mist bg-graphite px-2.5 py-1.5 text-left text-xs text-paper/80 hover:border-paper/50 focus-visible:outline-2 focus-visible:outline-ember"
+                    className="min-h-9 rounded-sm border border-mist bg-ink/30 px-3 py-1.5 text-left text-xs text-paper/80 transition-[background-color,border-color,transform] duration-150 hover:border-paper/50 hover:bg-mist/30 active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ember motion-reduce:transition-none"
                   >
                     {question}
                   </button>
@@ -72,13 +72,13 @@ export function ChatIndexPage() {
             </div>
           )}
           <button
-            type="button"
-            onClick={() => void onNew()}
-            className="mt-6 rounded border border-mist px-4 py-2 text-sm text-paper hover:border-paper/50 focus-visible:outline-2 focus-visible:outline-ember"
-          >
-            New chat
-          </button>
-        </div>
+              type="button"
+              onClick={() => void onNew()}
+              className="mt-6 min-h-9 rounded-sm border border-mist bg-ink/40 px-4 py-2 text-sm text-paper transition-[background-color,border-color,transform] duration-150 hover:border-paper/50 hover:bg-mist/30 active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ember motion-reduce:transition-none"
+            >
+              New chat
+            </button>
+        </section>
       </main>
     </div>
   )

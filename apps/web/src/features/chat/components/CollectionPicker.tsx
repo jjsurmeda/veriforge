@@ -21,21 +21,21 @@ export function CollectionPicker({ collections, value, onChange, disabled = fals
   }
 
   return (
-    <fieldset className="min-w-0" disabled={disabled}>
-      <legend className="font-mono text-[0.65rem] uppercase tracking-[0.12em] text-paper/50">
+    <fieldset className="min-w-0 rounded-sm border border-mist/60 bg-ink/20 p-2.5" disabled={disabled}>
+      <legend className="px-1 font-mono text-[0.65rem] uppercase tracking-[0.12em] text-paper/50">
         Documents
       </legend>
-      <div className="mt-1 space-y-1">
+      <div className="mt-1 space-y-0.5">
         {collections.map((collection) => (
           <label
             key={collection.id}
-            className="flex min-w-0 items-center gap-2 text-xs text-paper/70"
+            className="flex min-w-0 cursor-pointer items-center gap-2 rounded-sm px-1 py-1 text-xs text-paper/70 transition-colors duration-150 hover:bg-mist/30 focus-within:bg-mist/30 motion-reduce:transition-none"
           >
             <input
               type="checkbox"
               checked={value.includes(collection.id)}
               onChange={(event) => toggle(collection.id, event.currentTarget.checked)}
-              className="accent-ember"
+              className="h-3.5 w-3.5 shrink-0 cursor-pointer accent-ember focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember focus-visible:ring-offset-2 focus-visible:ring-offset-ink"
             />
             <span className="min-w-0 flex-1 truncate">
               {collection.name}
@@ -48,10 +48,16 @@ export function CollectionPicker({ collections, value, onChange, disabled = fals
             </span>
           </label>
         ))}
-        {collections.length === 0 && <p className="text-xs text-paper/40">No documents yet.</p>}
+        {collections.length === 0 && (
+          <p className="rounded-sm border border-dashed border-mist/60 px-2 py-2 text-xs text-paper/50">
+            No documents yet.
+          </p>
+        )}
       </div>
       {selectedNames.length > 0 && (
-        <p className="mt-2 truncate text-[0.65rem] text-paper/40">{selectedNames.join(', ')}</p>
+        <p className="mt-2 truncate border-t border-mist/40 pt-2 text-[0.65rem] text-paper/50">
+          {selectedNames.join(', ')}
+        </p>
       )}
     </fieldset>
   )

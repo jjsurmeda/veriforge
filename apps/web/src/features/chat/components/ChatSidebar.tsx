@@ -58,7 +58,7 @@ export function ChatSidebar({ currentChatId }: { currentChatId: string | null })
           type="button"
           onClick={() => void onNewChat()}
           disabled={creating}
-          className="rounded border border-mist px-2.5 py-1 text-xs text-paper hover:border-paper/50 focus-visible:outline-2 focus-visible:outline-ember"
+           className="min-h-8 rounded-sm border border-mist bg-ink/30 px-2.5 py-1 text-xs text-paper transition-[background-color,border-color,transform] duration-150 hover:border-paper/50 hover:bg-mist/30 active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ember disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
         >
           New chat
         </button>
@@ -77,9 +77,11 @@ export function ChatSidebar({ currentChatId }: { currentChatId: string | null })
         {(chats ?? []).map((chat) => (
           <div
             key={chat.id}
-            className={`group flex items-center gap-2 px-4 py-2 text-sm ${
-              chat.id === currentChatId ? 'bg-mist/60 text-paper' : 'text-paper/70 hover:bg-mist/30'
-            }`}
+             className={`group flex min-h-10 items-center gap-1 border-l-2 px-4 py-1.5 text-sm transition-colors duration-150 motion-reduce:transition-none ${
+               chat.id === currentChatId
+                 ? 'border-paper/35 bg-mist/60 text-paper'
+                 : 'border-transparent text-paper/70 hover:bg-mist/30'
+             }`}
           >
             {editingChatId === chat.id ? (
               <div className="flex min-w-0 flex-1 items-center gap-1">
@@ -91,13 +93,13 @@ export function ChatSidebar({ currentChatId }: { currentChatId: string | null })
                     if (event.key === 'Enter') void saveRename()
                     if (event.key === 'Escape') setEditingChatId(null)
                   }}
-                  className="min-w-0 flex-1 rounded border border-mist bg-ink px-2 py-1 text-xs text-paper focus-visible:outline-2 focus-visible:outline-ember"
+                   className="min-w-0 flex-1 rounded-sm border border-mist bg-ink px-2 py-1 text-xs text-paper focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ember"
                 />
                 <button
                   type="button"
                   aria-label="Save rename"
                   onClick={() => void saveRename()}
-                  className="text-[0.65rem] text-paper/60 hover:text-paper focus-visible:outline-2 focus-visible:outline-ember"
+                   className="rounded-sm px-1.5 py-1 text-[0.65rem] text-paper/60 transition-colors duration-150 hover:bg-mist/60 hover:text-paper focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ember motion-reduce:transition-none"
                 >
                   Save
                 </button>
@@ -140,7 +142,7 @@ export function ChatSidebar({ currentChatId }: { currentChatId: string | null })
               type="button"
               aria-label={`Delete ${chat.title}`}
               onClick={() => void deleteChat.mutateAsync(chat.id)}
-              className="text-paper/40 hover:text-rust focus-visible:outline-2 focus-visible:outline-ember"
+               className="rounded-sm p-1.5 text-paper/55 transition-colors duration-150 hover:bg-rust/10 hover:text-rust focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ember motion-reduce:transition-none"
             >
               ×
             </button>
@@ -153,7 +155,7 @@ export function ChatSidebar({ currentChatId }: { currentChatId: string | null })
             <button
               type="button"
               onClick={() => void navigate({ to: '/admin' })}
-              className="text-xs text-ember hover:text-paper focus-visible:outline-2 focus-visible:outline-ember"
+               className="rounded-sm px-1.5 py-1 text-xs text-ember transition-colors duration-150 hover:bg-mist/50 hover:text-paper focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ember motion-reduce:transition-none"
             >
               Admin
             </button>
@@ -161,7 +163,7 @@ export function ChatSidebar({ currentChatId }: { currentChatId: string | null })
           <button
             type="button"
             onClick={() => void navigate({ to: '/sources' })}
-            className="text-xs text-paper/50 hover:text-paper focus-visible:outline-2 focus-visible:outline-ember"
+             className="rounded-sm px-1.5 py-1 text-xs text-paper/55 transition-colors duration-150 hover:bg-mist/50 hover:text-paper focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ember motion-reduce:transition-none"
           >
             Sources
           </button>

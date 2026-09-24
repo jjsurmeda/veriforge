@@ -46,7 +46,13 @@ export function DocumentList({
   onDelete: (documentId: string) => void
 }) {
   if (documents.length === 0) {
-    return <p className="px-1 py-4 text-sm text-paper/40">No documents yet — drop one above.</p>
+    return (
+      <div className="rounded-sm border border-dashed border-mist/60 bg-graphite/30 px-4 py-6 text-center">
+        <p className="font-mono text-[0.65rem] uppercase tracking-[0.12em] text-paper/45">Documents</p>
+        <p className="mt-2 text-sm text-paper/70">No documents yet.</p>
+        <p className="mt-1 text-xs text-paper/45">Drop a document above to start building evidence.</p>
+      </div>
+    )
   }
   return (
     <ul className="space-y-1">
