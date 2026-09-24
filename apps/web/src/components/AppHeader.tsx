@@ -1,13 +1,10 @@
 import { useState, type FocusEvent } from 'react'
-import { useNavigate } from '@tanstack/react-router'
-import { ChevronDown, Coins, LogOut, ShieldCheck } from 'lucide-react'
+import { ChevronDown, Coins, ShieldCheck } from 'lucide-react'
 
+import { ProfileMenu } from './ProfileMenu'
 import { ThemeToggle } from './ThemeToggle'
-import { useMe } from '../features/auth/hooks/useMe'
 import { useQuota } from '../features/chat/hooks/useQuota'
-import { logout } from '../lib/auth'
 import { formatCredits } from '../lib/format'
-import { queryClient } from '../lib/queryClient'
 
 function quotaPercent(remaining: number, limit: number): number {
   if (limit <= 0) return 0
@@ -62,13 +59,7 @@ function QuotaBadge() {
   const fiveHourPercent = quotaPercent(windows[0].remaining, windows[0].limit)
 
   return (
-    <div
-       className="relative"
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
-      onFocus={closeOnBlur}
-      onBlur={closeOnBlur}
-    >
+    <div className="relative" onFocus={closeOnBlur} onBlur={closeOnBlur}>
       <button
         type="button"
         aria-label="Credit quota details"
@@ -139,17 +130,8 @@ function QuotaBadge() {
 }
 
 export function AppHeader() {
-  const navigate = useNavigate()
-  const me = useMe()
-
-  const onLogout = async () => {
-    await logout()
-    queryClient.clear()
-    void navigate({ to: '/login' })
-  }
-
   return (
-    <header className="z-30 flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border bg-surface/95 px-3 shadow-sm backdrop-blur sm:px-5">
+    <header className="z-30 flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border bg-surface/80 px-3 shadow-sm backdrop-blur-md sm:px-5">
       <div className="flex min-w-0 items-center gap-2.5">
         <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-primary">
           <ShieldCheck size={17} aria-hidden="true" />
@@ -162,27 +144,9 @@ export function AppHeader() {
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-        {me.data?.role === 'admin' && (
-          <button
-            type="button"
-            onClick={() => void navigate({ to: '/admin' })}
-            className="hidden h-9 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-muted-foreground transition-[color,background-color] duration-180 hover:bg-primary-soft hover:text-primary focus-visible:outline-2 focus-visible:outline-primary md:inline-flex"
-          >
-            <ShieldCheck size={14} aria-hidden="true" />
-            Admin
-          </button>
-        )}
         <QuotaBadge />
         <ThemeToggle />
-        <button
-          type="button"
-          aria-label="Sign out"
-          title="Sign out"
-          onClick={() => void onLogout()}
-          className="inline-flex size-9 items-center justify-center rounded-lg text-muted-foreground transition-[color,background-color,transform] duration-180 hover:bg-danger-soft hover:text-danger active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-danger motion-reduce:transition-none"
-        >
-          <LogOut size={16} aria-hidden="true" />
-        </button>
+        <ProfileMenu />
       </div>
     </header>
   )

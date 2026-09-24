@@ -196,17 +196,15 @@ export function ChatView({ chatId }: { chatId: string }) {
           </>
         )}
       </main>
-      {trace && (
-        <TracePanel
-          steps={trace.steps}
-          decisions={trace.decisions}
-          thinking={trace.thinking}
-          streaming={trace.streaming}
-          chunks={trace.chunks}
-          metrics={trace.metrics}
-          hold={trace.hold}
-        />
-      )}
+      <TracePanel
+        steps={trace?.steps ?? []}
+        decisions={trace?.decisions ?? []}
+        thinking={trace?.thinking ?? ''}
+        streaming={trace?.streaming ?? false}
+        chunks={trace?.chunks ?? []}
+        metrics={trace?.metrics ?? null}
+        hold={trace?.hold ?? false}
+      />
     </div>
   )
 }

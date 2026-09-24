@@ -86,7 +86,7 @@ export function ChatSidebar({
           mobileOpen
             ? 'fixed bottom-0 left-0 top-14 z-50 flex w-[min(20rem,85vw)]'
             : 'hidden lg:flex'
-        } ${collapsed ? 'lg:w-16' : 'lg:w-72'} h-full shrink-0 flex-col border-r border-border bg-surface shadow-lg lg:shadow-sm`}
+        } ${collapsed ? 'lg:w-16' : 'lg:w-72'} h-full shrink-0 flex-col border-r border-border bg-surface/80 shadow-lg backdrop-blur-md lg:shadow-sm`}
       >
         <div className={`flex items-center border-b border-border ${rail ? 'justify-center px-2 py-3' : 'justify-between gap-3 px-4 py-4'}`}>
           <div className={`flex min-w-0 items-center ${rail ? 'justify-center' : 'gap-2.5'}`}>

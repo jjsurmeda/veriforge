@@ -141,8 +141,8 @@ export function TracePanel({
     { id: 'metrics', label: 'Metrics', icon: <BarChart3 size={13} aria-hidden="true" /> },
   ]
   return (
-    <aside className="hidden w-80 shrink-0 flex-col border-l border-border bg-surface text-foreground shadow-sm lg:flex">
-      <header className="border-b border-border bg-surface-muted/50 px-4 py-3">
+    <aside className="hidden w-80 shrink-0 flex-col border-l border-border bg-surface/80 text-foreground shadow-sm backdrop-blur-md lg:flex">
+      <header className="border-b border-border bg-surface-muted/40 px-4 py-3 backdrop-blur-sm">
         <div className="flex items-center justify-between gap-2">
           <nav className="flex gap-1" aria-label="Trace tabs">
             {tabs.map((t) => (
