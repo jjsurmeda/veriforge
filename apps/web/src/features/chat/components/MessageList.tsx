@@ -2,6 +2,7 @@ import { Bot, ChevronDown, CircleAlert, CircleX, FileText, Layers3, Search, User
 
 import type { ReactNode } from 'react'
 
+import { formatCredits } from '../../../lib/format'
 import type { MessageOut } from '../../../generated/types.gen'
 import {
   CitationChip,
@@ -130,7 +131,7 @@ function AnswerFooter({ metrics }: { metrics: Record<string, unknown> | null | u
           tokens {tokensIn}/{tokensOut}
         </span>
       )}
-      {credits !== undefined && <span>{credits} credits</span>}
+      {credits !== undefined && <span>{formatCredits(credits)} credits</span>}
       {contextUsed !== undefined && contextWindow !== undefined && (
         <span>
           context {(contextUsed / 1000).toFixed(1)}k/{(contextWindow / 1000).toFixed(0)}k

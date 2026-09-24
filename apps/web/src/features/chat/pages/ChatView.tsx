@@ -129,7 +129,7 @@ export function ChatView({ chatId }: { chatId: string }) {
   }
 
   return (
-    <div className="theme-transition flex h-screen bg-background text-foreground">
+    <div className="theme-transition flex h-full min-h-0 bg-background text-foreground">
       <ChatSidebar
         currentChatId={chatId}
         mobileOpen={sidebarOpen}

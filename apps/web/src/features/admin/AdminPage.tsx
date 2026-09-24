@@ -14,8 +14,6 @@ import {
   Users,
 } from 'lucide-react'
 
-import { ThemeToggle } from '../../components/ThemeToggle'
-
 import {
   activateSettingsAdminSettingsVersionActivatePost,
   activeSettingsAdminSettingsGet,
@@ -346,7 +344,7 @@ export function AdminPage() {
   ]
 
   return (
-    <main className="min-h-screen bg-background text-foreground">
+    <main className="h-full overflow-y-auto bg-background text-foreground">
       <header className="border-b border-border bg-surface px-5 py-4 shadow-sm sm:px-8">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -354,13 +352,9 @@ export function AdminPage() {
               <ShieldCheck size={19} aria-hidden="true" />
             </span>
             <div>
-              <p className="font-mono text-xs font-semibold uppercase tracking-[0.16em] text-primary">Veriforge / Admin</p>
+               <p className="font-mono text-xs font-semibold uppercase tracking-[0.16em] text-primary">Administration</p>
               <h1 className="mt-1 font-display text-2xl font-semibold tracking-tight text-foreground">System control room</h1>
             </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="hidden font-mono text-xs text-muted-foreground sm:block">{me.data.email}</span>
-            <ThemeToggle />
           </div>
         </div>
       </header>

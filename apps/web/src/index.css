@@ -67,8 +67,8 @@ select {
 
 .theme-transition,
 .theme-transition * {
-  transition-property: background-color, border-color, color, box-shadow, transform, opacity;
-  transition-duration: var(--motion-slow);
+  transition-property: background-color, border-color, color, box-shadow;
+  transition-duration: var(--motion-fast);
   transition-timing-function: var(--motion-ease);
 }
 

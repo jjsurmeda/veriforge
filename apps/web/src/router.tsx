@@ -7,6 +7,7 @@ import {
 } from '@tanstack/react-router'
 
 import { ensureSession } from './lib/auth'
+import { AppShell } from './components/AppShell'
 import { AdminPage } from './features/admin/AdminPage'
 import { ForgotPasswordPage } from './features/auth/pages/ForgotPasswordPage'
 import { LoginPage } from './features/auth/pages/LoginPage'
@@ -54,6 +55,7 @@ const oauthCallbackRoute = createRoute({
 const appLayoutRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: 'app',
+  component: AppShell,
   beforeLoad: async () => {
     if (!(await ensureSession())) {
       throw redirect({ to: '/login' })

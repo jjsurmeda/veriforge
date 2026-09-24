@@ -2,8 +2,6 @@ import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { ArrowLeft, FolderOpen, Plus, X } from 'lucide-react'
 
-import { ThemeToggle } from '../../../components/ThemeToggle'
-
 import type { CollectionOut } from '../../../generated/types.gen'
 
 export function CollectionList({
@@ -39,14 +37,14 @@ export function CollectionList({
           type="button"
           aria-label="Close source navigation"
           onClick={onMobileClose}
-          className="fixed inset-0 z-40 bg-background/70 backdrop-blur-sm lg:hidden"
+           className="fixed bottom-0 left-0 right-0 top-14 z-40 bg-background/70 backdrop-blur-sm lg:hidden"
         />
       )}
       <aside
         className={`${
-          mobileOpen
-            ? 'fixed inset-y-0 left-0 z-50 flex w-[min(20rem,85vw)]'
-            : 'hidden lg:flex lg:w-72'
+           mobileOpen
+             ? 'fixed bottom-0 left-0 top-14 z-50 flex w-[min(20rem,85vw)]'
+             : 'hidden lg:flex lg:w-72'
         } h-full shrink-0 flex-col border-r border-border bg-surface shadow-lg lg:shadow-sm`}
       >
       <div className="flex items-center justify-between border-b border-border px-4 py-4">
@@ -59,9 +57,8 @@ export function CollectionList({
             <span className="block text-[0.65rem] text-muted-foreground">Evidence library</span>
           </div>
         </div>
-        <div className="flex items-center gap-1">
-          <ThemeToggle />
-          <button
+         <div className="flex items-center gap-1">
+           <button
             type="button"
             aria-label="Close source navigation panel"
             onClick={onMobileClose}

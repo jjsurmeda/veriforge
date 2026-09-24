@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Activity, BarChart3, FileText } from 'lucide-react'
 
+import { formatCredits } from '../../../lib/format'
 import type {
   Decision,
   Metrics,
@@ -114,7 +115,7 @@ function MetricsTab({ metrics }: { metrics: Metrics | null }) {
         <ul className="mt-1 space-y-0.5 font-mono text-muted-foreground">
           <li>tokens in {metrics.tokens_in}</li>
           <li>tokens out {metrics.tokens_out}</li>
-          <li>credits {metrics.credits}</li>
+           <li>credits {metrics.credits !== undefined ? formatCredits(metrics.credits) : '—'}</li>
           <li>
             context {metrics.context_used} / {metrics.context_window}
           </li>

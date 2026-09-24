@@ -8,6 +8,8 @@ test('shows quota windows and keeps the picker catalogue bounded', async ({ page
   await signUp(page, user)
   await createChat(page)
 
+  const quota = page.getByRole('button', { name: 'Credit quota details' })
+  await quota.click()
   await expect(page.getByRole('group', { name: '5h quota' })).toContainText(/5h.*\/.*resets/)
   await expect(page.getByRole('group', { name: 'month quota' })).toContainText(/month.*\/.*resets/)
 

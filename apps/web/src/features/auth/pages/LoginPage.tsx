@@ -45,7 +45,7 @@ export function LoginPage() {
           <Link to="/signup" className="rounded-md font-medium text-primary transition-colors duration-180 hover:text-primary-strong focus-visible:outline-2 focus-visible:outline-primary">
             Create account
           </Link>
-          <Link to="/forgot-password" className="rounded-md transition-colors duration-180 hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary">
+           <Link to="/forgot-password" className="rounded-md text-foreground/80 transition-colors duration-180 hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary">
             Forgot password
           </Link>
         </div>
@@ -61,7 +61,7 @@ export function LoginPage() {
             required
             autoComplete="email"
             placeholder="Email"
-            className="h-11 w-full rounded-lg border border-border bg-background pl-10 pr-3 text-sm text-foreground placeholder:text-muted-foreground/70 transition-[border-color,box-shadow] duration-180 hover:border-primary/40 focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25"
+            className="h-11 w-full rounded-lg border border-border bg-background pl-10 pr-3 text-sm text-foreground placeholder:text-muted-foreground transition-[border-color,box-shadow] duration-180 hover:border-primary/40 focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25"
           />
         </label>
         <label className="relative block">
@@ -73,7 +73,7 @@ export function LoginPage() {
             required
             autoComplete="current-password"
             placeholder="Password"
-            className="h-11 w-full rounded-lg border border-border bg-background pl-10 pr-3 text-sm text-foreground placeholder:text-muted-foreground/70 transition-[border-color,box-shadow] duration-180 hover:border-primary/40 focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25"
+            className="h-11 w-full rounded-lg border border-border bg-background pl-10 pr-3 text-sm text-foreground placeholder:text-muted-foreground transition-[border-color,box-shadow] duration-180 hover:border-primary/40 focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25"
           />
         </label>
         {error && <p role="alert" className="rounded-lg border border-danger/30 bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}

@@ -27,3 +27,18 @@ test('offers rename and pin controls for a chat', async ({ page }) => {
   await expect(row.getByRole('button', { name: /rename/i })).toBeVisible()
   await expect(row.getByRole('button', { name: /pin/i })).toBeVisible()
 })
+
+test('collapses the chat sidebar and persists the rail preference', async ({ page }) => {
+  const user = makeTestUser()
+  await signUp(page, user)
+  await createChat(page)
+
+  const collapse = page.getByRole('button', { name: 'Collapse chat sidebar' })
+  await collapse.click()
+  const expand = page.getByRole('button', { name: 'Expand chat sidebar' })
+  await expect(expand).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('complementary').first()).toHaveCSS('width', '64px')
+
+  await page.reload()
+  await expect(page.getByRole('button', { name: 'Expand chat sidebar' })).toHaveAttribute('aria-pressed', 'true')
+})
