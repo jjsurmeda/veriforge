@@ -7,7 +7,11 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Playwright artifacts
 node_modules
+e2e/report
+e2e/test-results
+e2e/screenshots
 dist
 dist-ssr
 *.local

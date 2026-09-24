@@ -10,11 +10,18 @@ interface CreateRunOptions {
   modelId?: string | null
   mode?: 'fast' | 'auto' | 'deep'
   source?: 'auto' | 'upload' | 'web' | 'both'
+  collectionIds?: string[]
 }
 
 export function useCreateRun(chatId: string) {
   return useMutation({
-    mutationFn: async ({ message, modelId, mode, source }: CreateRunOptions) => {
+    mutationFn: async ({
+      message,
+      modelId,
+      mode,
+      source,
+      collectionIds,
+    }: CreateRunOptions) => {
       const { data, error } = await createRunChatsChatIdRunsPost({
         path: { chat_id: chatId },
         body: {
@@ -22,6 +29,7 @@ export function useCreateRun(chatId: string) {
           model_id: modelId ?? null,
           mode: mode ?? 'auto',
           source: source ?? 'auto',
+          collection_ids: collectionIds ?? null,
         },
       })
       if (error) throw error

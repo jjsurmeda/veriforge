@@ -2658,11 +2658,26 @@
       },
       "ChatCreate": {
         "properties": {
+          "collection_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Collection Ids"
+          },
           "title": {
             "anyOf": [
               {
-                "type": "string",
-                "maxLength": 200
+                "maxLength": 200,
+                "type": "string"
               },
               {
                 "type": "null"
@@ -2671,22 +2686,37 @@
             "title": "Title"
           }
         },
-        "type": "object",
-        "title": "ChatCreate"
+        "title": "ChatCreate",
+        "type": "object"
       },
       "ChatOut": {
         "properties": {
+          "active_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Run Id"
+          },
+          "collection_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Collection Ids",
+            "type": "array"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
           "id": {
-            "type": "string",
-            "title": "Id"
-          },
-          "title": {
-            "type": "string",
-            "title": "Title"
-          },
-          "pinned": {
-            "type": "boolean",
-            "title": "Pinned"
+            "title": "Id",
+            "type": "string"
           },
           "model_id": {
             "anyOf": [
@@ -2699,46 +2729,54 @@
             ],
             "title": "Model Id"
           },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
+          "pinned": {
+            "title": "Pinned",
+            "type": "boolean"
           },
-          "active_run_id": {
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "pinned",
+          "model_id",
+          "collection_ids",
+          "created_at"
+        ],
+        "title": "ChatOut",
+        "type": "object"
+      },
+      "ChatPatch": {
+        "properties": {
+          "collection_ids": {
             "anyOf": [
               {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Collection Ids"
+          },
+          "model_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Active Run Id"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "title",
-          "pinned",
-          "model_id",
-          "created_at"
-        ],
-        "title": "ChatOut"
-      },
-      "ChatPatch": {
-        "properties": {
-          "title": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 200
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Title"
+            "title": "Model Id"
           },
           "pinned": {
             "anyOf": [
@@ -2751,21 +2789,21 @@
             ],
             "title": "Pinned"
           },
-          "model_id": {
+          "title": {
             "anyOf": [
               {
-                "type": "string",
-                "maxLength": 128
+                "maxLength": 200,
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Model Id"
+            "title": "Title"
           }
         },
-        "type": "object",
-        "title": "ChatPatch"
+        "title": "ChatPatch",
+        "type": "object"
       },
       "ChunkOut": {
         "properties": {
@@ -3343,16 +3381,15 @@
       "ForgotPasswordRequest": {
         "properties": {
           "email": {
-            "type": "string",
-            "format": "email",
-            "title": "Email"
+            "title": "Email",
+            "type": "string"
           }
         },
-        "type": "object",
         "required": [
           "email"
         ],
-        "title": "ForgotPasswordRequest"
+        "title": "ForgotPasswordRequest",
+        "type": "object"
       },
       "HTTPValidationError": {
         "properties": {
@@ -3397,23 +3434,22 @@
       "LoginRequest": {
         "properties": {
           "email": {
-            "type": "string",
-            "format": "email",
-            "title": "Email"
+            "title": "Email",
+            "type": "string"
           },
           "password": {
-            "type": "string",
             "maxLength": 1024,
             "minLength": 1,
-            "title": "Password"
+            "title": "Password",
+            "type": "string"
           }
         },
-        "type": "object",
         "required": [
           "email",
           "password"
         ],
-        "title": "LoginRequest"
+        "title": "LoginRequest",
+        "type": "object"
       },
       "MessageOut": {
         "properties": {
@@ -5065,23 +5101,22 @@
       "SignupRequest": {
         "properties": {
           "email": {
-            "type": "string",
-            "format": "email",
-            "title": "Email"
+            "title": "Email",
+            "type": "string"
           },
           "password": {
-            "type": "string",
             "maxLength": 1024,
             "minLength": 8,
-            "title": "Password"
+            "title": "Password",
+            "type": "string"
           }
         },
-        "type": "object",
         "required": [
           "email",
           "password"
         ],
-        "title": "SignupRequest"
+        "title": "SignupRequest",
+        "type": "object"
       },
       "StepCompleted": {
         "properties": {
@@ -5411,31 +5446,30 @@
       },
       "UserPublic": {
         "properties": {
-          "id": {
-            "type": "string",
-            "title": "Id"
-          },
           "email": {
-            "type": "string",
-            "format": "email",
-            "title": "Email"
+            "title": "Email",
+            "type": "string"
           },
-          "role": {
-            "type": "string",
-            "title": "Role"
+          "id": {
+            "title": "Id",
+            "type": "string"
           },
           "plan": {
             "$ref": "#/components/schemas/PlanPublic"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
           }
         },
-        "type": "object",
         "required": [
           "id",
           "email",
           "role",
           "plan"
         ],
-        "title": "UserPublic"
+        "title": "UserPublic",
+        "type": "object"
       },
       "ValidationError": {
         "properties": {

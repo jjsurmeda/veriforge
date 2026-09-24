@@ -162,7 +162,7 @@ async def active_settings(
     _: AdminUser,
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> SettingsOut:
-    row = await service.get_settings_row(session)
+    row = await service.get_settings_row(session, lock=True)
     return service.settings_out(row)
 
 

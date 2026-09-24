@@ -28,6 +28,13 @@ async def test_signup_login_wrong_password(client: AsyncClient) -> None:
     assert wrong.json()["error_code"] == "invalid_credentials"
 
 
+async def test_signup_accepts_rfc2606_test_domain(client: AsyncClient) -> None:
+    body = await signup(client, "test-user-auth@veriforge.test")
+    user = body.get("user")
+    assert isinstance(user, dict)
+    assert user.get("email") == "test-user-auth@veriforge.test"
+
+
 async def test_signup_duplicate_email(client: AsyncClient) -> None:
     await signup(client, "dup@test.dev")
     again = await client.post(

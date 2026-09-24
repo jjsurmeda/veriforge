@@ -292,6 +292,38 @@ class TestJevClientParsing:
         assert all(a.engine == "jev" for a in answers.values())
 
     @pytest.mark.asyncio
+    async def test_systemone_request_uses_bare_jev_model_id(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+        get_settings.cache_clear()
+
+        class Usage:
+            async def resolve_model(self, requested: str, role: str) -> str:
+                return "openrouter/typesafe/jev-1.13"
+
+            def api_key_for(self, model: str) -> str:
+                return "test-key"
+
+            async def record_call(
+                self, *, model_id: str, role: str, tokens_in: int, tokens_out: int
+            ) -> float:
+                return 0.0
+
+        payloads: list[dict[str, Any]] = []
+        monkeypatch.setattr("decisions.jev.get_usage_context", lambda: Usage())
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            payloads.append(json.loads(request.content))
+            return httpx.Response(200, json=INGRESS_RESPONSE)
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        jev = JevClient(client=client)
+        await jev.decide(state="state", questions={"guard_injection": Noul(prompt="inj?")})
+
+        assert payloads[0]["model"] == "typesafe/jev-1.13"
+
+    @pytest.mark.asyncio
     async def test_unparseable_response_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
         get_settings.cache_clear()

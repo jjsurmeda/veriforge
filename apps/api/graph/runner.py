@@ -167,7 +167,8 @@ async def _finalize(
             await settle_run(session, run_id, snapshot)
         message = await session.get(Message, message_id)
         if message is not None:
-            message.content = text
+            if status != "cancelled" or text:
+                message.content = text
             message.status = status
         values: dict[str, object] = {
             "heartbeat_at": datetime.now(UTC),

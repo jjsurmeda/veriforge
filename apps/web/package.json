@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "test": "vitest run",
+    "e2e": "playwright test",
     "codegen": "openapi-ts -i http://localhost:8000/openapi.json -o src/generated",
     "codegen:ci": "openapi-ts -i openapi.json -o src/generated",
     "preview": "vite preview"
@@ -25,6 +26,7 @@
   },
   "devDependencies": {
     "@hey-api/openapi-ts": "^0.99.0",
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/vite": "^4.3.3",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.1",

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
-import type { QuotaOut } from '../../../generated/types.gen'
+import type { CollectionOut, QuotaOut } from '../../../generated/types.gen'
+import { CollectionPicker } from './CollectionPicker'
 import { ModelPicker } from './ModelPicker'
 import { ModePicker, type RunMode } from './ModePicker'
 import { SourcePicker, type RunSource } from './SourcePicker'
@@ -9,8 +10,11 @@ interface Props {
   streaming: boolean
   modelId: string | null
   quota?: QuotaOut
+  collections: CollectionOut[]
+  collectionIds: string[]
   error?: string | null
   onModelChange: (modelId: string) => void
+  onCollectionChange: (collectionIds: string[]) => void
   onSend: (message: string, options: { mode: RunMode; source: RunSource }) => void
   onStop: () => void
 }
@@ -30,8 +34,11 @@ export function ChatComposer({
   streaming,
   modelId,
   quota,
+  collections,
+  collectionIds,
   error,
   onModelChange,
+  onCollectionChange,
   onSend,
   onStop,
 }: Props) {
@@ -83,6 +90,14 @@ export function ChatComposer({
             {error}
           </p>
         )}
+        <div className="mb-2 rounded border border-mist/60 px-3 py-2">
+          <CollectionPicker
+            collections={collections}
+            value={collectionIds}
+            onChange={onCollectionChange}
+            disabled={streaming || blocked}
+          />
+        </div>
         <textarea
            ref={textareaRef}
            aria-label="Question"

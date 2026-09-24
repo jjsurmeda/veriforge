@@ -124,7 +124,7 @@ class Chat(Base):
     # Catalogue model id (e.g. "openai/gpt-4o-mini"), not an FK: catalogue
     # rows are mutable admin records and chats must survive catalogue changes.
     model_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    collection_ids: Mapped[list[uuid.UUID] | None] = mapped_column(JSONB, nullable=True)
+    collection_ids: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

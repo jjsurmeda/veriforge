@@ -1,3 +1,5 @@
+import { useEffect, useRef } from 'react'
+
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import {
@@ -16,7 +18,10 @@ export function shouldPoll(documents: DocumentOut[] | undefined): boolean {
 }
 
 export function useDocuments(collectionId: string | null) {
-  return useQuery({
+  const queryClient = useQueryClient()
+  const previousCollectionId = useRef<string | null>(null)
+  const wasPolling = useRef(false)
+  const query = useQuery({
     queryKey: ['collections', collectionId, 'documents'],
     enabled: collectionId !== null,
     queryFn: async () =>
@@ -27,6 +32,21 @@ export function useDocuments(collectionId: string | null) {
       ).data ?? [],
     refetchInterval: (query) => (shouldPoll(query.state.data) ? 2000 : false),
   })
+
+  useEffect(() => {
+    const polling = shouldPoll(query.data)
+    if (
+      previousCollectionId.current === collectionId &&
+      wasPolling.current &&
+      !polling
+    ) {
+      void queryClient.invalidateQueries({ queryKey: ['collections'] })
+    }
+    previousCollectionId.current = collectionId
+    wasPolling.current = polling
+  }, [collectionId, query.data, queryClient])
+
+  return query
 }
 
 export function useUploadDocument(collectionId: string | null) {

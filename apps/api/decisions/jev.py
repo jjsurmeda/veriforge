@@ -129,12 +129,13 @@ class JevClient:
         self, *, state: dict[str, Any] | str, questions: dict[str, Question]
     ) -> dict[str, Answer]:
         settings = get_settings()
-        model = settings.jev_model
+        resolved_model = settings.jev_model
         api_key = settings.openrouter_api_key
         usage_context = get_usage_context()
         if usage_context is not None:
-            model = await usage_context.resolve_model(model, "decision_engine")
-            api_key = usage_context.api_key_for(model) or api_key
+            resolved_model = await usage_context.resolve_model(resolved_model, "decision_engine")
+            api_key = usage_context.api_key_for(resolved_model) or api_key
+        model = resolved_model.removeprefix("openrouter/")
         if not api_key:
             raise JevError("OPENROUTER_API_KEY not set")
         payload = {

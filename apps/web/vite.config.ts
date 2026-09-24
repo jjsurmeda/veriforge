@@ -25,5 +25,6 @@ export default defineConfig({
   server: { proxy },
   test: {
     environment: 'jsdom',
+    include: ['src/**/*.{test,spec}.{ts,tsx}'],
   },
 })

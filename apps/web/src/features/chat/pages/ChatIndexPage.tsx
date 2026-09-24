@@ -19,19 +19,21 @@ export function ChatIndexPage() {
   }, [chats, isPending, navigate])
 
   const onNew = async () => {
-    const chat = await createChat.mutateAsync(undefined)
+    const chat = await createChat.mutateAsync({})
     void navigate({ to: '/chat/$chatId', params: { chatId: chat!.id } })
   }
 
-  const starters: string[] = []
+  const starters: Array<{ question: string; collectionId: string }> = []
   for (const collection of collections.data ?? []) {
     for (const question of collection.starter_questions ?? []) {
-      if (!starters.includes(question)) starters.push(question)
+      if (!starters.some((starter) => starter.question === question)) {
+        starters.push({ question, collectionId: collection.id })
+      }
     }
   }
 
-  const onStart = async (question: string) => {
-    const chat = await createChat.mutateAsync(undefined)
+  const onStart = async (question: string, collectionId: string) => {
+    const chat = await createChat.mutateAsync({ collectionIds: [collectionId] })
     const chatId = chat!.id
     await createRunChatsChatIdRunsPost({
       path: { chat_id: chatId },
@@ -56,11 +58,11 @@ export function ChatIndexPage() {
                 Starter questions
               </h2>
               <div className="mt-2 flex flex-wrap gap-2">
-                {starters.slice(0, 6).map((question) => (
+                {starters.slice(0, 6).map(({ question, collectionId }) => (
                   <button
                     key={question}
                     type="button"
-                    onClick={() => void onStart(question)}
+                    onClick={() => void onStart(question, collectionId)}
                     className="rounded border border-mist bg-graphite px-2.5 py-1.5 text-left text-xs text-paper/80 hover:border-paper/50 focus-visible:outline-2 focus-visible:outline-ember"
                   >
                     {question}

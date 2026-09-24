@@ -93,7 +93,15 @@ async def list_chats(
         )
     ).all()
     return [
-        chat_out(chat.id, chat.title, chat.pinned, chat.model_id, chat.created_at, active)
+        chat_out(
+            chat.id,
+            chat.title,
+            chat.pinned,
+            chat.model_id,
+            chat.collection_ids,
+            chat.created_at,
+            active,
+        )
         for chat, active in rows
     ]
 
@@ -108,10 +116,19 @@ async def create_chat(
         user_id=user.id,
         title=body.title or "New chat",
         model_id=await _default_model_id(session),
+        collection_ids=[str(collection_id) for collection_id in (body.collection_ids or [])],
     )
     session.add(chat)
     await session.flush()
-    return chat_out(chat.id, chat.title, chat.pinned, chat.model_id, chat.created_at, None)
+    return chat_out(
+        chat.id,
+        chat.title,
+        chat.pinned,
+        chat.model_id,
+        chat.collection_ids,
+        chat.created_at,
+        None,
+    )
 
 
 @router.get("/chats/{chat_id}", response_model=ChatOut)
@@ -130,7 +147,15 @@ async def get_chat(
             .limit(1)
         )
     ).scalar_one_or_none()
-    return chat_out(chat.id, chat.title, chat.pinned, chat.model_id, chat.created_at, active_run)
+    return chat_out(
+        chat.id,
+        chat.title,
+        chat.pinned,
+        chat.model_id,
+        chat.collection_ids,
+        chat.created_at,
+        active_run,
+    )
 
 
 @router.patch("/chats/{chat_id}", response_model=ChatOut)
@@ -148,8 +173,18 @@ async def patch_chat(
     if body.model_id is not None:
         await _assert_model_available(session, body.model_id)
         chat.model_id = body.model_id
+    if "collection_ids" in body.model_fields_set:
+        chat.collection_ids = [str(collection_id) for collection_id in (body.collection_ids or [])]
     await session.flush()
-    return chat_out(chat.id, chat.title, chat.pinned, chat.model_id, chat.created_at, None)
+    return chat_out(
+        chat.id,
+        chat.title,
+        chat.pinned,
+        chat.model_id,
+        chat.collection_ids,
+        chat.created_at,
+        None,
+    )
 
 
 @router.delete("/chats/{chat_id}", status_code=204)
@@ -260,6 +295,15 @@ async def _small_model_litellm(session: AsyncSession, fallback: str) -> str:
     return f"{row}/{role.model_id}"
 
 
+def _effective_collection_ids(
+    chat_collection_ids: list[str] | None, requested: list[UUID] | None
+) -> list[UUID]:
+    if requested is None:
+        return [UUID(str(collection_id)) for collection_id in (chat_collection_ids or [])]
+    allowed = {str(collection_id) for collection_id in (chat_collection_ids or [])}
+    return [collection_id for collection_id in requested if str(collection_id) in allowed]
+
+
 @router.post("/chats/{chat_id}/runs", response_model=RunCreateResponse, status_code=201)
 async def create_run(
     chat_id: UUID,
@@ -280,12 +324,7 @@ async def create_run(
     session.add(assistant_message)
     await session.flush()
 
-    if body.collection_ids is not None:
-        # Run-scoped narrowing of the chat's collections; the retrieval SQL
-        # re-validates ownership regardless of what arrives here.
-        effective = list(body.collection_ids)
-    else:
-        effective = list(chat.collection_ids or [])
+    effective = _effective_collection_ids(chat.collection_ids, body.collection_ids)
 
     run = Run(
         message_id=assistant_message.id,

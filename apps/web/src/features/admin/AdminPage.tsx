@@ -49,6 +49,10 @@ function valueAt(data: Record<string, unknown>, path: string, fallback: number):
   return typeof value === 'number' ? value : fallback
 }
 
+function isDecisionModel(model: AdminModelOut): boolean {
+  return model.capabilities?.decision === true
+}
+
 function Panel({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="border border-mist bg-graphite">
@@ -412,7 +416,7 @@ export function AdminPage() {
               </div>
               <button type="button" className={`${buttonClass} mt-4`} onClick={() => modelCreate.mutate(modelForm)} disabled={modelCreate.isPending || !modelForm.provider_id || !modelForm.model_id}>Add model</button>
               <div className="mt-5 divide-y divide-mist border-t border-mist pt-2">
-                {(models.data ?? []).map((model: AdminModelOut) => (
+                {(models.data ?? []).filter((model: AdminModelOut) => !isDecisionModel(model)).map((model: AdminModelOut) => (
                   <div key={model.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
                     <div><span className="font-mono text-sm">{model.model_id}</span><span className="ml-2 text-xs text-paper/50">{model.context_window ?? '—'} tokens · in {model.price_in ?? '—'} / out {model.price_out ?? '—'}</span></div>
                     <button type="button" className={buttonClass} onClick={() => modelUpdate.mutate({ id: model.id, body: { enabled: !model.enabled } })}>{model.enabled ? 'Disable' : 'Enable'}</button>

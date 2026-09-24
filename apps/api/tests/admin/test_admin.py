@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 from cryptography.fernet import Fernet
 from httpx import AsyncClient
@@ -7,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
-from db.models import AuditLog, User
+from db.models import AuditLog, Setting, User
 from runtime import load_active_runtime
 from tests.conftest import signup
 
@@ -20,6 +22,33 @@ async def _admin_headers(client: AsyncClient, db: AsyncSession) -> dict[str, str
     user.role = "admin"
     await db.commit()
     return {"Authorization": f"Bearer {auth['access_token']}"}
+
+
+async def test_settings_recover_inactive_seed_and_allocate_unique_versions(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    db.add(Setting(version=1, data={"decision_engine_mode": "auto"}, active=False))
+    await db.commit()
+    headers = await _admin_headers(client, db)
+
+    active = await client.get("/admin/settings", headers=headers)
+    assert active.status_code == 200
+    assert active.json()["version"] == 1
+
+    responses = await asyncio.gather(
+        client.patch(
+            "/admin/settings", headers=headers, json={"retrieval": {"top_k": 9}}
+        ),
+        client.patch(
+            "/admin/settings", headers=headers, json={"retrieval": {"top_k": 10}}
+        ),
+    )
+    assert [response.status_code for response in responses] == [200, 200]
+
+    versions = await client.get("/admin/settings/versions", headers=headers)
+    assert versions.status_code == 200
+    assert sorted(row["version"] for row in versions.json()) == [1, 2, 3]
+    assert sum(row["active"] for row in versions.json()) == 1
 
 
 async def test_non_admin_cannot_access_admin_settings(client: AsyncClient) -> None:

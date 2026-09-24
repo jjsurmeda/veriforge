@@ -15,9 +15,30 @@ interface Props {
   messages: MessageOut[]
   live: RunLive | undefined
   onSuggestion?: (question: string) => void
+  onAbstainAction?: (action: AbstainAction) => void
 }
 
 const CITATION_RE = /\[(\d{1,2})\]/g
+
+type AbstainAction = 'web' | 'deep'
+
+function isAbstainAction(value: string): value is AbstainAction {
+  return value === 'web' || value === 'deep'
+}
+
+function abstentionActions(
+  live: RunLive | undefined,
+  lastMessage: MessageOut | undefined,
+): AbstainAction[] {
+  if (live?.abstain) {
+    return (live.abstain.offered_actions ?? []).filter(isAbstainAction)
+  }
+  if (lastMessage?.status !== 'abstained') return []
+  const actions: AbstainAction[] = []
+  if (lastMessage.content.includes('Searching the web')) actions.push('web')
+  if (lastMessage.content.includes('Deep mode')) actions.push('deep')
+  return actions
+}
 
 function renderWithCitations(
   content: string,
@@ -144,7 +165,41 @@ function SuggestionsRow({
   )
 }
 
-export function MessageList({ messages, live, onSuggestion }: Props) {
+function AbstentionActions({
+  actions,
+  onSelect,
+}: {
+  actions: AbstainAction[]
+  onSelect: (action: AbstainAction) => void
+}) {
+  return (
+    <div className="mx-auto max-w-[72ch] px-4 pb-2" role="group" aria-label="Abstention actions">
+      <p className="mb-1 text-xs text-paper/50">Try another path:</p>
+      <div className="flex flex-wrap gap-2">
+        {actions.includes('web') && (
+          <button
+            type="button"
+            onClick={() => onSelect('web')}
+            className="rounded border border-mist bg-graphite px-2.5 py-1 text-xs text-paper/80 hover:border-paper/50 focus-visible:outline-2 focus-visible:outline-ember"
+          >
+            Searching the web
+          </button>
+        )}
+        {actions.includes('deep') && (
+          <button
+            type="button"
+            onClick={() => onSelect('deep')}
+            className="rounded border border-mist bg-graphite px-2.5 py-1 text-xs text-paper/80 hover:border-paper/50 focus-visible:outline-2 focus-visible:outline-ember"
+          >
+            Deep mode
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+export function MessageList({ messages, live, onSuggestion, onAbstainAction }: Props) {
   const lastMessage = messages[messages.length - 1]
   const liveSuggestions =
     live !== undefined && live.suggestions.length > 0 ? live.suggestions : []
@@ -160,6 +215,7 @@ export function MessageList({ messages, live, onSuggestion }: Props) {
         ? persistedSuggestions
         : []
   const showSuggestions = onSuggestion !== undefined && suggestions.length > 0
+  const abstainActions = abstentionActions(live, lastMessage)
   return (
     <div className="mx-auto flex max-w-[72ch] flex-col gap-6 py-6">
       {messages.map((message) => {
@@ -253,6 +309,9 @@ export function MessageList({ messages, live, onSuggestion }: Props) {
           </div>
         )
       })}
+      {abstainActions.length > 0 && onAbstainAction && (
+        <AbstentionActions actions={abstainActions} onSelect={onAbstainAction} />
+      )}
       {messages.length === 0 && (
         <p className="px-4 text-sm text-paper/40">Ask anything to start the conversation.</p>
       )}

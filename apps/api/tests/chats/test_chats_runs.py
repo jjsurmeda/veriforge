@@ -5,12 +5,29 @@ import asyncio
 import json
 from collections.abc import AsyncIterator
 from typing import Any
+from uuid import UUID
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from chats.router import _effective_collection_ids
+from db.models import Message
+from db.session import get_session_factory
+from graph.runner import _finalize
+from tests.conftest import make_run_row
 
 TOKENS = ["Hello", " ", "world", "!", "!", "!"]
 FULL = "".join(TOKENS)
+
+
+def test_run_collection_filter_cannot_widen_chat_scope() -> None:
+    first = UUID("00000000-0000-0000-0000-000000000001")
+    second = UUID("00000000-0000-0000-0000-000000000002")
+
+    assert _effective_collection_ids([str(first), str(second)], [second]) == [second]
+    assert _effective_collection_ids([str(first)], [second]) == []
+    assert _effective_collection_ids([], [second]) == []
 
 
 async def _auth(client: AsyncClient, email: str = "owner@test.dev") -> dict[str, str]:
@@ -92,20 +109,33 @@ async def _parse_sse(
 
 async def test_chat_crud_and_model_persistence(client: AsyncClient) -> None:
     headers = await _auth(client)
-    created = await client.post("/chats", json={"title": "First"}, headers=headers)
+    collection = await client.post(
+        "/collections", json={"name": "Scoped corpus"}, headers=headers
+    )
+    assert collection.status_code == 201, collection.text
+    collection_id = collection.json()["id"]
+
+    created = await client.post(
+        "/chats", json={"title": "First", "collection_ids": [collection_id]}, headers=headers
+    )
     chat_id = created.json()["id"]
     assert created.json()["title"] == "First"
+    assert created.json()["collection_ids"] == [collection_id]
     # generator role default
     assert created.json()["model_id"] == "openai/gpt-4o-mini"
 
     patched = await client.patch(
-        f"/chats/{chat_id}", json={"model_id": "anthropic/claude-haiku-4.5"}, headers=headers
+        f"/chats/{chat_id}",
+        json={"model_id": "anthropic/claude-haiku-4.5", "collection_ids": []},
+        headers=headers,
     )
     assert patched.json()["model_id"] == "anthropic/claude-haiku-4.5"
+    assert patched.json()["collection_ids"] == []
 
     listed = await client.get("/chats", headers=headers)
     assert [c["id"] for c in listed.json()] == [chat_id]
     assert listed.json()[0]["model_id"] == "anthropic/claude-haiku-4.5"
+    assert listed.json()[0]["collection_ids"] == []
 
     deleted = await client.delete(f"/chats/{chat_id}", headers=headers)
     assert deleted.status_code == 204
@@ -211,6 +241,28 @@ async def test_run_cancel_mid_stream_saves_partial_text(
     assert assistant["id"] == message_id
     assert assistant["status"] == "cancelled"
     assert assistant["content"] == "Hello "
+
+
+async def test_cancel_finalize_preserves_persisted_partial_text(db: AsyncSession) -> None:
+    run_id, message_id = await make_run_row(db)
+    message = await db.get(Message, message_id)
+    assert message is not None
+    message.content = "Hello "
+    await db.commit()
+
+    await _finalize(
+        get_session_factory(),
+        run_id,
+        message_id,
+        status="cancelled",
+        text="",
+    )
+
+    db.expire_all()
+    saved = await db.get(Message, message_id)
+    assert saved is not None
+    assert saved.status == "cancelled"
+    assert saved.content == "Hello "
 
 
 async def test_stream_replay_after_completion(client: AsyncClient, fake_llm: None) -> None:

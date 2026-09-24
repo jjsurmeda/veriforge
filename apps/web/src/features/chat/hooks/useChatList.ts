@@ -7,6 +7,11 @@ import {
   patchChatChatsChatIdPatch,
 } from '../../../generated/sdk.gen'
 
+interface CreateChatOptions {
+  title?: string | null
+  collectionIds?: string[]
+}
+
 export function useChatList() {
   return useQuery({
     queryKey: ['chats'],
@@ -17,8 +22,13 @@ export function useChatList() {
 export function useCreateChat() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async (title?: string) => {
-      const { data, error } = await createChatChatsPost({ body: { title: title ?? null } })
+    mutationFn: async (options?: CreateChatOptions) => {
+      const { data, error } = await createChatChatsPost({
+        body: {
+          title: options?.title ?? null,
+          collection_ids: options?.collectionIds ?? null,
+        },
+      })
       if (error) throw error
       return data
     },
@@ -45,7 +55,12 @@ export function usePatchChat() {
       patch,
     }: {
       chatId: string
-      patch: { title?: string | null; pinned?: boolean | null; model_id?: string | null }
+      patch: {
+        title?: string | null
+        pinned?: boolean | null
+        model_id?: string | null
+        collection_ids?: string[] | null
+      }
     }) => {
       const { data, error } = await patchChatChatsChatIdPatch({
         path: { chat_id: chatId },

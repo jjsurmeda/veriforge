@@ -2,22 +2,42 @@ import { useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
 
 import { useMe } from '../../auth/hooks/useMe'
+import { useCollections } from '../../sources/hooks/useCollections'
 import { logout } from '../../../lib/auth'
 import { queryClient } from '../../../lib/queryClient'
-import { useChatList, useCreateChat, useDeleteChat } from '../hooks/useChatList'
+import { CollectionPicker } from './CollectionPicker'
+import { useChatList, useCreateChat, useDeleteChat, usePatchChat } from '../hooks/useChatList'
 
 export function ChatSidebar({ currentChatId }: { currentChatId: string | null }) {
   const navigate = useNavigate()
   const { data: chats } = useChatList()
   const createChat = useCreateChat()
   const deleteChat = useDeleteChat()
+  const patchChat = usePatchChat()
+  const collections = useCollections()
   const me = useMe()
   const [creating, setCreating] = useState(false)
+  const [newChatCollectionIds, setNewChatCollectionIds] = useState<string[]>([])
+  const [editingChatId, setEditingChatId] = useState<string | null>(null)
+  const [titleDraft, setTitleDraft] = useState('')
+
+  const beginRename = (chatId: string, title: string) => {
+    setEditingChatId(chatId)
+    setTitleDraft(title)
+  }
+
+  const saveRename = async () => {
+    if (!editingChatId) return
+    const title = titleDraft.trim()
+    if (!title) return
+    await patchChat.mutateAsync({ chatId: editingChatId, patch: { title } })
+    setEditingChatId(null)
+  }
 
   const onNewChat = async () => {
     setCreating(true)
     try {
-      const chat = await createChat.mutateAsync(undefined)
+      const chat = await createChat.mutateAsync({ collectionIds: newChatCollectionIds })
       void navigate({ to: '/chat/$chatId', params: { chatId: chat!.id } })
     } finally {
       setCreating(false)
@@ -43,6 +63,16 @@ export function ChatSidebar({ currentChatId }: { currentChatId: string | null })
           New chat
         </button>
       </div>
+      {currentChatId === null && (
+        <div className="border-b border-mist px-4 py-3">
+          <CollectionPicker
+            collections={collections.data ?? []}
+            value={newChatCollectionIds}
+            onChange={setNewChatCollectionIds}
+            disabled={creating}
+          />
+        </div>
+      )}
       <nav className="flex-1 overflow-y-auto py-1">
         {(chats ?? []).map((chat) => (
           <div
@@ -51,19 +81,66 @@ export function ChatSidebar({ currentChatId }: { currentChatId: string | null })
               chat.id === currentChatId ? 'bg-mist/60 text-paper' : 'text-paper/70 hover:bg-mist/30'
             }`}
           >
-            <button
-              type="button"
-              className="min-w-0 flex-1 truncate text-left focus-visible:outline-2 focus-visible:outline-ember"
-              onClick={() => void navigate({ to: '/chat/$chatId', params: { chatId: chat.id } })}
-            >
-              {chat.pinned ? '★ ' : ''}
-              {chat.title}
-            </button>
+            {editingChatId === chat.id ? (
+              <div className="flex min-w-0 flex-1 items-center gap-1">
+                <input
+                  aria-label={`Rename ${chat.title}`}
+                  value={titleDraft}
+                  onChange={(event) => setTitleDraft(event.currentTarget.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') void saveRename()
+                    if (event.key === 'Escape') setEditingChatId(null)
+                  }}
+                  className="min-w-0 flex-1 rounded border border-mist bg-ink px-2 py-1 text-xs text-paper focus-visible:outline-2 focus-visible:outline-ember"
+                />
+                <button
+                  type="button"
+                  aria-label="Save rename"
+                  onClick={() => void saveRename()}
+                  className="text-[0.65rem] text-paper/60 hover:text-paper focus-visible:outline-2 focus-visible:outline-ember"
+                >
+                  Save
+                </button>
+              </div>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="min-w-0 flex-1 truncate text-left focus-visible:outline-2 focus-visible:outline-ember"
+                  onClick={() => void navigate({ to: '/chat/$chatId', params: { chatId: chat.id } })}
+                >
+                  {chat.pinned ? '★ ' : ''}
+                  {chat.title}
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Rename ${chat.title}`}
+                  onClick={() => beginRename(chat.id, chat.title)}
+                  className="text-[0.65rem] text-paper/40 hover:text-paper focus-visible:outline-2 focus-visible:outline-ember"
+                >
+                  Rename
+                </button>
+                <button
+                  type="button"
+                  aria-label={`${chat.pinned ? 'Unpin' : 'Pin'} ${chat.title}`}
+                  aria-pressed={chat.pinned}
+                  onClick={() =>
+                    void patchChat.mutateAsync({
+                      chatId: chat.id,
+                      patch: { pinned: !chat.pinned },
+                    })
+                  }
+                  className="text-[0.65rem] text-paper/40 hover:text-paper focus-visible:outline-2 focus-visible:outline-ember"
+                >
+                  {chat.pinned ? 'Unpin' : 'Pin'}
+                </button>
+              </>
+            )}
             <button
               type="button"
               aria-label={`Delete ${chat.title}`}
               onClick={() => void deleteChat.mutateAsync(chat.id)}
-              className="invisible text-paper/40 group-hover:visible hover:text-rust focus-visible:visible focus-visible:outline-2 focus-visible:outline-ember"
+              className="text-paper/40 hover:text-rust focus-visible:outline-2 focus-visible:outline-ember"
             >
               ×
             </button>

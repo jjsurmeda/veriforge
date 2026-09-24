@@ -5,7 +5,7 @@ from urllib.parse import urlparse
 from uuid import UUID
 
 import httpx
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import (
@@ -184,15 +184,32 @@ def _audit(
     )
 
 
-async def get_settings_row(session: AsyncSession, *, lock: bool = False) -> Setting:
+async def _lock_settings(session: AsyncSession) -> None:
+    await session.execute(text("SELECT pg_advisory_xact_lock(1907, 1)"))
+
+
+async def get_settings_row(session: AsyncSession, *, lock: bool = True) -> Setting:
+    if lock:
+        await _lock_settings(session)
     statement = select(Setting).where(Setting.active).limit(1)
     if lock:
         statement = statement.with_for_update()
     row = (await session.execute(statement)).scalar_one_or_none()
-    if row is None:
-        row = Setting(version=1, data={}, active=True)
-        session.add(row)
-        await session.flush()
+    if row is not None:
+        return row
+
+    latest = (
+        await session.execute(
+            select(Setting).order_by(Setting.version.desc()).limit(1).with_for_update()
+        )
+    ).scalar_one_or_none()
+    if latest is not None:
+        latest.active = True
+        return latest
+
+    row = Setting(version=1, data={}, active=True)
+    session.add(row)
+    await session.flush()
     return row
 
 
@@ -229,6 +246,7 @@ async def update_settings(
 
 
 async def activate_settings(session: AsyncSession, *, actor_id: UUID, version: int) -> SettingsOut:
+    await _lock_settings(session)
     target = (
         await session.execute(select(Setting).where(Setting.version == version).with_for_update())
     ).scalar_one_or_none()

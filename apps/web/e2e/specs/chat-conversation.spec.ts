@@ -1,0 +1,32 @@
+import { expect, test } from '@playwright/test'
+
+import { createChat, signUp } from '../support/auth'
+import { makeTestUser } from '../support/seed'
+
+test('signs up and exposes the shared seed corpus', async ({ page }) => {
+  const user = makeTestUser()
+  await signUp(page, user)
+
+  await page.goto('/sources')
+  await expect(page.getByRole('button', { name: /eval-seed-corpus\(shared\) 7/ })).toBeVisible()
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: 'No chat selected' })).toBeVisible()
+})
+
+test('attaches eval-seed-corpus to a chat before asking', async ({ page }) => {
+  const user = makeTestUser()
+  await signUp(page, user)
+  await page.goto('/sources')
+  await expect(page.getByRole('button', { name: /eval-seed-corpus\(shared\) 7/ })).toBeVisible()
+
+  await page.goto('/')
+  await createChat(page)
+
+  await expect(page.getByRole('main').getByText('eval-seed-corpus', { exact: false })).toBeVisible()
+  await page.screenshot({ path: 'e2e/screenshots/e2e-chat-conversation.png', fullPage: true })
+})
+
+test('accepts the documented veriforge.test signup domain', async ({ page }) => {
+  const user = makeTestUser('veriforge.test')
+  await signUp(page, user)
+})
