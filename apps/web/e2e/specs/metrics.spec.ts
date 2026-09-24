@@ -18,7 +18,7 @@ test('shows the latency waterfall and answer usage metrics', async ({ page, requ
 
   await expect(page.getByText('Latency by stage')).toBeVisible({ timeout: 110_000 })
   await expect(page.getByText('Answer scores')).toBeVisible()
-  await expect(page.getByText('Usage')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Usage' })).toBeVisible()
   await expect(page.getByText(/faithfulness/)).toBeVisible()
   await expect(page.getByText(/tokens in/)).toBeVisible()
   await expect(page.getByText(/credits/).last()).toBeVisible()

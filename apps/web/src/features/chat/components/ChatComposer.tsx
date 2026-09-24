@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
+import { CircleAlert, Send, Settings2, Square } from 'lucide-react'
 
 import type { CollectionOut, QuotaOut } from '../../../generated/types.gen'
 import { CollectionPicker } from './CollectionPicker'
@@ -19,78 +20,6 @@ interface Props {
   onStop: () => void
 }
 
-const number = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 })
-
-function countdown(target: string, now: number): string {
-  const seconds = Math.max(0, Math.floor((new Date(target).getTime() - now) / 1000))
-  if (seconds === 0) return 'now'
-  const hours = Math.floor(seconds / 3600)
-  const minutes = Math.floor((seconds % 3600) / 60)
-  if (hours > 0) return `${hours}h ${minutes}m`
-  return `${minutes}m`
-}
-
-function quotaPercent(remaining: number, limit: number): number {
-  if (limit <= 0) return 0
-  return Math.min(100, Math.max(0, (remaining / limit) * 100))
-}
-
-function QuotaMeter({ quota, now }: { quota: QuotaOut; now: number }) {
-  const windows = [
-    { label: '5h', remaining: quota.remaining_5h, limit: quota.limit_5h, reset: quota.reset_at_5h },
-    {
-      label: 'month',
-      remaining: quota.remaining_month,
-      limit: quota.limit_month,
-      reset: quota.reset_at_month,
-    },
-  ]
-  return (
-    <div className="mb-3 grid gap-2 sm:grid-cols-2" aria-label="Credit quota" aria-live="polite">
-      {windows.map((window) => {
-        const percent = quotaPercent(window.remaining, window.limit)
-        return (
-          <div
-            key={window.label}
-            role="group"
-            aria-label={`${window.label} quota`}
-            className="rounded-sm border border-mist/60 bg-ink/30 px-2.5 py-2"
-          >
-            <div className="flex items-baseline justify-between gap-2">
-              <span className="font-mono text-[0.65rem] tracking-[0.08em] text-paper/50">
-                {window.label}
-              </span>
-              <span className="font-mono text-xs text-paper/85">
-                {number.format(window.remaining)} <span className="text-paper/40">/ {number.format(window.limit)}</span>
-              </span>
-            </div>
-            <div
-              className="mt-1.5 h-1 overflow-hidden rounded-full bg-mist/50"
-              role="progressbar"
-              aria-label={`${window.label} credits remaining`}
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={Math.round(percent)}
-            >
-              <div
-                className={`h-full rounded-full ${quota.blocked ? 'bg-amber-verdict' : 'bg-patina'}`}
-                style={{ width: `${percent}%` }}
-              />
-            </div>
-            <p className="mt-1 text-[0.65rem] text-paper/45">resets {countdown(window.reset, now)}</p>
-          </div>
-        )
-      })}
-      {quota.blocked && (
-        <p role="alert" className="col-span-full text-xs text-amber-verdict">
-          Credit limit reached. New questions resume when the oldest 5h credit ages out
-          {quota.reset_at_5h ? ` (${countdown(quota.reset_at_5h, now)})` : ''}.
-        </p>
-      )}
-    </div>
-  )
-}
-
 export function ChatComposer({
   streaming,
   modelId,
@@ -106,12 +35,7 @@ export function ChatComposer({
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [mode, setMode] = useState<RunMode>('auto')
   const [source, setSource] = useState<RunSource>('auto')
-  const [now, setNow] = useState(() => Date.now())
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 30_000)
-    return () => window.clearInterval(timer)
-  }, [])
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   const blocked = quota?.blocked ?? false
   const submit = () => {
@@ -122,60 +46,88 @@ export function ChatComposer({
   }
 
   return (
-    <div className="border-t border-mist bg-graphite/95 px-4 py-3">
+    <div className="border-t border-border bg-surface/95 px-4 py-4 shadow-[0_-10px_30px_rgb(24_34_56_/_0.06)] backdrop-blur">
       <div className="mx-auto max-w-[72ch]">
-        {quota && <QuotaMeter quota={quota} now={now} />}
         {error && (
-          <p role="alert" className="mb-2 text-sm text-rust">
-            {error}
-          </p>
-        )}
-        <div className="mb-2">
-          <CollectionPicker
-            collections={collections}
-            value={collectionIds}
-            onChange={onCollectionChange}
-            disabled={streaming || blocked}
-          />
-        </div>
-        <textarea
-           ref={textareaRef}
-           aria-label="Question"
-           rows={3}
-
-          placeholder={blocked ? 'Credit limit reached' : streaming ? 'Streaming…' : 'Ask a question'}
-          disabled={streaming || blocked}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.shiftKey) {
-              event.preventDefault()
-              submit()
-            }
-          }}
-           className="min-h-24 w-full resize-y rounded-sm border border-mist bg-ink px-3 py-2.5 text-[0.9375rem] leading-6 text-paper placeholder:text-paper/35 transition-colors duration-150 hover:border-paper/35 focus:border-ember/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember focus-visible:ring-offset-2 focus-visible:ring-offset-ink disabled:cursor-not-allowed disabled:opacity-60 motion-reduce:transition-none"
-        />
-        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <ModelPicker value={modelId} disabled={streaming || blocked} onChange={onModelChange} />
-            <ModePicker value={mode} disabled={streaming || blocked} onChange={setMode} />
-            <SourcePicker value={source} disabled={streaming || blocked} onChange={setSource} />
+          <div role="alert" className="mb-3 flex items-start gap-2 rounded-lg border border-danger/30 bg-danger-soft px-3 py-2 text-sm text-danger">
+            <CircleAlert size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+            <span>{error}</span>
           </div>
-          {streaming ? (
+        )}
+        <div className="rounded-xl border border-border bg-background p-2 shadow-sm transition-[border-color,box-shadow] duration-200 focus-within:border-primary/50 focus-within:shadow-md motion-reduce:transition-none">
+          <textarea
+            ref={textareaRef}
+            aria-label="Question"
+            rows={3}
+            placeholder={blocked ? 'Credit limit reached' : streaming ? 'Streaming…' : 'Ask a question'}
+            disabled={streaming || blocked}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault()
+                submit()
+              }
+            }}
+            className="min-h-20 w-full resize-y rounded-lg border-0 bg-transparent px-2 py-2 text-[0.9375rem] leading-6 text-foreground outline-none placeholder:text-muted-foreground/70 disabled:cursor-not-allowed disabled:opacity-60"
+          />
+          <div className="flex items-center justify-between gap-2 border-t border-border/70 px-1 pt-2">
             <button
               type="button"
-              onClick={onStop}
-              className="min-h-8 rounded-sm bg-ember px-4 py-1.5 text-sm font-medium text-ink transition-[filter,transform] duration-150 hover:brightness-110 active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper motion-reduce:transition-none"
+              aria-label="Run settings"
+              aria-expanded={settingsOpen}
+              onClick={() => setSettingsOpen((open) => !open)}
+              disabled={streaming || blocked}
+              className="inline-flex min-h-8 items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-[color,background-color,transform] duration-180 hover:bg-primary-soft hover:text-primary active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
             >
-              Stop
+              <Settings2 size={15} aria-hidden="true" />
+              <span className="hidden sm:inline">Settings</span>
+              <span className="font-mono text-[0.65rem] uppercase tracking-[0.08em] text-muted-foreground/80">
+                {mode} · {source}
+              </span>
             </button>
-          ) : (
-            <button
-              type="button"
-              onClick={submit}
-              disabled={blocked}
-              className="min-h-8 rounded-sm border border-mist bg-ink/40 px-4 py-1.5 text-sm text-paper transition-[background-color,border-color,transform] duration-150 hover:border-paper/50 hover:bg-mist/30 active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ember disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
-            >
-              Send
-            </button>
+            <div className="flex items-center gap-2">
+              {collectionIds.length > 0 && (
+                <span className="hidden rounded-full bg-secondary-soft px-2 py-1 font-mono text-[0.65rem] text-secondary sm:inline-flex">
+                  {collectionIds.length} {collectionIds.length === 1 ? 'source' : 'sources'}
+                </span>
+              )}
+              {streaming ? (
+                <button
+                  type="button"
+                  onClick={onStop}
+                  className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-danger px-4 py-2 text-sm font-semibold text-white shadow-sm transition-[filter,transform,box-shadow] duration-180 hover:-translate-y-0.5 hover:brightness-105 hover:shadow-md active:translate-y-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-danger motion-reduce:transform-none motion-reduce:transition-none"
+                >
+                  <Square size={14} fill="currentColor" aria-hidden="true" />
+                  Stop
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={submit}
+                  disabled={blocked}
+                  className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-on-primary shadow-sm transition-[background-color,transform,box-shadow] duration-180 hover:-translate-y-0.5 hover:bg-primary-strong hover:shadow-md active:translate-y-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transform-none motion-reduce:transition-none"
+                >
+                  <Send size={15} aria-hidden="true" />
+                  Send
+                </button>
+              )}
+            </div>
+          </div>
+          {settingsOpen && (
+            <div className="mt-3 grid gap-3 border-t border-border/70 px-1 pt-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
+              <div className="grid content-start gap-3 rounded-lg bg-surface p-3">
+                <ModelPicker value={modelId} disabled={streaming || blocked} onChange={onModelChange} />
+                <div className="grid grid-cols-2 gap-3">
+                  <ModePicker value={mode} disabled={streaming || blocked} onChange={setMode} />
+                  <SourcePicker value={source} disabled={streaming || blocked} onChange={setSource} />
+                </div>
+              </div>
+              <CollectionPicker
+                collections={collections}
+                value={collectionIds}
+                onChange={onCollectionChange}
+                disabled={streaming || blocked}
+              />
+            </div>
           )}
         </div>
       </div>

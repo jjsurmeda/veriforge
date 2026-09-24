@@ -1,5 +1,20 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
+import {
+  Boxes,
+  CheckCircle2,
+  CreditCard,
+  History,
+  Plus,
+  RefreshCw,
+  Save,
+  Server,
+  Settings2,
+  ShieldCheck,
+  Users,
+} from 'lucide-react'
+
+import { ThemeToggle } from '../../components/ThemeToggle'
 
 import {
   activateSettingsAdminSettingsVersionActivatePost,
@@ -55,19 +70,20 @@ function isDecisionModel(model: AdminModelOut): boolean {
 
 function Panel({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="overflow-hidden rounded-sm border border-mist/80 bg-graphite/80">
-      <h2 className="border-b border-mist/80 bg-ink/20 px-4 py-2.5 font-mono text-[0.65rem] uppercase tracking-[0.14em] text-paper/55">
+    <section className="overflow-hidden rounded-xl border border-border bg-surface shadow-sm">
+      <h2 className="flex items-center gap-2 border-b border-border bg-surface-muted/60 px-4 py-3 font-mono text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+        <Settings2 size={13} className="text-primary" aria-hidden="true" />
         {title}
       </h2>
-      <div className="p-4">{children}</div>
+      <div className="p-4 sm:p-5">{children}</div>
     </section>
   )
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className="flex flex-col gap-1.5 text-xs text-paper/60">
-      <span className="font-mono text-[0.65rem] uppercase tracking-[0.08em] text-paper/45">{label}</span>
+    <label className="flex flex-col gap-1.5 text-xs text-muted-foreground">
+      <span className="font-mono text-[0.65rem] uppercase tracking-[0.08em] text-muted-foreground/80">{label}</span>
       {children}
     </label>
   )
@@ -75,7 +91,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function TableHeader({ left, right }: { left: string; right: string }) {
   return (
-    <div className="mb-1 grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-mist/70 px-1 pb-2 font-mono text-[0.65rem] uppercase tracking-[0.1em] text-paper/40">
+    <div className="mb-2 grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-border px-1 pb-2 font-mono text-[0.65rem] uppercase tracking-[0.1em] text-muted-foreground">
       <span>{left}</span>
       <span>{right}</span>
     </div>
@@ -84,16 +100,16 @@ function TableHeader({ left, right }: { left: string; right: string }) {
 
 function TableRow({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={`grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-mist/50 px-1 py-2.5 last:border-b-0 hover:bg-mist/20 ${className}`}>
+    <div className={`grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-border/70 px-1 py-2.5 transition-colors duration-180 last:border-b-0 hover:bg-surface-muted ${className}`}>
       {children}
     </div>
   )
 }
 
 const inputClass =
-  'h-9 min-w-0 rounded-sm border border-mist bg-ink px-2.5 text-xs text-paper transition-colors duration-150 hover:border-paper/40 focus-visible:border-ember focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember focus-visible:ring-offset-2 focus-visible:ring-offset-ink disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none'
+  'h-9 min-w-0 rounded-lg border border-border bg-background px-2.5 text-xs text-foreground transition-[border-color,box-shadow] duration-180 hover:border-primary/40 focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25 disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none'
 const buttonClass =
-  'inline-flex min-h-8 items-center justify-center rounded-sm border border-mist bg-ink/30 px-2.5 py-1.5 text-xs text-paper transition-[background-color,border-color,transform] duration-150 hover:border-paper/50 hover:bg-mist/30 active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ember disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none'
+  'inline-flex min-h-8 items-center justify-center gap-1.5 rounded-lg border border-border bg-surface-muted px-2.5 py-1.5 text-xs font-medium text-foreground transition-[color,background-color,border-color,transform,box-shadow] duration-180 hover:-translate-y-px hover:border-primary/40 hover:bg-primary-soft hover:shadow-sm active:translate-y-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transform-none motion-reduce:transition-none'
 
 export function AdminPage() {
   const me = useMe()
@@ -309,9 +325,9 @@ export function AdminPage() {
     onSuccess: () => invalidate([['admin', 'users']]),
   })
 
-  if (me.isLoading) return <main className="min-h-screen bg-ink p-8 text-paper">Loading admin…</main>
+  if (me.isLoading) return <main className="min-h-screen bg-background p-8 text-foreground">Loading admin…</main>
   if (me.data?.role !== 'admin') {
-    return <main className="min-h-screen bg-ink p-8 text-paper">Administrator access required.</main>
+    return <main className="min-h-screen bg-background p-8 text-foreground">Administrator access required.</main>
   }
 
   const current = settings.data
@@ -319,44 +335,55 @@ export function AdminPage() {
   const currentTopK = valueAt(data, 'retrieval.top_k', settingsDraft.top_k)
   const currentThreshold = valueAt(data, 'thresholds.sufficient_retry.jev', settingsDraft.threshold)
   const currentMode = typeof data.decision_engine_mode === 'string' ? data.decision_engine_mode : settingsDraft.mode
-  const tabs: Array<[Section, string]> = [
-    ['settings', 'Settings'],
-    ['providers', 'Providers'],
-    ['models', 'Models'],
-    ['roles', 'Roles'],
-    ['plans', 'Plans'],
-    ['users', 'Users'],
-    ['audit', 'Audit'],
+  const tabs: Array<[Section, string, React.ReactNode]> = [
+    ['settings', 'Settings', <Settings2 key="settings" size={14} aria-hidden="true" />],
+    ['providers', 'Providers', <Server key="providers" size={14} aria-hidden="true" />],
+    ['models', 'Models', <Boxes key="models" size={14} aria-hidden="true" />],
+    ['roles', 'Roles', <ShieldCheck key="roles" size={14} aria-hidden="true" />],
+    ['plans', 'Plans', <CreditCard key="plans" size={14} aria-hidden="true" />],
+    ['users', 'Users', <Users key="users" size={14} aria-hidden="true" />],
+    ['audit', 'Audit', <History key="audit" size={14} aria-hidden="true" />],
   ]
 
   return (
-    <main className="min-h-screen bg-ink text-paper">
-      <header className="border-b border-mist bg-graphite px-5 py-4 sm:px-8">
+    <main className="min-h-screen bg-background text-foreground">
+      <header className="border-b border-border bg-surface px-5 py-4 shadow-sm sm:px-8">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
-          <div>
-            <p className="font-mono text-xs uppercase tracking-[0.16em] text-ember">Veriforge / Admin</p>
-            <h1 className="mt-1 font-display text-2xl">System control room</h1>
+          <div className="flex items-center gap-3">
+            <span className="flex size-10 items-center justify-center rounded-xl bg-primary-soft text-primary shadow-sm">
+              <ShieldCheck size={19} aria-hidden="true" />
+            </span>
+            <div>
+              <p className="font-mono text-xs font-semibold uppercase tracking-[0.16em] text-primary">Veriforge / Admin</p>
+              <h1 className="mt-1 font-display text-2xl font-semibold tracking-tight text-foreground">System control room</h1>
+            </div>
           </div>
-          <span className="hidden font-mono text-xs text-paper/50 sm:block">{me.data.email}</span>
+          <div className="flex items-center gap-3">
+            <span className="hidden font-mono text-xs text-muted-foreground sm:block">{me.data.email}</span>
+            <ThemeToggle />
+          </div>
         </div>
       </header>
-      <div className="mx-auto grid max-w-7xl gap-5 p-5 sm:p-8 lg:grid-cols-[12rem_minmax(0,1fr)] lg:gap-8">
-        <nav className="flex gap-1 overflow-x-auto rounded-sm border border-mist/70 bg-graphite/60 p-1 lg:sticky lg:top-5 lg:flex-col lg:self-start" aria-label="Admin sections">
-          {tabs.map(([id, label]) => (
+      <div className="mx-auto grid max-w-7xl gap-5 p-5 sm:p-8 lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-8">
+        <nav className="flex gap-1 overflow-x-auto rounded-xl border border-border bg-surface p-1 shadow-sm lg:sticky lg:top-5 lg:flex-col lg:self-start" aria-label="Admin sections">
+          {tabs.map(([id, label, icon]) => (
             <button
               key={id}
               type="button"
               onClick={() => setSection(id)}
-               className={`min-h-9 whitespace-nowrap rounded-sm px-3 py-2 text-left text-xs transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ember motion-reduce:transition-none ${
-                 section === id ? 'bg-mist text-paper' : 'text-paper/55 hover:bg-mist/50 hover:text-paper'
-               }`}
+              className={`inline-flex min-h-10 items-center gap-2 whitespace-nowrap rounded-lg px-3 py-2 text-left text-xs font-medium transition-[color,background-color,transform,box-shadow] duration-180 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary motion-reduce:transition-none ${
+                section === id
+                  ? 'bg-primary-soft text-primary shadow-sm'
+                  : 'text-muted-foreground hover:-translate-y-px hover:bg-surface-muted hover:text-foreground'
+              }`}
             >
+              {icon}
               {label}
             </button>
           ))}
         </nav>
         <div className="min-w-0 space-y-4">
-          {notice && <p role="status" className="rounded-sm border border-patina/50 bg-patina/10 px-3 py-2 text-sm text-patina">{notice}</p>}
+          {notice && <p role="status" className="flex items-center gap-2 rounded-lg border border-success/30 bg-success-soft px-3 py-2 text-sm text-success"><CheckCircle2 size={15} aria-hidden="true" />{notice}</p>}
           {section === 'settings' && (
             <>
               <Panel title="Runtime settings">
@@ -388,15 +415,17 @@ export function AdminPage() {
                   <Field label="Source priority"><select className={inputClass} value={settingsDraft.source_priority} onChange={(e) => setSettingsDraft({ ...settingsDraft, source_priority: e.target.value })}><option value="documents_first">Documents first</option><option value="web_first">Web first</option></select></Field>
                   <Field label="Trace sample rate"><input className={inputClass} type="number" min={0} max={1} step="0.01" value={settingsDraft.trace_sample_rate} onChange={(e) => setSettingsDraft({ ...settingsDraft, trace_sample_rate: Number(e.target.value) })} /></Field>
                 </div>
-                <p className="mt-3 font-mono text-[0.65rem] text-paper/45">Active v{current?.version ?? '—'} · top-k {currentTopK} · threshold {currentThreshold} · {currentMode}</p>
-                <button type="button" className={`${buttonClass} mt-4`} onClick={() => settingsSave.mutate()} disabled={settingsSave.isPending}>Create version</button>
+                <p className="mt-3 font-mono text-[0.65rem] text-muted-foreground">Active v{current?.version ?? '—'} · top-k {currentTopK} · threshold {currentThreshold} · {currentMode}</p>
+                 <button type="button" className={`${buttonClass} mt-4`} onClick={() => settingsSave.mutate()} disabled={settingsSave.isPending}><Save size={13} aria-hidden="true" />Create version</button>
+
               </Panel>
               <Panel title="Versions / rollback">
-                <div className="divide-y divide-mist">
+                <div className="divide-y divide-border">
                   {(versions.data ?? []).map((version: SettingsOut) => (
-                     <div key={version.version} className="flex items-center justify-between gap-3 border-b border-mist/50 px-1 py-2.5 last:border-b-0">
-                       <div className="flex items-baseline gap-2"><span className="font-mono text-sm text-paper">v{version.version}</span><span className="text-xs text-paper/50">{version.active ? 'active' : 'inactive'}</span></div>
-                       {!version.active && <button type="button" className={buttonClass} onClick={() => rollback.mutate(version.version)} disabled={rollback.isPending}>Activate</button>}
+                     <div key={version.version} className="flex items-center justify-between gap-3 border-b border-border/70 px-1 py-2.5 last:border-b-0">
+                       <div className="flex items-baseline gap-2"><span className="font-mono text-sm text-foreground">v{version.version}</span><span className="text-xs text-muted-foreground">{version.active ? 'active' : 'inactive'}</span></div>
+                        {!version.active && <button type="button" className={buttonClass} onClick={() => rollback.mutate(version.version)} disabled={rollback.isPending}><RefreshCw size={13} aria-hidden="true" />Activate</button>}
+
                      </div>
                   ))}
                 </div>
@@ -411,19 +440,21 @@ export function AdminPage() {
                 <Field label="Base URL"><input className={inputClass} value={providerForm.base_url ?? ''} onChange={(e) => setProviderForm({ ...providerForm, base_url: e.target.value })} /></Field>
                 <Field label="API key"><input className={inputClass} type="password" value={providerForm.api_key ?? ''} onChange={(e) => setProviderForm({ ...providerForm, api_key: e.target.value })} /></Field>
               </div>
-              <button type="button" className={`${buttonClass} mt-4`} onClick={() => providerCreate.mutate(providerForm)} disabled={providerCreate.isPending}>Add provider</button>
-               <div className="mt-5 border-t border-mist/70 pt-3">
+               <button type="button" className={`${buttonClass} mt-4`} onClick={() => providerCreate.mutate(providerForm)} disabled={providerCreate.isPending}><Plus size={13} aria-hidden="true" />Add provider</button>
+
+               <div className="mt-5 border-t border-border/70 pt-3">
                  <TableHeader left="Provider / status" right="Actions" />
                  {(providers.data ?? []).map((provider: ProviderOut) => (
                    <TableRow key={provider.id}>
                      <div className="min-w-0">
-                       <div className="truncate font-mono text-sm text-paper">{provider.name}</div>
-                       <div className="mt-0.5 truncate text-xs text-paper/50">
+                       <div className="truncate font-mono text-sm text-foreground">{provider.name}</div>
+                       <div className="mt-0.5 truncate text-xs text-muted-foreground">
                          {provider.kind} · {provider.enabled ? 'enabled' : 'disabled'} · key {provider.has_api_key ? 'stored' : 'missing'}
                        </div>
                      </div>
                      <div className="flex gap-2">
-                       <button type="button" className={buttonClass} onClick={() => providerTest.mutate(provider.id)}>Test</button>
+                        <button type="button" className={buttonClass} onClick={() => providerTest.mutate(provider.id)}><CheckCircle2 size={13} aria-hidden="true" />Test</button>
+
                        <button type="button" className={buttonClass} onClick={() => providerUpdate.mutate({ id: provider.id, body: { enabled: !provider.enabled } })}>{provider.enabled ? 'Disable' : 'Enable'}</button>
                      </div>
                    </TableRow>
@@ -440,14 +471,15 @@ export function AdminPage() {
                 <Field label="Input price"><input className={inputClass} type="number" step="0.000001" value={modelForm.price_in ?? ''} onChange={(e) => setModelForm({ ...modelForm, price_in: Number(e.target.value) })} /></Field>
                 <Field label="Output price"><input className={inputClass} type="number" step="0.000001" value={modelForm.price_out ?? ''} onChange={(e) => setModelForm({ ...modelForm, price_out: Number(e.target.value) })} /></Field>
               </div>
-              <button type="button" className={`${buttonClass} mt-4`} onClick={() => modelCreate.mutate(modelForm)} disabled={modelCreate.isPending || !modelForm.provider_id || !modelForm.model_id}>Add model</button>
-               <div className="mt-5 border-t border-mist/70 pt-3">
+               <button type="button" className={`${buttonClass} mt-4`} onClick={() => modelCreate.mutate(modelForm)} disabled={modelCreate.isPending || !modelForm.provider_id || !modelForm.model_id}><Plus size={13} aria-hidden="true" />Add model</button>
+
+               <div className="mt-5 border-t border-border/70 pt-3">
                  <TableHeader left="Model / limits" right="Actions" />
                  {(models.data ?? []).filter((model: AdminModelOut) => !isDecisionModel(model)).map((model: AdminModelOut) => (
                    <TableRow key={model.id}>
                      <div className="min-w-0">
-                       <div className="truncate font-mono text-sm text-paper">{model.model_id}</div>
-                       <div className="mt-0.5 text-xs text-paper/50">
+                       <div className="truncate font-mono text-sm text-foreground">{model.model_id}</div>
+                       <div className="mt-0.5 text-xs text-muted-foreground">
                          {model.context_window ?? '—'} tokens · in {model.price_in ?? '—'} / out {model.price_out ?? '—'}
                        </div>
                      </div>
@@ -459,11 +491,11 @@ export function AdminPage() {
           )}
           {section === 'roles' && (
              <Panel title="Model roles">
-               <div className="border-t border-mist/70 pt-3">
+               <div className="border-t border-border/70 pt-3">
                  <TableHeader left="Role" right="Assigned model" />
                  {(roles.data ?? []).map((role: RoleOut) => (
                    <TableRow key={role.role}>
-                     <span className="min-w-0 truncate font-mono text-sm text-paper">{role.role}</span>
+                     <span className="min-w-0 truncate font-mono text-sm text-foreground">{role.role}</span>
                      <select className={inputClass} value={role.model_id} onChange={(e) => roleSave.mutate({ role: role.role, model_id: e.target.value, fallback_model_id: role.fallback_model_id ?? undefined })}>
                        {(models.data ?? []).map((model: AdminModelOut) => <option key={model.id} value={model.model_id}>{model.model_id}</option>)}
                      </select>
@@ -475,8 +507,9 @@ export function AdminPage() {
           {section === 'plans' && (
             <Panel title="Plans and quota overrides">
               <div className="grid gap-3 sm:grid-cols-3"><Field label="Name"><input className={inputClass} value={planForm.name} onChange={(e) => setPlanForm({ ...planForm, name: e.target.value })} /></Field><Field label="5h credits"><input className={inputClass} type="number" value={planForm.credits_5h} onChange={(e) => setPlanForm({ ...planForm, credits_5h: Number(e.target.value) })} /></Field><Field label="Monthly credits"><input className={inputClass} type="number" value={planForm.credits_month} onChange={(e) => setPlanForm({ ...planForm, credits_month: Number(e.target.value) })} /></Field></div>
-              <button type="button" className={`${buttonClass} mt-4`} onClick={() => planCreate.mutate()} disabled={planCreate.isPending}>Add plan</button>
-               <div className="mt-5 border-t border-mist/70 pt-3">
+               <button type="button" className={`${buttonClass} mt-4`} onClick={() => planCreate.mutate()} disabled={planCreate.isPending}><Plus size={13} aria-hidden="true" />Add plan</button>
+
+               <div className="mt-5 border-t border-border/70 pt-3">
                  <TableHeader left="Plan / 5h credits" right="Monthly / action" />
                  {(plans.data ?? []).map((plan: PlanOut) => <PlanRow key={plan.id} plan={plan} onSave={(body) => planUpdate.mutate({ id: plan.id, body })} />)}
                </div>
@@ -484,7 +517,7 @@ export function AdminPage() {
           )}
           {section === 'users' && (
              <Panel title="Users">
-               <div className="border-t border-mist/70 pt-3">
+               <div className="border-t border-border/70 pt-3">
                  <TableHeader left="User / role" right="Overrides" />
                  {(users.data ?? []).map((user: UserOut) => <UserRow key={user.id} user={user} onUpdate={(body) => userUpdate.mutate({ id: user.id, body })} />)}
                </div>
@@ -492,15 +525,15 @@ export function AdminPage() {
           )}
           {section === 'audit' && (
              <Panel title="Audit log">
-               <div className="border-t border-mist/70 pt-3">
+               <div className="border-t border-border/70 pt-3">
                  <TableHeader left="Action / target" right="Time" />
                  {(audit.data ?? []).map((row: AuditOut) => (
                    <TableRow key={row.id}>
                      <div className="min-w-0">
-                       <div className="truncate font-mono text-sm text-paper">{row.action}</div>
-                       <div className="mt-0.5 truncate text-xs text-paper/50">{row.target}</div>
+                       <div className="truncate font-mono text-sm text-foreground">{row.action}</div>
+                       <div className="mt-0.5 truncate text-xs text-muted-foreground">{row.target}</div>
                      </div>
-                     <span className="shrink-0 text-xs text-paper/40">{new Date(row.created_at).toLocaleString()}</span>
+                     <span className="shrink-0 text-xs text-muted-foreground">{new Date(row.created_at).toLocaleString()}</span>
                    </TableRow>
                  ))}
                </div>
@@ -518,13 +551,14 @@ function UserRow({ user, onUpdate }: { user: UserOut; onUpdate: (body: UserPatch
   return (
     <TableRow>
       <div className="min-w-0">
-        <div className="truncate text-sm text-paper">{user.email}</div>
-        <div className="mt-0.5 text-xs text-paper/50">{user.role} · {user.status}</div>
+        <div className="truncate text-sm text-foreground">{user.email}</div>
+        <div className="mt-0.5 text-xs text-muted-foreground">{user.role} · {user.status}</div>
       </div>
       <div className="flex flex-wrap items-center justify-end gap-2">
         <input aria-label={`${user.email} 5h override`} className={inputClass} type="number" min={0} value={fiveHour} onChange={(e) => setFiveHour(Number(e.target.value))} />
         <input aria-label={`${user.email} monthly override`} className={inputClass} type="number" min={0} value={monthly} onChange={(e) => setMonthly(Number(e.target.value))} />
-        <button type="button" className={buttonClass} onClick={() => onUpdate({ credits_5h: fiveHour, credits_month: monthly })}>Save quota</button>
+         <button type="button" className={buttonClass} onClick={() => onUpdate({ credits_5h: fiveHour, credits_month: monthly })}><Save size={13} aria-hidden="true" />Save quota</button>
+
         <select aria-label={`${user.email} role`} className={inputClass} value={user.role} onChange={(e) => onUpdate({ role: e.target.value as UserPatch['role'] })}><option value="user">user</option><option value="admin">admin</option><option value="demo">demo</option></select>
         <button type="button" className={buttonClass} onClick={() => onUpdate({ status: user.status === 'active' ? 'disabled' : 'active' })}>{user.status === 'active' ? 'Disable' : 'Enable'}</button>
       </div>
@@ -537,12 +571,13 @@ function PlanRow({ plan, onSave }: { plan: PlanOut; onSave: (body: PlanPatch) =>
   return (
     <TableRow>
       <div className="min-w-0">
-        <div className="truncate font-mono text-sm text-paper">{plan.name}</div>
-        <div className="mt-0.5 text-xs text-paper/50">5h {plan.credits_5h}</div>
+        <div className="truncate font-mono text-sm text-foreground">{plan.name}</div>
+        <div className="mt-0.5 text-xs text-muted-foreground">5h {plan.credits_5h}</div>
       </div>
       <div className="flex items-center gap-2">
         <input aria-label={`${plan.name} monthly credits`} className={inputClass} type="number" value={month} onChange={(e) => setMonth(Number(e.target.value))} />
-        <button type="button" className={buttonClass} onClick={() => onSave({ credits_month: month })}>Save</button>
+         <button type="button" className={buttonClass} onClick={() => onSave({ credits_month: month })}><Save size={13} aria-hidden="true" />Save</button>
+
       </div>
     </TableRow>
   )

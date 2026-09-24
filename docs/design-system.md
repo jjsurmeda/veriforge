@@ -26,41 +26,49 @@ Two ideas carry the whole system:
 
 ## 2. Colour
 
-Six named tokens, dark-first (this is a long-session working tool), with a
-full light-mode pairing.
+The default theme is **light**: a cool workbench surface with a strong
+indigo action colour, cyan for evidence in motion, and pink as a sparing
+accent for selection and focus. Dark mode is a separately designed theme,
+not an inversion. The semantic names below are the source of truth for
+`apps/web/src/styles/tokens.css`.
 
-| Token | Hex | Role |
-| --- | --- | --- |
-| Ink | `#10131A` | Base background, dark. Blue-black, not a flat near-black. |
-| Graphite | `#1A1F29` | Surfaces: panels, composer, trace rows. |
-| Mist | `#2B3140` | Borders, dividers, disabled state, "(fallback)" labels. |
-| Ember | `#FF6A2C` | **Active/generating only** — a run in progress, a hop firing, the Stop button. Never a static brand accent. |
-| Patina | `#1FA37E` | Verified / supported claims and citations. Proven-over-time, like oxidised metal — not a generic SaaS mint. |
-| Rust | `#C1432B` | Contradicted / unsupported claims. Deliberately more red, less orange, than Ember, so the two never get confused mid-stream. |
-| Paper | `#F3F4F1` | Light-mode background — cool off-white, not cream. |
+| Token | Light | Dark | Role |
+| --- | --- | --- | --- |
+| `background` | `#F7F8FC` | `#0E1320` | App canvas; separates the workbench from the browser. |
+| `surface` | `#FFFFFF` | `#151C2B` | Cards, panels, sidebars, composer, and tables. |
+| `surface-muted` | `#EEF2F8` | `#1B2537` | Inset controls and secondary panels. |
+| `border` | `#DCE3EF` | `#29364B` | Quiet dividers and card edges. |
+| `foreground` | `#182238` | `#EEF2FF` | Primary text and iconography. |
+| `muted-foreground` | `#667085` | `#A7B2C7` | Metadata, labels, and non-essential copy. |
+| `primary` | `#6366F1` | `#818CF8` | Primary action, active selection, and focus glow. |
+| `secondary` | `#06B6D4` | `#22D3EE` | Evidence and retrieval activity. |
+| `accent` | `#EC4899` | `#F472B6` | A small amount of emphasis and live selection. |
+| `success` | `#0E9F78` | `#34D399` | Supported, ready, and successful state. |
+| `warning` | `#C27A08` | `#FBBF24` | Partial or attention state. |
+| `danger` | `#D92D5F` | `#FB7185` | Failed, unsupported, or destructive state. |
+| `info` | `#087EA4` | `#38BDF8` | Neutral system information. |
 
-Amber `#E8A33D` marks "partial" verdicts, between Patina and Rust. Colour
-is always paired with a shape (chip outline, icon) per the WCAG requirement
-in the TRD — never colour alone.
+Soft pairings (`primary-soft`, `secondary-soft`, `accent-soft`, and the
+matching semantic surfaces) are intentionally low-contrast fills; the
+semantic foreground remains the readable colour. Verdict colour is always
+paired with a shape, icon, or text label. The old near-black/ember/patina
+vocabulary is removed rather than aliased, so a component cannot silently
+fall back to the old visual language.
 
-**Why not the obvious choices:** warm-cream-plus-terracotta and
-near-black-plus-acid-accent are the two most common AI-generated defaults
-right now. Ember reads as molten copper, not clay — more saturated, and
-used for exactly one live state rather than as a decorative brand colour.
-Patina is green-shifted rather than the expected cyan/mint SaaS accent,
-because the metaphor is proven metal, not a status light.
+The persisted preference is stored under `veriforge-theme`. On a first visit,
+the app follows `prefers-color-scheme`; after that, the user's choice wins.
 
 ## 3. Type
 
 | Role | Face | Why |
 | --- | --- | --- |
-| Display / headline | Space Grotesk | Geometric, slightly mechanical — reads like an instrument face, not a marketing serif. |
-| Body / UI | IBM Plex Sans | Built for on-screen density and long reading sessions; technical without being the default system font. |
-| Data (scores, latency, tokens, citations) | IBM Plex Mono | Tabular figures so numbers actually align when compared. Functional, not a decorative label wrapper — used only where digits are being compared. |
+| Display / headline | Inter | Clear, contemporary UI voice with enough character for the workbench. |
+| Body / UI | Inter | Dense labels and long evidence remain comfortable at small sizes. |
+| Data (scores, latency, tokens, citations) | IBM Plex Mono | Tabular figures make comparisons and live metrics scannable. |
 
-Scale (rem, 1rem = 16px): `0.8125 / 0.875 / 1 / 1.125 / 1.375 / 1.75 / 2.25`.
-Body copy sits at 0.9375–1rem. Line length caps near 72 characters in the
-transcript and trace panels.
+The type scale is an Inter-style rem scale: `0.8125 / 0.875 / 1 / 1.125 /
+1.375 / 1.75 / 2.25`. Body copy sits at 0.9375–1rem. Line length caps near
+72 characters in the transcript and trace panels.
 
 ## 4. Layout
 
@@ -74,38 +82,43 @@ left-aligned throughout. No centred marketing-style blocks inside the app.
 │ • Chat A   │  A: [1][2] ...answer text...   │ ● retrieve  8 chunks       │
 │ • Chat B   │      ▓▓▓ streaming ▓▓▓          │ ● review    faithful 0.92 │
 │            │  [1] doc.pdf p.4   0.87 ●      │                            │
-│            │ ┌ composer: mode · source · send ┐                         │
+│            │ ┌ composer: settings · send ┐                         │
 └────────────┴───────────────────────────────┴────────────────────────────┘
 ```
 
 Admin pages break from the three-pane shell into a left-nav plus dense,
 sortable content tables — admins are scanning configuration, not browsing
-a catalogue, so tables beat cards there too.
+a catalogue, so tables beat decorative cards there too.
 
 ## 5. Components
 
-- **Citation chip.** Inline `[n]`, coloured by current verdict — grey while
-  pending, then Patina / Amber / Rust. A small filled numeral, closer to a
-  footnote mark than a rounded pill with a shadow.
+- **Citation chip.** Inline `[n]`, coloured by current verdict — muted while
+  pending, then `success`, `warning`, or `danger`. A small filled numeral,
+  closer to a footnote mark than a rounded pill with a shadow.
 - **Trace row.** One line: a status dot, the node name, the result, and the
   Jev probability set in Plex Mono on the right. A fallback-engine decision
-  gets a small "(fallback)" label in Mist — not a separate colour.
+  gets a small "(fallback)" label in the muted colour — not a separate hue.
 - **Latency waterfall / score bars.** Thin horizontal bars in a single
-  Graphite fill, labelled with the exact number. No per-bar rainbow
+  surface-muted fill, labelled with the exact number. No per-bar rainbow
   gradients.
-- **Buttons.** One filled primary style, Ember, reserved for the actively
-  running Stop action. Everything else is outline or text buttons in
-  Ink/Paper tones.
+- **Buttons.** One filled primary style for the main action, plus quiet outline
+  and text actions. The active stop action uses the danger semantic colour.
+- **Cards and panels.** Use `surface`, a quiet `border`, radius `md` or `lg`,
+  and a small elevation step on hover. Avoid a stack of identical cards where
+  a list or table would scan faster.
 
 ## 6. Motion
 
-One deliberate, response-triggered sequence: while an answer streams,
-citation chips sit grey. The moment the reviewer returns a verdict for a
-claim, its chip crossfades to its verdict colour (200ms) and a thin
-underline briefly traces under the claim it belongs to. That's the whole
-motion budget — no load-in animations, no hover-lift on every card. This
-motion answers a real event (a verdict arriving), which is the case worth
-animating.
+Motion is purposeful and state-driven. Interactive elements shift colour,
+border, elevation, or a small translate on hover and press. The theme toggle
+crossfades surface and text colours smoothly. New messages enter with a
+subtle 8px slide and fade, never a bounce. Citation chips retain their
+verdict crossfade when a reviewer result arrives. Active and focus states use
+a quiet primary/accent glow so keyboard users can see where they are.
+
+Motion stays in the 150–320ms range and only communicates a real state
+change, feedback, or reveal. `prefers-reduced-motion` is an accessibility
+floor: all transitions and animations become instant, with no exceptions.
 
 ## 7. Voice
 
@@ -119,16 +132,18 @@ vague "I don't know."
 ## 8. Accessibility floor
 
 WCAG 2.1 AA contrast in both themes. Verdict colour always paired with
-shape. Visible keyboard focus ring, Ember, 2px. `prefers-reduced-motion`
-disables the chip crossfade — verdicts still land, just instantly. Every
-chart in the Metrics tab has a text equivalent in the row it summarises.
+shape, icon, or text. Visible keyboard focus uses the primary colour at 2px.
+`prefers-reduced-motion` disables all nonessential motion — verdicts and
+state changes still land, just instantly. Every chart in the Metrics tab has
+a text equivalent in the row it summarises.
 
 ## 9. What we deliberately avoided
 
-- Cream/terracotta and near-black/acid-accent default palettes (§2).
+- The old near-black and ember-first palette; the default is now a designed
+  light workbench with a paired dark theme.
 - Numbered 01/02/03 markers anywhere content isn't actually a sequence —
   Deep-mode hop numbers are the one legitimate case.
 - ALL-CAPS eyebrows, middle-dot metadata strings, trailing arrows on
-  buttons.
-- An identical rounded-card grid for citations, sources and admin lists —
-  each uses the layout that matches how it's actually scanned.
+  buttons, and hand-drawn replacement iconography.
+- An identical rounded-card grid for citations, sources, and admin lists —
+  each uses the layout that matches how it is actually scanned.

@@ -26,7 +26,7 @@ test('uploads, edits, re-indexes, and deletes Docent sources', async ({ page }) 
   await expect(page.getByRole('heading', { name: collectionName })).toBeVisible()
 
   await page.locator('input[type="file"]').setInputFiles(files)
-  const documentRows = page.locator('main > ul').locator('li')
+  const documentRows = page.locator('main ul').locator('li')
   await expect(documentRows).toHaveCount(3, { timeout: 120_000 })
   await expect(documentRows.filter({ hasText: 'ready' })).toHaveCount(3, { timeout: 120_000 })
   await expect(page.getByText('1 page: scanned?')).toBeVisible()

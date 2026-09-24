@@ -73,10 +73,10 @@ export function verdictTone(verdict: string | null): VerdictTone {
 }
 
 const TONE_TEXT: Record<VerdictTone, string> = {
-  pending: 'text-paper/40',
-  supported: 'text-patina',
-  partial: 'text-amber-verdict',
-  unsupported: 'text-rust',
+  pending: 'text-muted-foreground',
+  supported: 'text-success',
+  partial: 'text-warning',
+  unsupported: 'text-danger',
 }
 
 const TONE_GLYPH: Record<VerdictTone, string> = {
@@ -167,20 +167,20 @@ export function CitationChip({ n, source, verdict }: Props) {
         ref={tooltipRef}
         role="tooltip"
         aria-hidden={!open}
-        className={`pointer-events-none absolute z-30 w-80 max-w-[calc(100vw-1rem)] rounded-sm border border-mist bg-graphite p-3 text-left shadow-lg transition-opacity duration-150 motion-reduce:transition-none ${open ? 'visible opacity-100' : 'invisible opacity-0'} ${placementClass} ${alignmentClass}`}
+        className={`pointer-events-none absolute z-30 w-80 max-w-[calc(100vw-1rem)] rounded-lg border border-border bg-surface p-3 text-left shadow-lg transition-opacity duration-150 motion-reduce:transition-none ${open ? 'visible opacity-100' : 'invisible opacity-0'} ${placementClass} ${alignmentClass}`}
       >
         <span className="mb-1 flex items-baseline justify-between gap-2">
-          <span className="truncate font-mono text-xs text-paper">
+          <span className="truncate font-mono text-xs text-foreground">
             {source?.documentName ?? (source?.sourceType === 'web' ? 'Web source' : 'Source')}
           </span>
           {source?.page !== null && source?.page !== undefined && (
-            <span className="shrink-0 font-mono text-xs text-paper/50">p.{source.page}</span>
+            <span className="shrink-0 font-mono text-xs text-muted-foreground">p.{source.page}</span>
           )}
         </span>
-        <span className="mb-2 block max-h-32 overflow-y-auto whitespace-pre-wrap text-xs leading-5 text-paper/80">
+        <span className="mb-2 block max-h-32 overflow-y-auto whitespace-pre-wrap text-xs leading-5 text-foreground">
           {source?.excerpt ?? '(source expired)'}
         </span>
-        <span className="block font-mono text-[0.65rem] text-paper/50">
+        <span className="block font-mono text-[0.65rem] text-muted-foreground">
           rerank {source?.rerankScore !== null && source?.rerankScore !== undefined ? source.rerankScore.toFixed(3) : '—'}
           {source?.pSupported !== null && source?.pSupported !== undefined && (
             <span> · support {source.pSupported.toFixed(2)}</span>

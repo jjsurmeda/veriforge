@@ -1,8 +1,10 @@
+import { LogIn, Mail, UserRound } from 'lucide-react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
 
 import { loginAuthLoginPost } from '../../../generated/sdk.gen'
 import { setAccessToken } from '../../../lib/auth'
+import { AuthShell } from '../components/AuthShell'
 
 interface ApiErrorBody {
   error_code?: string
@@ -35,54 +37,67 @@ export function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-ink text-paper">
-      <div className="w-80 rounded border border-mist bg-graphite p-6">
-        <h1 className="font-display text-xl">Veriforge</h1>
-        <form onSubmit={(e) => void onSubmit(e)} className="mt-4 flex flex-col gap-3">
-          <input
-             name="email"
-             aria-label="Email"
-             type="email"
-
-            required
-            autoComplete="email"
-            placeholder="Email"
-            className="rounded border border-mist bg-ink px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-ember"
-          />
-          <input
-             name="password"
-             aria-label="Password"
-             type="password"
-
-            required
-            autoComplete="current-password"
-            placeholder="Password"
-            className="rounded border border-mist bg-ink px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-ember"
-          />
-          {error && <p className="text-sm text-rust">{error}</p>}
-          <button
-            type="submit"
-            disabled={busy}
-            className="rounded border border-mist py-2 text-sm hover:border-paper/50 focus-visible:outline-2 focus-visible:outline-ember"
-          >
-            Sign in
-          </button>
-        </form>
-        <a
-          href="/auth/google/login"
-          className="mt-3 block rounded border border-mist py-2 text-center text-sm text-paper/70 hover:border-paper/50 focus-visible:outline-2 focus-visible:outline-ember"
-        >
-          Continue with Google
-        </a>
-        <div className="mt-4 flex justify-between text-xs text-paper/50">
-          <Link to="/signup" className="hover:text-paper">
+    <AuthShell
+      title="Welcome back"
+      description="Sign in to continue building answers you can inspect."
+      footer={
+        <div className="flex justify-center gap-4">
+          <Link to="/signup" className="rounded-md font-medium text-primary transition-colors duration-180 hover:text-primary-strong focus-visible:outline-2 focus-visible:outline-primary">
             Create account
           </Link>
-          <Link to="/forgot-password" className="hover:text-paper">
+          <Link to="/forgot-password" className="rounded-md transition-colors duration-180 hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary">
             Forgot password
           </Link>
         </div>
+      }
+    >
+      <form onSubmit={(e) => void onSubmit(e)} className="space-y-3">
+        <label className="relative block">
+          <Mail size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+          <input
+            name="email"
+            aria-label="Email"
+            type="email"
+            required
+            autoComplete="email"
+            placeholder="Email"
+            className="h-11 w-full rounded-lg border border-border bg-background pl-10 pr-3 text-sm text-foreground placeholder:text-muted-foreground/70 transition-[border-color,box-shadow] duration-180 hover:border-primary/40 focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25"
+          />
+        </label>
+        <label className="relative block">
+          <UserRound size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+          <input
+            name="password"
+            aria-label="Password"
+            type="password"
+            required
+            autoComplete="current-password"
+            placeholder="Password"
+            className="h-11 w-full rounded-lg border border-border bg-background pl-10 pr-3 text-sm text-foreground placeholder:text-muted-foreground/70 transition-[border-color,box-shadow] duration-180 hover:border-primary/40 focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25"
+          />
+        </label>
+        {error && <p role="alert" className="rounded-lg border border-danger/30 bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
+        <button
+          type="submit"
+          disabled={busy}
+          className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-on-primary shadow-sm transition-[background-color,transform,box-shadow] duration-180 hover:-translate-y-0.5 hover:bg-primary-strong hover:shadow-md active:translate-y-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-60 motion-reduce:transform-none motion-reduce:transition-none"
+        >
+          <LogIn size={16} aria-hidden="true" />
+          {busy ? 'Signing in…' : 'Sign in'}
+        </button>
+      </form>
+      <div className="my-5 flex items-center gap-3 text-[0.65rem] uppercase tracking-[0.12em] text-muted-foreground">
+        <span className="h-px flex-1 bg-border" />
+        or
+        <span className="h-px flex-1 bg-border" />
       </div>
-    </main>
+      <a
+        href="/auth/google/login"
+        className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-border bg-surface-muted px-4 text-sm font-medium text-foreground transition-[background-color,border-color,transform,box-shadow] duration-180 hover:-translate-y-0.5 hover:border-primary/40 hover:bg-primary-soft hover:shadow-sm active:translate-y-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary motion-reduce:transform-none motion-reduce:transition-none"
+      >
+        <LogIn size={16} className="text-secondary" aria-hidden="true" />
+        Continue with Google
+      </a>
+    </AuthShell>
   )
 }

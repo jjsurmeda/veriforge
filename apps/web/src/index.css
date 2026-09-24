@@ -5,14 +5,75 @@
 @import '@fontsource/ibm-plex-mono/400.css';
 @import './styles/tokens.css';
 
+:root {
+  font-family: var(--font-body);
+  color: var(--color-foreground);
+  background: var(--color-background);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
 body {
   margin: 0;
-  background: var(--color-ink);
-  color: var(--color-paper);
-  font-family: var(--font-body);
+  background: var(--color-background);
+  color: var(--color-foreground);
+  transition: background-color var(--motion-slow) var(--motion-ease), color var(--motion-slow) var(--motion-ease);
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+a,
+select {
+  touch-action: manipulation;
+}
+
+::selection {
+  background: var(--color-primary-soft);
+  color: var(--color-foreground);
 }
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: var(--color-mist) transparent;
+  scrollbar-color: var(--color-border-strong) transparent;
+}
+
+@keyframes message-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.message-enter {
+  animation: message-enter var(--motion-slow) var(--motion-ease) both;
+}
+
+.theme-transition,
+.theme-transition * {
+  transition-property: background-color, border-color, color, box-shadow, transform, opacity;
+  transition-duration: var(--motion-slow);
+  transition-timing-function: var(--motion-ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .message-enter {
+    animation: none;
+  }
 }

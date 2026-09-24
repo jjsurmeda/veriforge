@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { FileText, FolderOpen, Menu } from 'lucide-react'
 
 import { useCollections, useCreateCollection } from '../hooks/useCollections'
 import {
@@ -20,6 +21,7 @@ const LIVE_STATUSES = new Set(['queued', 'parsing', 'embedding'])
 export function SourcesPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [viewerId, setViewerId] = useState<string | null>(null)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
 
   const collections = useCollections()
   const createCollection = useCreateCollection()
@@ -43,7 +45,7 @@ export function SourcesPage() {
   }
 
   return (
-    <div className="flex h-screen bg-ink text-paper">
+    <div className="theme-transition flex h-screen bg-background text-foreground">
       <CollectionList
         collections={collections.data ?? []}
         selectedId={selectedId}
@@ -56,18 +58,41 @@ export function SourcesPage() {
           if (created) setSelectedId(created.id)
         }}
         creating={createCollection.isPending}
+        mobileOpen={sidebarOpen}
+        onMobileClose={() => setSidebarOpen(false)}
       />
-      <main className="flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto p-6">
-        {selected ? (
+      <main className="flex min-w-0 flex-1 flex-col">
+        <div className="flex items-center justify-between border-b border-border bg-surface px-3 py-2 lg:hidden">
+          <button
+            type="button"
+            aria-label="Open source navigation"
+            onClick={() => setSidebarOpen(true)}
+            className="inline-flex size-9 items-center justify-center rounded-lg border border-border bg-surface-muted text-muted-foreground transition-[color,background-color,transform] duration-180 hover:bg-primary-soft hover:text-primary active:translate-y-px focus-visible:outline-2 focus-visible:outline-primary motion-reduce:transition-none"
+          >
+            <Menu size={17} aria-hidden="true" />
+          </button>
+          <span className="text-sm font-semibold text-foreground">Sources</span>
+          <span className="size-9" aria-hidden="true" />
+        </div>
+        <div className="flex flex-1 flex-col gap-5 overflow-y-auto p-4 sm:p-6 lg:p-8">
+          {selected ? (
           <>
-            <header className="flex items-baseline justify-between gap-3">
-              <h1 className="font-display text-xl tracking-tight text-paper">
-                {selected.name}
-                {selected.visibility === 'shared' && (
-                  <span className="ml-2 text-sm text-paper/40">shared</span>
-                )}
-              </h1>
-              <span className="text-xs text-paper/40">
+            <header className="flex flex-wrap items-end justify-between gap-3 rounded-xl border border-border bg-surface px-5 py-4 shadow-sm">
+              <div className="flex items-center gap-3">
+                <span className="flex size-10 items-center justify-center rounded-xl bg-secondary-soft text-secondary shadow-sm">
+                  <FolderOpen size={19} aria-hidden="true" />
+                </span>
+                <div>
+                  <h1 className="font-display text-xl font-semibold tracking-tight text-foreground">
+                    {selected.name}
+                  </h1>
+                  {selected.visibility === 'shared' && (
+                    <span className="mt-0.5 inline-flex rounded-full bg-accent-soft px-2 py-0.5 text-[0.65rem] font-medium text-accent">shared</span>
+                  )}
+                </div>
+              </div>
+              <span className="inline-flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
+                <FileText size={13} aria-hidden="true" />
                 {selected.document_count} document{selected.document_count === 1 ? '' : 's'}
               </span>
             </header>
@@ -84,13 +109,18 @@ export function SourcesPage() {
             />
           </>
         ) : (
-          <p className="p-6 text-sm text-paper/60">
-            Select a collection on the left, or create one to start adding sources.
-          </p>
-        )}
+          <div className="flex min-h-[50vh] items-center justify-center rounded-xl border border-dashed border-border-strong bg-surface/60 p-8 text-center shadow-sm">
+            <div>
+              <FolderOpen size={28} className="mx-auto text-muted-foreground" aria-hidden="true" />
+              <p className="mt-3 text-sm text-muted-foreground">Select a collection on the left, or create one to start adding sources.</p>
+            </div>
+           </div>
+         )}
+        </div>
       </main>
+
       {viewerDocument && (
-        <div className="w-[42rem] shrink-0">
+        <div className="w-full shrink-0 lg:w-[42rem]">
           <DocumentViewer
             document={viewerDocument}
             chunks={chunks.data ?? []}

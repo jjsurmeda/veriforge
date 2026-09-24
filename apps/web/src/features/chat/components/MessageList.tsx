@@ -1,3 +1,5 @@
+import { Bot, ChevronDown, CircleAlert, CircleX, FileText, Layers3, Search, UserRound } from 'lucide-react'
+
 import type { ReactNode } from 'react'
 
 import type { MessageOut } from '../../../generated/types.gen'
@@ -69,22 +71,22 @@ function renderWithCitations(
 function StatusLabel({ status }: { status: string | null }) {
   if (status === 'cancelled') {
     return (
-      <span className="ml-2 inline-flex items-center gap-1 text-xs text-paper/60">
-        <span aria-hidden="true">—</span> Cancelled
+      <span className="ml-2 inline-flex items-center gap-1 text-xs text-muted-foreground">
+        <span className="inline-block h-px w-3 bg-current" aria-hidden="true" /> Cancelled
       </span>
     )
   }
   if (status === 'failed') {
     return (
-      <span className="ml-2 inline-flex items-center gap-1 text-xs text-rust">
-        <span aria-hidden="true">!</span> Failed
+      <span className="ml-2 inline-flex items-center gap-1 text-xs text-danger">
+        <CircleX size={13} aria-hidden="true" /> Failed
       </span>
     )
   }
   if (status === 'abstained') {
     return (
-      <span className="ml-2 inline-flex items-center gap-1 text-xs text-amber-verdict">
-        <span aria-hidden="true">~</span> Abstained
+      <span className="ml-2 inline-flex items-center gap-1 text-xs text-warning">
+        <CircleAlert size={13} aria-hidden="true" /> Abstained
       </span>
     )
   }
@@ -113,10 +115,10 @@ function AnswerFooter({ metrics }: { metrics: Record<string, unknown> | null | u
     tokensIn !== undefined
   if (!hasAnything) return null
   return (
-    <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 border-t border-mist/40 pt-2 font-mono text-[0.65rem] text-paper/60">
+    <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 border-t border-border/40 pt-2 font-mono text-[0.65rem] text-muted-foreground">
       {faithfulness !== null && faithfulness !== undefined && (
         <span>
-          faithful <span className="text-patina">{fmt(faithfulness)}</span>
+          faithful <span className="text-success">{fmt(faithfulness)}</span>
         </span>
       )}
       {minSupport !== null && minSupport !== undefined && (
@@ -143,25 +145,23 @@ function DiffLine({ line }: { line: string }) {
   const isRemoval = line.startsWith('-') && !line.startsWith('---')
   const isHunk = line.startsWith('@@')
   const tone = isAddition
-    ? 'bg-patina/5 text-patina'
+    ? 'bg-success-soft text-success'
     : isRemoval
-      ? 'bg-rust/5 text-rust'
+      ? 'bg-danger-soft text-danger'
       : isHunk
-        ? 'text-amber-verdict'
-        : 'text-paper/60'
+        ? 'text-warning'
+        : 'text-muted-foreground'
   return <span className={`block whitespace-pre-wrap px-3 ${tone}`}>{line || ' '}</span>
 }
 
 function RevisionBanner({ diff }: { diff: string }) {
   return (
-    <details className="group mt-3 overflow-hidden rounded-sm border border-mist border-l-2 border-l-amber-verdict/80 bg-ink/35 open:bg-ink/55">
-      <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-xs text-amber-verdict transition-colors duration-150 hover:bg-amber-verdict/5 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-amber-verdict motion-reduce:transition-none [&::-webkit-details-marker]:hidden">
+    <details className="group mt-3 overflow-hidden rounded-lg border border-border border-l-2 border-l-warning/80 bg-surface-muted open:bg-surface-muted">
+      <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-xs text-warning transition-colors duration-180 hover:bg-warning-soft focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-warning motion-reduce:transition-none [&::-webkit-details-marker]:hidden">
         <span>Reviewer revised this answer — show what changed</span>
-        <span aria-hidden="true" className="text-[0.65rem] text-amber-verdict/60 transition-transform duration-150 group-open:rotate-180 motion-reduce:transition-none">
-          ⌄
-        </span>
+        <ChevronDown size={14} aria-hidden="true" className="text-warning/70 transition-transform duration-180 group-open:rotate-180 motion-reduce:transition-none" />
       </summary>
-      <div className="max-h-48 overflow-auto border-t border-mist/50 py-2 font-mono text-[0.65rem] leading-5">
+      <div className="max-h-48 overflow-auto border-t border-border/50 py-2 font-mono text-[0.65rem] leading-5">
         {diff.split('\n').map((line, index) => (
           <DiffLine key={`${index}-${line}`} line={line} />
         ))}
@@ -180,7 +180,7 @@ function SuggestionsRow({
   return (
     <div className="mx-auto max-w-[72ch] px-4 pb-3">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="font-mono text-[0.65rem] uppercase tracking-[0.1em] text-paper/45">
+        <span className="font-mono text-[0.65rem] uppercase tracking-[0.1em] text-foreground/45">
           Suggested follow-ups:
         </span>
         {questions.map((question) => (
@@ -188,7 +188,7 @@ function SuggestionsRow({
             key={question}
             type="button"
             onClick={() => onSelect(question)}
-            className="min-h-8 rounded-sm border border-mist bg-ink/40 px-2.5 py-1.5 text-left text-xs text-paper/80 transition-[background-color,border-color,transform] duration-150 hover:border-paper/50 hover:bg-mist/30 active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ember motion-reduce:transition-none"
+            className="min-h-8 rounded-sm border border-border bg-surface-muted px-2.5 py-1.5 text-left text-xs text-foreground transition-[background-color,border-color,transform] duration-150 hover:border-paper/50 hover:bg-surface-muted active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary motion-reduce:transition-none"
           >
             {question}
           </button>
@@ -207,19 +207,19 @@ function AbstentionActions({
 }) {
   return (
     <div
-      className="mx-auto max-w-[72ch] border-l-2 border-amber-verdict/60 px-4 pb-3 pl-5"
+      className="mx-auto max-w-[72ch] border-l-2 border-warning/60 px-4 pb-3 pl-5"
       role="group"
       aria-label="Abstention actions"
     >
-      <p className="mb-2 text-xs text-paper/55">Try another path:</p>
+      <p className="mb-2 text-xs text-foreground/55">Try another path:</p>
       <div className="flex flex-wrap gap-2">
         {actions.includes('web') && (
           <button
             type="button"
             onClick={() => onSelect('web')}
-            className="inline-flex min-h-9 items-center gap-2 rounded-sm border border-amber-verdict/50 bg-amber-verdict/5 px-3 py-1.5 text-xs text-amber-verdict transition-[background-color,border-color,transform] duration-150 hover:border-amber-verdict hover:bg-amber-verdict/10 active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ember motion-reduce:transition-none"
+            className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-warning/50 bg-warning-soft px-3 py-1.5 text-xs text-warning transition-[background-color,border-color,transform] duration-180 hover:border-warning hover:bg-warning-soft active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary motion-reduce:transition-none"
           >
-            <span aria-hidden="true">↗</span>
+            <Search size={14} aria-hidden="true" />
             Searching the web
           </button>
         )}
@@ -227,9 +227,9 @@ function AbstentionActions({
           <button
             type="button"
             onClick={() => onSelect('deep')}
-            className="inline-flex min-h-9 items-center gap-2 rounded-sm border border-amber-verdict/50 bg-amber-verdict/5 px-3 py-1.5 text-xs text-amber-verdict transition-[background-color,border-color,transform] duration-150 hover:border-amber-verdict hover:bg-amber-verdict/10 active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ember motion-reduce:transition-none"
+            className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-warning/50 bg-warning-soft px-3 py-1.5 text-xs text-warning transition-[background-color,border-color,transform] duration-180 hover:border-warning hover:bg-warning-soft active:translate-y-px focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary motion-reduce:transition-none"
           >
-            <span aria-hidden="true">＋</span>
+            <Layers3 size={14} aria-hidden="true" />
             Deep mode
           </button>
         )}
@@ -283,54 +283,73 @@ export function MessageList({ messages, live, onSuggestion, onAbstainAction }: P
               ? (message.metrics?.revision_diff as string | undefined)
               : undefined)
         return (
-          <div key={message.id} className="px-4">
-            <div className="mb-1 font-mono text-xs text-paper/40">
-              {isAssistant ? 'Veriforge' : 'You'}
-              <StatusLabel status={message.status} />
-            </div>
-            <div className="whitespace-pre-wrap text-[0.9375rem] leading-6 text-paper">
-              {renderWithCitations(content, lookup, verdictFor)}
-              {isLivePlaceholder && live.hold && (
-                <span className="ml-2 inline-block animate-pulse text-xs text-amber-verdict" role="status">
-                  Verifying…
-                </span>
-              )}
-              {isLivePlaceholder && live.status === 'streaming' && !live.hold && (
-                <span className="ml-0.5 inline-block h-4 w-2 animate-pulse bg-ember align-text-bottom" />
-              )}
-            </div>
-            {revisionDiff && <RevisionBanner diff={revisionDiff} />}
+          <div key={message.id} className={`message-enter flex px-4 ${isAssistant ? 'justify-start' : 'justify-end'}`}>
+            <div className={`flex max-w-[88%] items-end gap-2 ${isAssistant ? '' : 'flex-row-reverse'}`}>
+              <span
+                className={`mb-1 flex size-8 shrink-0 items-center justify-center rounded-xl shadow-sm ${
+                  isAssistant ? 'bg-secondary-soft text-secondary' : 'bg-primary-soft text-primary'
+                }`}
+                aria-hidden="true"
+              >
+                {isAssistant ? <Bot size={16} /> : <UserRound size={16} />}
+              </span>
+              <div className="min-w-0">
+                <div className={`mb-1 flex items-center gap-2 ${isAssistant ? 'justify-start' : 'justify-end'}`}>
+                  <StatusLabel status={message.status} />
+                </div>
+                <div
+                  className={`whitespace-pre-wrap rounded-xl px-4 py-3 text-[0.9375rem] leading-6 shadow-sm transition-[background-color,border-color,box-shadow,transform] duration-200 ${
+                    isAssistant
+                      ? 'rounded-tl-sm border border-border bg-surface text-foreground'
+                      : 'rounded-tr-sm bg-primary text-on-primary'
+                  }`}
+                >
+                  {renderWithCitations(content, lookup, verdictFor)}
+                  {isLivePlaceholder && live.hold && (
+                    <span className="ml-2 inline-flex items-center gap-1 align-middle text-xs text-warning" role="status">
+                      <CircleAlert size={13} aria-hidden="true" />
+                      Verifying…
+                    </span>
+                  )}
+                  {isLivePlaceholder && live.status === 'streaming' && !live.hold && (
+                    <span className="ml-0.5 inline-block h-4 w-0.5 animate-pulse rounded-full bg-accent align-text-bottom" />
+                  )}
+                </div>
+                {revisionDiff && <RevisionBanner diff={revisionDiff} />}
             {isLivePlaceholder && live.chunks.length > 0 && (
-              <details className="mt-3 overflow-hidden rounded-sm border border-mist/70 bg-ink/20 open:bg-ink/40">
-                <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 font-mono text-xs text-paper/65 transition-colors duration-150 hover:bg-mist/30 hover:text-paper focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ember motion-reduce:transition-none [&::-webkit-details-marker]:hidden">
-                  Sources ({live.chunks.length})
+              <details className="group mt-3 overflow-hidden rounded-lg border border-border/70 bg-surface-muted open:bg-surface-muted">
+                <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 font-mono text-xs text-muted-foreground transition-colors duration-180 hover:bg-surface-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary motion-reduce:transition-none [&::-webkit-details-marker]:hidden">
+                  <span className="inline-flex items-center gap-1.5"><FileText size={13} aria-hidden="true" /> Sources ({live.chunks.length})</span>
+                  <ChevronDown size={14} aria-hidden="true" className="transition-transform duration-180 group-open:rotate-180 motion-reduce:transition-none" />
                 </summary>
                 <SourcesTab chunks={live.chunks} />
               </details>
             )}
             {!isLivePlaceholder && citations.length > 0 && (
-              <details className="mt-3 overflow-hidden rounded-sm border border-mist/70 bg-ink/20 open:bg-ink/40">
-                <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 font-mono text-xs text-paper/65 transition-colors duration-150 hover:bg-mist/30 hover:text-paper focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ember motion-reduce:transition-none [&::-webkit-details-marker]:hidden">
-                  Sources ({citations.length})
+              <details className="group mt-3 overflow-hidden rounded-lg border border-border/70 bg-surface-muted open:bg-surface-muted">
+                <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 font-mono text-xs text-muted-foreground transition-colors duration-180 hover:bg-surface-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary motion-reduce:transition-none [&::-webkit-details-marker]:hidden">
+                  <span className="inline-flex items-center gap-1.5"><FileText size={13} aria-hidden="true" /> Sources ({citations.length})</span>
+                  <ChevronDown size={14} aria-hidden="true" className="transition-transform duration-180 group-open:rotate-180 motion-reduce:transition-none" />
                 </summary>
-                <ol className="divide-y divide-mist/50">
+
+                <ol className="divide-y divide-border">
                   {citations.map((citation) => (
                     <li key={citation.n} className="px-4 py-3">
                       <div className="mb-1 flex items-baseline justify-between gap-3">
-                        <span className="truncate font-mono text-xs text-paper">
+                        <span className="truncate font-mono text-xs text-foreground">
                           [{citation.n}]{' '}
                           {citation.document_name ?? 'Source'}
                         </span>
                         {citation.page != null && (
-                          <span className="shrink-0 font-mono text-xs text-paper/50">
+                          <span className="shrink-0 font-mono text-xs text-muted-foreground">
                             p.{citation.page}
                           </span>
                         )}
                       </div>
-                      <p className="mb-1 whitespace-pre-wrap text-xs leading-5 text-paper/70">
+                      <p className="mb-1 whitespace-pre-wrap text-xs leading-5 text-foreground/70">
                         {citation.excerpt ?? '(source expired)'}
                       </p>
-                      <span className="font-mono text-[0.65rem] text-paper/50">
+                      <span className="font-mono text-[0.65rem] text-muted-foreground">
                         rerank{' '}
                         {citation.rerank_score != null
                           ? citation.rerank_score.toFixed(3)
@@ -345,6 +364,8 @@ export function MessageList({ messages, live, onSuggestion, onAbstainAction }: P
               </details>
             )}
             {isAssistant && <AnswerFooter metrics={footerMetrics} />}
+              </div>
+            </div>
           </div>
         )
       })}
@@ -353,12 +374,12 @@ export function MessageList({ messages, live, onSuggestion, onAbstainAction }: P
       )}
       {messages.length === 0 && (
         <div className="flex min-h-[42vh] items-center px-4">
-          <div className="w-full max-w-[52ch] border-l-2 border-mist pl-5">
-            <p className="font-mono text-[0.65rem] uppercase tracking-[0.12em] text-paper/45">
+          <div className="w-full max-w-[52ch] border-l-2 border-border pl-5">
+            <p className="font-mono text-[0.65rem] uppercase tracking-[0.12em] text-foreground/45">
               Workspace ready
             </p>
-            <p className="mt-2 text-sm text-paper/70">Ask anything to start the conversation.</p>
-            <p className="mt-1 text-xs leading-5 text-paper/45">
+            <p className="mt-2 text-sm text-foreground/70">Ask anything to start the conversation.</p>
+            <p className="mt-1 text-xs leading-5 text-foreground/45">
               Citations, reviewer verdicts, and source details stay one step away while you work.
             </p>
           </div>

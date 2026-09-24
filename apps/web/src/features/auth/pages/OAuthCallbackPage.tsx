@@ -1,7 +1,9 @@
+import { LoaderCircle } from 'lucide-react'
 import { useNavigate } from '@tanstack/react-router'
 import { useEffect } from 'react'
 
 import { setAccessToken } from '../../../lib/auth'
+import { AuthShell } from '../components/AuthShell'
 
 export function OAuthCallbackPage() {
   const navigate = useNavigate()
@@ -18,8 +20,11 @@ export function OAuthCallbackPage() {
   }, [navigate])
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-ink text-paper">
-      <p className="text-sm text-paper/60">Signing you in…</p>
-    </main>
+    <AuthShell title="Signing you in" description="Finishing the secure handoff to Veriforge.">
+      <div className="flex items-center gap-3 rounded-lg border border-border bg-surface-muted px-3 py-3 text-sm text-muted-foreground">
+        <LoaderCircle size={18} className="animate-spin text-primary" aria-hidden="true" />
+        One moment…
+      </div>
+    </AuthShell>
   )
 }

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Menu } from 'lucide-react'
 
 import { useChat, useMessages } from '../hooks/useChat'
 import { useCancelRun, useCreateRun } from '../hooks/useRuns'
@@ -49,6 +50,7 @@ export function ChatView({ chatId }: { chatId: string }) {
   const [activeRunId, setActiveRunId] = useState<string | null>(null)
   const [traceRunId, setTraceRunId] = useState<string | null>(null)
   const [sendError, setSendError] = useState<string | null>(null)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   const [collectionSelection, setCollectionSelection] = useState<{
     chatId: string
     ids: string[]
@@ -127,11 +129,28 @@ export function ChatView({ chatId }: { chatId: string }) {
   }
 
   return (
-    <div className="flex h-screen bg-ink text-paper">
-      <ChatSidebar currentChatId={chatId} />
+    <div className="theme-transition flex h-screen bg-background text-foreground">
+      <ChatSidebar
+        currentChatId={chatId}
+        mobileOpen={sidebarOpen}
+        onMobileClose={() => setSidebarOpen(false)}
+      />
       <main className="flex min-w-0 flex-1 flex-col">
+        <div className="flex items-center justify-between border-b border-border bg-surface px-3 py-2 lg:hidden">
+          <button
+            type="button"
+            aria-label="Open navigation"
+            onClick={() => setSidebarOpen(true)}
+            className="inline-flex size-9 items-center justify-center rounded-lg border border-border bg-surface-muted text-muted-foreground transition-[color,background-color,transform] duration-180 hover:bg-primary-soft hover:text-primary active:translate-y-px focus-visible:outline-2 focus-visible:outline-primary motion-reduce:transition-none"
+          >
+            <Menu size={17} aria-hidden="true" />
+          </button>
+          <span className="text-sm font-semibold text-foreground">Veriforge</span>
+          <span className="size-9" aria-hidden="true" />
+        </div>
         {chat.isError ? (
-          <p className="p-6 text-sm text-paper/60">Chat not found.</p>
+           <p className="p-6 text-sm text-muted-foreground">Chat not found.</p>
+
         ) : (
           <>
             <div className="flex-1 overflow-y-auto">
@@ -144,7 +163,7 @@ export function ChatView({ chatId }: { chatId: string }) {
                 onAbstainAction={onAbstainAction}
               />
               {live?.status === 'failed' && live.error && (
-                <p role="alert" className="mx-auto max-w-[72ch] px-4 pb-4 text-sm text-amber-verdict">
+                <p role="alert" className="mx-auto max-w-[72ch] px-4 pb-4 text-sm text-warning">
                   {runFailureMessage(live.error)}
                 </p>
               )}
@@ -153,7 +172,7 @@ export function ChatView({ chatId }: { chatId: string }) {
                   <button
                     type="button"
                     onClick={resume}
-                    className="rounded border border-rust px-3 py-1.5 text-sm text-rust hover:bg-rust/10 focus-visible:outline-2 focus-visible:outline-ember"
+                    className="rounded-lg border border-danger bg-danger-soft px-3 py-1.5 text-sm text-danger transition-colors duration-180 hover:bg-danger-soft focus-visible:outline-2 focus-visible:outline-danger motion-reduce:transition-none"
                   >
                     Connection lost — resume
                   </button>

@@ -1,3 +1,5 @@
+import { AlertTriangle, Check, CircleX, Eye, FileText, LoaderCircle, RotateCcw, Trash2 } from 'lucide-react'
+
 import type { DocumentOut, PageFlag } from '../../../generated/types.gen'
 
 const LIVE_STATUSES = new Set(['queued', 'parsing', 'embedding'])
@@ -5,22 +7,22 @@ const LIVE_STATUSES = new Set(['queued', 'parsing', 'embedding'])
 export function StatusChip({ status }: { status: string }) {
   if (LIVE_STATUSES.has(status)) {
     return (
-      <span className="inline-flex items-center gap-1.5 rounded border border-ember/60 px-2 py-0.5 text-xs text-ember">
-        <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-ember" aria-hidden />
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-info/30 bg-info-soft px-2 py-1 text-xs font-medium text-info">
+        <LoaderCircle size={12} className="animate-spin" aria-hidden="true" />
         {status}
       </span>
     )
   }
   if (status === 'ready') {
     return (
-      <span className="inline-flex items-center gap-1.5 rounded border border-patina/60 px-2 py-0.5 text-xs text-patina">
-        <span aria-hidden>✓</span> ready
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success-soft px-2 py-1 text-xs font-medium text-success">
+        <Check size={12} aria-hidden="true" /> ready
       </span>
     )
   }
   return (
-    <span className="inline-flex items-center gap-1.5 rounded border border-rust/60 px-2 py-0.5 text-xs text-rust">
-      <span aria-hidden>✕</span> {status}
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-danger/30 bg-danger-soft px-2 py-1 text-xs font-medium text-danger">
+      <CircleX size={12} aria-hidden="true" /> {status}
     </span>
   )
 }
@@ -47,10 +49,11 @@ export function DocumentList({
 }) {
   if (documents.length === 0) {
     return (
-      <div className="rounded-sm border border-dashed border-mist/60 bg-graphite/30 px-4 py-6 text-center">
-        <p className="font-mono text-[0.65rem] uppercase tracking-[0.12em] text-paper/45">Documents</p>
-        <p className="mt-2 text-sm text-paper/70">No documents yet.</p>
-        <p className="mt-1 text-xs text-paper/45">Drop a document above to start building evidence.</p>
+      <div className="rounded-xl border border-dashed border-border-strong bg-surface px-4 py-10 text-center shadow-sm">
+        <FileText size={24} className="mx-auto text-muted-foreground" aria-hidden="true" />
+        <p className="mt-3 font-mono text-[0.65rem] uppercase tracking-[0.12em] text-muted-foreground">Documents</p>
+        <p className="mt-2 text-sm text-foreground">No documents yet.</p>
+        <p className="mt-1 text-xs text-muted-foreground">Drop a document above to start building evidence.</p>
       </div>
     )
   }
@@ -61,38 +64,42 @@ export function DocumentList({
         return (
           <li
             key={document.id}
-            className="flex items-center gap-3 rounded border border-mist bg-graphite px-3 py-2"
+             className="group flex items-center gap-3 rounded-xl border border-border bg-surface px-3 py-2.5 shadow-sm transition-[border-color,box-shadow,transform] duration-180 hover:-translate-y-px hover:border-primary/30 hover:shadow-md motion-reduce:transform-none motion-reduce:transition-none"
+
           >
             <button
               type="button"
               onClick={() => onView(document.id)}
-              className="min-w-0 flex-1 truncate text-left text-sm text-paper hover:underline focus-visible:outline-2 focus-visible:outline-ember"
+              className="inline-flex min-w-0 flex-1 items-center gap-2 truncate rounded-md px-1 py-1 text-left text-sm text-foreground hover:bg-primary-soft focus-visible:outline-2 focus-visible:outline-primary"
             >
+              <Eye size={14} className="shrink-0 text-muted-foreground group-hover:text-primary" aria-hidden="true" />
               {document.name}
             </button>
             <StatusChip status={document.status} />
             {flags && (
-              <span className="hidden shrink-0 items-center gap-1 text-xs text-amber-verdict sm:inline-flex">
-                <span aria-hidden>⚠</span> {flags}
+              <span className="hidden shrink-0 items-center gap-1 text-xs text-warning sm:inline-flex">
+                <AlertTriangle size={13} aria-hidden="true" /> {flags}
               </span>
             )}
             {document.tags.length > 0 && (
-              <span className="hidden shrink-0 text-xs text-paper/40 md:inline">
+              <span className="hidden shrink-0 text-xs text-muted-foreground md:inline">
                 {document.tags.join(', ')}
               </span>
             )}
             <button
               type="button"
               onClick={() => onReindex(document.id)}
-              className="shrink-0 rounded border border-mist px-2 py-0.5 text-xs text-paper/70 hover:border-paper/50 focus-visible:outline-2 focus-visible:outline-ember"
+              className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-border bg-surface-muted px-2 py-1 text-xs text-muted-foreground transition-[color,background-color,border-color,transform] duration-180 hover:border-secondary/40 hover:bg-secondary-soft hover:text-secondary active:translate-y-px focus-visible:outline-2 focus-visible:outline-secondary motion-reduce:transition-none"
             >
+              <RotateCcw size={12} aria-hidden="true" />
               Re-index
             </button>
             <button
               type="button"
               onClick={() => onDelete(document.id)}
-              className="shrink-0 rounded border border-mist px-2 py-0.5 text-xs text-rust hover:border-rust focus-visible:outline-2 focus-visible:outline-ember"
+              className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-transparent px-2 py-1 text-xs text-muted-foreground transition-[color,background-color,border-color,transform] duration-180 hover:border-danger/30 hover:bg-danger-soft hover:text-danger active:translate-y-px focus-visible:outline-2 focus-visible:outline-danger motion-reduce:transition-none"
             >
+              <Trash2 size={12} aria-hidden="true" />
               Delete
             </button>
           </li>

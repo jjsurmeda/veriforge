@@ -22,6 +22,8 @@ test('offers rename and pin controls for a chat', async ({ page }) => {
   await signUp(page, user)
   await createChat(page)
 
-  await expect(page.getByRole('button', { name: /rename/i })).toBeVisible()
-  await expect(page.getByRole('button', { name: /pin/i })).toBeVisible()
+  const row = page.locator('aside nav > div').first()
+  await row.hover()
+  await expect(row.getByRole('button', { name: /rename/i })).toBeVisible()
+  await expect(row.getByRole('button', { name: /pin/i })).toBeVisible()
 })

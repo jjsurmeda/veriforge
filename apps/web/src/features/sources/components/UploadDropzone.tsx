@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { Check, CircleX, CloudUpload, LoaderCircle } from 'lucide-react'
 
 export interface UploadOutcome {
   file: File
@@ -68,12 +69,17 @@ export function UploadDropzone({
         }}
         onDragLeave={() => setDragOver(false)}
         onDrop={onDrop}
-        className={`flex w-full flex-col items-center gap-1 rounded border border-dashed px-4 py-8 text-sm focus-visible:outline-2 focus-visible:outline-ember ${
-          dragOver ? 'border-ember text-paper' : 'border-mist text-paper/60'
-        } ${disabled ? 'cursor-not-allowed opacity-50' : 'hover:border-paper/50'}`}
+        className={`flex w-full flex-col items-center gap-2 rounded-xl border border-dashed px-4 py-8 text-sm shadow-sm transition-[border-color,background-color,transform,box-shadow] duration-180 focus-visible:outline-2 focus-visible:outline-primary motion-reduce:transition-none ${
+          dragOver
+            ? 'border-primary bg-primary-soft text-primary shadow-md'
+            : 'border-border-strong bg-surface text-foreground hover:-translate-y-0.5 hover:border-primary/50 hover:bg-primary-soft/50 hover:shadow-md'
+        } ${disabled ? 'cursor-not-allowed opacity-50' : ''}`}
       >
-        <span>Drop files here, or click to choose</span>
-        <span className="text-xs text-paper/40">PDF, Office, text — up to 20 MB each</span>
+        <span className="flex size-10 items-center justify-center rounded-xl bg-secondary-soft text-secondary">
+          <CloudUpload size={20} aria-hidden="true" />
+        </span>
+        <span className="font-medium">Drop files here, or click to choose</span>
+        <span className="text-xs text-muted-foreground">PDF, Office, text — up to 20 MB each</span>
       </button>
       <input
         ref={inputRef}
@@ -86,19 +92,26 @@ export function UploadDropzone({
         }}
       />
       {outcomes.length > 0 && (
-        <ul className="mt-2 space-y-1">
+        <ul className="mt-2 space-y-1 rounded-lg border border-border bg-surface p-2 shadow-sm">
           {outcomes.map((outcome, index) => (
             <li
               key={`${outcome.file.name}-${index}`}
-              className="flex items-center justify-between gap-2 px-1 text-xs"
+              className="flex items-center justify-between gap-2 px-2 py-1.5 text-xs"
             >
-              <span className="truncate text-paper/70">{outcome.file.name}</span>
+              <span className="truncate text-foreground">{outcome.file.name}</span>
               {outcome.state === 'uploading' && (
-                <span className="shrink-0 text-ember">uploading…</span>
+                <span className="inline-flex shrink-0 items-center gap-1 text-info">
+                  <LoaderCircle size={12} className="animate-spin" aria-hidden="true" /> uploading…
+                </span>
               )}
-              {outcome.state === 'done' && <span className="shrink-0 text-patina">queued</span>}
+              {outcome.state === 'done' && (
+                <span className="inline-flex shrink-0 items-center gap-1 text-success">
+                  <Check size={12} aria-hidden="true" /> queued
+                </span>
+              )}
               {outcome.state === 'error' && (
-                <span className="shrink-0 text-rust" role="alert">
+                <span className="inline-flex shrink-0 items-center gap-1 text-danger" role="alert">
+                  <CircleX size={12} aria-hidden="true" />
                   {outcome.message}
                 </span>
               )}

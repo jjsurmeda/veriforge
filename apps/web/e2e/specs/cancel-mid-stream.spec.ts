@@ -22,10 +22,10 @@ test('cancels a run and preserves partial answer text', async ({ page, request }
   })
   await stop.click()
 
-  const messages = page.locator('main > div:first-child > div > div.px-4')
+  const messages = page.locator('main .message-enter')
   const last = messages.last()
   await expect(last).toContainText('Cancelled', { timeout: 30_000 })
-  const text = (await last.innerText()).replace('Veriforge', '').replace('Cancelled', '').trim()
+  const text = (await last.innerText()).replace('Cancelled', '').trim()
   expect(text).not.toBe('')
   await page.screenshot({ path: 'e2e/screenshots/e2e-cancel-mid-stream.png', fullPage: true })
 })

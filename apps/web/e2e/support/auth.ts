@@ -24,6 +24,7 @@ export async function createChat(page: Page): Promise<string> {
   if (await evalCorpus.count()) {
     await expect(evalCorpus).toBeVisible()
     await evalCorpus.check()
+    await expect(evalCorpus).toBeChecked()
   }
   await sidebar.getByRole('button', { name: 'New chat' }).first().click()
   await page.waitForURL(/\/chat\/[^/]+$/)
@@ -33,14 +34,18 @@ export async function createChat(page: Page): Promise<string> {
 }
 
 export async function setComposerMode(page: Page, value: 'auto' | 'fast' | 'deep'): Promise<void> {
-  await page.locator('select').nth(1).selectOption(value)
+  const settings = page.getByRole('button', { name: 'Run settings' })
+  if ((await settings.getAttribute('aria-expanded')) !== 'true') await settings.click()
+  await page.getByRole('combobox', { name: 'Run mode' }).selectOption(value)
 }
 
 export async function setComposerSource(
   page: Page,
   value: 'auto' | 'upload' | 'web' | 'both',
 ): Promise<void> {
-  await page.locator('select').nth(2).selectOption(value)
+  const settings = page.getByRole('button', { name: 'Run settings' })
+  if ((await settings.getAttribute('aria-expanded')) !== 'true') await settings.click()
+  await page.getByRole('combobox', { name: 'Run source' }).selectOption(value)
 }
 
 export async function waitForRunToFinish(page: Page): Promise<void> {
