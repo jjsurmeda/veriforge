@@ -327,42 +327,50 @@ export function MessageList({ messages, live, onSuggestion, onAbstainAction }: P
               </details>
             )}
             {!isLivePlaceholder && citations.length > 0 && (
-              <details className="group mt-3 overflow-hidden rounded-lg border border-border/70 bg-surface-muted open:bg-surface-muted">
-                <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 font-mono text-xs text-muted-foreground transition-colors duration-180 hover:bg-surface-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary motion-reduce:transition-none [&::-webkit-details-marker]:hidden">
-                  <span className="inline-flex items-center gap-1.5"><FileText size={13} aria-hidden="true" /> Sources ({citations.length})</span>
-                  <ChevronDown size={14} aria-hidden="true" className="transition-transform duration-180 group-open:rotate-180 motion-reduce:transition-none" />
-                </summary>
-
-                <ol className="divide-y divide-border">
+              <div className="mt-3">
+                <p className="mb-1.5 flex items-center gap-1.5 font-mono text-[0.65rem] uppercase tracking-[0.1em] text-foreground/45">
+                  <FileText size={12} aria-hidden="true" /> Sources
+                </p>
+                <div className="flex gap-2 overflow-x-auto pb-1" role="list">
                   {citations.map((citation) => (
-                    <li key={citation.n} className="px-4 py-3">
-                      <div className="mb-1 flex items-baseline justify-between gap-3">
-                        <span className="truncate font-mono text-xs text-foreground">
-                          [{citation.n}]{' '}
-                          {citation.document_name ?? 'Source'}
-                        </span>
-                        {citation.page != null && (
-                          <span className="shrink-0 font-mono text-xs text-muted-foreground">
-                            p.{citation.page}
+                    <details
+                      key={citation.n}
+                      role="listitem"
+                      className="group w-56 shrink-0 overflow-hidden rounded-lg border border-border/70 bg-surface-muted transition-[border-color] duration-150 open:border-border hover:border-border"
+                    >
+                      <summary className="flex min-h-9 cursor-pointer list-none flex-col gap-0.5 px-3 py-2 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary [&::-webkit-details-marker]:hidden">
+                        <span className="flex items-baseline justify-between gap-2">
+                          <span className="truncate font-mono text-xs text-foreground">
+                            [{citation.n}] {citation.document_name ?? 'Source'}
                           </span>
-                        )}
+                          {citation.page != null && (
+                            <span className="shrink-0 font-mono text-[0.65rem] text-muted-foreground">
+                              p.{citation.page}
+                            </span>
+                          )}
+                        </span>
+                        <span className="line-clamp-2 text-[0.7rem] leading-4 text-foreground/60">
+                          {citation.excerpt ?? '(source expired)'}
+                        </span>
+                      </summary>
+                      <div className="border-t border-border/50 px-3 py-2">
+                        <p className="mb-1.5 whitespace-pre-wrap text-xs leading-5 text-foreground/70">
+                          {citation.excerpt ?? '(source expired)'}
+                        </p>
+                        <span className="font-mono text-[0.65rem] text-muted-foreground">
+                          rerank{' '}
+                          {citation.rerank_score != null
+                            ? citation.rerank_score.toFixed(3)
+                            : '—'}
+                          {citation.p_supported != null && (
+                            <span> · support {citation.p_supported.toFixed(2)}</span>
+                          )}
+                        </span>
                       </div>
-                      <p className="mb-1 whitespace-pre-wrap text-xs leading-5 text-foreground/70">
-                        {citation.excerpt ?? '(source expired)'}
-                      </p>
-                      <span className="font-mono text-[0.65rem] text-muted-foreground">
-                        rerank{' '}
-                        {citation.rerank_score != null
-                          ? citation.rerank_score.toFixed(3)
-                          : '—'}
-                        {citation.p_supported != null && (
-                          <span> · support {citation.p_supported.toFixed(2)}</span>
-                        )}
-                      </span>
-                    </li>
+                    </details>
                   ))}
-                </ol>
-              </details>
+                </div>
+              </div>
             )}
             {isAssistant && <AnswerFooter metrics={footerMetrics} />}
               </div>
