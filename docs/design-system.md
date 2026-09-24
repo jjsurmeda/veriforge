@@ -26,34 +26,40 @@ Two ideas carry the whole system:
 
 ## 2. Colour
 
-The default theme is **light**: a cool workbench surface with a strong
-indigo action colour, cyan for evidence in motion, and pink as a sparing
-accent for selection and focus. Dark mode is a separately designed theme,
-not an inversion. The semantic names below are the source of truth for
-`apps/web/src/styles/tokens.css`.
+The default theme is **light**: a clean, near-white workbench surface with
+Google-blue as the primary action colour — the reference is NotebookLM's
+Material palette (a real product in the same category: grounded QA over a
+document set), not a generic SaaS gradient. Dark mode uses NotebookLM's own
+near-black surface (`#131314`), not a navy tint — it's a separately designed
+theme, not an inversion. The semantic names below are the source of truth
+for `apps/web/src/styles/tokens.css`.
 
 | Token | Light | Dark | Role |
 | --- | --- | --- | --- |
-| `background` | `#F7F8FC` | `#0E1320` | App canvas; separates the workbench from the browser. |
-| `surface` | `#FFFFFF` | `#151C2B` | Cards, panels, sidebars, composer, and tables. |
-| `surface-muted` | `#EEF2F8` | `#1B2537` | Inset controls and secondary panels. |
-| `border` | `#DCE3EF` | `#29364B` | Quiet dividers and card edges. |
-| `foreground` | `#182238` | `#EEF2FF` | Primary text and iconography. |
-| `muted-foreground` | `#667085` | `#A7B2C7` | Metadata, labels, and non-essential copy. |
-| `primary` | `#6366F1` | `#818CF8` | Primary action, active selection, and focus glow. |
-| `secondary` | `#06B6D4` | `#22D3EE` | Evidence and retrieval activity. |
-| `accent` | `#EC4899` | `#F472B6` | A small amount of emphasis and live selection. |
-| `success` | `#0E9F78` | `#34D399` | Supported, ready, and successful state. |
-| `warning` | `#C27A08` | `#FBBF24` | Partial or attention state. |
-| `danger` | `#D92D5F` | `#FB7185` | Failed, unsupported, or destructive state. |
-| `info` | `#087EA4` | `#38BDF8` | Neutral system information. |
+| `background` | `#FFFFFF` | `#131314` | App canvas; separates the workbench from the browser. |
+| `surface` | `#FFFFFF` | `#1E1F20` | Cards, panels, sidebars, composer, and tables. |
+| `surface-muted` | `#F1F3F4` | `#1B1C1D` | Inset controls and secondary panels. |
+| `border` | `#DADCE0` | `#3C4043` | Quiet dividers and card edges. |
+| `foreground` | `#1F1F1F` | `#E8EAED` | Primary text and iconography. |
+| `muted-foreground` | `#5F6368` | `#9AA0A6` | Metadata, labels, and non-essential copy. |
+| `primary` | `#1A73E8` | `#A8C7FA` | Primary action, active selection, and focus glow. |
+| `secondary` | `#12805C` | `#6DD58C` | Evidence and retrieval activity. |
+| `accent` | `#A142F4` | `#D7AEFB` | A small amount of emphasis and live selection. |
+| `success` | `#188038` | `#81C995` | Supported, ready, and successful state. |
+| `warning` | `#B06000` | `#FDD663` | Partial or attention state. |
+| `danger` | `#C5221F` | `#F28B82` | Failed, unsupported, or destructive state. |
+| `info` | `#0B57D0` | `#8AB4F8` | Neutral system information. |
 
 Soft pairings (`primary-soft`, `secondary-soft`, `accent-soft`, and the
 matching semantic surfaces) are intentionally low-contrast fills; the
 semantic foreground remains the readable colour. Verdict colour is always
-paired with a shape, icon, or text label. The old near-black/ember/patina
+paired with a shape, icon, or text label. The old indigo/cyan/pink
 vocabulary is removed rather than aliased, so a component cannot silently
 fall back to the old visual language.
+
+Chrome surfaces (header, sidebar, trace panel) use a glass treatment —
+`bg-surface` at partial opacity plus `backdrop-blur` — so panels read as
+layered above the canvas rather than flat-stacked.
 
 The persisted preference is stored under `veriforge-theme`. On a first visit,
 the app follows `prefers-color-scheme`; after that, the user's choice wins.
@@ -62,11 +68,11 @@ the app follows `prefers-color-scheme`; after that, the user's choice wins.
 
 | Role | Face | Why |
 | --- | --- | --- |
-| Display / headline | Inter | Clear, contemporary UI voice with enough character for the workbench. |
-| Body / UI | Inter | Dense labels and long evidence remain comfortable at small sizes. |
-| Data (scores, latency, tokens, citations) | IBM Plex Mono | Tabular figures make comparisons and live metrics scannable. |
+| Display / headline | Roboto | Google's own workhorse face — the real, freely-licensed choice behind the NotebookLM/Gemini family look (the proprietary "Google Sans" isn't licensable). |
+| Body / UI | Roboto | Dense labels and long evidence remain comfortable at small sizes. |
+| Data (scores, latency, tokens, citations) | Roboto Mono | Tabular figures make comparisons and live metrics scannable. |
 
-The type scale is an Inter-style rem scale: `0.8125 / 0.875 / 1 / 1.125 /
+The type scale is a Roboto-style rem scale: `0.8125 / 0.875 / 1 / 1.125 /
 1.375 / 1.75 / 2.25`. Body copy sits at 0.9375–1rem. Line length caps near
 72 characters in the transcript and trace panels.
 
