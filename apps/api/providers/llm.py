@@ -97,6 +97,8 @@ async def stream_completion(
     response = await litellm.acompletion(
         model=model,
         messages=messages,
+        num_retries=get_settings().llm_max_retries,
+        timeout=get_settings().llm_timeout_seconds,
         stream=True,
         stream_options={"include_usage": True},
         metadata={
@@ -148,6 +150,8 @@ async def complete(
     response = await litellm.acompletion(
         model=model,
         messages=messages,
+        num_retries=get_settings().llm_max_retries,
+        timeout=get_settings().llm_timeout_seconds,
         metadata={
             "trace_id": metadata.get("job", metadata.get("run_id", "")),
             "run_id": metadata.get("run_id", ""),

@@ -62,7 +62,14 @@ class Settings(BaseSettings):
     jev_model: str = "typesafe/jev-1.13"
     jev_timeout_ms: int = 2000
     jev_max_state_tokens: int = 28_000
-    fallback_model: str = "openrouter/anthropic/claude-haiku-4.5"
+    # Every non-Jev LLM call runs on a free OpenRouter id (see
+    # scripts/seed_models.py). Free ids are rate-limited per minute and per
+    # day, so LiteLLM's own retry is capped rather than left unbounded.
+    fallback_model: str = "openrouter/nvidia/nemotron-3-super-120b-a12b:free"
+    llm_max_retries: int = 4
+    # A retry cap is meaningless without a per-attempt deadline: a saturated
+    # free endpoint can hold a streaming response open indefinitely.
+    llm_timeout_seconds: float = 90.0
     breaker_failure_threshold: int = 3
     breaker_window_seconds: float = 60.0
     breaker_cooldown_seconds: float = 60.0
