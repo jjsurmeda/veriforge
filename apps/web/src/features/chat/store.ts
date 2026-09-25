@@ -5,6 +5,7 @@ import type {
   Conflict,
   Decision,
   Metrics,
+  Plan,
   RetrievedChunk,
   ReviewClaim,
   Revision,
@@ -30,6 +31,7 @@ export interface RunLive {
   chunks: RetrievedChunk[]
   metrics: Metrics | null
   steps: Array<StepStarted | StepCompleted>
+  plan: Plan | null
   decisions: Decision[]
   thinking: string
   abstain: Abstain | null
@@ -56,6 +58,7 @@ const empty: RunLive = {
   chunks: [],
   metrics: null,
   steps: [],
+  plan: null,
   decisions: [],
   thinking: '',
   abstain: null,
@@ -94,6 +97,9 @@ export const useChatRunStore = create<ChatRunStore>()((set) => ({
         case 'step.started':
         case 'step.completed':
           next.steps = [...next.steps, event]
+          break
+        case 'plan':
+          next.plan = event
           break
         case 'decision':
           next.decisions = [...next.decisions, event]

@@ -135,3 +135,13 @@ The named `ui-ux-pro-max`, copy, dataviz, screenshot critique, and accessibility
 - Playwright against the local Vite/API stack passes all 20 e2e tests. The decision-layer theme setup now explicitly normalizes the new dark default before taking its light/dark screenshots; no assertion was removed or weakened.
 - Real-browser QA covered auth, chat, sources, completed answer, workspace tabs, theme switching, sidebar persistence, mobile navigation, and 1440/1100/390px layouts. The mobile workspace panel closes below 1024px so the navigation drawer remains reachable.
 - Manual screenshot critique found no blocking layout defect. The source-card strip remains intentionally horizontally scrollable when more cards exceed the reading width.
+
+## v3.1 fix-pass record
+
+- Shared Radix primitives now own portal, collision, focus, Escape, outside-click, and ARIA behaviour for popovers, menus, selects, hover cards, and tooltips.
+- The sidebar account row and quota trigger share the account menu; the chat-row, thread, and composer menus are portalled rather than positioned with local math.
+- Composer mode, model, and source controls use Radix Select; the old native-select e2e helper now opens the trigger and chooses an option.
+- Citation markers are number-only and expose evidence through a Radix HoverCard; source-card hover state is local to the message and mirrored by `data-highlighted`.
+- The v3.1 warm-neutral token contract is in `apps/web/src/styles/tokens.css`; `scripts/check-colors.sh` blocks raw colours and deleted chromatic utility names outside that file.
+- The focused browser slice and the complete local Playwright suite pass: 20/20 tests. Browser checks covered the running Docker web service at desktop and mobile-sized viewports through the existing responsive specs; the Playwright MCP bridge was unavailable, so no separate MCP screenshot session was possible.
+- `design:design-critique` and `ui-ux-pro-max:ui-ux-pro-max` are not installed in this environment. The available `impeccable`, `emil-design-eng`, and browser checks were used instead; no findings are waived.

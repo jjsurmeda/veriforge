@@ -21,10 +21,10 @@ test('attaches eval-seed-corpus to a chat before asking', async ({ page }) => {
 
   await page.goto('/')
   await createChat(page)
-  const settings = page.getByRole('button', { name: 'Run settings' })
+  const settings = page.getByRole('main').getByRole('button', { name: 'Run settings' }).first()
   if ((await settings.getAttribute('aria-expanded')) !== 'true') await settings.click()
 
-  const collection = page.getByRole('main').getByRole('checkbox', { name: /eval-seed-corpus/ })
+  const collection = page.getByRole('checkbox', { name: /eval-seed-corpus/ })
   await collection.check()
   await expect(collection).toBeChecked()
   await page.screenshot({ path: 'e2e/screenshots/e2e-chat-conversation.png', fullPage: true })

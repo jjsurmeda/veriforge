@@ -13,37 +13,62 @@ v3 takes structural cues from the supplied Perplexity and Grok references while 
 
 ## 2. Colour
 
-Dark is the default. Semantic colour is reserved for state and evidence, never used as ambient decoration.
+**Why v3 missed:** the v3 prompt specified cool neutral greys (`#161616`) plus a
+turquoise accent. The references are **warm near-blacks** (R > G > B by 1–2 steps) and
+have **no chromatic accent at all**. The accent is simply brighter text. Every value
+below was sampled from `docs/design-refs/*.png`.
 
-### Core surfaces
+**Dark (default):**
 
-| token | dark | light | role |
-| --- | --- | --- | --- |
-| `background` | `#161616` | `#fcfcfa` | Main canvas |
-| `surface` | `#1f1f1f` | `#ffffff` | Composer, cards, detail surfaces |
-| `surface-raised` | `#2a2a2a` | `#efefec` | Active rows, pills, user bubble |
-| `surface-hover` | `#262626` | `#e7e7e2` | Hover fill |
-| `surface-muted` / panels | `#1b1b1b` | `#f5f5f2` | Sidebar and workspace panel |
-| `border` | `#2e2e2e` | `#e6e6e2` | Hairline dividers |
-| `border-strong` | `#3a3a3a` | `#d4d4ce` | Inputs and structural emphasis |
+| token | value | sampled from |
+| --- | --- | --- |
+| `--bg-main` | `#171615` | Perplexity canvas (Grok is `#121211`; pick Perplexity) |
+| `--bg-sidebar` | `#1d1c1b` | Perplexity sidebar |
+| `--bg-panel` (right) | `#1d1c1b` | same as the sidebar, so the side panels read as one family |
+| `--bg-surface` (composer, cards) | `#1e1d1c` | Perplexity composer and Sources card |
+| `--bg-raised` (pills, hover, user bubble) | `#242323` | Perplexity composer pill and citation pill |
+| `--bg-raised-hover` | `#2a2928` | Grok active row |
+| `--bg-selected` (active chat row) | `#2a2928` | Grok active row |
+| `--bg-popover` | `#1e1d1c` | — |
+| `--border` | `#292827` | Perplexity sidebar divider |
+| `--border-strong` | `#393837` | Perplexity pill outline |
+| `--fg` (body, titles) | `#e5e4e3` | Perplexity body text |
+| `--fg-strong` (buttons, headings) | `#d6d5d4` for button fills, `#ffffff` for Grok-bright emphasis only | Perplexity Share button |
+| `--fg-muted` (placeholder, secondary, icons) | `#999897` | Perplexity snippet and Model label |
+| `--fg-subtle` (section labels, timestamps) | `#7f7e7d` | Perplexity "Projects" label |
+| `--fg-faint` (empty hints) | `#636260` (decorative text only, never for info) | Perplexity "No projects" |
+| `--on-strong` | `#171615` | text on the Share button |
+| `--focus-ring` | `#e5e4e3` at 45% opacity, 2px, offset 2px | neutral, no hue |
 
-### Text and actions
+**Light** (the references have none; derived by inverting the same warm scale):
 
-| token | dark | light | role |
-| --- | --- | --- | --- |
-| `foreground` | `#ececec` | `#1a1a1a` | Primary text and icons |
-| `muted-foreground` | `#9a9a9a` | `#6b6b66` | Metadata and secondary copy |
-| `subtle-foreground` | `#858585` | `#6f6f6a` | Section labels and quiet metadata |
-| `primary` | `#ececec` | `#1a1a1a` | Primary action fill |
-| `on-primary` | `#161616` | `#fcfcfa` | Text on primary |
-| `accent` | `#20b8cd` | `#1c737d` | Focus ring, links, active selection |
-| `success` | `#75c99a` | `#2f7d5b` | Supported/ready |
-| `warning` | `#e3b56a` | `#8a5a18` | Partial/attention |
-| `danger` | `#f08d86` | `#a33e3a` | Failed/unsupported/destructive |
+| token | value |
+| --- | --- |
+| `--bg-main` | `#fbfaf8` |
+| `--bg-sidebar` / `--bg-panel` | `#f3f2ef` |
+| `--bg-surface` | `#ffffff` |
+| `--bg-raised` | `#ebeae6` |
+| `--bg-raised-hover` / `--bg-selected` | `#e3e2de` |
+| `--border` | `#e2e0dc` |
+| `--border-strong` | `#cfcdc8` |
+| `--fg` | `#1d1c1b` |
+| `--fg-strong` | `#171615` |
+| `--fg-muted` | `#6b6a67` |
+| `--fg-subtle` | `#8a8884` |
+| `--on-strong` | `#fbfaf8` |
 
-The dark `subtle-foreground` and light `accent` values are adjusted from the initial v3 proposal to meet WCAG AA contrast against their panel backgrounds. Use the semantic dot or badge together with text or shape; colour is never the only verdict cue.
-
-Forbidden: purple/blue gradients, glow, glassmorphism, gradient text, default Tailwind greys, and coloured ambient backgrounds.
+**Rules:**
+- **Delete** `--color-accent`, `--color-secondary`, `--color-info`, and every
+  `*-soft` tint, along with the turquoise values `#20b8cd`/`#20808d`. Links use `fg`
+  with an underline on hover. Active tabs use a `fg` 2px underline and `fg` text,
+  with inactive tabs in `fg-muted`.
+- **Status colours** are allowed only as a 6px dot or a text label. Never use them as
+  ambient panel fills. Success/warning/danger stay for dots and text, not backgrounds.
+- **Map Tailwind v4 `@theme`** so utilities read naturally: `bg-main`, `bg-sidebar`,
+  `bg-surface`, `bg-raised`, `text-fg`, `text-fg-muted`, `border-border`, and so on.
+- **Focus** is a neutral ring only: `focus-ring`.
+- **Forbidden:** purple/blue gradients, glow, glassmorphism, gradient text, default
+  Tailwind greys, and coloured ambient backgrounds.
 
 ## 3. Typography
 

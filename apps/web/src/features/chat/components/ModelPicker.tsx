@@ -1,6 +1,16 @@
 import { Bot, ChevronDown } from 'lucide-react'
 
 import { useModels } from '../hooks/useModels'
+import {
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectRoot,
+  SelectTrigger,
+  SelectValue,
+  SelectViewport,
+} from '../../../components/ui/primitives'
 
 interface Props {
   value: string | null
@@ -10,26 +20,28 @@ interface Props {
 
 export function ModelPicker({ value, disabled, onChange }: Props) {
   const { data: models } = useModels()
+  const providers = [...new Set((models ?? []).map((model) => model.provider))]
   return (
-    <label className="relative flex min-w-0 items-center gap-1.5 text-xs font-medium text-muted-foreground">
-      <span className="sr-only">Model</span>
-      <Bot size={14} strokeWidth={1.75} className="shrink-0 text-muted-foreground" aria-hidden="true" />
-      <span className="relative min-w-0 flex-1">
-        <select
-          aria-label="Model"
-          value={value ?? ''}
-          disabled={disabled}
-          onChange={(event) => onChange(event.target.value)}
-          className="h-8 w-full min-w-0 cursor-pointer appearance-none rounded-lg border-0 bg-transparent px-1 pr-5 text-xs font-medium text-foreground outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {(models ?? []).map((model) => (
-            <option key={model.model_id} value={model.model_id}>
-              {model.model_id}
-            </option>
+    <SelectRoot value={value ?? undefined} disabled={disabled} onValueChange={onChange}>
+      <SelectTrigger aria-label="Model" className="inline-flex h-8 min-w-0 items-center gap-1.5 rounded-lg px-2.5 text-sm text-fg-muted outline-none transition-colors hover:bg-raised hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring data-[placeholder]:text-fg-muted">
+        <Bot size={14} strokeWidth={1.75} aria-hidden="true" />
+        <SelectValue placeholder="Model" />
+        <ChevronDown size={12} strokeWidth={1.75} aria-hidden="true" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectViewport>
+          {providers.map((provider) => (
+            <SelectGroup key={provider}>
+              <SelectLabel className="px-2.5 py-1.5 text-[11px] text-fg-subtle">{provider}</SelectLabel>
+              {(models ?? []).filter((model) => model.provider === provider).map((model) => (
+                <SelectItem key={model.model_id} value={model.model_id}>
+                  <span className="flex min-w-0 flex-col"><span>{model.model_id}</span><span className="text-xs text-fg-muted">{model.context_window ? `${Math.round(model.context_window / 1000)}k context` : ''}</span></span>
+                </SelectItem>
+              ))}
+            </SelectGroup>
           ))}
-        </select>
-        <ChevronDown size={13} strokeWidth={1.75} aria-hidden="true" className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 text-muted-foreground" />
-      </span>
-    </label>
+        </SelectViewport>
+      </SelectContent>
+    </SelectRoot>
   )
 }

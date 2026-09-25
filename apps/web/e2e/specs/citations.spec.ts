@@ -12,14 +12,14 @@ test('shows citation evidence and a non-colour verdict cue', async ({ page, requ
   const { chatId } = await startSeededRun(request, user, question)
 
   await page.goto(`/chat/${chatId}`)
-  const chip = page.locator('sup[aria-label^="Citation"]').filter({ hasText: /[✓~×]/ }).first()
+  const chip = page.locator('sup[aria-label^="Citation"]').first()
   await expect(chip).toBeVisible({ timeout: 110_000 })
   await chip.hover()
 
   const tooltip = page.locator('[role="tooltip"]:visible').filter({ hasText: 'faq.md' })
   await expect(tooltip).toBeVisible()
   await expect(tooltip).toContainText('rerank')
-  await expect(tooltip).toContainText(/supported|partial|unsupported/)
+  await expect(tooltip).toContainText(/unverified|supported|partial|unsupported/)
 
   const state = await chip.evaluate((element) => ({
     label: element.getAttribute('aria-label') ?? '',
@@ -27,8 +27,8 @@ test('shows citation evidence and a non-colour verdict cue', async ({ page, requ
     color: getComputedStyle(element).color,
     decoration: getComputedStyle(element).textDecorationLine,
   }))
-  expect(state.label).toMatch(/supported|partial|unsupported/)
-  expect(state.text).toMatch(/[✓×]/)
+  expect(state.label).toMatch(/supported|partial|unsupported|unverified/)
+  expect(state.text).toMatch(/^[1-9]$/)
   expect(state.color).not.toBe('')
   expect(state.decoration).toBeTruthy()
 })

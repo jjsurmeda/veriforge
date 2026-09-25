@@ -1,4 +1,13 @@
-import { ChevronDown, Library } from 'lucide-react'
+import { Library } from 'lucide-react'
+
+import {
+  SelectContent,
+  SelectItem,
+  SelectRoot,
+  SelectTrigger,
+  SelectValue,
+  SelectViewport,
+} from '../../../components/ui/primitives'
 
 export type RunSource = 'auto' | 'upload' | 'web' | 'both'
 
@@ -8,34 +17,25 @@ interface Props {
   onChange: (source: RunSource) => void
 }
 
-const SOURCES: { value: RunSource; label: string }[] = [
-  { value: 'auto', label: 'Auto' },
-  { value: 'upload', label: 'Upload' },
-  { value: 'web', label: 'Web' },
-  { value: 'both', label: 'Both' },
+const SOURCES: Array<{ value: RunSource; label: string; description: string }> = [
+  { value: 'auto', label: 'Auto', description: 'Choose the best source' },
+  { value: 'upload', label: 'Upload', description: 'Your uploaded documents' },
+  { value: 'web', label: 'Web', description: 'Search the web' },
+  { value: 'both', label: 'Both', description: 'Documents and web' },
 ]
 
 export function SourcePicker({ value, disabled, onChange }: Props) {
   return (
-    <label className="relative flex min-w-0 items-center gap-1.5 text-xs font-medium text-muted-foreground">
-      <span className="sr-only">Source</span>
-      <Library size={14} strokeWidth={1.75} className="shrink-0 text-muted-foreground" aria-hidden="true" />
-      <span className="relative min-w-0 flex-1">
-        <select
-          aria-label="Run source"
-          value={value}
-          disabled={disabled}
-          onChange={(event) => onChange(event.target.value as RunSource)}
-          className="h-8 w-full min-w-0 cursor-pointer appearance-none rounded-lg border-0 bg-transparent px-1 pr-5 text-xs font-medium text-foreground outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {SOURCES.map((source) => (
-            <option key={source.value} value={source.value}>
-              {source.label}
-            </option>
-          ))}
-        </select>
-        <ChevronDown size={13} strokeWidth={1.75} aria-hidden="true" className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 text-muted-foreground" />
-      </span>
-    </label>
+    <SelectRoot value={value} disabled={disabled} onValueChange={(next) => onChange(next as RunSource)}>
+      <SelectTrigger aria-label="Run source" className="inline-flex h-8 min-w-0 items-center gap-1.5 rounded-lg px-2.5 text-sm text-fg-muted outline-none transition-colors hover:bg-raised hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring">
+        <Library size={14} strokeWidth={1.75} aria-hidden="true" />
+        <SelectValue placeholder="Source" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectViewport>
+          {SOURCES.map((source) => <SelectItem key={source.value} value={source.value}><span className="flex flex-col"><span>{source.label}</span><span className="text-xs text-fg-muted">{source.description}</span></span></SelectItem>)}
+        </SelectViewport>
+      </SelectContent>
+    </SelectRoot>
   )
 }

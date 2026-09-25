@@ -10,6 +10,7 @@ export function useTrace(runId: string | null) {
       if (!run) return undefined
       return {
         steps: run.steps,
+        plan: run.plan,
         decisions: run.decisions,
         thinking: run.thinking,
         abstain: run.abstain,

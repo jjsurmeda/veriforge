@@ -15,6 +15,7 @@ function baseRun(): RunLive {
     chunks: [],
     metrics: null,
     steps: [],
+    plan: null,
     decisions: [],
     thinking: '',
     abstain: null,

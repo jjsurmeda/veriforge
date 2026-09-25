@@ -31,7 +31,10 @@ interface Props {
   live: RunLive | undefined
   onSuggestion?: (question: string) => void
   onAbstainAction?: (action: AbstainAction) => void
-  onOpenSources?: (sourceNumber?: number) => void
+  onOpenSources?: (sourceNumber?: number, messageId?: string) => void
+  onSelectMessage?: (messageId: string) => void
+  onShowSteps?: () => void
+  optimisticQuestion?: string | null
 }
 
 const CITATION_RE = /\[(\d{1,2})\]/g
@@ -61,6 +64,8 @@ function renderWithCitations(
   lookup: (n: number) => ChipSource | undefined,
   verdictFor: (n: number) => string | null,
   onOpen?: (sourceNumber: number) => void,
+  onHover?: (sourceNumber: number | null) => void,
+  highlighted?: number | null,
 ): ReactNode[] {
   const nodes: ReactNode[] = []
   let last = 0
@@ -76,6 +81,8 @@ function renderWithCitations(
         source={lookup(n)}
         verdict={verdictFor(n)}
         onOpen={onOpen ? () => onOpen(n) : undefined}
+        onHover={onHover ? (value) => onHover(value ? n : null) : undefined}
+        highlighted={highlighted === n}
       />,
     )
     last = match.index + match[0].length
@@ -87,7 +94,7 @@ function renderWithCitations(
 function StatusLabel({ status }: { status: string | null }) {
   if (status === 'cancelled') {
     return (
-      <span className="ml-2 inline-flex items-center gap-1 text-xs text-muted-foreground">
+      <span className="ml-2 inline-flex items-center gap-1 text-xs text-fg-muted">
         <span className="inline-block h-px w-3 bg-current" aria-hidden="true" /> Cancelled
       </span>
     )
@@ -131,7 +138,7 @@ function AnswerFooter({ metrics }: { metrics: Record<string, unknown> | null | u
     tokensIn !== undefined
   if (!hasAnything) return null
   return (
-    <div className="mt-4 flex flex-wrap items-baseline gap-x-3 gap-y-1 border-t border-border pt-2 font-mono text-[0.65rem] tabular-nums text-muted-foreground">
+    <div className="mt-4 flex flex-wrap items-baseline gap-x-3 gap-y-1 border-t border-border pt-2 font-mono text-[0.65rem] tabular-nums text-fg-muted">
       {faithfulness !== null && faithfulness !== undefined && <span>faithful <span className="text-success">{fmt(faithfulness)}</span></span>}
       {minSupport !== null && minSupport !== undefined && <span>min support {fmt(minSupport)}</span>}
       {totalMs !== null && <span>{(totalMs / 1000).toFixed(1)}s</span>}
@@ -147,19 +154,19 @@ function DiffLine({ line }: { line: string }) {
   const isRemoval = line.startsWith('-') && !line.startsWith('---')
   const isHunk = line.startsWith('@@')
   const tone = isAddition
-    ? 'bg-success-soft text-success'
+    ? 'bg-raised text-success'
     : isRemoval
-      ? 'bg-danger-soft text-danger'
+      ? 'bg-raised text-danger'
       : isHunk
         ? 'text-warning'
-        : 'text-muted-foreground'
+        : 'text-fg-muted'
   return <span className={`block whitespace-pre-wrap px-3 ${tone}`}>{line || ' '}</span>
 }
 
 function RevisionBanner({ diff }: { diff: string }) {
   return (
-    <details className="group mt-4 overflow-hidden rounded-lg border border-border bg-surface-muted open:bg-surface-muted">
-      <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-xs text-warning transition-colors duration-150 hover:bg-warning-soft focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-warning [&::-webkit-details-marker]:hidden">
+    <details className="group mt-4 overflow-hidden rounded-lg border border-border bg-sidebar open:bg-sidebar">
+      <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-xs text-warning transition-colors duration-150 hover:bg-raised focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-warning [&::-webkit-details-marker]:hidden">
         <span>Reviewer revised this answer — show what changed</span>
         <ChevronDown size={14} strokeWidth={1.75} aria-hidden="true" className="text-warning/70 transition-transform duration-150 group-open:rotate-180" />
       </summary>
@@ -174,12 +181,12 @@ function SuggestionsRow({ questions, onSelect }: { questions: string[]; onSelect
   return (
     <section className="mx-auto w-full max-w-[720px] px-1 pb-4" aria-labelledby="related-follow-ups-heading">
       <div className="rounded-xl border border-border bg-surface p-2">
-        <span id="related-follow-ups-heading" className="block px-2 py-1 text-xs font-medium text-foreground">Related</span>
-        <span className="block px-2 pb-1 text-[0.65rem] text-muted-foreground">Suggested follow-ups:</span>
+        <span id="related-follow-ups-heading" className="block px-2 py-1 text-xs font-medium text-fg">Related</span>
+        <span className="block px-2 pb-1 text-[0.65rem] text-fg-muted">Suggested follow-ups:</span>
         <div className="divide-y divide-border">
           {questions.map((question) => (
-            <button key={question} type="button" onClick={() => onSelect(question)} className="flex min-h-11 w-full items-center gap-2 rounded-none px-3 text-left text-sm text-foreground transition-colors duration-150 hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-accent">
-              <Search size={14} strokeWidth={1.75} className="shrink-0 text-muted-foreground" aria-hidden="true" />
+            <button key={question} type="button" onClick={() => onSelect(question)} className="flex min-h-11 w-full items-center gap-2 rounded-none px-3 text-left text-sm text-fg transition-colors duration-150 hover:bg-raised-hover focus-visible:outline-2 focus-visible:outline-focus-ring">
+              <Search size={14} strokeWidth={1.75} className="shrink-0 text-fg-muted" aria-hidden="true" />
               <span className="min-w-0 flex-1">{question}</span>
             </button>
           ))}
@@ -191,16 +198,16 @@ function SuggestionsRow({ questions, onSelect }: { questions: string[]; onSelect
 
 function AbstentionActions({ actions, onSelect }: { actions: AbstainAction[]; onSelect: (action: AbstainAction) => void }) {
   return (
-    <div className="mx-auto w-full max-w-[720px] border-l-2 border-warning/60 px-1 pb-4 pl-4" role="group" aria-label="Abstention actions">
-      <p className="mb-2 text-xs text-muted-foreground">Try another path:</p>
+    <div className="mx-auto w-full max-w-[720px] border-l-2 border-border/60 px-1 pb-4 pl-4" role="group" aria-label="Abstention actions">
+      <p className="mb-2 text-xs text-fg-muted">Try another path:</p>
       <div className="flex flex-wrap gap-2">
         {actions.includes('web') && (
-          <button type="button" onClick={() => onSelect('web')} className="pressable inline-flex min-h-9 items-center gap-2 rounded-lg border border-warning/40 px-3 py-1.5 text-xs text-warning hover:bg-warning-soft focus-visible:outline-2 focus-visible:outline-accent">
+          <button type="button" onClick={() => onSelect('web')} className="pressable inline-flex min-h-9 items-center gap-2 rounded-lg border border-border/40 px-3 py-1.5 text-xs text-warning hover:bg-raised focus-visible:outline-2 focus-visible:outline-focus-ring">
             <Search size={14} strokeWidth={1.75} aria-hidden="true" /> Searching the web
           </button>
         )}
         {actions.includes('deep') && (
-          <button type="button" onClick={() => onSelect('deep')} className="pressable inline-flex min-h-9 items-center gap-2 rounded-lg border border-warning/40 px-3 py-1.5 text-xs text-warning hover:bg-warning-soft focus-visible:outline-2 focus-visible:outline-accent">
+          <button type="button" onClick={() => onSelect('deep')} className="pressable inline-flex min-h-9 items-center gap-2 rounded-lg border border-border/40 px-3 py-1.5 text-xs text-warning hover:bg-raised focus-visible:outline-2 focus-visible:outline-focus-ring">
             <Layers3 size={14} strokeWidth={1.75} aria-hidden="true" /> Deep mode
           </button>
         )}
@@ -209,7 +216,7 @@ function AbstentionActions({ actions, onSelect }: { actions: AbstainAction[]; on
   )
 }
 
-function MessageActions({ message, content }: { message: MessageOut; content: string }) {
+function MessageActions({ message, content, onShowSteps }: { message: MessageOut; content: string; onShowSteps?: () => void }) {
   const [copied, setCopied] = useState(false)
   const copy = async () => {
     if (!navigator.clipboard) return
@@ -230,17 +237,18 @@ function MessageActions({ message, content }: { message: MessageOut; content: st
       <button type="button" aria-label="Link to message" title="Link to message" onClick={() => void link()} className="icon-button size-8">
         <Link2 size={15} strokeWidth={1.75} aria-hidden="true" />
       </button>
+      {onShowSteps && <button type="button" onClick={onShowSteps} className="ml-2 text-xs text-fg-muted underline decoration-transparent hover:text-fg hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring">Show steps</button>}
     </div>
   )
 }
 
-function SourceCardRow({ message, onOpenSources }: { message: MessageOut; onOpenSources?: (sourceNumber?: number) => void }) {
+function SourceCardRow({ message, onOpenSources, hoveredCitation, onHoverCitation }: { message: MessageOut; onOpenSources?: (sourceNumber?: number) => void; hoveredCitation: number | null; onHoverCitation: (citation: number | null) => void }) {
   const citations = message.citations ?? []
   if (citations.length === 0) return null
   return (
     <div className="mt-4">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <p className="flex items-center gap-1.5 text-[0.68rem] font-medium uppercase tracking-[0.1em] text-muted-foreground"><FileText size={12} strokeWidth={1.75} aria-hidden="true" /> Sources</p>
+        <p className="flex items-center gap-1.5 text-[0.68rem] font-medium uppercase tracking-[0.1em] text-fg-muted"><FileText size={12} strokeWidth={1.75} aria-hidden="true" /> Sources</p>
         <button type="button" aria-label={`Open ${citations.length} sources`} onClick={() => onOpenSources?.()} className="source-pill">
           <Layers3 size={13} strokeWidth={1.75} aria-hidden="true" /> {citations.length} sources
         </button>
@@ -249,18 +257,19 @@ function SourceCardRow({ message, onOpenSources }: { message: MessageOut; onOpen
         {citations.map((citation) => {
           const tone = verdictTone(citation.verdict ?? null)
           return (
-            <details key={citation.n} role="listitem" className="group w-56 shrink-0 overflow-hidden rounded-lg border border-border bg-surface transition-[border-color,background-color] duration-150 open:bg-surface-raised hover:border-border-strong">
-              <summary className="flex min-h-16 cursor-pointer list-none flex-col gap-1 px-3 py-2 focus-visible:outline-2 focus-visible:outline-accent [&::-webkit-details-marker]:hidden">
+             <details key={citation.n} role="listitem" data-highlighted={hoveredCitation === citation.n ? 'true' : undefined} onMouseEnter={() => onHoverCitation(citation.n)} onMouseLeave={() => onHoverCitation(null)} className={`group w-56 shrink-0 overflow-hidden rounded-lg border bg-surface transition-[border-color,background-color] duration-150 open:bg-raised hover:border-border-strong ${hoveredCitation === citation.n ? 'border-border-strong bg-raised-hover' : 'border-border'}`}>
+
+              <summary onClick={() => onOpenSources?.(citation.n)} className="flex min-h-16 cursor-pointer list-none flex-col gap-1 px-3 py-2 focus-visible:outline-2 focus-visible:outline-focus-ring [&::-webkit-details-marker]:hidden">
                 <span className="flex items-center justify-between gap-2">
-                  <span className="truncate text-xs font-medium text-foreground">[{citation.n}] {citation.document_name ?? 'Source'}</span>
-                  <span className={`size-1.5 shrink-0 rounded-full ${tone === 'supported' ? 'bg-success' : tone === 'partial' ? 'bg-warning' : tone === 'unsupported' ? 'bg-danger' : 'bg-muted-foreground'}`} aria-label={tone} />
+                  <span className="truncate text-xs font-medium text-fg">[{citation.n}] {citation.document_name ?? 'Source'}</span>
+                  <span className={`size-1.5 shrink-0 rounded-full ${tone === 'supported' ? 'bg-success' : tone === 'partial' ? 'bg-warning' : tone === 'unsupported' ? 'bg-danger' : 'bg-fg-muted'}`} aria-label={tone} />
                 </span>
-                <span className="line-clamp-2 text-[0.7rem] leading-4 text-muted-foreground">{citation.excerpt ?? '(source expired)'}</span>
-                {citation.page != null && <span className="font-mono text-[0.62rem] text-muted-foreground">p.{citation.page}</span>}
+                <span className="line-clamp-2 text-[0.7rem] leading-4 text-fg-muted">{citation.excerpt ?? '(source expired)'}</span>
+                {citation.page != null && <span className="font-mono text-[0.62rem] text-fg-muted">p.{citation.page}</span>}
               </summary>
               <div className="border-t border-border px-3 py-2">
-                <p className="mb-1.5 line-clamp-3 whitespace-pre-wrap text-xs leading-5 text-muted-foreground">{citation.excerpt ?? '(source expired)'}</p>
-                <span className="font-mono text-[0.62rem] tabular-nums text-muted-foreground">rerank {citation.rerank_score != null ? citation.rerank_score.toFixed(3) : '—'}{citation.p_supported != null && <span> · support {citation.p_supported.toFixed(2)}</span>}</span>
+                <p className="mb-1.5 line-clamp-3 whitespace-pre-wrap text-xs leading-5 text-fg-muted">{citation.excerpt ?? '(source expired)'}</p>
+                <span className="font-mono text-[0.62rem] tabular-nums text-fg-muted">rerank {citation.rerank_score != null ? citation.rerank_score.toFixed(3) : '—'}{citation.p_supported != null && <span> · support {citation.p_supported.toFixed(2)}</span>}</span>
               </div>
             </details>
           )
@@ -270,8 +279,18 @@ function SourceCardRow({ message, onOpenSources }: { message: MessageOut; onOpen
   )
 }
 
-export function MessageList({ messages, live, onSuggestion, onAbstainAction, onOpenSources }: Props) {
-  const lastAssistantMessage = [...messages].reverse().find((message) => message.role === 'assistant')
+export function MessageList({ messages, live, onSuggestion, onAbstainAction, onOpenSources, onSelectMessage, onShowSteps, optimisticQuestion }: Props) {
+  const [hoveredCitation, setHoveredCitation] = useState<number | null>(null)
+  const optimisticUserId = 'optimistic-user'
+  const optimisticAssistantId = 'optimistic-assistant'
+  const displayedMessages = optimisticQuestion && !messages.some((message) => message.role === 'user' && message.content === optimisticQuestion)
+    ? [
+        ...messages,
+        { id: optimisticUserId, chat_id: '', role: 'user', content: optimisticQuestion, status: 'complete', created_at: new Date().toISOString() },
+        { id: optimisticAssistantId, chat_id: '', role: 'assistant', content: '', status: null, created_at: new Date().toISOString() },
+      ]
+    : messages
+  const lastAssistantMessage = [...displayedMessages].reverse().find((message) => message.role === 'assistant')
   const liveSuggestions = live !== undefined && live.suggestions.length > 0 ? live.suggestions : []
   const persistedSuggestions = lastAssistantMessage?.role === 'assistant' ? ((lastAssistantMessage.metrics?.suggestions as string[] | undefined) ?? []) : []
   const suggestions = liveSuggestions.length > 0 ? liveSuggestions : live === undefined || live.status === 'completed' ? persistedSuggestions : []
@@ -280,61 +299,64 @@ export function MessageList({ messages, live, onSuggestion, onAbstainAction, onO
 
   return (
     <div className="mx-auto flex w-full max-w-[720px] flex-col gap-8 px-4 py-8 sm:px-6">
-      {messages.map((message) => {
+      {displayedMessages.map((message) => {
         const isAssistant = message.role === 'assistant'
-        const isLivePlaceholder = isAssistant && message.status === null && live !== undefined
-        const content = isLivePlaceholder && live.text ? live.text : message.content
+        const isLivePlaceholder = isAssistant && message.status === null && (live !== undefined || message.id === optimisticAssistantId)
+        const content = isLivePlaceholder ? (live?.text ?? '') : message.content
         const citations = message.citations ?? []
         const lookup = isLivePlaceholder
           ? (n: number) => {
-              const chunk = live.chunks[n - 1]
+              const chunk = live?.chunks[n - 1]
               return chunk ? chipSourceFromChunk(chunk) : undefined
             }
           : (n: number) => {
               const citation = citations.find((c) => c.n === n)
               return citation ? chipSourceFromCitation(citation) : undefined
             }
-        const verdictFor = isLivePlaceholder ? (n: number) => worstVerdict(live.claims, n) : (n: number) => citations.find((c) => c.n === n)?.verdict ?? null
-        const footerMetrics = isLivePlaceholder ? live.metrics : message.metrics
-        const revisionDiff = isLivePlaceholder ? live.revision?.diff : message.metrics?.revised === true ? (message.metrics?.revision_diff as string | undefined) : undefined
-        const liveLabel = (live?.chunks.length ?? 0) > 0 ? 'Reviewing claims…' : 'Searching sources…'
+        const verdictFor = isLivePlaceholder ? (n: number) => worstVerdict(live?.claims ?? [], n) : (n: number) => citations.find((c) => c.n === n)?.verdict ?? null
+        const footerMetrics = isLivePlaceholder ? live?.metrics : message.metrics
+        const revisionDiff = isLivePlaceholder ? live?.revision?.diff : message.metrics?.revised === true ? (message.metrics?.revision_diff as string | undefined) : undefined
         return (
-          <article key={message.id} id={`message-${message.id}`} className={`message-enter flex w-full ${isAssistant ? 'justify-start' : 'justify-end'}`}>
+          <article key={message.id} id={`message-${message.id}`} onClick={() => isAssistant && onSelectMessage?.(message.id)} className={`message-enter flex w-full ${isAssistant ? 'cursor-pointer justify-start' : 'justify-end'}`}>
             {isAssistant ? (
               <div className="w-full min-w-0">
                 <div className="mb-3 flex items-center gap-2">
-                  <span className="flex size-5 items-center justify-center rounded-md border border-border bg-surface text-accent" aria-hidden="true"><Bot size={14} strokeWidth={1.75} /></span>
-                  <span className="text-[0.8rem] font-medium text-muted-foreground">Answer</span>
+                  <span className="flex size-5 items-center justify-center rounded-md border border-border bg-surface text-fg" aria-hidden="true"><Bot size={14} strokeWidth={1.75} /></span>
+                  <span className="text-[0.8rem] font-medium text-fg-muted">Answer</span>
                   <StatusLabel status={message.status} />
                 </div>
-                {isLivePlaceholder && (
-                  <button type="button" onClick={() => onOpenSources?.()} className="stream-shimmer mb-3 inline-flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-accent">
-                    <span className="size-1.5 rounded-full bg-accent" aria-hidden="true" /> {liveLabel}
-                  </button>
+                {isLivePlaceholder && !live?.hold && (
+                  <div className="mb-3 rounded-lg border border-border bg-sidebar p-3" role="status" aria-label="Working">
+                    <div className="mb-2 flex items-center justify-between gap-3"><span className="thinking-shimmer text-sm font-medium">Working</span><span className="inline-flex items-center gap-1 text-fg-muted" aria-hidden="true"><span className="thinking-dot size-1 rounded-full bg-current" /><span className="thinking-dot size-1 rounded-full bg-current" /><span className="thinking-dot size-1 rounded-full bg-current" /></span></div>
+                    <ol className="space-y-1.5">{[...(live?.steps ?? [])].reverse().slice(0, 4).map((step) => <li key={`${step.seq ?? 0}-${step.node}`} className="flex items-center gap-2 text-xs text-fg-muted"><span className="text-fg-subtle">{step.type === 'step.completed' ? '✓' : '•'}</span><span>{step.label}</span></li>)}{live?.plan && <li className="text-xs text-fg-muted">Planning{live.plan.sub_questions.length > 0 ? `: ${live.plan.sub_questions.map((question) => question.question).join(' · ')}` : ''}</li>}{live?.thinking && <li className="line-clamp-2 text-xs text-fg-muted">{live.thinking}</li>}</ol>
+                  </div>
                 )}
-                <div className="answer-prose text-foreground">
-                  {renderWithCitations(content, lookup, verdictFor, onOpenSources)}
-                  {isLivePlaceholder && live.hold && <span className="ml-2 inline-flex items-center gap-1 align-middle font-sans text-xs text-warning" role="status"><CircleAlert size={13} strokeWidth={1.75} aria-hidden="true" /> Verifying…</span>}
-                  {isLivePlaceholder && live.status === 'streaming' && !live.hold && <span className="ml-0.5 inline-block h-4 w-0.5 animate-pulse rounded-sm bg-muted-foreground align-text-bottom" aria-hidden="true" />}
+                <div className="answer-prose text-fg">
+                  {renderWithCitations(content, lookup, verdictFor, onOpenSources, (value) => setHoveredCitation(value), hoveredCitation)}
+                  {isLivePlaceholder && live?.hold && <span className="ml-2 inline-flex items-center gap-1 align-middle font-sans text-xs text-warning" role="status"><CircleAlert size={13} strokeWidth={1.75} aria-hidden="true" /> Verifying…</span>}
+                  {isLivePlaceholder && live?.status === 'streaming' && !live.hold && <span className="ml-0.5 inline-block h-4 w-0.5 animate-pulse rounded-sm bg-fg-muted align-text-bottom" aria-hidden="true" />}
                 </div>
                 {revisionDiff && <RevisionBanner diff={revisionDiff} />}
-                {isLivePlaceholder && live.chunks.length > 0 && (
-                  <details className="group mt-4 overflow-hidden rounded-lg border border-border bg-surface-muted open:bg-surface-raised">
-                    <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-xs text-muted-foreground transition-colors duration-150 hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-accent [&::-webkit-details-marker]:hidden">
-                      <span className="inline-flex items-center gap-1.5"><FileText size={13} strokeWidth={1.75} aria-hidden="true" /> Sources ({live.chunks.length})</span>
+                {isLivePlaceholder && (live?.chunks.length ?? 0) > 0 && (
+                  <details className="group mt-4 overflow-hidden rounded-lg border border-border bg-sidebar open:bg-raised">
+                    <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-xs text-fg-muted transition-colors duration-150 hover:bg-raised-hover focus-visible:outline-2 focus-visible:outline-focus-ring [&::-webkit-details-marker]:hidden">
+                      <span className="inline-flex items-center gap-1.5"><FileText size={13} strokeWidth={1.75} aria-hidden="true" /> Sources ({live?.chunks.length ?? 0})</span>
                       <ChevronDown size={14} strokeWidth={1.75} aria-hidden="true" className="transition-transform duration-150 group-open:rotate-180" />
-                    </summary>
-                    <SourcesTab chunks={live.chunks} />
+                   </summary>
+                     <SourcesTab chunks={live?.chunks ?? []} />
+
                   </details>
                 )}
-                {!isLivePlaceholder && <SourceCardRow message={message} onOpenSources={onOpenSources} />}
-                {isAssistant && <MessageActions message={message} content={content} />}
+                 {!isLivePlaceholder && <SourceCardRow message={message} onOpenSources={onOpenSources} hoveredCitation={hoveredCitation} onHoverCitation={setHoveredCitation} />}
+
+                 {isAssistant && <MessageActions message={message} content={content} onShowSteps={onShowSteps} />}
+
                 <AnswerFooter metrics={footerMetrics} />
               </div>
             ) : (
               <div className="flex max-w-[80%] items-start gap-2">
-                <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border border-border bg-surface text-muted-foreground" aria-hidden="true"><UserRound size={14} strokeWidth={1.75} /></span>
-                <div className="min-w-0 rounded-3xl rounded-br-lg bg-surface-raised px-4 py-2.5 text-[0.9375rem] leading-6 text-foreground">
+                <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border border-border bg-surface text-fg-muted" aria-hidden="true"><UserRound size={14} strokeWidth={1.75} /></span>
+                <div className="min-w-0 rounded-3xl rounded-br-lg bg-raised px-4 py-2.5 text-[0.9375rem] leading-6 text-fg">
                   <div className="whitespace-pre-wrap">{renderWithCitations(content, lookup, verdictFor, onOpenSources)}</div>
                   <div className="mt-1 flex justify-end"><StatusLabel status={message.status} /></div>
                 </div>
@@ -344,11 +366,14 @@ export function MessageList({ messages, live, onSuggestion, onAbstainAction, onO
         )
       })}
       {abstainActions.length > 0 && onAbstainAction && <AbstentionActions actions={abstainActions} onSelect={onAbstainAction} />}
-      {messages.length === 0 && (
+      {messages.length === 0 && optimisticQuestion && (
+        <div className="sr-only" role="status">Question sent. Waiting for the assistant.</div>
+      )}
+      {displayedMessages.length === 0 && !optimisticQuestion && (
         <div className="flex min-h-[42vh] items-center justify-center px-4 text-center">
           <div className="max-w-[32rem]">
-            <p className="text-sm text-muted-foreground">Ask anything to start the conversation.</p>
-            <p className="mt-2 text-xs leading-5 text-subtle-foreground">Citations, reviewer verdicts, and source details stay one step away while you work.</p>
+            <p className="text-sm text-fg-muted">Ask anything to start the conversation.</p>
+            <p className="mt-2 text-xs leading-5 text-fg-subtle">Citations, reviewer verdicts, and source details stay one step away while you work.</p>
           </div>
         </div>
       )}

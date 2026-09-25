@@ -1,4 +1,13 @@
-import { ChevronDown, Zap } from 'lucide-react'
+import { Zap } from 'lucide-react'
+
+import {
+  SelectContent,
+  SelectItem,
+  SelectRoot,
+  SelectTrigger,
+  SelectValue,
+  SelectViewport,
+} from '../../../components/ui/primitives'
 
 export type RunMode = 'auto' | 'fast' | 'deep'
 
@@ -8,33 +17,24 @@ interface Props {
   onChange: (mode: RunMode) => void
 }
 
-const MODES: { value: RunMode; label: string }[] = [
-  { value: 'auto', label: 'Auto' },
-  { value: 'fast', label: 'Fast' },
-  { value: 'deep', label: 'Deep' },
+const MODES: Array<{ value: RunMode; label: string; description: string }> = [
+  { value: 'auto', label: 'Auto', description: 'Fast, single-pass answer' },
+  { value: 'fast', label: 'Fast', description: 'Fast, single-pass answer' },
+  { value: 'deep', label: 'Deep', description: 'Plans, multi-hop, verifies' },
 ]
 
 export function ModePicker({ value, disabled, onChange }: Props) {
   return (
-    <label className="relative flex min-w-0 items-center gap-1.5 text-xs font-medium text-muted-foreground">
-      <span className="sr-only">Mode</span>
-      <Zap size={14} strokeWidth={1.75} className="shrink-0 text-accent" aria-hidden="true" />
-      <span className="relative min-w-0 flex-1">
-        <select
-          aria-label="Run mode"
-          value={value}
-          disabled={disabled}
-          onChange={(event) => onChange(event.target.value as RunMode)}
-          className="h-8 w-full min-w-0 cursor-pointer appearance-none rounded-lg border-0 bg-transparent px-1 pr-5 text-xs font-medium text-foreground outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {MODES.map((mode) => (
-            <option key={mode.value} value={mode.value}>
-              {mode.label}
-            </option>
-          ))}
-        </select>
-        <ChevronDown size={13} strokeWidth={1.75} aria-hidden="true" className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 text-muted-foreground" />
-      </span>
-    </label>
+    <SelectRoot value={value} disabled={disabled} onValueChange={(next) => onChange(next as RunMode)}>
+      <SelectTrigger aria-label="Run mode" className="inline-flex h-8 min-w-0 items-center gap-1.5 rounded-lg px-2.5 text-sm text-fg-muted outline-none transition-colors hover:bg-raised hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring">
+        <Zap size={14} strokeWidth={1.75} aria-hidden="true" />
+        <SelectValue placeholder="Mode" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectViewport>
+          {MODES.map((mode) => <SelectItem key={mode.value} value={mode.value}><span className="flex flex-col"><span>{mode.label}</span><span className="text-xs text-fg-muted">{mode.description}</span></span></SelectItem>)}
+        </SelectViewport>
+      </SelectContent>
+    </SelectRoot>
   )
 }

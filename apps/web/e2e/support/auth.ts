@@ -34,18 +34,18 @@ export async function createChat(page: Page): Promise<string> {
 }
 
 export async function setComposerMode(page: Page, value: 'auto' | 'fast' | 'deep'): Promise<void> {
-  const settings = page.getByRole('button', { name: 'Run settings' })
-  if ((await settings.getAttribute('aria-expanded')) !== 'true') await settings.click()
-  await page.getByRole('combobox', { name: 'Run mode' }).selectOption(value)
+  const trigger = page.locator('button[role="combobox"][aria-label="Run mode"]:visible').last()
+  await trigger.click()
+  await page.getByRole('option', { name: new RegExp(`^${value}`, 'i') }).click()
 }
 
 export async function setComposerSource(
   page: Page,
   value: 'auto' | 'upload' | 'web' | 'both',
 ): Promise<void> {
-  const settings = page.getByRole('button', { name: 'Run settings' })
-  if ((await settings.getAttribute('aria-expanded')) !== 'true') await settings.click()
-  await page.getByRole('combobox', { name: 'Run source' }).selectOption(value)
+  const trigger = page.locator('button[role="combobox"][aria-label="Run source"]:visible').last()
+  await trigger.click()
+  await page.getByRole('option', { name: new RegExp(`^${value}`, 'i') }).click()
 }
 
 export async function waitForRunToFinish(page: Page): Promise<void> {

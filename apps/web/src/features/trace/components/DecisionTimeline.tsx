@@ -22,8 +22,8 @@ function EngineBadge({ engine }: { engine: Decision['engine'] }) {
     <span
       className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 font-mono text-[0.6rem] ${
         fallback
-          ? 'border-warning/30 bg-warning-soft text-warning'
-          : 'border-accent/25 bg-accent-soft text-accent'
+          ? 'border-border/30 bg-raised text-warning'
+          : 'border-border/25 bg-raised text-fg'
       }`}
       title={fallback ? 'Jev unavailable — answered by LLM fallback' : undefined}
     >
@@ -35,7 +35,7 @@ function EngineBadge({ engine }: { engine: Decision['engine'] }) {
 
 function Outcome({ label, tone }: { label: string; tone: OutcomeTone }) {
   const toneClass = {
-    neutral: 'text-muted-foreground',
+    neutral: 'text-fg-muted',
     success: 'text-success',
     warning: 'text-warning',
     danger: 'text-danger',
@@ -52,8 +52,8 @@ function Outcome({ label, tone }: { label: string; tone: OutcomeTone }) {
 function Reasoning({ reasoning }: { reasoning: string | null | undefined }) {
   if (!reasoning) return null
   return (
-    <details className="mt-1 text-xs text-muted-foreground">
-      <summary className="cursor-pointer hover:text-foreground">reasoning</summary>
+    <details className="mt-1 text-xs text-fg-muted">
+      <summary className="cursor-pointer hover:text-fg">reasoning</summary>
       <p className="mt-1 whitespace-pre-wrap">{reasoning}</p>
     </details>
   )
@@ -75,28 +75,28 @@ function NoulRow({ decision, stage }: { decision: Decision; stage: string | null
   return (
     <li className="space-y-1.5 py-2">
       <div className="flex items-center justify-between gap-2 text-xs">
-        <span className="font-medium text-foreground">{label}</span>
+        <span className="font-medium text-fg">{label}</span>
         <EngineBadge engine={decision.engine} />
       </div>
       <div className="flex items-center gap-2">
         <div
-          className="relative h-2 min-w-0 flex-1 overflow-visible rounded-full bg-surface-muted"
+          className="relative h-2 min-w-0 flex-1 overflow-visible rounded-full bg-sidebar"
           role="meter"
           aria-label={meterLabel}
           aria-valuemin={0}
           aria-valuemax={1}
           aria-valuenow={probability ?? 0}
         >
-          <div className="h-full rounded-full bg-accent" style={{ width: `${width}%` }} />
+          <div className="h-full rounded-full bg-fg-strong" style={{ width: `${width}%` }} />
           {thresholdPosition !== null && (
             <span
-              className="absolute -top-1 bottom-[-4px] border-l-2 border-foreground"
+              className="absolute -top-1 bottom-[-4px] border-l-2 border-border"
               style={{ left: `${thresholdPosition}%` }}
               aria-hidden="true"
             />
           )}
         </div>
-        <span className="w-9 text-right font-mono text-[0.65rem] text-foreground">{(probability ?? 0).toFixed(2)}</span>
+        <span className="w-9 text-right font-mono text-[0.65rem] text-fg">{(probability ?? 0).toFixed(2)}</span>
         <Outcome label={outcome.label} tone={outcome.tone} />
       </div>
       <Reasoning reasoning={decision.reasoning} />
@@ -111,17 +111,17 @@ function ChoiceRow({ decision, stage }: { decision: Decision; stage: string | nu
   return (
     <li className="space-y-1.5 py-2">
       <div className="flex items-center justify-between gap-2 text-xs">
-        <span className="font-medium text-foreground">{decisionLabel(decision.name, stage)}</span>
+        <span className="font-medium text-fg">{decisionLabel(decision.name, stage)}</span>
         <EngineBadge engine={decision.engine} />
       </div>
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xs">
-        <span className="font-medium text-foreground">{winner}</span>
+        <span className="font-medium text-fg">{winner}</span>
         {winnerProbability !== null && winnerProbability !== undefined && (
-          <span className="font-mono text-muted-foreground">{(winnerProbability * 100).toFixed(0)}%</span>
+          <span className="font-mono text-fg-muted">{(winnerProbability * 100).toFixed(0)}%</span>
         )}
       </div>
       {spread.length > 0 && (
-        <div className="flex flex-wrap gap-x-3 gap-y-1 font-mono text-[0.65rem] text-muted-foreground">
+        <div className="flex flex-wrap gap-x-3 gap-y-1 font-mono text-[0.65rem] text-fg-muted">
           {spread.map(([option, probability]) => (
             <span key={option}>
               {option} {(probability * 100).toFixed(0)}%
@@ -141,12 +141,12 @@ function ScoreRow({ decision }: { decision: Decision }) {
   return (
     <li className="space-y-1.5 py-2">
       <div className="flex items-center justify-between gap-2 text-xs">
-        <span className="font-medium text-foreground">{decisionLabel(decision.name)}</span>
+        <span className="font-medium text-fg">{decisionLabel(decision.name)}</span>
         <EngineBadge engine={decision.engine} />
       </div>
-      <div className="font-mono text-xs text-foreground">{Number.isFinite(value) ? value.toFixed(2) : decision.value}</div>
+      <div className="font-mono text-xs text-fg">{Number.isFinite(value) ? value.toFixed(2) : decision.value}</div>
       {lexical && vector !== null && (
-        <div className="font-mono text-[0.65rem] text-muted-foreground">
+        <div className="font-mono text-[0.65rem] text-fg-muted">
           BM25 {(value * 100).toFixed(0)}% / vector {(vector * 100).toFixed(0)}%
         </div>
       )}
@@ -160,13 +160,13 @@ function GenericRow({ decision, stage }: { decision: Decision; stage: string | n
   return (
     <li className="space-y-1 py-2">
       <div className="flex items-center justify-between gap-2 text-xs">
-        <span className="font-medium text-foreground">{decisionLabel(decision.name, stage)}</span>
+        <span className="font-medium text-fg">{decisionLabel(decision.name, stage)}</span>
         <span className="flex items-center gap-2">
           <Outcome label={outcome.label} tone={outcome.tone} />
           <EngineBadge engine={decision.engine} />
         </span>
       </div>
-      <div className="font-mono text-xs text-muted-foreground">{String(decision.value)}</div>
+      <div className="font-mono text-xs text-fg-muted">{String(decision.value)}</div>
       <Reasoning reasoning={decision.reasoning} />
     </li>
   )
@@ -202,7 +202,7 @@ function DynamicSummary({
     <li className="py-1">
       <button
         type="button"
-        className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs text-foreground transition-colors duration-150 hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-accent motion-reduce:transition-none"
+        className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs text-fg transition-colors duration-150 hover:bg-sidebar focus-visible:outline-2 focus-visible:outline-focus-ring motion-reduce:transition-none"
         aria-expanded={expanded}
         onClick={() => setExpanded((value) => !value)}
       >
@@ -210,7 +210,7 @@ function DynamicSummary({
           {expanded ? <ChevronDown size={13} aria-hidden="true" /> : <ChevronRight size={13} aria-hidden="true" />}
           {decisions.length} {label}
         </span>
-        <span className="font-mono text-[0.65rem] text-muted-foreground">show details</span>
+        <span className="font-mono text-[0.65rem] text-fg-muted">show details</span>
       </button>
       {expanded && (
         <ul className="mt-1 border-l border-border pl-2">
@@ -234,8 +234,8 @@ function DecisionGroupSection({ group }: { group: DecisionGroup }) {
   return (
     <section className="rounded-lg border border-border bg-surface">
       <header className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1 border-b border-border px-3 py-2">
-        <h3 className="text-xs font-semibold text-foreground">{decisionStageLabel(group.stage)}</h3>
-        <span className="font-mono text-[0.6rem] text-muted-foreground">
+        <h3 className="text-xs font-semibold text-fg">{decisionStageLabel(group.stage)}</h3>
+        <span className="font-mono text-[0.6rem] text-fg-muted">
           {callLabel} · {questionCount} questions · {maxLatency} ms
         </span>
       </header>
@@ -268,7 +268,7 @@ export function DecisionSummary({ decisions }: { decisions: Decision[] }) {
     ...groupDecisions(decisions).map((group) => Math.max(...group.decisions.map((decision) => decision.latency_ms))),
   )
   return (
-    <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-border bg-surface-muted px-2.5 py-2 font-mono text-[0.65rem] text-muted-foreground">
+    <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-border bg-sidebar px-2.5 py-2 font-mono text-[0.65rem] text-fg-muted">
       <span>{decisions.length} decisions</span>
       <span aria-hidden="true">·</span>
       <span>Jev {jevCount}/{decisions.length}</span>

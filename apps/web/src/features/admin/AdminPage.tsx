@@ -71,8 +71,8 @@ function isDecisionModel(model: AdminModelOut): boolean {
 function Panel({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="overflow-hidden rounded-xl border border-border bg-surface">
-      <h2 className="flex items-center gap-2 border-b border-border bg-surface-muted px-4 py-3 text-xs font-semibold text-foreground">
-        <Settings2 size={14} strokeWidth={1.75} className="text-accent" aria-hidden="true" />
+      <h2 className="flex items-center gap-2 border-b border-border bg-sidebar px-4 py-3 text-xs font-semibold text-fg">
+        <Settings2 size={14} strokeWidth={1.75} className="text-fg" aria-hidden="true" />
         {title}
       </h2>
       <div className="p-4 sm:p-5">{children}</div>
@@ -82,8 +82,8 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className="flex flex-col gap-1.5 text-xs text-muted-foreground">
-      <span className="text-[0.68rem] font-medium text-foreground">{label}</span>
+    <label className="flex flex-col gap-1.5 text-xs text-fg-muted">
+      <span className="text-[0.68rem] font-medium text-fg">{label}</span>
       {children}
     </label>
   )
@@ -91,7 +91,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function TableHeader({ left, right }: { left: string; right: string }) {
   return (
-    <div className="mb-2 grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-border px-1 pb-2 text-[0.65rem] font-medium uppercase tracking-[0.1em] text-muted-foreground">
+    <div className="mb-2 grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-border px-1 pb-2 text-[0.65rem] font-medium uppercase tracking-[0.1em] text-fg-muted">
       <span>{left}</span>
       <span>{right}</span>
     </div>
@@ -100,16 +100,16 @@ function TableHeader({ left, right }: { left: string; right: string }) {
 
 function TableRow({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={`grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-border/70 px-1 py-3 transition-colors duration-150 last:border-b-0 hover:bg-surface-hover ${className}`}>
+    <div className={`grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-border/70 px-1 py-3 transition-colors duration-150 last:border-b-0 hover:bg-raised-hover ${className}`}>
       {children}
     </div>
   )
 }
 
 const inputClass =
-  'h-9 min-w-0 rounded-lg border border-border bg-surface px-2.5 text-xs text-foreground transition-[border-color,background-color] duration-150 hover:border-border-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50'
+  'h-9 min-w-0 rounded-lg border border-border bg-surface px-2.5 text-xs text-fg transition-[border-color,background-color] duration-150 hover:border-border-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:cursor-not-allowed disabled:opacity-50'
 const buttonClass =
-  'pressable inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg border border-border bg-surface-raised px-2.5 text-xs font-medium text-foreground hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50'
+  'pressable inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg border border-border bg-raised px-2.5 text-xs font-medium text-fg hover:bg-raised-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:cursor-not-allowed disabled:opacity-50'
 
 export function AdminPage() {
   const me = useMe()
@@ -325,9 +325,9 @@ export function AdminPage() {
     onSuccess: () => invalidate([['admin', 'users']]),
   })
 
-  if (me.isLoading) return <main className="min-h-screen bg-background p-8 text-foreground">Loading admin…</main>
+  if (me.isLoading) return <main className="min-h-screen bg-main p-8 text-fg">Loading admin…</main>
   if (me.data?.role !== 'admin') {
-    return <main className="min-h-screen bg-background p-8 text-foreground">Administrator access required.</main>
+    return <main className="min-h-screen bg-main p-8 text-fg">Administrator access required.</main>
   }
 
   const current = settings.data
@@ -347,16 +347,16 @@ export function AdminPage() {
   ]
 
   return (
-    <main className="h-full overflow-y-auto bg-background text-foreground">
-      <header className="border-b border-border bg-surface-muted px-5 py-4 sm:px-8">
+    <main className="h-full overflow-y-auto bg-main text-fg">
+      <header className="border-b border-border bg-sidebar px-5 py-4 sm:px-8">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <span className="flex size-9 items-center justify-center rounded-lg border border-border bg-surface text-accent">
+            <span className="flex size-9 items-center justify-center rounded-lg border border-border bg-surface text-fg">
               <ShieldCheck size={18} strokeWidth={1.75} aria-hidden="true" />
             </span>
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-accent">Administration</p>
-              <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">System control room</h1>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-fg">Administration</p>
+              <h1 className="mt-1 text-2xl font-semibold tracking-tight text-fg">System control room</h1>
             </div>
           </div>
         </div>
@@ -368,8 +368,8 @@ export function AdminPage() {
               key={id}
               type="button"
               onClick={() => setSection(id)}
-              className={`inline-flex min-h-10 items-center gap-2 whitespace-nowrap rounded-lg px-3 py-2 text-left text-xs font-medium transition-[background-color,color] duration-150 focus-visible:outline-2 focus-visible:outline-accent ${
-                section === id ? 'bg-surface-raised text-foreground' : 'text-muted-foreground hover:bg-surface-hover hover:text-foreground'
+              className={`inline-flex min-h-10 items-center gap-2 whitespace-nowrap rounded-lg px-3 py-2 text-left text-xs font-medium transition-[background-color,color] duration-150 focus-visible:outline-2 focus-visible:outline-focus-ring ${
+                section === id ? 'bg-raised text-fg' : 'text-fg-muted hover:bg-raised-hover hover:text-fg'
               }`}
             >
               {icon}
@@ -378,7 +378,7 @@ export function AdminPage() {
           ))}
         </nav>
         <div className="min-w-0 space-y-4">
-          {notice && <p role="status" className="flex items-center gap-2 rounded-lg border border-success/30 bg-success-soft px-3 py-2 text-sm text-success"><CheckCircle2 size={15} aria-hidden="true" />{notice}</p>}
+          {notice && <p role="status" className="flex items-center gap-2 rounded-lg border border-border/30 bg-raised px-3 py-2 text-sm text-success"><CheckCircle2 size={15} aria-hidden="true" />{notice}</p>}
           {section === 'decisions' && <DecisionLayerPanel />}
           {section === 'settings' && (
             <>
@@ -411,7 +411,7 @@ export function AdminPage() {
                   <Field label="Source priority"><select className={inputClass} value={settingsDraft.source_priority} onChange={(e) => setSettingsDraft({ ...settingsDraft, source_priority: e.target.value })}><option value="documents_first">Documents first</option><option value="web_first">Web first</option></select></Field>
                   <Field label="Trace sample rate"><input className={inputClass} type="number" min={0} max={1} step="0.01" value={settingsDraft.trace_sample_rate} onChange={(e) => setSettingsDraft({ ...settingsDraft, trace_sample_rate: Number(e.target.value) })} /></Field>
                 </div>
-                <p className="mt-3 font-mono text-[0.65rem] text-muted-foreground">Active v{current?.version ?? '—'} · top-k {currentTopK} · threshold {currentThreshold} · {currentMode}</p>
+                <p className="mt-3 font-mono text-[0.65rem] text-fg-muted">Active v{current?.version ?? '—'} · top-k {currentTopK} · threshold {currentThreshold} · {currentMode}</p>
                  <button type="button" className={`${buttonClass} mt-4`} onClick={() => settingsSave.mutate()} disabled={settingsSave.isPending}><Save size={13} aria-hidden="true" />Create version</button>
 
               </Panel>
@@ -419,7 +419,7 @@ export function AdminPage() {
                 <div className="divide-y divide-border">
                   {(versions.data ?? []).map((version: SettingsOut) => (
                      <div key={version.version} className="flex items-center justify-between gap-3 border-b border-border/70 px-1 py-2.5 last:border-b-0">
-                       <div className="flex items-baseline gap-2"><span className="font-mono text-sm text-foreground">v{version.version}</span><span className="text-xs text-muted-foreground">{version.active ? 'active' : 'inactive'}</span></div>
+                       <div className="flex items-baseline gap-2"><span className="font-mono text-sm text-fg">v{version.version}</span><span className="text-xs text-fg-muted">{version.active ? 'active' : 'inactive'}</span></div>
                         {!version.active && <button type="button" className={buttonClass} onClick={() => rollback.mutate(version.version)} disabled={rollback.isPending}><RefreshCw size={13} aria-hidden="true" />Activate</button>}
 
                      </div>
@@ -443,8 +443,8 @@ export function AdminPage() {
                  {(providers.data ?? []).map((provider: ProviderOut) => (
                    <TableRow key={provider.id}>
                      <div className="min-w-0">
-                       <div className="truncate font-mono text-sm text-foreground">{provider.name}</div>
-                       <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                       <div className="truncate font-mono text-sm text-fg">{provider.name}</div>
+                       <div className="mt-0.5 truncate text-xs text-fg-muted">
                          {provider.kind} · {provider.enabled ? 'enabled' : 'disabled'} · key {provider.has_api_key ? 'stored' : 'missing'}
                        </div>
                      </div>
@@ -474,8 +474,8 @@ export function AdminPage() {
                  {(models.data ?? []).filter((model: AdminModelOut) => !isDecisionModel(model)).map((model: AdminModelOut) => (
                    <TableRow key={model.id}>
                      <div className="min-w-0">
-                       <div className="truncate font-mono text-sm text-foreground">{model.model_id}</div>
-                       <div className="mt-0.5 text-xs text-muted-foreground">
+                       <div className="truncate font-mono text-sm text-fg">{model.model_id}</div>
+                       <div className="mt-0.5 text-xs text-fg-muted">
                          {model.context_window ?? '—'} tokens · in {model.price_in ?? '—'} / out {model.price_out ?? '—'}
                        </div>
                      </div>
@@ -491,7 +491,7 @@ export function AdminPage() {
                  <TableHeader left="Role" right="Assigned model" />
                  {(roles.data ?? []).map((role: RoleOut) => (
                    <TableRow key={role.role}>
-                     <span className="min-w-0 truncate font-mono text-sm text-foreground">{role.role}</span>
+                     <span className="min-w-0 truncate font-mono text-sm text-fg">{role.role}</span>
                      <select className={inputClass} value={role.model_id} onChange={(e) => roleSave.mutate({ role: role.role, model_id: e.target.value, fallback_model_id: role.fallback_model_id ?? undefined })}>
                        {(models.data ?? []).map((model: AdminModelOut) => <option key={model.id} value={model.model_id}>{model.model_id}</option>)}
                      </select>
@@ -526,10 +526,10 @@ export function AdminPage() {
                  {(audit.data ?? []).map((row: AuditOut) => (
                    <TableRow key={row.id}>
                      <div className="min-w-0">
-                       <div className="truncate font-mono text-sm text-foreground">{row.action}</div>
-                       <div className="mt-0.5 truncate text-xs text-muted-foreground">{row.target}</div>
+                       <div className="truncate font-mono text-sm text-fg">{row.action}</div>
+                       <div className="mt-0.5 truncate text-xs text-fg-muted">{row.target}</div>
                      </div>
-                     <span className="shrink-0 text-xs text-muted-foreground">{new Date(row.created_at).toLocaleString()}</span>
+                     <span className="shrink-0 text-xs text-fg-muted">{new Date(row.created_at).toLocaleString()}</span>
                    </TableRow>
                  ))}
                </div>
@@ -547,8 +547,8 @@ function UserRow({ user, onUpdate }: { user: UserOut; onUpdate: (body: UserPatch
   return (
     <TableRow>
       <div className="min-w-0">
-        <div className="truncate text-sm text-foreground">{user.email}</div>
-        <div className="mt-0.5 text-xs text-muted-foreground">{user.role} · {user.status}</div>
+        <div className="truncate text-sm text-fg">{user.email}</div>
+        <div className="mt-0.5 text-xs text-fg-muted">{user.role} · {user.status}</div>
       </div>
       <div className="flex flex-wrap items-center justify-end gap-2">
         <input aria-label={`${user.email} 5h override`} className={inputClass} type="number" min={0} value={fiveHour} onChange={(e) => setFiveHour(Number(e.target.value))} />
@@ -567,8 +567,8 @@ function PlanRow({ plan, onSave }: { plan: PlanOut; onSave: (body: PlanPatch) =>
   return (
     <TableRow>
       <div className="min-w-0">
-        <div className="truncate font-mono text-sm text-foreground">{plan.name}</div>
-        <div className="mt-0.5 text-xs text-muted-foreground">5h {plan.credits_5h}</div>
+        <div className="truncate font-mono text-sm text-fg">{plan.name}</div>
+        <div className="mt-0.5 text-xs text-fg-muted">5h {plan.credits_5h}</div>
       </div>
       <div className="flex items-center gap-2">
         <input aria-label={`${plan.name} monthly credits`} className={inputClass} type="number" value={month} onChange={(e) => setMonth(Number(e.target.value))} />

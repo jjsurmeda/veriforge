@@ -77,6 +77,7 @@ describe('useRunStream', () => {
     })
 
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['messages', CHAT_ID] })
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['chats'] })
     // Kept (not cleared) so the trust UI survives past the terminal event.
     const finished = useChatRunStore.getState().runs[RUN_ID]
     expect(finished.status).toBe('completed')
@@ -129,8 +130,10 @@ describe('useRunStream', () => {
           error: null,
           chunks: [],
           metrics: null,
-          steps: [],
-          decisions: [],
+    steps: [],
+    plan: null,
+    decisions: [],
+
           thinking: '',
           abstain: null,
           conflict: null,

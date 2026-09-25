@@ -56,8 +56,10 @@ export function useRunStream(runId: string | null, chatId: string | null): UseRu
         useChatRunStore.getState().applyEvent(runId, event)
         if (TERMINAL_TYPES.has(event.type)) {
           void queryClient.invalidateQueries({ queryKey: ['messages', chatId] })
-          void queryClient.invalidateQueries({ queryKey: ['chats'] })
           void queryClient.invalidateQueries({ queryKey: ['chat', chatId] })
+          if (event.type === 'run.completed') {
+            void queryClient.invalidateQueries({ queryKey: ['chats'] })
+          }
           // No store clear: the trace panel, verdicts, metrics and
           // suggestions stay visible after completion (store.ts begin()).
         }

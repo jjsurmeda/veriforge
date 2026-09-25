@@ -103,5 +103,6 @@ jobs:
       - run: npm ci
       - run: npm run codegen:ci
       - run: npm run lint
+      - run: ../../scripts/check-colors.sh
       - run: npx tsc --noEmit -p tsconfig.app.json
       - run: npm run build

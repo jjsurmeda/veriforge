@@ -6,6 +6,7 @@ import type {
   Decision,
   Heartbeat,
   Metrics,
+  Plan,
   Retrieval,
   ReviewClaim,
   Revision,
@@ -25,6 +26,7 @@ export type StreamEvent =
   | StepCompleted
   | Decision
   | ThinkingDelta
+  | Plan
   | Retrieval
   | AnswerDelta
   | Abstain

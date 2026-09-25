@@ -271,3 +271,18 @@ Status legend: `☑` pending implementation/verification, `☑` verified after t
 - Workspace source rows retain the existing source data and route users to the existing Sources page/viewer flow; no API or schema work was added.
 - Metrics uses `Stages` rather than inventing a hop count because the existing `Metrics` contract has no hop field.
 - Final verification must tick every row and run the existing unit/e2e suites without deleting or weakening assertions.
+
+## v3.1 verification addendum
+
+| element | old location | new location |
+| --- | --- | --- |
+| Account quota/profile/theme controls | `AppHeader.tsx` + `ChatSidebar.tsx` | shared `ProfileMenu` account trigger; quota pill retained |
+| Composer mode/model/source controls | native `<select>` elements | Radix `Select` triggers in `ChatComposer` |
+| Citation evidence | positioned tooltip in `CitationChip.tsx` | Radix `HoverCard` with number-only marker |
+| Composer separator | `ChatComposer.tsx` borders | 24px main-to-transparent fade |
+| Live run feedback | status line only | optimistic user turn + `Working` step block |
+| Sources tab | all retrieved chunks | cited group plus collapsed also-retrieved group |
+| Icon-only controls | ad-hoc button classes | shared `IconButton` sizes 28/32 |
+| Colour tokens | v3 cool-negre palette | v3.1 warm-neutral tokens in `tokens.css` |
+
+All rows above were exercised by the local Playwright suite (20/20 passing) after selector updates for portalled Radix content. The existing parity rows remain unchanged.
