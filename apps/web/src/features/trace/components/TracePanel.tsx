@@ -10,6 +10,7 @@ import type {
   StepStarted,
 } from '../../../generated/types.gen'
 import { SourcesTab } from './SourcesTab'
+import { DecisionSummary, DecisionTimeline } from './DecisionTimeline'
 
 interface Props {
   steps: Array<StepStarted | StepCompleted>
@@ -35,37 +36,6 @@ function StepRow({ step }: { step: StepStarted | StepCompleted }) {
   )
 }
 
-function DecisionRow({ decision }: { decision: Decision }) {
-  const probability = decision.probability
-  const valueLabel =
-    typeof decision.value === 'number'
-      ? decision.value.toFixed(2)
-      : String(decision.value)
-  return (
-    <li className="border-l border-border py-1 pl-3">
-      <div className="flex items-baseline justify-between gap-2 text-xs">
-        <span className="font-medium text-foreground">{decision.name}</span>
-        <span className="flex items-baseline gap-2 text-muted-foreground">
-          <span>{decision.engine}</span>
-          <span>{decision.latency_ms} ms</span>
-        </span>
-      </div>
-      <div className="mt-0.5 text-xs text-muted-foreground">
-        {valueLabel}
-        {probability !== null && probability !== undefined && (
-          <span className="ml-2 text-muted-foreground">p={probability.toFixed(2)}</span>
-        )}
-      </div>
-      {decision.reasoning && (
-        <details className="mt-1 text-xs text-muted-foreground">
-          <summary className="cursor-pointer hover:text-muted-foreground">reasoning</summary>
-          <p className="mt-1 whitespace-pre-wrap">{decision.reasoning}</p>
-        </details>
-      )}
-    </li>
-  )
-}
-
 function WaterfallRow({ label, ms, max }: { label: string; ms: number; max: number }) {
   const width = max > 0 ? Math.max(2, Math.round((ms / max) * 100)) : 0
   return (
@@ -81,15 +51,17 @@ function WaterfallRow({ label, ms, max }: { label: string; ms: number; max: numb
   )
 }
 
-function MetricsTab({ metrics }: { metrics: Metrics | null }) {
-  if (!metrics) {
-    return <p className="text-xs text-muted-foreground">Metrics land when the run completes.</p>
-  }
-  const latency = Object.entries(metrics.latency_ms ?? {})
+function MetricsTab({ metrics, decisions }: { metrics: Metrics | null; decisions: Decision[] }) {
+  const latency = Object.entries(metrics?.latency_ms ?? {})
   const max = Math.max(1, ...latency.map(([, ms]) => ms))
   const total = latency.reduce((sum, [, ms]) => sum + ms, 0)
   return (
     <div className="space-y-4 text-xs">
+      <DecisionSummary decisions={decisions} />
+      {!metrics ? (
+        <p className="text-muted-foreground">Metrics land when the run completes.</p>
+      ) : (
+        <>
       <section>
         <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           Latency by stage
@@ -121,6 +93,8 @@ function MetricsTab({ metrics }: { metrics: Metrics | null }) {
           </li>
         </ul>
       </section>
+        </>
+      )}
     </div>
   )
 }
@@ -195,15 +169,13 @@ export function TracePanel({
               </section>
             )}
             {decisions.length > 0 && (
-              <section>
-                <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Decisions
+              <section aria-labelledby="decision-timeline-heading">
+                <h3 id="decision-timeline-heading" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Decision timeline
                 </h3>
-                <ul className="mt-1 space-y-1">
-                  {decisions.map((decision, i) => (
-                    <DecisionRow key={i} decision={decision} />
-                  ))}
-                </ul>
+                <div className="mt-2">
+                  <DecisionTimeline decisions={decisions} />
+                </div>
               </section>
             )}
             {steps.length === 0 && decisions.length === 0 && thinking.length === 0 && (
@@ -214,7 +186,7 @@ export function TracePanel({
           </>
         )}
         {tab === 'sources' && <SourcesTab chunks={chunks} />}
-        {tab === 'metrics' && <MetricsTab metrics={metrics} />}
+        {tab === 'metrics' && <MetricsTab metrics={metrics} decisions={decisions} />}
       </div>
     </aside>
   )
