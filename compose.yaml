@@ -38,6 +38,9 @@ services:
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+      BRAVE_API_KEY: ${BRAVE_API_KEY:-}
+      COHERE_API_KEY: ${COHERE_API_KEY:-}
       LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
       LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
     ports:
@@ -64,6 +67,12 @@ services:
       OBJECT_STORAGE_DIR: /data/objects
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-openrouter/openai/text-embedding-3-small}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      # Retrieval providers. Without these a run whose ingress picks `web`
+      # fails outright with web_search_unconfigured, and Cohere rerank silently
+      # degrades to fused order inside the worker.
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+      BRAVE_API_KEY: ${BRAVE_API_KEY:-}
+      COHERE_API_KEY: ${COHERE_API_KEY:-}
       LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
       LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
     volumes:
@@ -85,6 +94,12 @@ services:
       OBJECT_STORAGE_DIR: /data/objects
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-openrouter/openai/text-embedding-3-small}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      # Retrieval providers. Without these a run whose ingress picks `web`
+      # fails outright with web_search_unconfigured, and Cohere rerank silently
+      # degrades to fused order inside the worker.
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+      BRAVE_API_KEY: ${BRAVE_API_KEY:-}
+      COHERE_API_KEY: ${COHERE_API_KEY:-}
       LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
       LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
     volumes:

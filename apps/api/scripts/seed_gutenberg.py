@@ -146,7 +146,8 @@ async def seed() -> None:
                 await asyncio.sleep(POLITE_DELAY_SECONDS)
             document_id, deduped = await upload_book(client, token, title, book_id)
             queued[title] = document_id
-            print(f"  {title} ({book_id}) {document_id} {'already ingested' if deduped else 'queued'}")
+            state = "already ingested" if deduped else "queued"
+            print(f"  {title} ({book_id}) {document_id} {state}")
 
         await poll_until_ready(client, token, queued)
 

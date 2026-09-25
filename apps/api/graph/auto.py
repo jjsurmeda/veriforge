@@ -288,7 +288,7 @@ async def prepare_auto_run(
 
         ingress, rewritten = await _step("ingress+rewrite", ingress_and_rewrite)
 
-        if ingress.intent == "chitchat" and ingress.off_topic == "pass":
+        if ingress.intent == "chitchat" and ingress.off_topic != "block":
             await _step("Small talk: skipped retrieval", _skip_retrieval)
             return AutoRun(
                 params=params,

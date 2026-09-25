@@ -233,9 +233,12 @@ async def test_mixed_message_keeps_the_lookup_path(
     assert no_llm["retrieval"] != []
 
 
-async def test_off_topic_message_does_not_get_the_chitchat_branch(
+async def test_an_off_topic_warn_does_not_divert_small_talk(
     db: AsyncSession, user_a: User, no_llm: dict[str, list[str]]
 ) -> None:
+    """off_topic is thresholded with no block name, so it can only ever warn.
+    A greeting that Jev also calls off-topic relative to the corpus must still
+    be answered as small talk, or the most common opening turn breaks."""
     chat, assistant_message_id = await _seed_chat(db, user_a)
 
     run = await prepare_auto_run(
@@ -245,5 +248,6 @@ async def test_off_topic_message_does_not_get_the_chitchat_branch(
     )
 
     assert run.ingress.off_topic == "warn"
-    assert run.chitchat is False
-    assert "Small talk: skipped retrieval" not in run.latency_ms
+    assert run.chitchat is True
+    assert "Small talk: skipped retrieval" in run.latency_ms
+    assert no_llm["retrieval"] == []

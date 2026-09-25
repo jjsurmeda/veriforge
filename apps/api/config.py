@@ -31,7 +31,11 @@ class Settings(BaseSettings):
     # RunBus tuning (TRD §7, ADR-001).
     delta_coalesce_ms: int = 50
     heartbeat_interval_seconds: int = 15
-    heartbeat_sweep_seconds: int = 60
+    # A run is only orphaned if it goes quiet for longer than one worst-case
+    # LLM call: llm_max_retries * llm_timeout_seconds, plus margin. At 60 s a
+    # slow provider was swept as dead while it was still waiting on a reply,
+    # which killed every retrieval-bearing run on the free models.
+    heartbeat_sweep_seconds: int = 480
 
     # Ingestion (TRD §9.1). Object storage is a local directory at Stage 1;
     # slice 9 points the same ObjectStore interface at S3.
