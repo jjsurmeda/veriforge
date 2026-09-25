@@ -36,3 +36,10 @@ graphify-out/
 # playwright-mcp tool state
 .playwright-mcp/
 evals/seed/.loaded.json
+
+# Local working prompts and design references
+docs/prompts/
+docs/design-refs/
+
+# Gutenberg corpus cache
+.data/
