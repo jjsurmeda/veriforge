@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { AlertTriangle, Check, RotateCcw, Tag, X } from 'lucide-react'
 
 import type { ChunkOut, DocumentOut } from '../../../generated/types.gen'
-import { StatusChip } from './DocumentList'
+import { StatusChip } from './StatusChip'
 
 const FLAG_LABELS: Record<string, string> = { low_text: 'Scanned?', table_heavy: 'Table-heavy' }
 

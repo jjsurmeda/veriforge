@@ -16,7 +16,6 @@ import { ResetPasswordPage } from './features/auth/pages/ResetPasswordPage'
 import { SignupPage } from './features/auth/pages/SignupPage'
 import { ChatIndexPage } from './features/chat/pages/ChatIndexPage'
 import { ChatView } from './features/chat/pages/ChatView'
-import { LibraryPage } from './features/library/pages/LibraryPage'
 
 const rootRoute = createRootRoute({ component: Outlet })
 
@@ -76,16 +75,18 @@ const chatRoute = createRoute({
     return <ChatView chatId={chatId} />
   },
 })
-const libraryRoute = createRoute({
+const libraryRedirectRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: '/library',
-  component: LibraryPage,
+  beforeLoad: () => {
+    throw redirect({ to: '/' })
+  },
 })
 const sourcesRedirectRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: '/sources',
   beforeLoad: () => {
-    throw redirect({ to: '/library' })
+    throw redirect({ to: '/' })
   },
 })
 
@@ -104,7 +105,7 @@ const routeTree = rootRoute.addChildren([
   appLayoutRoute.addChildren([
     indexRoute,
     chatRoute,
-    libraryRoute,
+    libraryRedirectRoute,
     sourcesRedirectRoute,
     adminRoute,
   ]),

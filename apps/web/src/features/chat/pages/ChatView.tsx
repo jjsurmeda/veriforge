@@ -82,8 +82,17 @@ export function ChatView({ chatId }: { chatId: string }) {
 
   const { resume } = useRunStream(activeRunId, chatId)
   const live = useChatRunStore((s) => (activeRunId ? s.runs[activeRunId] : undefined))
-  const viewerDocument = (documents.data ?? []).find((entry) => entry.id === viewerDocumentId)
-  const viewerChunks = useDocumentChunks(viewerDocumentId, viewerDocument?.status === 'parsing' || viewerDocument?.status === 'embedding' || viewerDocument?.status === 'queued')
+  const libraryDocument = (library.data?.documents ?? []).find(
+    (entry) => entry.id === viewerDocumentId,
+  )
+  const viewerDocument =
+    (documents.data ?? []).find((entry) => entry.id === viewerDocumentId) ?? libraryDocument
+  const viewerLive =
+    viewerDocument !== undefined &&
+    (viewerDocument.status === 'parsing' ||
+      viewerDocument.status === 'embedding' ||
+      viewerDocument.status === 'queued')
+  const viewerChunks = useDocumentChunks(viewerDocumentId, viewerLive)
 
   useEffect(() => {
     if (live?.status === 'completed' || live?.status === 'failed' || live?.status === 'cancelled') setOptimisticQuestion(null)
@@ -179,6 +188,7 @@ export function ChatView({ chatId }: { chatId: string }) {
               <DocumentViewer
                 document={viewerDocument}
                 chunks={viewerChunks.data ?? []}
+                readOnly={libraryDocument !== undefined && !libraryDocument.editable}
                 onClose={() => setViewerDocumentId(null)}
                 onSaveTags={async (tags) => {
                   await patchTags.mutateAsync({ documentId: viewerDocument.id, tags })

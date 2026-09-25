@@ -60,8 +60,10 @@ export async function addChatSource(page: Page, files: string | string[]): Promi
 }
 
 export async function uploadLibraryDocument(page: Page, file: string): Promise<void> {
-  await page.goto('/library')
-  await page.locator('input[type="file"]').first().setInputFiles(file)
+  await openNavigation(page)
+  await sidebar(page).getByRole('button', { name: /^Library$/ }).click()
+  await sidebar(page).getByText('Drop files or browse').waitFor({ state: 'visible' })
+  await sidebar(page).locator('input[type="file"]').first().setInputFiles(file)
 }
 
 export async function setComposerMode(page: Page, value: 'auto' | 'fast' | 'deep'): Promise<void> {

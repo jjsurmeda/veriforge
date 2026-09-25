@@ -1,5 +1,5 @@
 import { useNavigate } from '@tanstack/react-router'
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import {
   Check,
   ChevronDown,
@@ -20,14 +20,25 @@ import {
 
 import { useMe } from '../../auth/hooks/useMe'
 import { IconButton } from '../../../components/ui/IconButton'
-import { Menu, MenuContent, MenuItemWithIcon, MenuTrigger } from '../../../components/ui/primitives'
-import { ProfileMenu, QuotaBadge } from '../../../components/ProfileMenu'
-import { StatusChip } from '../../library/components/DocumentList'
-import { useChatDocuments, useLibrary, useUploadChatDocument } from '../../library/hooks/useDocuments'
+import {
+  Menu,
+  MenuContent,
+  MenuItemWithIcon,
+  MenuTrigger,
+  TooltipContent,
+  TooltipRoot,
+  TooltipTrigger,
+} from '../../../components/ui/primitives'
+import { ProfileMenu } from '../../../components/ProfileMenu'
+import { StatusChip } from '../../library/components/StatusChip'
+import { LibrarySection } from '../../library/components/LibrarySection'
+import { useChatDocuments, useUploadChatDocument } from '../../library/hooks/useDocuments'
 import { useChatList, useCreateChat, useDeleteChat, usePatchChat } from '../hooks/useChatList'
 
 const SIDEBAR_STORAGE_KEY = 'veriforge-chat-sidebar-collapsed'
-const CHATS_SECTION_STORAGE_KEY = 'veriforge-chat-chats-collapsed'
+const SECTION_STORAGE_KEY = 'veriforge-sidebar-section'
+
+type Section = 'chats' | 'library'
 
 function readStorage(key: string, fallback: string): string {
   try {
@@ -43,6 +54,15 @@ function writeStorage(key: string, value: string): void {
   } catch {
     return
   }
+}
+
+function Tooltip({ label, children }: { label: string; children: ReactElement }) {
+  return (
+    <TooltipRoot>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </TooltipRoot>
+  )
 }
 
 export function ChatSidebar({
@@ -62,13 +82,12 @@ export function ChatSidebar({
   const createChat = useCreateChat()
   const deleteChat = useDeleteChat()
   const patchChat = usePatchChat()
-  const library = useLibrary()
   const documents = useChatDocuments(currentChatId)
   const upload = useUploadChatDocument(currentChatId)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [collapsed, setCollapsed] = useState(() => readStorage(SIDEBAR_STORAGE_KEY, 'false') === 'true')
-  const [chatsCollapsed, setChatsCollapsed] = useState(
-    () => readStorage(CHATS_SECTION_STORAGE_KEY, 'false') === 'true',
+  const [section, setSection] = useState<Section>(() =>
+    readStorage(SECTION_STORAGE_KEY, 'chats') === 'library' ? 'library' : 'chats',
   )
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -78,7 +97,7 @@ export function ChatSidebar({
   const rail = collapsed && !mobileOpen
 
   useEffect(() => writeStorage(SIDEBAR_STORAGE_KEY, String(collapsed)), [collapsed])
-  useEffect(() => writeStorage(CHATS_SECTION_STORAGE_KEY, String(chatsCollapsed)), [chatsCollapsed])
+  useEffect(() => writeStorage(SECTION_STORAGE_KEY, section), [section])
 
   const filteredChats = useMemo(() => {
     const query = searchQuery.trim().toLowerCase()
@@ -87,6 +106,16 @@ export function ChatSidebar({
   }, [chats, searchQuery])
   const pinnedChats = filteredChats.filter((chat) => chat.pinned)
   const otherChats = filteredChats.filter((chat) => !chat.pinned)
+
+  const openSection = (next: Section) => {
+    setSection(next)
+    if (next === 'chats') setSearchOpen(false)
+  }
+
+  const expandToLibrary = () => {
+    setCollapsed(false)
+    setSection('library')
+  }
 
   const beginRename = (chatId: string, title: string) => {
     setEditingChatId(chatId)
@@ -110,11 +139,6 @@ export function ChatSidebar({
     } finally {
       setCreating(false)
     }
-  }
-
-  const navigateToLibrary = () => {
-    onMobileClose?.()
-    void navigate({ to: '/library' })
   }
 
   const addSources = async (files: File[]) => {
@@ -291,14 +315,9 @@ export function ChatSidebar({
             )}
           </div>
           {!rail && (
-            <div className="flex items-center gap-0.5">
-              <button type="button" aria-label="Search chats" title="Search chats" onClick={() => setSearchOpen((value) => !value)} className="icon-button size-8">
-                <Search size={16} strokeWidth={1.75} aria-hidden="true" />
-              </button>
-              <button type="button" aria-label="Close navigation panel" onClick={onMobileClose} className="icon-button size-8 lg:hidden">
-                <X size={16} strokeWidth={1.75} aria-hidden="true" />
-              </button>
-            </div>
+            <button type="button" aria-label="Close navigation panel" onClick={onMobileClose} className="icon-button size-8 lg:hidden">
+              <X size={16} strokeWidth={1.75} aria-hidden="true" />
+            </button>
           )}
           <button
             type="button"
@@ -312,57 +331,109 @@ export function ChatSidebar({
           </button>
         </div>
 
-        <div className={`border-b border-border px-2 py-2 ${rail ? 'flex justify-center' : ''}`}>
-          <button type="button" aria-label="New chat" onClick={() => void onNewChat()} disabled={creating} className={`pressable flex min-h-10 w-full items-center rounded-lg text-sm font-medium ${rail ? 'justify-center px-2' : 'gap-2.5 px-2.5'} ${rail ? 'text-fg-muted hover:bg-raised-hover hover:text-fg' : 'text-fg hover:bg-raised-hover'} disabled:cursor-not-allowed disabled:opacity-50`}>
-            <span className={`flex size-6 shrink-0 items-center justify-center rounded-full border border-border ${rail ? 'bg-surface' : 'bg-raised text-fg'}`}>
-              <Plus size={14} strokeWidth={1.75} aria-hidden="true" />
-            </span>
-            {!rail && <span>New chat</span>}
-          </button>
-          <button type="button" aria-label="Library" title="Library" onClick={navigateToLibrary} className={`pressable mt-1 flex min-h-10 w-full items-center rounded-lg text-sm ${rail ? 'justify-center px-2' : 'gap-2.5 px-2.5'} text-fg-muted hover:bg-raised-hover hover:text-fg`}>
-            <Library size={18} strokeWidth={1.75} aria-hidden="true" />
-            {!rail && <span className="min-w-0 flex-1 truncate text-left">Library</span>}
-            {!rail && (
-              <span className="font-mono text-[0.65rem] tabular-nums text-fg-muted">
-                {library.data?.documents.length ?? 0}
-              </span>
+        {rail ? (
+          <div className="flex flex-col items-center gap-2 border-b border-border px-1.5 py-2">
+            <Tooltip label="Library">
+              <IconButton aria-label="Library" onClick={expandToLibrary}>
+                <Library size={18} strokeWidth={1.75} aria-hidden="true" />
+              </IconButton>
+            </Tooltip>
+            {me?.role === 'admin' && (
+              <Tooltip label="Admin">
+                <IconButton aria-label="Admin" onClick={() => void navigate({ to: '/admin' })}>
+                  <ShieldCheck size={18} strokeWidth={1.75} aria-hidden="true" />
+                </IconButton>
+              </Tooltip>
             )}
-          </button>
-          {me?.role === 'admin' && (
-            <button type="button" aria-label="Admin" title="Admin" onClick={() => void navigate({ to: '/admin' })} className={`pressable mt-1 flex min-h-10 w-full items-center rounded-lg text-sm ${rail ? 'justify-center px-2' : 'gap-2.5 px-2.5'} text-fg-muted hover:bg-raised-hover hover:text-fg`}>
-              <ShieldCheck size={18} strokeWidth={1.75} aria-hidden="true" />
-              {!rail && <span>Admin</span>}
-            </button>
-          )}
-        </div>
-
-        {!rail && searchOpen && (
-          <div className="border-b border-border px-3 py-2">
-            <label className="relative block">
-              <Search size={14} strokeWidth={1.75} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-fg-muted" aria-hidden="true" />
-              <input aria-label="Search chats" value={searchQuery} onChange={(event) => setSearchQuery(event.currentTarget.value)} placeholder="Filter chats" className="h-9 w-full rounded-lg border border-border bg-surface pl-8 pr-2 text-xs text-fg placeholder:text-fg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring" />
-            </label>
           </div>
-        )}
+        ) : (
+          <nav className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 py-2" aria-label="Sidebar">
+            {searchOpen && section === 'chats' ? (
+              <div className="mb-1">
+                <label className="relative block">
+                  <Search size={14} strokeWidth={1.75} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-fg-muted" aria-hidden="true" />
+                  <input
+                    autoFocus
+                    aria-label="Search chats"
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.currentTarget.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Escape') {
+                        setSearchQuery('')
+                        setSearchOpen(false)
+                      }
+                    }}
+                    placeholder="Filter chats"
+                    className="h-9 w-full rounded-lg border border-border bg-surface pl-8 pr-2 text-xs text-fg placeholder:text-fg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+                  />
+                </label>
+              </div>
+            ) : (
+              <div className="mb-1 flex items-center gap-1">
+                <button
+                  type="button"
+                  aria-expanded={section === 'chats'}
+                  onClick={() => openSection('chats')}
+                  className={`flex min-h-8 min-w-0 flex-1 items-center gap-1.5 rounded-lg px-2 text-left text-[0.68rem] font-medium uppercase tracking-[0.12em] transition-colors duration-150 hover:text-fg focus-visible:outline-2 focus-visible:outline-focus-ring ${
+                    section === 'chats' ? 'text-fg' : 'text-fg-subtle'
+                  }`}
+                >
+                  <ChevronDown size={14} strokeWidth={1.75} className={`shrink-0 transition-transform duration-150 ${section === 'chats' ? '' : '-rotate-90'}`} aria-hidden="true" />
+                  <span className="truncate">Chats</span>
+                </button>
+                <Tooltip label="Search chats">
+                  <IconButton aria-label="Search chats" onClick={() => { setSection('chats'); setSearchOpen(true) }}>
+                    <Search size={15} strokeWidth={1.75} aria-hidden="true" />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip label="New chat">
+                  <IconButton aria-label="New chat" disabled={creating} onClick={() => void onNewChat()}>
+                    <Plus size={16} strokeWidth={1.75} aria-hidden="true" />
+                  </IconButton>
+                </Tooltip>
+              </div>
+            )}
 
-        <nav className={`min-h-0 flex-1 overflow-y-auto ${rail ? 'px-1.5 py-2' : 'px-2 py-2'}`} aria-label="Chats">
-          {!rail && (
-            <button type="button" aria-expanded={!chatsCollapsed} onClick={() => setChatsCollapsed((value) => !value)} className="mb-1 flex min-h-8 w-full items-center justify-between px-2 text-left text-[0.68rem] font-medium uppercase tracking-[0.12em] text-fg-subtle hover:text-fg focus-visible:outline-2 focus-visible:outline-focus-ring">
-              <span>Chats</span>
-              <ChevronDown size={14} strokeWidth={1.75} className={`transition-transform duration-150 ${chatsCollapsed ? '-rotate-90' : ''}`} aria-hidden="true" />
+            {section === 'chats' && (
+              <>
+                {pinnedChats.length > 0 && (
+                  <div className="mb-2">
+                    <p className="px-2 pb-1 text-[0.62rem] text-fg-subtle">Pinned</p>
+                    {pinnedChats.map(renderChatRow)}
+                  </div>
+                )}
+                {otherChats.map(renderChatRow)}
+                {filteredChats.length === 0 && (
+                  <p className="px-2 py-3 text-xs text-fg-muted">{searchQuery ? 'No chats match.' : 'No chats yet.'}</p>
+                )}
+              </>
+            )}
+
+            <button
+              type="button"
+              aria-expanded={section === 'library'}
+              onClick={() => openSection('library')}
+              className={`mt-2 flex min-h-8 w-full items-center gap-1.5 rounded-lg px-2 text-left text-[0.68rem] font-medium uppercase tracking-[0.12em] transition-colors duration-150 hover:text-fg focus-visible:outline-2 focus-visible:outline-focus-ring ${
+                section === 'library' ? 'text-fg' : 'text-fg-subtle'
+              }`}
+            >
+              <ChevronDown size={14} strokeWidth={1.75} className={`shrink-0 transition-transform duration-150 ${section === 'library' ? '' : '-rotate-90'}`} aria-hidden="true" />
+              <span className="truncate">Library</span>
             </button>
-          )}
-          {!chatsCollapsed && pinnedChats.length > 0 && (
-            <div className="mb-2">
-              {!rail && <p className="px-2 pb-1 text-[0.62rem] text-fg-subtle">Pinned</p>}
-              {pinnedChats.map(renderChatRow)}
-            </div>
-          )}
-          {!chatsCollapsed && otherChats.map(renderChatRow)}
-          {!chatsCollapsed && filteredChats.length === 0 && (
-            <p className="px-2 py-3 text-xs text-fg-muted">{searchQuery ? 'No chats match.' : 'No chats yet.'}</p>
-          )}
-        </nav>
+            {section === 'library' && <LibrarySection onOpenDocument={(id) => onOpenDocument?.(id)} />}
+
+            {me?.role === 'admin' && (
+              <button
+                type="button"
+                onClick={() => void navigate({ to: '/admin' })}
+                className="mt-2 flex min-h-9 w-full items-center gap-2 rounded-lg px-2 text-left text-xs text-fg-muted transition-colors duration-150 hover:bg-raised-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-focus-ring"
+              >
+                <ShieldCheck size={15} strokeWidth={1.75} aria-hidden="true" />
+                Admin
+              </button>
+            )}
+          </nav>
+        )}
 
         <input
           ref={fileInputRef}
@@ -376,8 +447,7 @@ export function ChatSidebar({
           }}
         />
 
-        <div className={`border-t border-border p-2 ${rail ? 'flex flex-col items-center gap-2' : 'space-y-2'}`}>
-          <QuotaBadge side={rail ? 'right' : 'top'} align={rail ? 'start' : 'start'} className={rail ? 'mx-auto' : 'mx-auto w-fit'} />
+        <div className={`border-t border-border p-2 ${rail ? 'flex flex-col items-center gap-2' : ''}`}>
           <ProfileMenu side={rail ? 'right' : 'top'} align="start" collapsed={rail} />
         </div>
       </aside>

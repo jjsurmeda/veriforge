@@ -3,15 +3,14 @@ import { expect, test } from '@playwright/test'
 import { createChat, openNavigation, signUp, sidebar } from '../support/auth'
 import { makeTestUser } from '../support/seed'
 
-test('signs up and sees the shared seed corpus in the Library', async ({ page }) => {
+test('signs up and sees the shared seed corpus in the Library section', async ({ page }) => {
   const user = makeTestUser()
   await signUp(page, user)
 
-  await page.goto('/library')
-  await expect(page.getByRole('heading', { name: 'Library' })).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Shared' })).toBeVisible()
-  await page.goto('/')
-  await expect(page.getByRole('heading', { name: 'No chat selected' })).toBeVisible()
+  await openNavigation(page)
+  await sidebar(page).getByRole('button', { name: /^Library$/ }).click()
+  await expect(sidebar(page).getByRole('heading', { name: 'Shared' })).toBeVisible()
+  await expect(sidebar(page).getByRole('heading', { name: 'Mine' })).toBeVisible()
 })
 
 test('a new chat includes the Library by default', async ({ page }) => {
