@@ -6,6 +6,9 @@ Terms used across the PRD/TRD and the codebase. Alphabetical.
 evidence is insufficient, stating what was found and what's missing,
 instead of generating an unsupported answer.
 
+**Chat sources** — Documents uploaded into one chat. Stored in that chat's
+hidden collection, searched only by that chat, deleted with it (ADR-002).
+
 **Circuit breaker** — The rule that switches `DecisionEngine` calls from
 Jev to the LLM fallback for a cooldown period after repeated Jev failures.
 
@@ -40,6 +43,10 @@ Deep mode runs up to 4 hops or stops at its credit budget.
 **Jev** — TypeSafe AI's System One model, accessed via OpenRouter. Returns
 typed, calibrated decisions (probabilities, choices, scores) rather than
 free text; used for every decision in the graph.
+
+**Library** — A user's sources that apply to every chat whose "Include
+Library" switch is on (the default). Shows the user's own documents plus
+read-only Shared documents published by admins (ADR-002).
 
 **Minimum claim support** — The lowest per-claim support probability in a
 message. The revision pass triggers on this, not on the mean faithfulness

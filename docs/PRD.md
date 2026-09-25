@@ -128,7 +128,7 @@ and tests. All are v1 unless marked.
 | CH-6 | A Stop button cancels the run; partial text is saved with a Cancelled label and used credits are charged. |
 | CH-7 | Follow-up questions use chat history; long chats are summarised so context stays within the model window. |
 | CH-8 | Users pick the answer model from models the admin enabled; the choice persists per chat. |
-| CH-9 | Three suggested follow-up questions appear under each answer; starter questions appear in an empty chat, generated per collection. |
+| CH-9 | Three suggested follow-up questions appear under each answer; starter questions appear in an empty chat, generated from the chat's sources (or the Library when the chat has none). |
 | CH-10 | Users rate answers thumbs up or down with an optional comment. |
 
 ### 4.2 Trust: citations, faithfulness, abstention, conflicts
@@ -147,12 +147,12 @@ and tests. All are v1 unless marked.
 
 | ID | Requirement |
 | --- | --- |
-| SR-1 | Users create private collections and attach one or more to a chat; admins publish shared collections. |
+| SR-1 | Each chat has its own sources, uploaded into that chat and deleted with it. Each user has a Library of sources that applies to every chat; admins publish Shared sources that appear read-only in every user's Library. A per-chat "Include Library" switch (on by default) adds the Library to that chat's scope. Users never manage collections (ADR-002). |
 | SR-2 | Drag-and-drop upload with per-file ingestion status (queued, parsing, embedding, ready, failed). |
 | SR-3 | Document viewer shows chunks, pages and metadata; users edit tags and delete or re-index documents. |
 | SR-4 | Pages that look scanned or table-heavy are flagged with a warning icon. |
-| SR-5 | Web results used in a chat are listed as temporary sources; users can pin one into a collection. |
-| SR-6 | Metadata filters (collection, source type, document, tag, date range, file type) are available in the composer. |
+| SR-5 | Web results used in a chat are listed as temporary sources; users can pin one into the chat's sources or their Library. |
+| SR-6 | Metadata filters (source type, document, tag, date range, file type) are available in the composer. |
 
 ### 4.4 Transparency and metrics
 

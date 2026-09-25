@@ -128,7 +128,7 @@ round trip.
 
 | Node | Engine | Behaviour |
 | --- | --- | --- |
-| Ingress | Jev, one call | Questions: `guard_injection`, `guard_jailbreak`, `guard_pii`, `off_topic` (noul); `intent` (choice: chitchat, lookup, compare, summarize, multi-part, follow-up); `source` (choice, if source = Auto); `complexity` (choice, if mode = Auto); `lexical_weight` (score 0–1); `risk` (choice: low, high). |
+| Ingress | Jev, one call | Questions: `guard_injection`, `guard_jailbreak`, `guard_pii`, `off_topic` (noul); `intent` (choice: chitchat, lookup, compare, summarize, multi-part, follow-up); `source` (choice, if source = Auto); `complexity` (choice, if mode = Auto); `lexical_weight` (score 0–1); `risk` (choice: low, high). `intent = chitchat` (and not `off_topic`) routes to a direct small-talk reply: no retrieval, no citations, no reviewer, no abstention. |
 | Rewrite + summary | Small LLM | Condenses the question with history; refreshes the rolling chat summary every 10 turns. |
 | Multi-query retrieve | Small LLM + SQL | 3 query variants (Auto only), each through hybrid search; results fused. Fast uses the rewritten query only. |
 | Sufficient? | Jev | `sufficient` noul over question + top chunks. Below threshold with retries left (max 2): rewrite and retry. |
@@ -232,7 +232,8 @@ their surrounding context.
 ### 9.1 Ingestion pipeline (worker)
 
 1. **Accept.** Validate MIME by content sniffing, size ≤ 20 MB, SHA-256
-   dedupe per collection; store the original in S3.
+   dedupe per collection (a chat's sources and a Library are separate
+   collections, ADR-002); store the original in S3.
 2. **Parse.** markitdown to markdown; pdfplumber fallback for PDFs
    markitdown fails on.
 3. **Page quality.** Per page: characters per page below 200 →
@@ -245,7 +246,8 @@ their surrounding context.
 5. **Embed.** Children embedded as `heading_path + text` in batches of
    100.
 6. **Index.** Rows written in one transaction; document status set to
-   `ready`. Starter questions for the collection are regenerated in the
+   `ready`. Starter questions for the document's collection (chat or
+   Library) are regenerated in the
    background.
 
 **Resource limits.** Worker concurrency is 1 ingestion job at a time plus
@@ -262,8 +264,11 @@ fused  = Σ weight_i / (60 + rank_i)
 → top 40 → Cohere Rerank → top 8 → dedupe adjacent → expand
 ```
 
-- **Filter.** `owner_id or shared` and `collection_id in (chat
-  collections)` are always injected server-side. Client filters (source
+- **Filter.** `owner_id or shared` and `collection_id in (scope)` are
+  always injected server-side. The scope is resolved server-side from the
+  chat, never from the request: the chat's own collection, plus, when
+  `chats.include_library` is true, the user's Library collections and all
+  shared collections (ADR-002). Client filters (source
   type, document, tags, date range, MIME, page) can only narrow.
 - **Multi-query.** In Auto single-hop, the original plus 3 variants run in
   parallel; lists are fused with RRF before rerank.
@@ -282,8 +287,8 @@ Tavily search (advanced depth, 5 results) returns cleaned page content.
 Pages are chunked like documents into chat-scoped temporary rows
 (`source_type = web`, `chat_id` set, 7-day TTL) and pass the sanitizer.
 Results are cached by normalised query for 24 h. Brave plus
-fetch-and-clean is used if Tavily fails. Pinning copies the rows into a
-collection.
+fetch-and-clean is used if Tavily fails. Pinning copies the rows into the
+chat's collection or the user's Library.
 
 ### 9.4 Caching
 
@@ -379,7 +384,7 @@ blocked.
 
 **Authorisation and data isolation**
 
-- Roles: `user`, `admin`, `demo` (read-only, shared collections only).
+- Roles: `user`, `admin`, `demo` (read-only, Shared sources only).
 - Every repository function takes the acting user and adds ownership
   filters; retrieval filters are built server-side (section 9.2).
 - Admin routes behind a role dependency; all admin writes go to
@@ -408,12 +413,14 @@ generated from it.
 | --- | --- |
 | `POST /auth/signup`, `/auth/login`, `/auth/refresh`, `/auth/logout`, `GET /auth/google/*` | Authentication |
 | `GET/POST/PATCH/DELETE /chats`, `GET /chats/{id}/messages` | Chat management |
-| `POST /chats/{id}/runs` | Start a run: `{message, mode, source, model_id, collection_ids, filters}` → `{run_id}` |
+| `POST /chats/{id}/runs` | Start a run: `{message, mode, source, model_id, filters}` (scope comes from the chat, ADR-002) → `{run_id}` |
 | `GET /runs/{id}/stream` | SSE event stream (live or replay from `run_events`) |
 | `POST /runs/{id}/cancel` | Cancel |
 | `POST /messages/{id}/feedback` | Thumbs and comment |
-| `GET/POST/PATCH/DELETE /collections`, `POST /collections/{id}/documents`, `GET /documents/{id}/chunks` | Sources |
-| `POST /web-sources/{id}/pin` | Pin a web page into a collection |
+| `GET/POST /chats/{id}/documents` | The chat's own sources (list, upload) |
+| `GET /library`, `POST /library/documents` | Library documents (own + shared) and Library starter questions; `shared=true` upload is admin-only |
+| `GET/PATCH/DELETE /documents/{id}`, `POST /documents/{id}/reindex`, `GET /documents/{id}/chunks` | Any document the user can see |
+| `POST /web-sources/{id}/pin` | Pin a web page into the chat's sources or the Library: `{target: chat \| library}` |
 | `GET /me/usage`, `GET /me/quota` | Usage and quota |
 | `/admin/providers`, `/admin/models`, `/admin/roles`, `/admin/settings`, `/admin/plans`, `/admin/users`, `/admin/evals/*`, `/admin/audit` | Admin (role `admin`) |
 
@@ -457,13 +464,13 @@ every table has `created_at`.
 | `refresh_tokens` | user_id, hash, expires_at, revoked_at | Rotating |
 | `plans` | name, credits_5h, credits_month | Defaults 200k and 2M |
 | `user_quota_overrides` | user_id, credits_5h, credits_month | Nullable fields |
-| `collections` | owner_id, name, visibility, starter_questions jsonb | visibility: private, shared |
+| `collections` | owner_id, name, visibility, kind, chat_id, starter_questions jsonb | Internal container, never shown in the UI (ADR-002). kind: chat, library. chat_id unique, cascade; set only for kind chat. visibility: private, shared (shared is library-only, admin-owned) |
 | `documents` | collection_id, name, mime, sha256, s3_key, status, page_flags jsonb, error | status: queued → ready or failed |
 | `sections` | document_id, heading_path, text, tokens | Parents for small-to-big |
 | `chunks` | document_id, section_id, ord, page, text, embedding vector(1536), metadata jsonb, source_type, chat_id, expires_at | HNSW index on embedding; pg_search BM25 index on text; GIN on metadata |
 | `query_cache` | query_hash, embedding, created_at | 30-day TTL |
 | `web_cache` | query_hash, results jsonb | 24 h TTL |
-| `chats` | user_id, title, pinned, model_id, collection_ids, summary | |
+| `chats` | user_id, title, pinned, model_id, include_library, summary | include_library default true |
 | `messages` | chat_id, role, content, status, revised_from | status: complete, cancelled, abstained, failed |
 | `runs` | message_id, mode, source, settings_version, metrics jsonb, langfuse_trace_id | |
 | `run_events` | run_id, seq, type, payload jsonb | Replay |
