@@ -632,6 +632,10 @@ async def list_audit(session: AsyncSession, *, limit: int = 100) -> list[AuditOu
     ]
 
 
+def _shadow_answer(answer: dict[str, object]) -> dict[str, object]:
+    return {key: answer[key] for key in ("value", "probability", "probabilities") if key in answer}
+
+
 async def decision_stats(session: AsyncSession, *, hours: int = 24) -> DecisionStatsOut:
     window = max(1, min(168, hours))
     cutoff = datetime.now(UTC) - timedelta(hours=window)
@@ -779,8 +783,8 @@ async def decision_stats(session: AsyncSession, *, hours: int = 24) -> DecisionS
                 DecisionShadowDisagreementOut(
                     run_id=row["run_id"],
                     decision=row["decision"],
-                    jev_answer=row["jev_answer"],
-                    fallback_answer=row["fallback_answer"],
+                    jev_answer=_shadow_answer(row["jev_answer"]),
+                    fallback_answer=_shadow_answer(row["fallback_answer"]),
                     created_at=row["created_at"],
                 )
                 for row in disagreements

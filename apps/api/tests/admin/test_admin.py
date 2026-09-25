@@ -145,8 +145,16 @@ async def test_decision_stats_use_call_latency_and_collapse_dynamic_names(
             DecisionShadow(
                 run_id=run_id,
                 decision="intent",
-                jev_answer={"value": "lookup", "probability": 0.8},
-                fallback_answer={"value": "summarize", "probability": 0.7},
+                jev_answer={
+                    "value": "lookup",
+                    "probability": 0.8,
+                    "reasoning": "private shadow reasoning",
+                },
+                fallback_answer={
+                    "value": "summarize",
+                    "probability": 0.7,
+                    "reasoning": "private fallback reasoning",
+                },
                 agree=False,
                 created_at=datetime.now(UTC),
             ),
@@ -181,6 +189,8 @@ async def test_decision_stats_use_call_latency_and_collapse_dynamic_names(
     assert body["shadow"]["sampled"] == 2
     assert body["shadow"]["agree_rate"] == pytest.approx(0.5)
     assert len(body["shadow"]["recent_disagreements"]) == 1
+    assert "private shadow reasoning" not in response.text
+    assert "private fallback reasoning" not in response.text
     assert body["breaker"]["state"] == "closed"
     assert body["targets"] == {"ingress_p95_ms": 600, "fallback_share": 0.05}
 
