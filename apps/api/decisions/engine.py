@@ -17,13 +17,14 @@ from collections.abc import Awaitable, Callable
 from typing import Any, Literal, Protocol
 
 from config import get_settings
-from decisions.breaker import CircuitBreaker
+from decisions.breaker import CircuitBreaker, get_breaker
 from decisions.fallback import FallbackEngine, FallbackError
 from decisions.jev import JevClient, JevError
 from runtime import RuntimeSettings
 from schemas.decisions import Answer, Choice, Noul, Question, Score
 
 logger = logging.getLogger(__name__)
+_shadow_tasks: set[asyncio.Task[None]] = set()
 
 EngineMode = Literal["auto", "jev_only", "fallback_only"]
 
@@ -59,11 +60,7 @@ class DecisionEngine:
         settings = get_settings()
         self._jev = jev or JevClient()
         self._fallback = fallback or FallbackEngine()
-        self._breaker = breaker or CircuitBreaker(
-            failure_threshold=settings.breaker_failure_threshold,
-            window_seconds=settings.breaker_window_seconds,
-            cooldown_seconds=settings.breaker_cooldown_seconds,
-        )
+        self._breaker = breaker if breaker is not None else get_breaker()
         self._mode: EngineMode = mode
         self._shadow_sample_rate = (
             shadow_sample_rate if shadow_sample_rate is not None else settings.shadow_sample_rate
@@ -151,8 +148,8 @@ class DecisionEngine:
         except RuntimeError:
             return
         task = loop.create_task(self._shadow_compare(state, questions, jev_answers))
-        # Fire-and-forget: keep a strong ref until done so GC can't reap mid-flight.
-        task.add_done_callback(lambda _t: None)
+        _shadow_tasks.add(task)
+        task.add_done_callback(_shadow_tasks.discard)
 
     async def _shadow_compare(
         self,

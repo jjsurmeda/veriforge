@@ -13,7 +13,11 @@ ADR-001's "scale-out" section).
 import time
 from collections import deque
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from enum import Enum
+from functools import cache
+
+from config import get_settings
 
 
 class BreakerState(Enum):
@@ -77,3 +81,20 @@ class CircuitBreaker:
     @property
     def state(self) -> BreakerState:
         return self._state
+
+    @property
+    def open_until(self) -> datetime | None:
+        if self._state is not BreakerState.OPEN or self._opened_at is None:
+            return None
+        remaining = max(0.0, self._opened_at + self.cooldown_seconds - self._now())
+        return datetime.now(UTC) + timedelta(seconds=remaining)
+
+
+@cache
+def get_breaker() -> CircuitBreaker:
+    settings = get_settings()
+    return CircuitBreaker(
+        failure_threshold=settings.breaker_failure_threshold,
+        window_seconds=settings.breaker_window_seconds,
+        cooldown_seconds=settings.breaker_cooldown_seconds,
+    )

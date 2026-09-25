@@ -4,7 +4,7 @@ tables truncated between tests."""
 
 import asyncio
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -28,6 +28,7 @@ from sqlalchemy import text  # noqa: E402
 from sqlalchemy.ext.asyncio import AsyncSession  # noqa: E402
 
 from config import get_settings  # noqa: E402
+from decisions.breaker import get_breaker  # noqa: E402
 
 
 def _create_test_database() -> None:
@@ -118,6 +119,12 @@ async def seed_base_rows(session: AsyncSession) -> None:
         ]
     )
     await session.commit()
+
+
+@pytest.fixture(autouse=True)
+def reset_default_breaker() -> Iterator[None]:
+    get_breaker.cache_clear()
+    yield
 
 
 @pytest.fixture(autouse=True)

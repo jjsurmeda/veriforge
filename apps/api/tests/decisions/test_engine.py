@@ -180,6 +180,23 @@ class TestCircuitBreaker:
             assert all(a.engine == "fallback" for a in answers.values())
         assert jev.calls == 0
 
+    @pytest.mark.asyncio
+    async def test_default_breaker_is_shared_across_engines(self) -> None:
+        for _ in range(3):
+            jev, fallback = _FakeJev(["timeout"]), _FakeFallback()
+            engine = DecisionEngine(jev=jev, fallback=fallback, mode="auto")
+            answers = await engine.decide(state="q", questions=_questions())
+            assert all(answer.engine == "fallback" for answer in answers.values())
+            assert jev.calls == 1
+            assert fallback.calls == 1
+
+        jev, fallback = _FakeJev(["ok"]), _FakeFallback()
+        engine = DecisionEngine(jev=jev, fallback=fallback, mode="auto")
+        answers = await engine.decide(state="q", questions=_questions())
+        assert all(answer.engine == "fallback" for answer in answers.values())
+        assert jev.calls == 0
+        assert fallback.calls == 1
+
 
 class TestShadowMode:
     @pytest.mark.asyncio
