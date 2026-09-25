@@ -24,6 +24,7 @@ from db.models import (
 from db.session import get_session
 from errors import AppError
 from graph import runner
+from graph.chat_title import DEFAULT_CHAT_TITLE, collapse_instant_title
 from quota.service import gate_and_reserve
 from runtime import load_active_runtime
 from schemas.chats import (
@@ -317,6 +318,13 @@ async def create_run(
     if model_id is None:
         model_id = await _default_model_id(session)
     model, provider = await _assert_model_available(session, model_id)
+    is_first_message = (
+        await session.execute(select(Message.id).where(Message.chat_id == chat.id).limit(1))
+    ).scalar_one_or_none() is None
+    instant_title = None
+    if is_first_message and chat.title == DEFAULT_CHAT_TITLE:
+        instant_title = collapse_instant_title(body.message)
+        chat.title = instant_title
 
     user_message = Message(chat_id=chat.id, role="user", content=body.message, status="complete")
     assistant_message = Message(chat_id=chat.id, role="assistant", content="", status=None)
@@ -368,5 +376,6 @@ async def create_run(
         collection_ids=effective,
         quota_remaining_5h=reservation.remaining_5h,
         settings_version=runtime.version,
+        instant_title=instant_title,
     )
     return RunCreateResponse(run_id=str(run.id), message_id=str(assistant_message.id))

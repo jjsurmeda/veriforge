@@ -32,6 +32,7 @@ from decisions.thresholds import threshold
 from errors import AppError
 from graph.async_scoring import score_run_async
 from graph.auto import AutoRunInput, finalize_auto_run, prepare_auto_run
+from graph.chat_title import refine_chat_title
 from graph.deep import DeepRunInput, finalize_deep_run, prepare_deep_run
 from graph.fast import FastRunInput, finalize_fast_run, prepare_fast_run, to_client_filters
 from graph.generate import build_grounded_messages
@@ -363,6 +364,7 @@ def start_run(
     collection_ids: list[UUID] | None = None,
     quota_remaining_5h: float | None = None,
     settings_version: int | None = None,
+    instant_title: str | None = None,
 ) -> None:
     task = asyncio.create_task(
         execute_run(
@@ -383,6 +385,7 @@ def start_run(
             collection_ids=collection_ids or [],
             quota_remaining_5h=quota_remaining_5h,
             settings_version=settings_version,
+            instant_title=instant_title,
         )
     )
     _active_tasks[run_id] = task
@@ -424,6 +427,8 @@ async def _finish_answer(
     generate_ms: int,
     abstained: bool,
     plan: str,
+    chat_id: UUID,
+    instant_title: str | None,
 ) -> None:
     """Shared tail for every mode: review phase (skipped for abstentions —
     the fixed template has no claims to verify), event order per delivery
@@ -454,6 +459,18 @@ async def _finish_answer(
         # plan == "stream" + blocked: the answer already streamed; the
         # blocked verdict replaces the persisted content, which is what a
         # reload shows (TRD §11 "output toxicity (block)").
+
+    async def refine_title(session: AsyncSession) -> None:
+        await refine_chat_title(
+            session=session,
+            chat_id=chat_id,
+            instant_title=instant_title,
+            question=question,
+            answer=final_text,
+            small_model=small_model,
+        )
+
+    await _with_session(session_factory, refine_title)
 
     context = get_usage_context()
     credits: float
@@ -544,6 +561,7 @@ async def execute_run(
     collection_ids: list[UUID] | None = None,
     quota_remaining_5h: float | None = None,
     settings_version: int | None = None,
+    instant_title: str | None = None,
 ) -> None:
     text = ""
     try:
@@ -704,6 +722,8 @@ async def execute_run(
                 generate_ms=generate_ms,
                 abstained=auto_run.abstain_event is not None,
                 plan=plan,
+                chat_id=chat_id,
+                instant_title=instant_title,
             )
             return
 
@@ -792,6 +812,8 @@ async def execute_run(
                 generate_ms=generate_ms,
                 abstained=deep_run.abstain_event is not None,
                 plan=plan,
+                chat_id=chat_id,
+                instant_title=instant_title,
             )
             return
 
@@ -866,6 +888,8 @@ async def execute_run(
             generate_ms=generate_ms,
             abstained=False,
             plan="stream",
+            chat_id=chat_id,
+            instant_title=instant_title,
         )
 
     except asyncio.CancelledError:

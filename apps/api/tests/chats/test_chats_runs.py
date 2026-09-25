@@ -12,9 +12,10 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from chats.router import _effective_collection_ids
-from db.models import Message
+from db.models import Chat, Message
 from db.session import get_session_factory
 from graph.runner import _finalize
+from quota.usage import get_usage_context
 from tests.conftest import make_run_row
 
 TOKENS = ["Hello", " ", "world", "!", "!", "!"]
@@ -43,11 +44,24 @@ async def _make_chat(client: AsyncClient, headers: dict[str, str]) -> str:
 
 
 def _patch_fast_seams(
-    monkeypatch: pytest.MonkeyPatch, stream: Any, complete_response: str = "rewritten"
-) -> None:
+    monkeypatch: pytest.MonkeyPatch,
+    stream: Any,
+    complete_response: str = "rewritten",
+    title_response: str = '{"title": "Greeting The World"}',
+) -> list[str]:
+    title_calls: list[str] = []
+
     async def fake_complete(
         *, litellm_model: str, messages: list[dict[str, str]], metadata: dict[str, str]
     ) -> str:
+        if metadata.get("role") == "titler":
+            title_calls.append(metadata["role"])
+            context = get_usage_context()
+            if context is not None:
+                await context.record_call(
+                    model_id=litellm_model, role="titler", tokens_in=7, tokens_out=3
+                )
+            return title_response
         return complete_response
 
     async def fake_embed(*, texts: list[str]) -> list[list[float]]:
@@ -55,7 +69,9 @@ def _patch_fast_seams(
 
     monkeypatch.setattr("graph.fast.stream_grounded_answer", stream)
     monkeypatch.setattr("graph.fast.complete", fake_complete)
+    monkeypatch.setattr("graph.chat_title.complete", fake_complete)
     monkeypatch.setattr("retrieval.cache.embed_batch", fake_embed)
+    return title_calls
 
 
 @pytest.fixture
@@ -206,6 +222,129 @@ async def test_run_streams_to_completion_and_saves_message(
     assert assistant["content"] == FULL
     assert assistant["status"] == "complete"
     assert messages[-2]["role"] == "user"
+
+
+async def test_first_run_sets_instant_title_then_refines(
+    client: AsyncClient, fake_llm: None
+) -> None:
+    headers = await _auth(client)
+    chat_id = await _make_chat(client, headers)
+
+    question = (
+        "  Explain   adaptive retrieval with citations and reviewer confidence "
+        "scoring please  "
+    )
+    started = await client.post(
+        f"/chats/{chat_id}/runs", json={"message": question}, headers=headers
+    )
+    assert started.status_code == 201, started.text
+    run_id = started.json()["run_id"]
+
+    instant = (await client.get(f"/chats/{chat_id}", headers=headers)).json()["title"]
+    assert instant == "Explain adaptive retrieval with citations and reviewer…"
+
+    async with client.stream("GET", f"/runs/{run_id}/stream", headers=headers) as response:
+        async for event_type, _data in _parse_sse(response.aiter_lines()):
+            if event_type == "run.completed":
+                break
+
+    chat = (await client.get(f"/chats/{chat_id}", headers=headers)).json()
+    assert chat["title"] == "Greeting The World"
+
+
+async def test_refined_title_does_not_overwrite_user_rename(
+    client: AsyncClient, fake_llm: None
+) -> None:
+    headers = await _auth(client)
+    chat_id = await _make_chat(client, headers)
+
+    started = await client.post(
+        f"/chats/{chat_id}/runs", json={"message": "What is RRF?"}, headers=headers
+    )
+    run_id = started.json()["run_id"]
+    renamed = await client.patch(
+        f"/chats/{chat_id}", json={"title": "My saved title"}, headers=headers
+    )
+    assert renamed.status_code == 200, renamed.text
+
+    async with client.stream("GET", f"/runs/{run_id}/stream", headers=headers) as response:
+        async for event_type, _data in _parse_sse(response.aiter_lines()):
+            if event_type == "run.completed":
+                break
+
+    chat = (await client.get(f"/chats/{chat_id}", headers=headers)).json()
+    assert chat["title"] == "My saved title"
+
+
+async def test_title_llm_failure_keeps_instant_title(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def fake_stream(
+        *,
+        litellm_model: str,
+        question: str,
+        contexts: list[object],
+        history: list[tuple[str, str]],
+        metadata: dict[str, str],
+    ) -> AsyncIterator[str]:
+        yield "Hello"
+
+    _patch_fast_seams(monkeypatch, fake_stream, title_response="not json")
+    headers = await _auth(client)
+    chat_id = await _make_chat(client, headers)
+
+    started = await client.post(
+        f"/chats/{chat_id}/runs", json={"message": "What is hybrid search?"}, headers=headers
+    )
+    run_id = started.json()["run_id"]
+    instant = (await client.get(f"/chats/{chat_id}", headers=headers)).json()["title"]
+
+    async with client.stream("GET", f"/runs/{run_id}/stream", headers=headers) as response:
+        async for event_type, _data in _parse_sse(response.aiter_lines()):
+            if event_type == "run.completed":
+                break
+
+    chat = (await client.get(f"/chats/{chat_id}", headers=headers)).json()
+    assert chat["title"] == instant
+
+
+async def test_title_usage_lands_before_metrics_and_settle(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def fake_stream(
+        *,
+        litellm_model: str,
+        question: str,
+        contexts: list[object],
+        history: list[tuple[str, str]],
+        metadata: dict[str, str],
+    ) -> AsyncIterator[str]:
+        yield "Hello"
+
+    title_calls = _patch_fast_seams(monkeypatch, fake_stream)
+    headers = await _auth(client)
+    chat_id = await _make_chat(client, headers)
+    run_id = (
+        await client.post(f"/chats/{chat_id}/runs", json={"message": "hi"}, headers=headers)
+    ).json()["run_id"]
+
+    metrics: dict[str, Any] | None = None
+    async with client.stream("GET", f"/runs/{run_id}/stream", headers=headers) as response:
+        async for event_type, data in _parse_sse(response.aiter_lines()):
+            if event_type == "metrics":
+                metrics = data
+            if event_type == "run.completed":
+                break
+
+    assert metrics is not None
+    assert title_calls == ["titler"]
+    assert metrics["tokens_in"] >= 7
+    assert metrics["tokens_out"] >= 3
+
+    async with get_session_factory()() as session:
+        chat = (await session.get(Chat, UUID(chat_id)))
+        assert chat is not None
+        assert chat.title == "Greeting The World"
 
 
 async def test_run_cancel_mid_stream_saves_partial_text(
