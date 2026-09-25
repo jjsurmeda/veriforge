@@ -34,6 +34,19 @@ _DEFAULTS: dict[str, dict[Engine, float]] = {
 }
 
 
+DISPLAY_THRESHOLDS: dict[str, str] = {
+    "guard_injection": "guard_injection_block",
+    "guard_jailbreak": "guard_jailbreak_block",
+    "guard_pii": "guard_pii_warn",
+    "off_topic": "off_topic_warn",
+    "sufficient": "sufficient_retry",
+    "conflict": "conflict_disclose",
+    "controller": "controller_sufficient",
+    "output_toxicity": "output_toxicity_block",
+    "output_secrets": "guard_pii_warn",
+}
+
+
 def threshold(
     name: str, engine: Engine, overrides: dict[str, dict[str, float]] | None = None
 ) -> float:
@@ -49,3 +62,15 @@ def threshold(
         return _DEFAULTS[name][engine]
     except KeyError as exc:
         raise KeyError(f"unknown decision threshold: {name!r} for engine {engine!r}") from exc
+
+
+def display_threshold(name: str, engine: Engine) -> float | None:
+    threshold_name = DISPLAY_THRESHOLDS.get(name)
+    if threshold_name is None and name.startswith("chunk_injection_"):
+        threshold_name = "chunk_injection_drop"
+    if threshold_name is None:
+        return None
+    try:
+        return threshold(threshold_name, engine)
+    except KeyError:
+        return None

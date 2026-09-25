@@ -8,7 +8,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from runbus.postgres import PostgresRunBus
-from schemas.events import AnswerDelta, RunCompleted, RunStarted, RunStreamEvent
+from schemas.events import AnswerDelta, Decision, RunCompleted, RunStarted, RunStreamEvent
 from tests.conftest import make_run_row
 
 
@@ -25,6 +25,29 @@ async def _collect(
     except TimeoutError:
         pass
     return out
+
+
+def test_decision_event_accepts_optional_call_context() -> None:
+    event = Decision(
+        name="guard_injection",
+        value=0.03,
+        engine="jev",
+        latency_ms=12,
+        stage="ingress",
+        call_id="abc123",
+        batch_size=9,
+        threshold=0.85,
+    )
+    assert event.stage == "ingress"
+    assert event.call_id == "abc123"
+    assert event.batch_size == 9
+    assert event.threshold == 0.85
+
+    legacy = Decision(name="intent", value="lookup", engine="fallback", latency_ms=8)
+    assert legacy.stage is None
+    assert legacy.call_id is None
+    assert legacy.batch_size is None
+    assert legacy.threshold is None
 
 
 async def test_publish_then_replay_from_zero(db: AsyncSession, bus: PostgresRunBus) -> None:

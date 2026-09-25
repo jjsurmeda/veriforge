@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from config import get_settings
 from db.models import Citation, Claim, LlmProvider, Message, Model, ModelRole, Run
-from decisions import DecisionEngine, make_shadow_writer
+from decisions import DecisionCall, DecisionEngine, display_threshold, make_shadow_writer
 from decisions.output_guard import OutputGuardResult, guard_output
 from decisions.thresholds import threshold
 from errors import AppError
@@ -598,7 +598,7 @@ async def execute_run(
         )
         await _touch_heartbeat(session_factory, run_id)
 
-        async def emit_decision(name: str, answer: Answer) -> None:
+        async def emit_decision(name: str, answer: Answer, call: DecisionCall) -> None:
             await bus.publish(
                 run_id,
                 Decision(
@@ -610,6 +610,10 @@ async def execute_run(
                     engine=answer.engine,
                     latency_ms=answer.latency_ms,
                     reasoning=answer.reasoning,
+                    stage=call.stage,
+                    call_id=call.call_id,
+                    batch_size=call.batch_size,
+                    threshold=display_threshold(name, answer.engine),
                 ),
             )
 

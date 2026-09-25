@@ -14,7 +14,9 @@ import asyncio
 import logging
 import random
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from typing import Any, Literal, Protocol
+from uuid import uuid4
 
 from config import get_settings
 from decisions.breaker import CircuitBreaker, get_breaker
@@ -38,7 +40,14 @@ class EngineProtocol(Protocol):
     ) -> dict[str, Answer]: ...
 
 
-DecisionEventEmitter = Callable[[str, Answer], Awaitable[None]]
+@dataclass(frozen=True)
+class DecisionCall:
+    stage: str | None
+    call_id: str
+    batch_size: int
+
+
+DecisionEventEmitter = Callable[[str, Answer, DecisionCall], Awaitable[None]]
 ShadowWriter = Callable[[str, str, Answer, Answer, bool], Awaitable[None]]
 
 
@@ -88,10 +97,10 @@ class DecisionEngine:
         """Bind the emitter for the run that owns this engine instance."""
         self._emitter = emitter
 
-    async def _emit(self, name: str, answer: Answer) -> None:
+    async def _emit(self, name: str, answer: Answer, call: DecisionCall) -> None:
         if self._emitter is not None:
             try:
-                await self._emitter(name, answer)
+                await self._emitter(name, answer, call)
             except Exception:
                 logger.exception("decision event emitter failed for %s", name)
 
@@ -102,16 +111,21 @@ class DecisionEngine:
         if not questions:
             return {}
 
+        call = DecisionCall(
+            stage=_stage_from_state(state),
+            call_id=uuid4().hex[:12],
+            batch_size=len(questions),
+        )
         if self._mode == "fallback_only":
             answers = await self._fallback.decide(state=state, questions=questions)
             for name, answer in answers.items():
-                await self._emit(name, answer)
+                await self._emit(name, answer, call)
             return answers
 
         if self._mode == "jev_only":
             answers = await self._jev.decide(state=state, questions=questions)
             for name, answer in answers.items():
-                await self._emit(name, answer)
+                await self._emit(name, answer, call)
             return answers
 
         # auto
@@ -129,7 +143,7 @@ class DecisionEngine:
             answers = await self._fallback.decide(state=state, questions=questions)
 
         for name, answer in answers.items():
-            await self._emit(name, answer)
+            await self._emit(name, answer, call)
         return answers
 
     def _maybe_shadow(
@@ -175,6 +189,13 @@ class DecisionEngine:
                 await self._shadow_writer(run_id, name, jev_answer, fallback_answer, agree)
             except Exception:
                 logger.exception("shadow write failed for %s", name)
+
+
+def _stage_from_state(state: dict[str, Any] | str) -> str | None:
+    if isinstance(state, dict):
+        value = state.get("kind")
+        return value if isinstance(value, str) else None
+    return None
 
 
 def _run_id_from_state(state: dict[str, Any] | str) -> str:

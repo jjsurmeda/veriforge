@@ -5,19 +5,21 @@ Public surface: `DecisionEngine`, `JevClient`, `FallbackEngine`,
 """
 
 from decisions.breaker import BreakerState, CircuitBreaker
-from decisions.engine import DecisionEngine, EngineMode
+from decisions.engine import DecisionCall, DecisionEngine, EngineMode
 from decisions.fallback import FallbackEngine
 from decisions.jev import JevClient
 from decisions.shadow import make_shadow_writer
-from decisions.thresholds import threshold
+from decisions.thresholds import display_threshold, threshold
 
 __all__ = [
     "BreakerState",
     "CircuitBreaker",
+    "DecisionCall",
     "DecisionEngine",
     "EngineMode",
     "FallbackEngine",
     "JevClient",
+    "display_threshold",
     "make_shadow_writer",
     "threshold",
 ]

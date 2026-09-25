@@ -6,15 +6,19 @@ import json
 import random
 import time
 from typing import Any
+from uuid import UUID
 
 import httpx
 import pytest
 
 from config import get_settings
 from decisions.breaker import BreakerState, CircuitBreaker
-from decisions.engine import DecisionEngine
+from decisions.engine import DecisionCall, DecisionEngine
 from decisions.fallback import FallbackEngine
 from decisions.jev import JevClient, JevError
+from decisions.thresholds import display_threshold
+from graph.ingress import run_ingress
+from runtime import RuntimeSettings, reset_runtime_settings, set_runtime_settings
 from schemas.decisions import Answer, Choice, Noul, Question, Score
 from tests.fixtures.jev.ingress import INGRESS_RESPONSE
 
@@ -38,11 +42,13 @@ class _FakeJev:
     def __init__(self, behaviour: list[str]) -> None:
         self._behaviour = behaviour
         self.calls = 0
+        self.last_state: dict[str, Any] | str | None = None
 
     async def decide(
         self, *, state: dict[str, Any] | str, questions: dict[str, Question]
     ) -> dict[str, Answer]:
         self.calls += 1
+        self.last_state = state
         if self._behaviour and self._behaviour.pop(0) == "timeout":
             raise JevError("simulated timeout")
         return {
@@ -117,6 +123,19 @@ class TestEngineModes:
         with pytest.raises(JevError):
             await engine.decide(state="q", questions=_questions())
         assert fallback.calls == 0
+
+    @pytest.mark.asyncio
+    async def test_ingress_marks_the_call_stage(self) -> None:
+        jev = _FakeJev(["ok"])
+        engine = DecisionEngine(jev=jev, mode="jev_only")
+        await run_ingress(
+            engine,
+            run_id=UUID(int=1),
+            user_message="What is in the document?",
+            has_collections=False,
+        )
+        assert isinstance(jev.last_state, dict)
+        assert jev.last_state["kind"] == "ingress"
 
     @pytest.mark.asyncio
     async def test_empty_questions_short_circuits(self) -> None:
@@ -246,26 +265,71 @@ class TestShadowMode:
         assert writes == []
 
 
+class TestDisplayThresholds:
+    def test_display_threshold_maps_known_names_and_prefixes(self) -> None:
+        assert display_threshold("guard_injection", "jev") == pytest.approx(0.85)
+        assert display_threshold("chunk_injection_3", "fallback") == pytest.approx(0.70)
+        assert display_threshold("output_secrets", "jev") == pytest.approx(0.70)
+        assert display_threshold("intent", "jev") is None
+        assert display_threshold("claim_c1", "jev") is None
+
+    def test_display_threshold_honors_runtime_override(self) -> None:
+        token = set_runtime_settings(
+            RuntimeSettings.from_data(
+                1, {"thresholds": {"sufficient_retry": {"fallback": 0.42}}}
+            )
+        )
+        try:
+            assert display_threshold("sufficient", "fallback") == pytest.approx(0.42)
+        finally:
+            reset_runtime_settings(token)
+
+
 class TestEventEmission:
     @pytest.mark.asyncio
     async def test_every_answer_emits_with_engine_and_latency(self) -> None:
-        emitted: list[tuple[str, Answer]] = []
+        emitted: list[tuple[str, Answer, DecisionCall]] = []
 
-        async def emitter(name: str, answer: Answer) -> None:
-            emitted.append((name, answer))
+        async def emitter(name: str, answer: Answer, call: DecisionCall) -> None:
+            emitted.append((name, answer, call))
 
         engine = DecisionEngine(
             jev=_FakeJev(["ok"]), fallback=_FakeFallback(), event_emitter=emitter
         )
         await engine.decide(state="q", questions=_questions())
-        assert {name for name, _ in emitted} == set(_questions().keys())
-        for _, answer in emitted:
+        assert {name for name, _, _ in emitted} == set(_questions().keys())
+        for _, answer, _ in emitted:
             assert answer.engine == "jev"
             assert answer.latency_ms >= 0
 
     @pytest.mark.asyncio
+    async def test_emitter_shares_call_id_and_batch_size(self) -> None:
+        emitted: list[tuple[str, Answer, DecisionCall]] = []
+
+        async def emitter(name: str, answer: Answer, call: DecisionCall) -> None:
+            emitted.append((name, answer, call))
+
+        engine = DecisionEngine(
+            jev=_FakeJev(["ok", "ok"]), fallback=_FakeFallback(), event_emitter=emitter
+        )
+        await engine.decide(state={"kind": "ingress"}, questions=_questions())
+        await engine.decide(
+            state={"kind": "sufficient"},
+            questions={"sufficient": Noul(prompt="Enough evidence?")},
+        )
+
+        ingress = [entry for entry in emitted if entry[2].stage == "ingress"]
+        sufficient = [entry for entry in emitted if entry[2].stage == "sufficient"]
+        assert len(ingress) == len(_questions())
+        assert len(sufficient) == 1
+        assert len({entry[2].call_id for entry in ingress}) == 1
+        assert ingress[0][2].batch_size == len(_questions())
+        assert sufficient[0][2].batch_size == 1
+        assert ingress[0][2].call_id != sufficient[0][2].call_id
+
+    @pytest.mark.asyncio
     async def test_emitter_failure_does_not_block_decision(self) -> None:
-        async def bad_emitter(name: str, answer: Answer) -> None:
+        async def bad_emitter(name: str, answer: Answer, call: DecisionCall) -> None:
             raise RuntimeError("bus down")
 
         engine = DecisionEngine(

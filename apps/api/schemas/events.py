@@ -105,6 +105,10 @@ class Decision(RunEvent):
     engine: Literal["jev", "fallback"]
     latency_ms: int
     reasoning: str | None = None
+    stage: str | None = None
+    call_id: str | None = None
+    batch_size: int | None = None
+    threshold: float | None = None
 
 
 class ThinkingDelta(RunEvent):

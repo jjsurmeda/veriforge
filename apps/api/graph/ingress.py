@@ -207,6 +207,7 @@ async def run_ingress(
     """One DecisionEngine.decide call; outcome drives the rest of the run."""
     state: dict[str, Any] = {
         "run_id": str(run_id),
+        "kind": "ingress",
         "user_message": user_message,
         "has_collections": has_collections,
     }
