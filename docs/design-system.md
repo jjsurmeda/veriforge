@@ -1,155 +1,158 @@
-# Veriforge — Design System & UI/UX Direction
+# Veriforge design system — v3
 
-This is the visual language for `apps/web`. It exists so "modern, clean
-design" means something specific and repeatable, rather than whatever the
-last component happened to look like. Follow it; propose changes here
-before changing a component.
+Veriforge is a dense evidence workbench. The interface should feel like a calm instrument panel: quiet when evidence is still forming, explicit when a verdict or state arrives, and never more decorative than the work requires.
 
-## 1. Grounding
+v3 takes structural cues from the supplied Perplexity and Grok references while keeping Veriforge's own name, mark, language, and product behaviour.
 
-Veriforge is a workbench for turning retrieved evidence into verified
-answers — the *forge* tempering raw material (chunks, web pages) into
-something trustworthy, and *veri* the promise that the result was actually
-checked, not just asserted. The audience is engineers and architects
-evaluating a RAG system, plus real users asking real questions.
+## 1. Product register
 
-The UI's one job: make trust visible **while it's still forming**. A person
-should be able to tell, mid-stream, how much of an answer to believe and
-why — without the interface performing a confidence it hasn't earned yet.
-
-Two ideas carry the whole system:
-
-1. **Evidence is material.** Chunks, scores and citations behave like
-   objects with weight and provenance — not decoration.
-2. **Trust is a live state, not a badge.** Colour changes happen when a
-   verdict actually arrives, never as ambient styling.
+- **Audience:** engineers and architects evaluating a RAG system, plus people asking questions from their documents.
+- **Primary job:** make an answer's provenance, reviewer state, retrieval decisions, quotas, and uncertainty inspectable without leaving the thread.
+- **Personality:** forensic, precise, grounded.
+- **UI job:** show trust while it is forming; do not perform certainty before verification.
 
 ## 2. Colour
 
-The default theme is **light**: a clean, near-white workbench surface with
-Google-blue as the primary action colour — the reference is NotebookLM's
-Material palette (a real product in the same category: grounded QA over a
-document set), not a generic SaaS gradient. Dark mode uses NotebookLM's own
-near-black surface (`#131314`), not a navy tint — it's a separately designed
-theme, not an inversion. The semantic names below are the source of truth
-for `apps/web/src/styles/tokens.css`.
+Dark is the default. Semantic colour is reserved for state and evidence, never used as ambient decoration.
 
-| Token | Light | Dark | Role |
+### Core surfaces
+
+| token | dark | light | role |
 | --- | --- | --- | --- |
-| `background` | `#FFFFFF` | `#131314` | App canvas; separates the workbench from the browser. |
-| `surface` | `#FFFFFF` | `#1E1F20` | Cards, panels, sidebars, composer, and tables. |
-| `surface-muted` | `#F1F3F4` | `#1B1C1D` | Inset controls and secondary panels. |
-| `border` | `#DADCE0` | `#3C4043` | Quiet dividers and card edges. |
-| `foreground` | `#1F1F1F` | `#E8EAED` | Primary text and iconography. |
-| `muted-foreground` | `#5F6368` | `#9AA0A6` | Metadata, labels, and non-essential copy. |
-| `primary` | `#1A73E8` | `#A8C7FA` | Primary action, active selection, and focus glow. |
-| `secondary` | `#12805C` | `#6DD58C` | Evidence and retrieval activity. |
-| `accent` | `#A142F4` | `#D7AEFB` | A small amount of emphasis and live selection. |
-| `success` | `#188038` | `#81C995` | Supported, ready, and successful state. |
-| `warning` | `#B06000` | `#FDD663` | Partial or attention state. |
-| `danger` | `#C5221F` | `#F28B82` | Failed, unsupported, or destructive state. |
-| `info` | `#0B57D0` | `#8AB4F8` | Neutral system information. |
+| `background` | `#161616` | `#fcfcfa` | Main canvas |
+| `surface` | `#1f1f1f` | `#ffffff` | Composer, cards, detail surfaces |
+| `surface-raised` | `#2a2a2a` | `#efefec` | Active rows, pills, user bubble |
+| `surface-hover` | `#262626` | `#e7e7e2` | Hover fill |
+| `surface-muted` / panels | `#1b1b1b` | `#f5f5f2` | Sidebar and workspace panel |
+| `border` | `#2e2e2e` | `#e6e6e2` | Hairline dividers |
+| `border-strong` | `#3a3a3a` | `#d4d4ce` | Inputs and structural emphasis |
 
-Soft pairings (`primary-soft`, `secondary-soft`, `accent-soft`, and the
-matching semantic surfaces) are intentionally low-contrast fills; the
-semantic foreground remains the readable colour. Verdict colour is always
-paired with a shape, icon, or text label. The old indigo/cyan/pink
-vocabulary is removed rather than aliased, so a component cannot silently
-fall back to the old visual language.
+### Text and actions
 
-Chrome surfaces (header, sidebar, trace panel) use a glass treatment —
-`bg-surface` at partial opacity plus `backdrop-blur` — so panels read as
-layered above the canvas rather than flat-stacked.
+| token | dark | light | role |
+| --- | --- | --- | --- |
+| `foreground` | `#ececec` | `#1a1a1a` | Primary text and icons |
+| `muted-foreground` | `#9a9a9a` | `#6b6b66` | Metadata and secondary copy |
+| `subtle-foreground` | `#858585` | `#6f6f6a` | Section labels and quiet metadata |
+| `primary` | `#ececec` | `#1a1a1a` | Primary action fill |
+| `on-primary` | `#161616` | `#fcfcfa` | Text on primary |
+| `accent` | `#20b8cd` | `#1c737d` | Focus ring, links, active selection |
+| `success` | `#75c99a` | `#2f7d5b` | Supported/ready |
+| `warning` | `#e3b56a` | `#8a5a18` | Partial/attention |
+| `danger` | `#f08d86` | `#a33e3a` | Failed/unsupported/destructive |
 
-The persisted preference is stored under `veriforge-theme`. On a first visit,
-the app follows `prefers-color-scheme`; after that, the user's choice wins.
+The dark `subtle-foreground` and light `accent` values are adjusted from the initial v3 proposal to meet WCAG AA contrast against their panel backgrounds. Use the semantic dot or badge together with text or shape; colour is never the only verdict cue.
 
-## 3. Type
+Forbidden: purple/blue gradients, glow, glassmorphism, gradient text, default Tailwind greys, and coloured ambient backgrounds.
 
-| Role | Face | Why |
-| --- | --- | --- |
-| Display / headline | Roboto | Google's own workhorse face — the real, freely-licensed choice behind the NotebookLM/Gemini family look (the proprietary "Google Sans" isn't licensable). |
-| Body / UI | Roboto | Dense labels and long evidence remain comfortable at small sizes. |
-| Data (scores, latency, tokens, citations) | Roboto Mono | Tabular figures make comparisons and live metrics scannable. |
+## 3. Typography
 
-The type scale is a Roboto-style rem scale: `0.8125 / 0.875 / 1 / 1.125 /
-1.375 / 1.75 / 2.25`. Body copy sits at 0.9375–1rem. Line length caps near
-72 characters in the transcript and trace panels.
+- **UI sans:** Inter Variable, 14–15px in chrome, 15px/1.6 for user messages.
+- **Answer serif:** Source Serif 4 Variable, 17px/1.75, left-aligned, maximum reading width 720px.
+- **Mono:** JetBrains Mono for IDs, scores, trace metadata, quota values, and compact technical labels.
+- **Numbers:** always use `tabular-nums`.
+- **Scale:** keep the product UI scale tight. Avoid fluid display sizing and excessive all-caps labels.
+- **Icons:** Lucide at `strokeWidth={1.75}`; 18px in chrome, 14px in pills and metadata.
 
-## 4. Layout
+The answer surface is direct prose on the canvas. It is not a card, and it does not use a bubble, border, or shadow. A small `Answer` label and Bot avatar identify the assistant turn.
 
-The chat workspace is a **workbench**, not a card stack: three fixed panes,
-left-aligned throughout. No centred marketing-style blocks inside the app.
+## 4. Shape and depth
 
-```
-┌────────────┬───────────────────────────────┬────────────────────────────┐
-│ Chats      │ Transcript                     │ Trace ▸ Sources ▸ Metrics  │
-│ (search)   │  Q: ...                        │ ● ingress   0.94 lookup    │
-│ • Chat A   │  A: [1][2] ...answer text...   │ ● retrieve  8 chunks       │
-│ • Chat B   │      ▓▓▓ streaming ▓▓▓          │ ● review    faithful 0.92 │
-│            │  [1] doc.pdf p.4   0.87 ●      │                            │
-│            │ ┌ composer: settings · send ┐                         │
-└────────────┴───────────────────────────────┴────────────────────────────┘
-```
+- Controls: 8px radius.
+- Cards and rows: 12px radius.
+- Composer: 24px radius.
+- Pills and avatars: full radius.
+- Dark mode has no shadows. Depth comes from surface steps and hairlines.
+- Light mode may use a soft shadow on the composer, popovers, menus, and auth card only.
+- Do not stack a border, shadow, and tinted background on the same element unless the state needs to be especially clear.
 
-Admin pages break from the three-pane shell into a left-nav plus dense,
-sortable content tables — admins are scanning configuration, not browsing
-a catalogue, so tables beat decorative cards there too.
+## 5. Layout
 
-## 5. Components
+### Authenticated chat
 
-- **Citation chip.** Inline `[n]`, coloured by current verdict — muted while
-  pending, then `success`, `warning`, or `danger`. A small filled numeral,
-  closer to a footnote mark than a rounded pill with a shadow.
-- **Trace row.** One line: a status dot, the node name, the result, and the
-  Jev probability set in Plex Mono on the right. A fallback-engine decision
-  gets a small "(fallback)" label in the muted colour — not a separate hue.
-- **Latency waterfall / score bars.** Thin horizontal bars in a single
-  surface-muted fill, labelled with the exact number. No per-bar rainbow
-  gradients.
-- **Buttons.** One filled primary style for the main action, plus quiet outline
-  and text actions. The active stop action uses the danger semantic colour.
-- **Cards and panels.** Use `surface`, a quiet `border`, radius `md` or `lg`,
-  and a small elevation step on hover. Avoid a stack of identical cards where
-  a list or table would scan faster.
+- `>=1280px`: 280px left sidebar, flexible main column, 400px right workspace.
+- `1024–1279px`: right workspace is a fixed overlay drawer; the main thread remains underneath.
+- `<1024px`: left navigation is a drawer; the workspace is a full-height drawer. Mobile targets are at least 44px.
+- The AppHeader is dissolved on `/` and `/chat/*`; quota, theme, profile, and admin access move to the left sidebar or thread header. Sources and admin keep the header shell.
+- Both panel states persist in guarded localStorage writes.
 
-## 6. Motion
+### Main thread
 
-Motion is purposeful and state-driven. Interactive elements shift colour,
-border, elevation, or a small translate on hover and press. The theme toggle
-crossfades surface and text colours smoothly. New messages enter with a
-subtle 8px slide and fade, never a bounce. Citation chips retain their
-verdict crossfade when a reviewer result arrives. Active and focus states use
-a quiet primary/accent glow so keyboard users can see where they are.
+- Thread header: 56px, quiet title, thread actions, and workspace toggle.
+- Message column: 720px maximum, left-aligned, 32px between turns and 12px between a user turn and its answer.
+- User message: right-aligned `surface-raised` bubble, maximum 80%, 24px radius with an 8px tail corner.
+- Assistant message: no bubble; serif prose with a 20px Bot avatar and `Answer` label.
+- Inline citations: compact `surface-raised` pills with file icon, short document label, verdict dot, hover preview, and click-to-workspace behavior.
+- Keep the existing horizontal source-card row in addition to the `N sources` pill.
+- Answer actions: client-side Copy and Link to message are allowed. Do not add thumbs or regenerate without an existing API.
+- Related follow-ups: full-width hairline rows under a `Related` heading. Preserve the existing `Suggested follow-ups:` copy for parity and e2e compatibility.
 
-Motion stays in the 150–320ms range and only communicates a real state
-change, feedback, or reveal. `prefers-reduced-motion` is an accessibility
-floor: all transitions and animations become instant, with no exceptions.
+### Left sidebar
 
-## 7. Voice
+- Top row: Veriforge mark, search, collapse/expand.
+- Primary rows: New chat, Sources, and Admin for admins.
+- Sources and Chats are collapsible sections. Chat titles truncate to one line; pinned chats form a small pinned group.
+- A row's existing rename, pin, and delete actions remain keyboard reachable. The overflow menu repeats those actions rather than replacing them.
+- Bottom: compact quota pill, profile menu, user email/role, and theme toggle.
 
-Plain, active, user-facing language. "Documents," not "collections," in
-end-user copy (the word "collection" stays in admin/API surfaces only).
-"Stop," not "Cancel run." "Couldn't find this in your documents," not
-"Retrieval insufficient." Abstention copy always says two things, in
-order: what was found, then what's missing — never an apology, never a
-vague "I don't know."
+### Workspace panel
 
-## 8. Accessibility floor
+Tabs remain `Trace`, `Sources (n)`, and `Metrics` so existing selectors remain stable. The panel header includes a live indicator, expand control, and collapse control.
 
-WCAG 2.1 AA contrast in both themes. Verdict colour always paired with
-shape, icon, or text. Visible keyboard focus uses the primary colour at 2px.
-`prefers-reduced-motion` disables all nonessential motion — verdicts and
-state changes still land, just instantly. Every chart in the Metrics tab has
-a text equivalent in the row it summarises.
+- **Sources/Citations:** query context, document rows, page refs, verdict, snippet, and retrieval scores.
+- **Trace:** thinking disclosure, steps, DecisionTimeline, meters, Jev/fallback badges, and reasoning.
+- **Metrics:** compact stat tiles, latency waterfall, answer scores, usage, and the existing empty state.
 
-## 9. What we deliberately avoided
+## 6. Components
 
-- The old near-black and ember-first palette; the default is now a designed
-  light workbench with a paired dark theme.
-- Numbered 01/02/03 markers anywhere content isn't actually a sequence —
-  Deep-mode hop numbers are the one legitimate case.
-- ALL-CAPS eyebrows, middle-dot metadata strings, trailing arrows on
-  buttons, and hand-drawn replacement iconography.
-- An identical rounded-card grid for citations, sources, and admin lists —
-  each uses the layout that matches how it is actually scanned.
+### Composer
+
+The composer is sticky at the bottom, max-width 720px, with a 24px radius. The placeholder is `Ask anything` for an empty thread and `Ask a follow-up` after a turn. The Plus/Run settings control opens the same settings surface. Mode, Model, Run source, and Collection controls remain native labelled selects/checkboxes. Submit is a round ArrowUp button; streaming changes it to a labelled Stop button. The textarea grows in place and never shifts the answer layout.
+
+### Sources
+
+Sources uses a collection sidebar, collection summary cards, a `+ New source` card, upload dropzone, document list, starter questions, and a document detail drawer. Keep all current status, page-quality, tag, re-index, delete, and upload outcome states.
+
+### Auth
+
+Auth pages use a centred 400px card on the canvas, Veriforge mark, theme toggle, `Secure access` label, existing fields/links/errors, and one primary action. No decorative blurred colour fields.
+
+### Admin
+
+Admin uses the same left-shell language and quiet hairline tables. All eight sections remain: Decision layer, Settings, Providers, Models, Roles, Plans, Users, and Audit. Preserve every Add, Save, Test, Activate, Create version, quota override, and role/status control. The DecisionLayerPanel window select and all stat/breaker/disagreement values remain.
+
+## 7. Motion
+
+- Hover and press: 150ms ease-out, colour/background/border only where possible.
+- Buttons: `active:scale(0.97)`; text links do not scale.
+- Popovers and menus: 150–200ms ease-out, scale from the trigger origin when a primitive exposes it.
+- Panels: 240ms custom ease-out slide; never use `ease-in` for UI.
+- Streaming: only the status line may shimmer. The answer grows in place.
+- Repeated actions such as typing, sending, and switching chats feel immediate.
+- `prefers-reduced-motion` removes nonessential animation and leaves state changes visible.
+
+## 8. Voice and copy
+
+Use plain, specific language: `Ask anything`, `Ask a follow-up`, `Sources`, `Related`, `Metrics land when the run completes.`, and the existing error text. Do not use filler such as “Unlock the power of…” or “Seamlessly…”. Keep user-facing errors calm and actionable.
+
+## 9. Accessibility floor
+
+- Every interactive element has hover, active, focus-visible, disabled, loading, and error states where applicable.
+- Focus rings are 2px turquoise (`accent`) with offset.
+- Body text meets 4.5:1 contrast in both themes; `subtle-foreground` is checked against panel surfaces.
+- Every icon-only control has an `aria-label` and a tooltip where its meaning is not obvious.
+- Native buttons, inputs, selects, and textareas remain keyboard operable. Workspace tabs use a labelled tablist and arrow-key navigation.
+- Keep existing `aria-label`, `role`, and test selectors. A moved control must retain its accessible name.
+- Tables, meters, status badges, and charts have text equivalents.
+- No horizontal overflow or clipped controls at 390px.
+
+## 10. Anti-slop pre-flight
+
+- [x] Neutral surfaces and one turquoise accent.
+- [x] No gradients, glow, glass, or gradient text.
+- [x] No card-in-card nesting or uniform shadow stacks.
+- [x] Lucide-only icon family at 1.75 stroke.
+- [x] Left-aligned answer prose; centring only for empty/auth states.
+- [x] Real type scale and tabular numeric data.
+- [x] 4px spacing rhythm and purposeful motion.
+- [x] Required screenshot and accessibility verification recorded in `docs/prompts/redesign-v3-audit.md`.

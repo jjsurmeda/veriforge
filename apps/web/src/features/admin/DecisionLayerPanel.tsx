@@ -38,8 +38,8 @@ function StatTile({
   pass?: boolean
 }) {
   return (
-    <div className="rounded-lg border border-border bg-surface px-3 py-2.5 shadow-sm">
-      <div className="font-mono text-[0.6rem] uppercase tracking-[0.1em] text-muted-foreground">{label}</div>
+    <div className="rounded-lg border border-border bg-surface px-3 py-2.5">
+      <div className="text-[0.62rem] text-muted-foreground">{label}</div>
       <div className="mt-1 flex items-baseline justify-between gap-2">
         <span className="font-mono text-lg text-foreground">{value}</span>
         {pass !== undefined && (
@@ -63,10 +63,10 @@ function BreakerStatus({ stats }: { stats: DecisionStatsOut }) {
     warning: 'border-warning/30 bg-warning-soft text-warning',
   }[tone]
   return (
-    <section className="rounded-xl border border-border bg-surface shadow-sm">
+    <section className="rounded-xl border border-border bg-surface">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-surface-muted/60 px-4 py-3">
-        <h2 className="flex items-center gap-2 font-mono text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          <ShieldCheck size={13} className="text-primary" aria-hidden="true" />
+        <h2 className="flex items-center gap-2 text-xs font-semibold text-foreground">
+          <ShieldCheck size={13} className="text-accent" aria-hidden="true" />
           Circuit breaker
         </h2>
         <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${toneClass}`}>
@@ -97,7 +97,7 @@ export function DecisionLayerPanel() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="flex items-center gap-2 text-lg font-semibold text-foreground">
-            <Activity size={17} className="text-primary" aria-hidden="true" />
+            <Activity size={17} className="text-accent" aria-hidden="true" />
             Decision layer
           </h2>
           <p className="mt-1 text-xs text-muted-foreground">Jev throughput, fallback pressure, and shadow agreement.</p>
@@ -151,8 +151,8 @@ export function DecisionLayerPanel() {
           <BreakerStatus stats={stats.data} />
 
           <div className="grid gap-4 xl:grid-cols-2">
-            <section className="overflow-hidden rounded-xl border border-border bg-surface shadow-sm">
-              <h2 className="border-b border-border bg-surface-muted/60 px-4 py-3 font-mono text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+            <section className="overflow-hidden rounded-xl border border-border bg-surface">
+              <h2 className="border-b border-border bg-surface-muted/60 px-4 py-3 text-xs font-semibold text-foreground">
                 Decisions by name
               </h2>
               {stats.data.by_decision.length === 0 ? (
@@ -170,9 +170,9 @@ export function DecisionLayerPanel() {
               )}
             </section>
 
-            <section className="overflow-hidden rounded-xl border border-border bg-surface shadow-sm">
-              <h2 className="flex items-center gap-2 border-b border-border bg-surface-muted/60 px-4 py-3 font-mono text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                <History size={13} className="text-primary" aria-hidden="true" />
+            <section className="overflow-hidden rounded-xl border border-border bg-surface">
+              <h2 className="flex items-center gap-2 border-b border-border bg-surface-muted/60 px-4 py-3 text-xs font-semibold text-foreground">
+                <History size={13} className="text-accent" aria-hidden="true" />
                 Shadow agreement · {formatShare(stats.data.shadow.agree_rate)} ({stats.data.shadow.sampled} sampled)
               </h2>
               {stats.data.shadow.recent_disagreements.length === 0 ? (

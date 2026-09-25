@@ -48,7 +48,7 @@ export function ProfileMenu() {
         onKeyDown={(event) => {
           if (event.key === 'Escape') setOpen(false)
         }}
-        className="inline-flex size-9 items-center justify-center rounded-full bg-primary-soft text-xs font-semibold text-primary shadow-sm transition-[box-shadow,transform] duration-180 hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary motion-reduce:transform-none motion-reduce:transition-none"
+        className="inline-flex size-9 items-center justify-center rounded-full border border-border bg-surface-raised text-xs font-semibold text-foreground transition-[background-color,border-color,color,transform] duration-150 ease-out hover:border-border-strong hover:bg-surface-hover active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent motion-reduce:transform-none motion-reduce:transition-none"
       >
         {initialsFor(me.data.email)}
       </button>
@@ -56,10 +56,10 @@ export function ProfileMenu() {
         <div
           role="dialog"
           aria-label="Profile"
-          className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-64 rounded-xl border border-border bg-surface/90 p-3 shadow-lg backdrop-blur"
+          className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-64 rounded-xl border border-border bg-surface-raised p-3 shadow-lg"
         >
           <div className="mb-3 flex items-center gap-3 border-b border-border/70 pb-3">
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary-soft text-xs font-semibold text-primary">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-surface-raised text-xs font-semibold text-foreground">
               {initialsFor(me.data.email)}
             </span>
             <div className="min-w-0">
@@ -73,7 +73,7 @@ export function ProfileMenu() {
             <button
               type="button"
               onClick={() => void navigate({ to: '/admin' })}
-              className="mb-1 flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm text-foreground transition-colors duration-150 hover:bg-primary-soft hover:text-primary focus-visible:outline-2 focus-visible:outline-primary"
+              className="mb-1 flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm text-foreground transition-colors duration-150 hover:bg-surface-hover hover:text-foreground focus-visible:outline-2 focus-visible:outline-accent"
             >
               <ShieldCheck size={15} aria-hidden="true" />
               Admin console

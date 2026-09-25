@@ -1,12 +1,12 @@
-@import '@fontsource/roboto/400.css';
-@import '@fontsource/roboto/500.css';
-@import '@fontsource/roboto/700.css';
-@import '@fontsource/roboto-mono/400.css';
-@import '@fontsource/roboto-mono/500.css';
+@import '@fontsource-variable/inter';
+@import '@fontsource-variable/source-serif-4';
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jetbrains-mono/500.css';
+@import '@fontsource/jetbrains-mono/600.css';
 @import './styles/tokens.css';
 
 :root {
-  font-family: var(--font-body);
+  font-family: var(--font-sans);
   color: var(--color-foreground);
   background: var(--color-background);
   font-synthesis: none;
@@ -26,6 +26,10 @@ body {
   transition: background-color var(--motion-slow) var(--motion-ease), color var(--motion-slow) var(--motion-ease);
 }
 
+svg {
+  stroke-width: 1.75;
+}
+
 button,
 a,
 input,
@@ -41,7 +45,7 @@ select {
 }
 
 ::selection {
-  background: var(--color-primary-soft);
+  background: var(--color-accent-soft);
   color: var(--color-foreground);
 }
 
@@ -50,10 +54,63 @@ select {
   scrollbar-color: var(--color-border-strong) transparent;
 }
 
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: var(--color-border-strong);
+  background-clip: padding-box;
+}
+
+@layer components {
+  .focus-ring {
+    @apply focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent;
+  }
+
+  .pressable {
+    @apply transition-[transform,background-color,border-color,color] duration-150 ease-out active:scale-[0.97] motion-reduce:transform-none motion-reduce:transition-none;
+  }
+
+  .icon-button {
+    @apply inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-[background-color,color,transform] duration-150 ease-out hover:bg-surface-hover hover:text-foreground active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent motion-reduce:transform-none motion-reduce:transition-none;
+  }
+
+  .answer-prose {
+    font-family: var(--font-serif);
+    font-size: 1.0625rem;
+    line-height: 1.75;
+    letter-spacing: -0.005em;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .answer-prose strong,
+  .answer-prose b {
+    font-weight: 600;
+  }
+
+  .source-pill {
+    @apply inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-surface-raised px-2 py-1 text-xs text-muted-foreground transition-[background-color,border-color,color] duration-150 ease-out hover:border-border-strong hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent;
+  }
+
+  .panel-surface {
+    background: var(--color-surface-muted);
+    border-color: var(--color-border);
+  }
+}
+
 @keyframes message-enter {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(4px);
   }
   to {
     opacity: 1;
@@ -61,8 +118,37 @@ select {
   }
 }
 
+@keyframes stream-shimmer {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
 .message-enter {
   animation: message-enter var(--motion-slow) var(--motion-ease) both;
+}
+
+.stream-shimmer {
+  animation: stream-shimmer 1.8s ease-in-out infinite;
+}
+
+.panel-enter {
+  animation: panel-in var(--motion-slow) var(--motion-panel) both;
 }
 
 .theme-transition,
@@ -73,7 +159,9 @@ select {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .message-enter {
+  .message-enter,
+  .stream-shimmer,
+  .panel-enter {
     animation: none;
   }
 }

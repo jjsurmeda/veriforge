@@ -22,7 +22,7 @@ export function OAuthCallbackPage() {
   return (
     <AuthShell title="Signing you in" description="Finishing the secure handoff to Veriforge.">
       <div className="flex items-center gap-3 rounded-lg border border-border bg-surface-muted px-3 py-3 text-sm text-muted-foreground">
-        <LoaderCircle size={18} className="animate-spin text-primary" aria-hidden="true" />
+        <LoaderCircle size={18} className="animate-spin text-accent" aria-hidden="true" />
         One moment…
       </div>
     </AuthShell>

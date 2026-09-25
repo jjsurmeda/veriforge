@@ -1,23 +1,49 @@
 import { useNavigate } from '@tanstack/react-router'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Check,
+  ChevronDown,
   Library,
   MessageSquare,
+  MoreHorizontal,
   PanelLeftClose,
   PanelLeftOpen,
   Pencil,
   Pin,
   Plus,
+  Search,
+  ShieldCheck,
   Trash2,
   X,
 } from 'lucide-react'
 
+import { useMe } from '../../auth/hooks/useMe'
 import { useCollections } from '../../sources/hooks/useCollections'
+import { ProfileMenu } from '../../../components/ProfileMenu'
+import { ThemeToggle } from '../../../components/ThemeToggle'
+import { QuotaBadge } from '../../../components/AppHeader'
 import { CollectionPicker } from './CollectionPicker'
 import { useChatList, useCreateChat, useDeleteChat, usePatchChat } from '../hooks/useChatList'
 
 const SIDEBAR_STORAGE_KEY = 'veriforge-chat-sidebar-collapsed'
+const SOURCES_SECTION_STORAGE_KEY = 'veriforge-chat-sources-collapsed'
+const CHATS_SECTION_STORAGE_KEY = 'veriforge-chat-chats-collapsed'
+
+function readStorage(key: string, fallback: string): string {
+  try {
+    return window.localStorage.getItem(key) ?? fallback
+  } catch {
+    return fallback
+  }
+}
+
+function writeStorage(key: string, value: string): void {
+  try {
+    window.localStorage.setItem(key, value)
+  } catch {
+    return
+  }
+}
 
 export function ChatSidebar({
   currentChatId,
@@ -30,26 +56,43 @@ export function ChatSidebar({
 }) {
   const navigate = useNavigate()
   const { data: chats } = useChatList()
+  const { data: me } = useMe()
   const createChat = useCreateChat()
   const deleteChat = useDeleteChat()
   const patchChat = usePatchChat()
   const collections = useCollections()
-  const [collapsed, setCollapsed] = useState(
-    () => window.localStorage.getItem(SIDEBAR_STORAGE_KEY) === 'true',
+  const [collapsed, setCollapsed] = useState(() => readStorage(SIDEBAR_STORAGE_KEY, 'false') === 'true')
+  const [sourcesCollapsed, setSourcesCollapsed] = useState(
+    () => readStorage(SOURCES_SECTION_STORAGE_KEY, 'false') === 'true',
   )
+  const [chatsCollapsed, setChatsCollapsed] = useState(
+    () => readStorage(CHATS_SECTION_STORAGE_KEY, 'false') === 'true',
+  )
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [openMenuChatId, setOpenMenuChatId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [newChatCollectionIds, setNewChatCollectionIds] = useState<string[]>([])
   const [editingChatId, setEditingChatId] = useState<string | null>(null)
   const [titleDraft, setTitleDraft] = useState('')
   const rail = collapsed && !mobileOpen
 
-  useEffect(() => {
-    window.localStorage.setItem(SIDEBAR_STORAGE_KEY, String(collapsed))
-  }, [collapsed])
+  useEffect(() => writeStorage(SIDEBAR_STORAGE_KEY, String(collapsed)), [collapsed])
+  useEffect(() => writeStorage(SOURCES_SECTION_STORAGE_KEY, String(sourcesCollapsed)), [sourcesCollapsed])
+  useEffect(() => writeStorage(CHATS_SECTION_STORAGE_KEY, String(chatsCollapsed)), [chatsCollapsed])
+
+  const filteredChats = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase()
+    if (!query) return chats ?? []
+    return (chats ?? []).filter((chat) => chat.title.toLowerCase().includes(query))
+  }, [chats, searchQuery])
+  const pinnedChats = filteredChats.filter((chat) => chat.pinned)
+  const otherChats = filteredChats.filter((chat) => !chat.pinned)
 
   const beginRename = (chatId: string, title: string) => {
     setEditingChatId(chatId)
     setTitleDraft(title)
+    setOpenMenuChatId(null)
   }
 
   const saveRename = async () => {
@@ -71,6 +114,122 @@ export function ChatSidebar({
     }
   }
 
+  const navigateToSources = () => {
+    onMobileClose?.()
+    void navigate({ to: '/sources' })
+  }
+
+  const toggleCollapsed = () => setCollapsed((value) => !value)
+
+  const renderChatRow = (chat: NonNullable<typeof chats>[number]) => {
+    const active = chat.id === currentChatId
+    const menuOpen = openMenuChatId === chat.id
+    return (
+      <div
+        key={chat.id}
+        className={`group relative flex min-h-10 items-center rounded-lg transition-[background-color,color] duration-150 ease-out ${
+          rail ? 'justify-center px-1' : 'gap-0.5 px-1'
+        } ${active ? 'bg-surface-raised text-foreground' : 'text-muted-foreground hover:bg-surface-hover hover:text-foreground'}`}
+      >
+        {editingChatId === chat.id ? (
+          <div className="flex min-w-0 flex-1 items-center gap-1 px-1">
+            <input
+              aria-label={`Rename ${chat.title}`}
+              value={titleDraft}
+              onChange={(event) => setTitleDraft(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') void saveRename()
+                if (event.key === 'Escape') setEditingChatId(null)
+              }}
+              className="min-w-0 flex-1 rounded-md border border-border bg-surface px-2 py-1.5 text-xs text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            />
+            <button
+              type="button"
+              aria-label="Save rename"
+              onClick={() => void saveRename()}
+              className="icon-button size-7 text-accent"
+            >
+              <Check size={14} strokeWidth={1.75} aria-hidden="true" />
+            </button>
+          </div>
+        ) : (
+          <>
+            <button
+              type="button"
+              aria-label={rail ? chat.title : undefined}
+              title={rail ? chat.title : undefined}
+              className={`flex min-w-0 items-center rounded-md text-left focus-visible:outline-2 focus-visible:outline-accent ${rail ? 'justify-center p-2' : 'flex-1 gap-2 truncate px-2 py-1.5'}`}
+              onClick={() => void navigate({ to: '/chat/$chatId', params: { chatId: chat.id } })}
+            >
+              {chat.pinned ? (
+                <Pin size={14} strokeWidth={1.75} className="shrink-0 text-accent" fill="currentColor" aria-hidden="true" />
+              ) : (
+                <MessageSquare size={14} strokeWidth={1.75} className="shrink-0 text-muted-foreground" aria-hidden="true" />
+              )}
+              <span className={rail ? 'sr-only' : 'truncate'}>{chat.title}</span>
+            </button>
+            {!rail && (
+              <>
+                <button
+                  type="button"
+                  aria-label={`Rename ${chat.title}`}
+                  onClick={() => beginRename(chat.id, chat.title)}
+                  className="icon-button size-7 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                >
+                  <Pencil size={13} strokeWidth={1.75} aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  aria-label={`${chat.pinned ? 'Unpin' : 'Pin'} ${chat.title}`}
+                  aria-pressed={chat.pinned}
+                  onClick={() =>
+                    void patchChat.mutateAsync({
+                      chatId: chat.id,
+                      patch: { pinned: !chat.pinned },
+                    })
+                  }
+                  className="icon-button size-7"
+                >
+                  <Pin size={13} strokeWidth={1.75} fill={chat.pinned ? 'currentColor' : 'none'} aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Delete ${chat.title}`}
+                  onClick={() => void deleteChat.mutateAsync(chat.id)}
+                  className="icon-button size-7 hover:bg-danger-soft hover:text-danger"
+                >
+                  <Trash2 size={13} strokeWidth={1.75} aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  aria-label={`More actions for ${chat.title}`}
+                  aria-expanded={menuOpen}
+                  onClick={() => setOpenMenuChatId((value) => (value === chat.id ? null : chat.id))}
+                  className="icon-button size-7 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                >
+                  <MoreHorizontal size={14} strokeWidth={1.75} aria-hidden="true" />
+                </button>
+              </>
+            )}
+          </>
+        )}
+        {!rail && menuOpen && editingChatId !== chat.id && (
+          <div className="absolute right-1 top-10 z-30 w-40 rounded-lg border border-border bg-surface-raised p-1 shadow-lg">
+            <button type="button" onClick={() => beginRename(chat.id, chat.title)} className="flex min-h-9 w-full items-center gap-2 rounded-md px-2 text-left text-xs text-foreground hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-accent">
+              <Pencil size={13} strokeWidth={1.75} aria-hidden="true" /> Rename
+            </button>
+            <button type="button" onClick={() => void patchChat.mutateAsync({ chatId: chat.id, patch: { pinned: !chat.pinned } })} className="flex min-h-9 w-full items-center gap-2 rounded-md px-2 text-left text-xs text-foreground hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-accent">
+              <Pin size={13} strokeWidth={1.75} aria-hidden="true" /> {chat.pinned ? 'Unpin' : 'Pin'}
+            </button>
+            <button type="button" onClick={() => void deleteChat.mutateAsync(chat.id)} className="flex min-h-9 w-full items-center gap-2 rounded-md px-2 text-left text-xs text-danger hover:bg-danger-soft focus-visible:outline-2 focus-visible:outline-danger">
+              <Trash2 size={13} strokeWidth={1.75} aria-hidden="true" /> Delete
+            </button>
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
     <>
       {mobileOpen && (
@@ -78,170 +237,141 @@ export function ChatSidebar({
           type="button"
           aria-label="Close navigation"
           onClick={onMobileClose}
-           className="fixed bottom-0 left-0 right-0 top-14 z-40 bg-background/70 backdrop-blur-sm lg:hidden"
+          className="fixed inset-0 z-40 bg-background/75 lg:hidden"
         />
       )}
       <aside
-        className={`${
-          mobileOpen
-            ? 'fixed bottom-0 left-0 top-14 z-50 flex w-[min(20rem,85vw)]'
-            : 'hidden lg:flex'
-        } ${collapsed ? 'lg:w-16' : 'lg:w-72'} h-full shrink-0 flex-col border-r border-border bg-surface/80 shadow-lg backdrop-blur-md lg:shadow-sm`}
+        className={`${mobileOpen ? 'fixed inset-y-0 left-0 z-50 flex w-[min(20rem,88vw)]' : 'hidden lg:flex'} ${collapsed ? 'lg:w-16' : 'lg:w-[280px]'} h-full shrink-0 flex-col border-r border-border bg-surface-muted text-foreground`}
       >
-        <div className={`flex items-center border-b border-border ${rail ? 'justify-center px-2 py-3' : 'justify-between gap-3 px-4 py-4'}`}>
+        <div className={`flex h-14 shrink-0 items-center border-b border-border ${rail ? 'justify-center px-2' : 'justify-between gap-2 px-4'}`}>
           <div className={`flex min-w-0 items-center ${rail ? 'justify-center' : 'gap-2.5'}`}>
-            <span className={`flex size-9 shrink-0 items-center justify-center rounded-xl ${rail ? 'bg-surface-muted text-muted-foreground' : 'bg-primary-soft text-primary shadow-sm'}`}>
-              <MessageSquare size={18} aria-hidden="true" />
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-surface text-accent">
+              <MessageSquare size={17} strokeWidth={1.75} aria-hidden="true" />
             </span>
-            <div className={`${rail ? 'hidden' : 'min-w-0'}`}>
-              <span className="block truncate font-display text-base font-semibold tracking-tight text-foreground">Chats</span>
+            {!rail && (
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold tracking-tight text-foreground">Veriforge</p>
+                <p className="truncate text-[0.62rem] text-muted-foreground">Evidence workbench</p>
+              </div>
+            )}
+          </div>
+          {!rail && (
+            <div className="flex items-center gap-0.5">
+              <button type="button" aria-label="Search chats" title="Search chats" onClick={() => setSearchOpen((value) => !value)} className="icon-button size-8">
+                <Search size={16} strokeWidth={1.75} aria-hidden="true" />
+              </button>
+              <button type="button" aria-label="Close navigation panel" onClick={onMobileClose} className="icon-button size-8 lg:hidden">
+                <X size={16} strokeWidth={1.75} aria-hidden="true" />
+              </button>
             </div>
-          </div>
-          <div className={`${rail ? 'hidden' : 'flex items-center gap-1'}`}>
-            <button
-              type="button"
-              aria-label="New chat"
-              onClick={() => void onNewChat()}
-              disabled={creating}
-              className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-on-primary shadow-sm transition-[background-color,transform,box-shadow] duration-180 hover:-translate-y-0.5 hover:bg-primary-strong hover:shadow-md active:translate-y-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transform-none motion-reduce:transition-none"
-            >
-              <Plus size={15} aria-hidden="true" />
-              <span className="hidden sm:inline">New chat</span>
-            </button>
-            <button
-              type="button"
-              aria-label="Close navigation panel"
-              onClick={onMobileClose}
-              className="rounded-lg p-2 text-muted-foreground transition-colors duration-180 hover:bg-surface-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary lg:hidden"
-            >
-              <X size={16} aria-hidden="true" />
-            </button>
-          </div>
+          )}
           <button
             type="button"
             aria-label={collapsed ? 'Expand chat sidebar' : 'Collapse chat sidebar'}
             aria-pressed={collapsed}
             title={collapsed ? 'Expand chat sidebar' : 'Collapse chat sidebar'}
-            onClick={() => setCollapsed((value) => !value)}
-            className="hidden size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-[color,background-color,transform] duration-180 hover:bg-surface-muted hover:text-foreground active:translate-y-px focus-visible:outline-2 focus-visible:outline-primary lg:inline-flex motion-reduce:transition-none"
+            onClick={toggleCollapsed}
+            className="icon-button hidden size-8 lg:inline-flex"
           >
-            {collapsed ? <PanelLeftOpen size={16} aria-hidden="true" /> : <PanelLeftClose size={16} aria-hidden="true" />}
+            {collapsed ? <PanelLeftOpen size={16} strokeWidth={1.75} aria-hidden="true" /> : <PanelLeftClose size={16} strokeWidth={1.75} aria-hidden="true" />}
           </button>
         </div>
 
-        {currentChatId === null && !rail && (
-          <div className="border-b border-border bg-surface-muted/40 px-4 py-3">
-            <CollectionPicker
-              collections={collections.data ?? []}
-              value={newChatCollectionIds}
-              onChange={setNewChatCollectionIds}
-              disabled={creating}
-            />
+        <div className={`border-b border-border px-2 py-2 ${rail ? 'flex justify-center' : ''}`}>
+          <button type="button" aria-label="New chat" onClick={() => void onNewChat()} disabled={creating} className={`pressable flex min-h-10 w-full items-center rounded-lg text-sm font-medium ${rail ? 'justify-center px-2' : 'gap-2.5 px-2.5'} ${rail ? 'text-muted-foreground hover:bg-surface-hover hover:text-foreground' : 'text-foreground hover:bg-surface-hover'} disabled:cursor-not-allowed disabled:opacity-50`}>
+            <span className={`flex size-6 shrink-0 items-center justify-center rounded-full border border-border ${rail ? 'bg-surface' : 'bg-surface-raised text-accent'}`}>
+              <Plus size={14} strokeWidth={1.75} aria-hidden="true" />
+            </span>
+            {!rail && <span>New chat</span>}
+          </button>
+          <button type="button" aria-label="Sources" title="Sources" onClick={navigateToSources} className={`pressable mt-1 flex min-h-10 w-full items-center rounded-lg text-sm ${rail ? 'justify-center px-2' : 'gap-2.5 px-2.5'} text-muted-foreground hover:bg-surface-hover hover:text-foreground`}>
+            <Library size={18} strokeWidth={1.75} aria-hidden="true" />
+            {!rail && <span>Sources</span>}
+          </button>
+          {me?.role === 'admin' && (
+            <button type="button" aria-label="Admin" title="Admin" onClick={() => void navigate({ to: '/admin' })} className={`pressable mt-1 flex min-h-10 w-full items-center rounded-lg text-sm ${rail ? 'justify-center px-2' : 'gap-2.5 px-2.5'} text-muted-foreground hover:bg-surface-hover hover:text-foreground`}>
+              <ShieldCheck size={18} strokeWidth={1.75} aria-hidden="true" />
+              {!rail && <span>Admin</span>}
+            </button>
+          )}
+        </div>
+
+        {!rail && searchOpen && (
+          <div className="border-b border-border px-3 py-2">
+            <label className="relative block">
+              <Search size={14} strokeWidth={1.75} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+              <input aria-label="Search chats" value={searchQuery} onChange={(event) => setSearchQuery(event.currentTarget.value)} placeholder="Filter chats" className="h-9 w-full rounded-lg border border-border bg-surface pl-8 pr-2 text-xs text-foreground placeholder:text-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent" />
+            </label>
           </div>
         )}
-        <nav className={`flex-1 overflow-y-auto ${rail ? 'px-1.5 py-2' : 'px-2 py-2'}`} aria-label="Chats">
-        {(chats ?? []).map((chat) => (
-          <div
-            key={chat.id}
-            className={`group flex min-h-11 items-center rounded-r-lg border-l-2 py-1.5 text-sm transition-[background-color,border-color,transform,box-shadow] duration-180 motion-reduce:transition-none ${
-              rail ? 'justify-center px-1' : 'gap-1 px-2'
-            } ${
-              chat.id === currentChatId
-                ? 'border-primary bg-primary-soft text-foreground shadow-sm'
-                : 'border-transparent text-muted-foreground hover:-translate-y-px hover:bg-surface-muted hover:text-foreground hover:shadow-sm'
-            }`}
-          >
-            {editingChatId === chat.id ? (
-              <div className="flex min-w-0 flex-1 items-center gap-1">
-                <input
-                  aria-label={`Rename ${chat.title}`}
-                  value={titleDraft}
-                  onChange={(event) => setTitleDraft(event.currentTarget.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') void saveRename()
-                    if (event.key === 'Escape') setEditingChatId(null)
-                  }}
-                  className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1.5 text-xs text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-                />
-                <button
-                  type="button"
-                  aria-label="Save rename"
-                  onClick={() => void saveRename()}
-                  className="rounded-md p-1.5 text-primary transition-colors duration-180 hover:bg-primary-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary motion-reduce:transition-none"
-                >
-                  <Check size={14} aria-hidden="true" />
-                </button>
-              </div>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  aria-label={rail ? chat.title : undefined}
-                  title={rail ? chat.title : undefined}
-                  className={`flex min-w-0 items-center rounded-md text-left focus-visible:outline-2 focus-visible:outline-primary ${rail ? 'justify-center p-2' : 'flex-1 gap-2 truncate px-1 py-1'}`}
-                  onClick={() => void navigate({ to: '/chat/$chatId', params: { chatId: chat.id } })}
-                >
-                  {chat.pinned ? (
-                    <Pin size={14} className="shrink-0 text-accent" fill="currentColor" aria-hidden="true" />
-                  ) : (
-                    <MessageSquare size={14} className="shrink-0 text-muted-foreground" aria-hidden="true" />
-                  )}
-                  <span className={rail ? 'sr-only' : 'truncate'}>{chat.title}</span>
-                </button>
-                {!rail && (
+
+        {!rail && (
+          <section className="border-b border-border px-3 py-3" aria-labelledby="sidebar-sources-heading">
+            <button type="button" aria-expanded={!sourcesCollapsed} onClick={() => setSourcesCollapsed((value) => !value)} className="flex min-h-8 w-full items-center justify-between text-left text-[0.68rem] font-medium uppercase tracking-[0.12em] text-subtle-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-accent">
+              <span id="sidebar-sources-heading">Sources</span>
+              <ChevronDown size={14} strokeWidth={1.75} className={`transition-transform duration-150 ${sourcesCollapsed ? '-rotate-90' : ''}`} aria-hidden="true" />
+            </button>
+            {!sourcesCollapsed && (
+              <div className="mt-1 space-y-0.5">
+                {(collections.data ?? []).map((collection) => (
+                  <button key={collection.id} type="button" onClick={navigateToSources} className="flex min-h-9 w-full items-center gap-2 rounded-lg px-2 text-left text-sm text-muted-foreground hover:bg-surface-hover hover:text-foreground focus-visible:outline-2 focus-visible:outline-accent">
+                    <Library size={14} strokeWidth={1.75} className="shrink-0" aria-hidden="true" />
+                    <span className="min-w-0 flex-1 truncate">{collection.name}</span>
+                    <span className="font-mono text-[0.65rem] tabular-nums text-muted-foreground">{collection.document_count}</span>
+                  </button>
+                ))}
+                {(collections.data ?? []).length === 0 && (
                   <>
-                    <button
-                      type="button"
-                      aria-label={`Rename ${chat.title}`}
-                      onClick={() => beginRename(chat.id, chat.title)}
-                      className="rounded-md p-1.5 text-muted-foreground opacity-0 transition-[color,background-color,opacity] duration-180 hover:bg-surface-muted hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-primary motion-reduce:transition-none"
-                    >
-                      <Pencil size={13} aria-hidden="true" />
-                    </button>
-                    <button
-                      type="button"
-                      aria-label={`${chat.pinned ? 'Unpin' : 'Pin'} ${chat.title}`}
-                      aria-pressed={chat.pinned}
-                      onClick={() =>
-                        void patchChat.mutateAsync({
-                          chatId: chat.id,
-                          patch: { pinned: !chat.pinned },
-                        })
-                      }
-                      className="rounded-md p-1.5 text-muted-foreground transition-[color,background-color] duration-180 hover:bg-accent-soft hover:text-accent focus-visible:outline-2 focus-visible:outline-primary motion-reduce:transition-none"
-                    >
-                      <Pin size={13} fill={chat.pinned ? 'currentColor' : 'none'} aria-hidden="true" />
+                    <p className="px-2 py-2 text-xs text-muted-foreground">No sources yet</p>
+                    <button type="button" onClick={navigateToSources} className="flex min-h-9 w-full items-center gap-2 rounded-lg px-2 text-left text-xs text-accent hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-accent">
+                      <Plus size={14} strokeWidth={1.75} aria-hidden="true" /> Add source
                     </button>
                   </>
                 )}
-              </>
+              </div>
             )}
-            {!rail && (
-              <button
-                type="button"
-                aria-label={`Delete ${chat.title}`}
-                onClick={() => void deleteChat.mutateAsync(chat.id)}
-                className="rounded-md p-1.5 text-muted-foreground transition-[color,background-color] duration-180 hover:bg-danger-soft hover:text-danger focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-danger motion-reduce:transition-none"
-              >
-                <Trash2 size={13} aria-hidden="true" />
-              </button>
-            )}
+          </section>
+        )}
+
+        {currentChatId === null && !rail && (
+          <div className="border-b border-border px-3 py-3">
+            <CollectionPicker collections={collections.data ?? []} value={newChatCollectionIds} onChange={setNewChatCollectionIds} disabled={creating} />
           </div>
-        ))}
-      </nav>
-      <div className={`flex border-t border-border px-3 py-3 ${rail ? 'justify-center' : 'items-center justify-between gap-2'}`}>
-        <button
-          type="button"
-          aria-label="Sources"
-          title="Sources"
-          onClick={() => void navigate({ to: '/sources' })}
-          className={`inline-flex items-center justify-center rounded-lg text-muted-foreground transition-[color,background-color,transform] duration-180 hover:bg-secondary-soft hover:text-secondary active:translate-y-px focus-visible:outline-2 focus-visible:outline-secondary motion-reduce:transition-none ${rail ? 'size-9' : 'gap-1.5 px-2 py-1.5 text-xs'}`}
-        >
-          <Library size={15} aria-hidden="true" />
-          {!rail && <span>Sources</span>}
-        </button>
-      </div>
-        </aside>
-      </>
-    )
-  }
+        )}
+
+        <nav className={`min-h-0 flex-1 overflow-y-auto ${rail ? 'px-1.5 py-2' : 'px-2 py-2'}`} aria-label="Chats">
+          {!rail && (
+            <button type="button" aria-expanded={!chatsCollapsed} onClick={() => setChatsCollapsed((value) => !value)} className="mb-1 flex min-h-8 w-full items-center justify-between px-2 text-left text-[0.68rem] font-medium uppercase tracking-[0.12em] text-subtle-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-accent">
+              <span>Chats</span>
+              <ChevronDown size={14} strokeWidth={1.75} className={`transition-transform duration-150 ${chatsCollapsed ? '-rotate-90' : ''}`} aria-hidden="true" />
+            </button>
+          )}
+          {!chatsCollapsed && pinnedChats.length > 0 && (
+            <div className="mb-2">
+              {!rail && <p className="px-2 pb-1 text-[0.62rem] text-subtle-foreground">Pinned</p>}
+              {pinnedChats.map(renderChatRow)}
+            </div>
+          )}
+          {!chatsCollapsed && otherChats.map(renderChatRow)}
+          {!chatsCollapsed && filteredChats.length === 0 && (
+            <p className="px-2 py-3 text-xs text-muted-foreground">{searchQuery ? 'No chats match.' : 'No chats yet.'}</p>
+          )}
+        </nav>
+
+        <div className={`border-t border-border p-2 ${rail ? 'flex flex-col items-center gap-2' : 'space-y-2'}`}>
+          <QuotaBadge className={rail ? '[&>button]:size-9 [&>button]:px-0' : 'mx-auto w-fit'} />
+          <div className={`flex min-h-12 items-center rounded-lg ${rail ? 'justify-center' : 'gap-2 px-2 hover:bg-surface-hover'}`}>
+            <ProfileMenu />
+            {!rail && (
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xs font-medium text-foreground">{me?.email ?? 'Profile loading'}</p>
+                <p className="truncate text-[0.65rem] text-muted-foreground">{me?.role ?? '—'}</p>
+              </div>
+            )}
+            {!rail && <ThemeToggle />}
+          </div>
+        </div>
+      </aside>
+    </>
+  )
+}

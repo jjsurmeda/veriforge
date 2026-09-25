@@ -202,7 +202,7 @@ function DynamicSummary({
     <li className="py-1">
       <button
         type="button"
-        className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs text-foreground transition-colors duration-180 hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-primary motion-reduce:transition-none"
+        className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs text-foreground transition-colors duration-150 hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-accent motion-reduce:transition-none"
         aria-expanded={expanded}
         onClick={() => setExpanded((value) => !value)}
       >
@@ -232,7 +232,7 @@ function DecisionGroupSection({ group }: { group: DecisionGroup }) {
   const callLabel = engines.length === 1 ? `1 ${engineLabel(engines[0])} call` : `${engines.length} engines`
 
   return (
-    <section className="rounded-lg border border-border bg-surface/60">
+    <section className="rounded-lg border border-border bg-surface">
       <header className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1 border-b border-border px-3 py-2">
         <h3 className="text-xs font-semibold text-foreground">{decisionStageLabel(group.stage)}</h3>
         <span className="font-mono text-[0.6rem] text-muted-foreground">
@@ -268,7 +268,7 @@ export function DecisionSummary({ decisions }: { decisions: Decision[] }) {
     ...groupDecisions(decisions).map((group) => Math.max(...group.decisions.map((decision) => decision.latency_ms))),
   )
   return (
-    <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-border bg-surface-muted/60 px-2.5 py-2 font-mono text-[0.65rem] text-muted-foreground">
+    <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-border bg-surface-muted px-2.5 py-2 font-mono text-[0.65rem] text-muted-foreground">
       <span>{decisions.length} decisions</span>
       <span aria-hidden="true">·</span>
       <span>Jev {jevCount}/{decisions.length}</span>

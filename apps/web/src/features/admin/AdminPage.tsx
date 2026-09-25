@@ -70,9 +70,9 @@ function isDecisionModel(model: AdminModelOut): boolean {
 
 function Panel({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="overflow-hidden rounded-xl border border-border bg-surface shadow-sm">
-      <h2 className="flex items-center gap-2 border-b border-border bg-surface-muted/60 px-4 py-3 font-mono text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-        <Settings2 size={13} className="text-primary" aria-hidden="true" />
+    <section className="overflow-hidden rounded-xl border border-border bg-surface">
+      <h2 className="flex items-center gap-2 border-b border-border bg-surface-muted px-4 py-3 text-xs font-semibold text-foreground">
+        <Settings2 size={14} strokeWidth={1.75} className="text-accent" aria-hidden="true" />
         {title}
       </h2>
       <div className="p-4 sm:p-5">{children}</div>
@@ -83,7 +83,7 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="flex flex-col gap-1.5 text-xs text-muted-foreground">
-      <span className="font-mono text-[0.65rem] uppercase tracking-[0.08em] text-muted-foreground/80">{label}</span>
+      <span className="text-[0.68rem] font-medium text-foreground">{label}</span>
       {children}
     </label>
   )
@@ -91,7 +91,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function TableHeader({ left, right }: { left: string; right: string }) {
   return (
-    <div className="mb-2 grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-border px-1 pb-2 font-mono text-[0.65rem] uppercase tracking-[0.1em] text-muted-foreground">
+    <div className="mb-2 grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-border px-1 pb-2 text-[0.65rem] font-medium uppercase tracking-[0.1em] text-muted-foreground">
       <span>{left}</span>
       <span>{right}</span>
     </div>
@@ -100,16 +100,16 @@ function TableHeader({ left, right }: { left: string; right: string }) {
 
 function TableRow({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={`grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-border/70 px-1 py-2.5 transition-colors duration-180 last:border-b-0 hover:bg-surface-muted ${className}`}>
+    <div className={`grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-border/70 px-1 py-3 transition-colors duration-150 last:border-b-0 hover:bg-surface-hover ${className}`}>
       {children}
     </div>
   )
 }
 
 const inputClass =
-  'h-9 min-w-0 rounded-lg border border-border bg-background px-2.5 text-xs text-foreground transition-[border-color,box-shadow] duration-180 hover:border-primary/40 focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25 disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none'
+  'h-9 min-w-0 rounded-lg border border-border bg-surface px-2.5 text-xs text-foreground transition-[border-color,background-color] duration-150 hover:border-border-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50'
 const buttonClass =
-  'inline-flex min-h-8 items-center justify-center gap-1.5 rounded-lg border border-border bg-surface-muted px-2.5 py-1.5 text-xs font-medium text-foreground transition-[color,background-color,border-color,transform,box-shadow] duration-180 hover:-translate-y-px hover:border-primary/40 hover:bg-primary-soft hover:shadow-sm active:translate-y-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transform-none motion-reduce:transition-none'
+  'pressable inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg border border-border bg-surface-raised px-2.5 text-xs font-medium text-foreground hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50'
 
 export function AdminPage() {
   const me = useMe()
@@ -348,30 +348,28 @@ export function AdminPage() {
 
   return (
     <main className="h-full overflow-y-auto bg-background text-foreground">
-      <header className="border-b border-border bg-surface px-5 py-4 shadow-sm sm:px-8">
+      <header className="border-b border-border bg-surface-muted px-5 py-4 sm:px-8">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <span className="flex size-10 items-center justify-center rounded-xl bg-primary-soft text-primary shadow-sm">
-              <ShieldCheck size={19} aria-hidden="true" />
+            <span className="flex size-9 items-center justify-center rounded-lg border border-border bg-surface text-accent">
+              <ShieldCheck size={18} strokeWidth={1.75} aria-hidden="true" />
             </span>
             <div>
-               <p className="font-mono text-xs font-semibold uppercase tracking-[0.16em] text-primary">Administration</p>
-              <h1 className="mt-1 font-display text-2xl font-semibold tracking-tight text-foreground">System control room</h1>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-accent">Administration</p>
+              <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">System control room</h1>
             </div>
           </div>
         </div>
       </header>
       <div className="mx-auto grid max-w-7xl gap-5 p-5 sm:p-8 lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-8">
-        <nav className="flex gap-1 overflow-x-auto rounded-xl border border-border bg-surface p-1 shadow-sm lg:sticky lg:top-5 lg:flex-col lg:self-start" aria-label="Admin sections">
+        <nav className="flex gap-1 overflow-x-auto rounded-xl border border-border bg-surface p-1 lg:sticky lg:top-5 lg:flex-col lg:self-start" aria-label="Admin sections">
           {tabs.map(([id, label, icon]) => (
             <button
               key={id}
               type="button"
               onClick={() => setSection(id)}
-              className={`inline-flex min-h-10 items-center gap-2 whitespace-nowrap rounded-lg px-3 py-2 text-left text-xs font-medium transition-[color,background-color,transform,box-shadow] duration-180 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary motion-reduce:transition-none ${
-                section === id
-                  ? 'bg-primary-soft text-primary shadow-sm'
-                  : 'text-muted-foreground hover:-translate-y-px hover:bg-surface-muted hover:text-foreground'
+              className={`inline-flex min-h-10 items-center gap-2 whitespace-nowrap rounded-lg px-3 py-2 text-left text-xs font-medium transition-[background-color,color] duration-150 focus-visible:outline-2 focus-visible:outline-accent ${
+                section === id ? 'bg-surface-raised text-foreground' : 'text-muted-foreground hover:bg-surface-hover hover:text-foreground'
               }`}
             >
               {icon}

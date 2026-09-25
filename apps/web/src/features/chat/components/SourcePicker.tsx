@@ -1,4 +1,4 @@
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, Library } from 'lucide-react'
 
 export type RunSource = 'auto' | 'upload' | 'web' | 'both'
 
@@ -17,15 +17,16 @@ const SOURCES: { value: RunSource; label: string }[] = [
 
 export function SourcePicker({ value, disabled, onChange }: Props) {
   return (
-    <label className="flex min-w-0 items-center gap-2 text-xs font-medium text-muted-foreground">
-      <span className="shrink-0 font-mono text-[0.65rem] uppercase tracking-[0.1em]">Source</span>
+    <label className="relative flex min-w-0 items-center gap-1.5 text-xs font-medium text-muted-foreground">
+      <span className="sr-only">Source</span>
+      <Library size={14} strokeWidth={1.75} className="shrink-0 text-muted-foreground" aria-hidden="true" />
       <span className="relative min-w-0 flex-1">
         <select
           aria-label="Run source"
           value={value}
           disabled={disabled}
           onChange={(event) => onChange(event.target.value as RunSource)}
-          className="h-9 w-full min-w-0 cursor-pointer appearance-none rounded-lg border border-border bg-surface px-3 pr-8 text-sm text-foreground transition-[border-color,box-shadow] duration-180 hover:border-primary/50 focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
+          className="h-8 w-full min-w-0 cursor-pointer appearance-none rounded-lg border-0 bg-transparent px-1 pr-5 text-xs font-medium text-foreground outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {SOURCES.map((source) => (
             <option key={source.value} value={source.value}>
@@ -33,11 +34,7 @@ export function SourcePicker({ value, disabled, onChange }: Props) {
             </option>
           ))}
         </select>
-        <ChevronDown
-          size={14}
-          aria-hidden="true"
-          className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
-        />
+        <ChevronDown size={13} strokeWidth={1.75} aria-hidden="true" className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 text-muted-foreground" />
       </span>
     </label>
   )

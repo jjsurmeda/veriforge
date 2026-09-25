@@ -5,7 +5,7 @@ export const THEME_STORAGE_KEY = 'veriforge-theme'
 export function getInitialTheme(): Theme {
   const saved = window.localStorage.getItem(THEME_STORAGE_KEY)
   if (saved === 'light' || saved === 'dark') return saved
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  return 'dark'
 }
 
 export function applyTheme(theme: Theme): void {
