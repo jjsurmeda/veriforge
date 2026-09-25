@@ -38,9 +38,17 @@ async def make_user(db: AsyncSession, email: str) -> User:
 
 
 async def make_collection(
-    db: AsyncSession, owner: User, name: str, visibility: str = "private"
+    db: AsyncSession,
+    owner: User,
+    name: str,
+    visibility: str = "private",
+    *,
+    kind: str = "library",
+    chat_id: UUID | None = None,
 ) -> Collection:
-    collection = Collection(owner_id=owner.id, name=name, visibility=visibility)
+    collection = Collection(
+        owner_id=owner.id, name=name, visibility=visibility, kind=kind, chat_id=chat_id
+    )
     db.add(collection)
     await db.commit()
     await db.refresh(collection)
@@ -114,8 +122,8 @@ async def add_chunk(
     return chunk
 
 
-async def make_chat(db: AsyncSession, user: User, collection_ids: list[UUID]) -> Chat:
-    chat = Chat(user_id=user.id, title="t", collection_ids=collection_ids)
+async def make_chat(db: AsyncSession, user: User, *, include_library: bool = True) -> Chat:
+    chat = Chat(user_id=user.id, title="t", include_library=include_library)
     db.add(chat)
     await db.commit()
     await db.refresh(chat)

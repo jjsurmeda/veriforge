@@ -9,7 +9,6 @@ import {
 
 interface CreateChatOptions {
   title?: string | null
-  collectionIds?: string[]
 }
 
 export function useChatList() {
@@ -24,10 +23,7 @@ export function useCreateChat() {
   return useMutation({
     mutationFn: async (options?: CreateChatOptions) => {
       const { data, error } = await createChatChatsPost({
-        body: {
-          title: options?.title ?? null,
-          collection_ids: options?.collectionIds ?? null,
-        },
+        body: { title: options?.title ?? null },
       })
       if (error) throw error
       return data
@@ -59,7 +55,7 @@ export function usePatchChat() {
         title?: string | null
         pinned?: boolean | null
         model_id?: string | null
-        collection_ids?: string[] | null
+        include_library?: boolean | null
       }
     }) => {
       const { data, error } = await patchChatChatsChatIdPatch({

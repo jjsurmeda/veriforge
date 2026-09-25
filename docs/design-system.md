@@ -98,7 +98,7 @@ The answer surface is direct prose on the canvas. It is not a card, and it does 
 - `>=1280px`: 280px left sidebar, flexible main column, 400px right workspace.
 - `1024–1279px`: right workspace is a fixed overlay drawer; the main thread remains underneath.
 - `<1024px`: left navigation is a drawer; the workspace is a full-height drawer. Mobile targets are at least 44px.
-- The AppHeader is dissolved on `/` and `/chat/*`; quota, theme, profile, and admin access move to the left sidebar or thread header. Sources and admin keep the header shell.
+- The AppHeader is dissolved on `/` and `/chat/*`; quota, theme, profile, and admin access move to the left sidebar or thread header. Library and admin keep the header shell.
 - Both panel states persist in guarded localStorage writes.
 
 ### Main thread
@@ -115,8 +115,8 @@ The answer surface is direct prose on the canvas. It is not a card, and it does 
 ### Left sidebar
 
 - Top row: Veriforge mark, search, collapse/expand.
-- Primary rows: New chat, Sources, and Admin for admins.
-- Sources and Chats are collapsible sections. Chat titles truncate to one line; pinned chats form a small pinned group.
+- Primary rows: New chat, Library (with a document count), and Admin for admins.
+- Chats is a collapsible section. Chat titles truncate to one line; pinned chats form a small pinned group. The active chat expands in place to list its own sources with an ingest status each, an `Include Library` switch, and `+ Add sources`; the collapsed rail shows a Library icon only.
 - A row's existing rename, pin, and delete actions remain keyboard reachable. The overflow menu repeats those actions rather than replacing them.
 - Bottom: compact quota pill, profile menu, user email/role, and theme toggle.
 
@@ -132,11 +132,11 @@ Tabs remain `Trace`, `Sources (n)`, and `Metrics` so existing selectors remain s
 
 ### Composer
 
-The composer is sticky at the bottom, max-width 720px, with a 24px radius. The placeholder is `Ask anything` for an empty thread and `Ask a follow-up` after a turn. The Plus/Run settings control opens the same settings surface. Mode, Model, Run source, and Collection controls remain native labelled selects/checkboxes. Submit is a round ArrowUp button; streaming changes it to a labelled Stop button. The textarea grows in place and never shifts the answer layout.
+The composer is sticky at the bottom, max-width 720px, with a 24px radius. The placeholder is `Ask anything` for an empty thread and `Ask a follow-up` after a turn. The Plus/Run settings control opens the same settings surface. Mode, Model and Run source remain native labelled selects. A `📎 N sources` button opens the file picker and the composer itself is a drop target; both upload into the current chat. Submit is a round ArrowUp button; streaming changes it to a labelled Stop button. The textarea grows in place and never shifts the answer layout.
 
-### Sources
+### Library
 
-Sources uses a collection sidebar, collection summary cards, a `+ New source` card, upload dropzone, document list, starter questions, and a document detail drawer. Keep all current status, page-quality, tag, re-index, delete, and upload outcome states.
+The Library is one flat document list in two groups, `Mine` and `Shared`, under an upload dropzone, with starter questions above. Shared rows carry a read-only badge with no edit, re-index or delete for non-admins; admins get a Mine/Shared upload target toggle. Clicking a row opens the existing document detail drawer. Keep all current status, page-quality, tag and upload outcome states.
 
 ### Auth
 

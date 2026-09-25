@@ -17,7 +17,7 @@ async def visible_collections(
     rows = await session.execute(
         select(Collection, func.count(Document.id))
         .outerjoin(Document, Document.collection_id == Collection.id)
-        .where(_visible_to(user))
+        .where(Collection.kind == "library", _visible_to(user))
         .group_by(Collection.id)
         .order_by(Collection.created_at.desc())
     )
@@ -44,11 +44,22 @@ async def get_owned_collection(
     ).scalar_one_or_none()
 
 
-async def list_collection_documents(
-    session: AsyncSession, user: User, collection_id: UUID
-) -> Sequence[Document] | None:
-    if await get_visible_collection(session, user, collection_id) is None:
-        return None
+async def list_library_documents(
+    session: AsyncSession, user: User
+) -> Sequence[tuple[Document, Collection]]:
+    """The Library: the user's own containers plus Shared, newest first."""
+    rows = await session.execute(
+        select(Document, Collection)
+        .join(Collection, Document.collection_id == Collection.id)
+        .where(Collection.kind == "library", _visible_to(user))
+        .order_by(Document.created_at.desc())
+    )
+    return [(document, collection) for document, collection in rows.all()]
+
+
+async def list_container_documents(
+    session: AsyncSession, collection_id: UUID
+) -> Sequence[Document]:
     return (
         await session.execute(
             select(Document)

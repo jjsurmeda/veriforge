@@ -76,7 +76,7 @@ async def _seed_chat_with_chunks(
         db, document=document, section=section, ord=0,
         text_="zebra quoll aardvark facts", embedding=vec(1, bump=1), page=4,
     )
-    chat = Chat(user_id=user.id, title="t", collection_ids=[str(collection.id)])
+    chat = Chat(user_id=user.id, title="t")
     db.add(chat)
     await db.flush()
     user_message = Message(

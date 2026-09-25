@@ -2,48 +2,85 @@ import { existsSync } from 'node:fs'
 
 import { expect, test } from '@playwright/test'
 
-import { makeTestUser, docentFixtures } from '../support/seed'
+import { addChatSource, createChat, deleteCurrentChat, openNavigation, setComposerSource, signUp, sidebar, uploadLibraryDocument, waitForRunToFinish } from '../support/auth'
+import { docentFixtures, makeTestUser } from '../support/seed'
 
-const files = [docentFixtures.pdf, docentFixtures.jekyll, docentFixtures.faust]
+const chatFixture = docentFixtures.jekyll
+const libraryFixture = docentFixtures.faust
 
-test('uploads, edits, re-indexes, and deletes Docent sources', async ({ page }) => {
-  expect(
-    files.every((file) => existsSync(file)),
-    `Docent fixtures are required: ${files.join(', ')}`,
-  ).toBe(true)
+test.describe('chat sources and the Library', () => {
+  test.beforeAll(() => {
+    expect(
+      existsSync(chatFixture) && existsSync(libraryFixture),
+      `Docent fixtures are required: ${chatFixture}, ${libraryFixture}`,
+    ).toBe(true)
+  })
 
-  const user = makeTestUser()
-  const collectionName = `Docent demo corpus ${Date.now()}`
-  await page.goto('/signup')
-  await page.getByLabel('Email').fill(user.email)
-  await page.getByLabel('Password').fill(user.password)
-  await page.getByRole('button', { name: 'Sign up' }).click()
-  await page.waitForURL((url) => url.pathname === '/' || url.pathname.startsWith('/chat/'))
+  test('a chat file reaches ready, is cited, and dies with its chat', async ({ page }) => {
+    const user = makeTestUser()
+    await signUp(page, user)
+    const chatId = await createChat(page)
 
-  await page.goto('/sources')
-  await page.getByLabel('New collection name').fill(collectionName)
-  await page.getByRole('button', { name: 'Create' }).click()
-  await expect(page.getByRole('heading', { name: collectionName })).toBeVisible()
+    await addChatSource(page, chatFixture)
+    const source = sidebar(page).getByRole('button', { name: /cas-etrange/ })
+    await expect(source).toBeVisible()
+    await expect(
+      sidebar(page).locator('li', { hasText: 'cas-etrange' }).getByText('ready'),
+    ).toBeVisible({ timeout: 120_000 })
 
-  await page.locator('input[type="file"]').setInputFiles(files)
-  const documentRows = page.locator('main ul').locator('li')
-  await expect(documentRows).toHaveCount(3, { timeout: 120_000 })
-  await expect(documentRows.filter({ hasText: 'ready' })).toHaveCount(3, { timeout: 120_000 })
-  await expect(page.getByText('1 page: scanned?')).toBeVisible()
+    await setComposerSource(page, 'upload')
+    await page.getByRole('textbox', { name: 'Question' }).fill('Who is the doctor in this file?')
+    await page.getByRole('button', { name: 'Send' }).click()
+    await waitForRunToFinish(page)
+    await expect(page.getByRole('main').getByText(/\[1\] cas-etrange/)).toBeVisible()
 
-  await page.getByRole('button', { name: 'AI_Engineering_Crash_Course.pdf' }).click()
-  const tag = page.getByLabel('Add tag')
-  await tag.fill('docent-demo')
-  await tag.press('Enter')
-  await page.getByRole('button', { name: 'Save tags' }).click()
-  await expect(page.getByText('docent-demo')).toBeVisible()
+    const otherChatId = await createChat(page)
+    expect(otherChatId).not.toBe(chatId)
+    await openNavigation(page)
+    await expect(sidebar(page).getByRole('button', { name: /cas-etrange/ })).toHaveCount(0)
 
-  await page.getByRole('button', { name: 'Re-index' }).first().click()
-  await expect(documentRows.filter({ hasText: 'ready' })).toHaveCount(3, { timeout: 120_000 })
+    await page.goto(`/chat/${chatId}`)
+    await deleteCurrentChat(page)
+    await page.goto(`/chat/${chatId}`)
+    await expect(page.getByText('Chat not found.')).toBeVisible()
+  })
 
-  const firstDelete = page.getByRole('button', { name: 'Delete' }).first()
-  await firstDelete.locator('..').hover()
-  page.once('dialog', (dialog) => void dialog.accept())
-  await firstDelete.click()
-  await expect(page.getByText('2 documents')).toBeVisible({ timeout: 30_000 })
+  test('a Library file is visible in every chat until Include Library is off', async ({ page }) => {
+    const user = makeTestUser()
+    await signUp(page, user)
+
+    await uploadLibraryDocument(page, libraryFixture)
+    await expect(
+      page.getByRole('listitem').filter({ hasText: 'faust-erster-teil' }).getByText('ready'),
+    ).toBeVisible({ timeout: 120_000 })
+
+    await page.goto('/')
+    await createChat(page)
+    await openNavigation(page)
+    await expect(sidebar(page).getByText('Include Library')).toBeVisible()
+
+    await setComposerSource(page, 'upload')
+    await page.getByRole('textbox', { name: 'Question' }).fill('Who is the author of Faust: Der Tragodie erster Teil?')
+    await page.getByRole('button', { name: 'Send' }).click()
+    await waitForRunToFinish(page)
+    await expect(page.getByRole('main').getByText(/\[1\] faust-erster-teil/)).toBeVisible()
+
+    const secondChat = await createChat(page)
+    await setComposerSource(page, 'upload')
+    await page.getByRole('textbox', { name: 'Question' }).fill('Who is the author of Faust: Der Tragodie erster Teil?')
+    await page.getByRole('button', { name: 'Send' }).click()
+    await waitForRunToFinish(page)
+    await expect(page.getByRole('main').getByText(/\[1\] faust-erster-teil/)).toBeVisible()
+    expect(secondChat).toBeTruthy()
+
+    await openNavigation(page)
+    await sidebar(page).getByRole('checkbox', { name: 'Include Library' }).click()
+    await expect(sidebar(page).getByRole('checkbox', { name: 'Include Library' })).not.toBeChecked()
+    await page.getByRole('button', { name: 'Close navigation' }).click()
+    await setComposerSource(page, 'upload')
+    await page.getByRole('textbox', { name: 'Question' }).fill('Who is the author of Faust: Der Tragodie erster Teil?')
+    await page.getByRole('button', { name: 'Send' }).click()
+    await waitForRunToFinish(page)
+    await expect(page.getByRole('main').getByText(/faust-erster-teil/)).toHaveCount(0)
+  })
 })

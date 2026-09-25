@@ -101,7 +101,7 @@ def fake_search(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 async def test_ensure_web_chunks_creates_chat_scoped_temp_rows(
     db: AsyncSession, user_a: User, embed_calls: list[list[str]], fake_search: list[str]
 ) -> None:
-    chat = await make_chat(db, user_a, [])
+    chat = await make_chat(db, user_a)
     pages = await ensure_web_chunks(db, query="gadget warranty", chat_id=chat.id)
     assert pages == 1
     chunks = (await db.execute(select(Chunk).where(Chunk.chat_id == chat.id))).scalars().all()
@@ -119,7 +119,7 @@ async def test_ensure_web_chunks_creates_chat_scoped_temp_rows(
 async def test_pin_copies_web_rows_into_owned_collection(
     db: AsyncSession, user_a: User, user_b: User, fake_search: list[str]
 ) -> None:
-    chat = await make_chat(db, user_a, [])
+    chat = await make_chat(db, user_a)
     await ensure_web_chunks(db, query="gadget warranty", chat_id=chat.id)
     page = (await db.execute(select(WebPage))).scalar_one()
 

@@ -6,14 +6,14 @@ interface LoginResponse {
   access_token: string
 }
 
-interface Collection {
-  id: string
-  name: string
-  document_count: number
+interface LibraryResponse {
+  documents: Array<{ name: string; shared: boolean }>
+  starter_questions: string[]
 }
 
 interface ChatResponse {
   id: string
+  include_library: boolean
 }
 
 interface RunResponse {
@@ -30,18 +30,16 @@ export async function accessToken(request: APIRequestContext, user: TestUser): P
   return body.access_token
 }
 
-export async function evalCollectionId(
+export async function sharedCorpusVisible(
   request: APIRequestContext,
   token: string,
-): Promise<string> {
-  const response = await request.get('/collections', {
+): Promise<boolean> {
+  const response = await request.get('/library', {
     headers: { Authorization: `Bearer ${token}` },
   })
   expect(response.ok()).toBeTruthy()
-  const collections = (await response.json()) as Collection[]
-  const collection = collections.find((item) => item.name === 'eval-seed-corpus')
-  expect(collection, 'eval-seed-corpus must be present').toBeTruthy()
-  return (collection as Collection).id
+  const library = (await response.json()) as LibraryResponse
+  return library.documents.some((document) => document.shared)
 }
 
 export async function startSeededRun(
@@ -51,21 +49,16 @@ export async function startSeededRun(
   mode: 'auto' | 'fast' | 'deep' = 'fast',
 ): Promise<{ chatId: string; runId: string }> {
   const token = await accessToken(request, user)
-  const collectionId = await evalCollectionId(request, token)
   const chatResponse = await request.post('/chats', {
     headers: { Authorization: `Bearer ${token}` },
-    data: { title: `E2E ${new Date().toISOString()}`, collection_ids: [collectionId] },
+    data: { title: `E2E ${new Date().toISOString()}` },
   })
   expect(chatResponse.ok()).toBeTruthy()
   const chat = (await chatResponse.json()) as ChatResponse
+  expect(chat.include_library).toBe(true)
   const runResponse = await request.post(`/chats/${chat.id}/runs`, {
     headers: { Authorization: `Bearer ${token}` },
-    data: {
-      message: question,
-      mode,
-      source: 'upload',
-      collection_ids: [collectionId],
-    },
+    data: { message: question, mode, source: 'upload' },
   })
   expect(runResponse.ok()).toBeTruthy()
   const run = (await runResponse.json()) as RunResponse

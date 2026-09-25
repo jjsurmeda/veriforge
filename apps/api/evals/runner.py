@@ -28,6 +28,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from chats.scope import resolve_scope
 from db.ids import uuid7
 from db.models import Chat, EvalDataset, EvalItem, EvalResult, EvalRun, Message, User
 from db.session import get_session_factory
@@ -55,7 +56,6 @@ async def _run_item(
     factory: async_sessionmaker[AsyncSession],
     *,
     user: User,
-    collection_id: UUID,
     eval_run_id: UUID,
     item: EvalItem,
     mode: str = "auto",
@@ -64,11 +64,12 @@ async def _run_item(
         chat = Chat(
             user_id=user.id,
             title=f"eval:{item.question[:40]}",
-            collection_ids=[str(collection_id)],
+            include_library=True,
         )
         session.add(chat)
         await session.flush()
         chat_id = chat.id
+        scope = await resolve_scope(session, user, chat)
         user_message = Message(
             chat_id=chat_id, role="user", content=item.question, status="complete"
         )
@@ -93,7 +94,7 @@ async def _run_item(
                 context_window=CONTEXT_WINDOW,
                 source="auto",
                 client_filters=ClientFilters(),
-                collection_ids=[collection_id],
+                collection_ids=scope,
             ),
             engine,
         )
@@ -131,7 +132,7 @@ async def _run_item(
                 context_window=CONTEXT_WINDOW,
                 source="auto",
                 client_filters=ClientFilters(),
-                collection_ids=[collection_id],
+                collection_ids=scope,
             ),
             engine,
         )
@@ -200,7 +201,8 @@ async def run_eval(
 ) -> tuple[EvalRun, list[tuple[EvalItem, EvalResult]]]:
     if not STATE_FILE.exists():
         raise SystemExit("run `uv run python -m evals.loader` first")
-    collection_id = UUID(json.loads(STATE_FILE.read_text())["corpus_collection_id"])
+    if not json.loads(STATE_FILE.read_text()).get("corpus_collection_id"):
+        raise SystemExit("seed corpus missing: run `uv run python -m evals.loader` first")
     payload = json.loads((SEED_DIR / "items.json").read_text(encoding="utf-8"))
     fast20 = set(payload.get("fast20_ids", []))
     seed_ids = _seed_ids(payload)
@@ -239,7 +241,6 @@ async def run_eval(
             result = await _run_item(
                 factory,
                 user=user,
-                collection_id=collection_id,
                 eval_run_id=eval_run_id,
                 item=item,
                 mode=mode,

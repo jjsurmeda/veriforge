@@ -1,120 +1,71 @@
+"""Critical tier (testing.md): cross-user visibility across the chat-sources
+and Library endpoints (ADR-002, TRD §11).
+
+Collections are no longer addressable, so the leak surfaces are the chat
+document routes, the Library list, and the document routes that are
+unchanged.
+"""
+
 from collections.abc import Awaitable, Callable
 from uuid import UUID
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.models import Collection, Document, User
+from db.models import Chat, Collection, Document, User
+from ingest.repository import get_owned_collection, get_visible_collection
 
-
-async def _user_by_email(db: AsyncSession, email: str) -> User:
-    user = (await db.execute(select(User).where(User.email == email))).scalar_one()
-    return user
+Container = Callable[..., Awaitable[Collection]]
 
 
 async def test_repository_visibility_branches(
     db: AsyncSession,
-    client: AsyncClient,
-    user_a_headers: dict[str, str],
-    user_b_headers: dict[str, str],
-    make_collection: Callable[[AsyncClient, dict[str, str], str], Awaitable[str]],
+    user_a: User,
+    user_b: User,
+    direct_collection: Container,
 ) -> None:
-    from ingest.repository import get_owned_collection, get_visible_collection
+    own = await direct_collection(db, user_a, "own")
+    shared = await direct_collection(db, user_b, "shared", visibility="shared")
+    private = await direct_collection(db, user_b, "private")
 
-    user_a = await _user_by_email(db, "source-a@test.dev")
-    own_id = UUID(await make_collection(client, user_a_headers, "own"))
-    shared_id = UUID(await make_collection(client, user_b_headers, "shared"))
-    private_id = UUID(await make_collection(client, user_b_headers, "private"))
-    shared = await db.get(Collection, shared_id)
-    assert shared is not None
-    shared.visibility = "shared"
-    await db.commit()
-
-    assert (await get_visible_collection(db, user_a, own_id)) is not None
-    assert (await get_visible_collection(db, user_a, shared_id)) is not None
-    assert await get_visible_collection(db, user_a, private_id) is None
-    assert await get_owned_collection(db, user_a, shared_id) is None
+    assert (await get_visible_collection(db, user_a, own.id)) is not None
+    assert (await get_visible_collection(db, user_a, shared.id)) is not None
+    assert await get_visible_collection(db, user_a, private.id) is None
+    assert await get_owned_collection(db, user_a, shared.id) is None
 
 
-async def test_collection_visibility_and_mutation_rules(
+async def test_library_lists_own_and_shared_only(
     db: AsyncSession,
     client: AsyncClient,
+    user_a: User,
     user_a_headers: dict[str, str],
-    user_b_headers: dict[str, str],
-    admin_headers: dict[str, str],
-    make_collection: Callable[[AsyncClient, dict[str, str], str], Awaitable[str]],
+    user_b: User,
+    direct_collection: Container,
     make_document: Callable[[AsyncSession, str, str], Awaitable[Document]],
     make_chunk: Callable[[AsyncSession, Document, int, int], Awaitable[object]],
 ) -> None:
-    own_id = await make_collection(client, user_a_headers, "A private")
-    other_private_id = await make_collection(client, user_b_headers, "B private")
-    other_shared_id = await make_collection(client, user_b_headers, "B shared")
-    other_shared = await db.get(Collection, UUID(other_shared_id))
-    assert other_shared is not None
-    other_shared.visibility = "shared"
-    await db.commit()
-    other_shared_doc = await make_document(db, other_shared_id, "shared.txt")
-    await make_chunk(db, other_shared_doc, 1, 1)
+    own = await direct_collection(db, user_a, "A private")
+    other_shared = await direct_collection(db, user_b, "B shared", visibility="shared")
+    other_private = await direct_collection(db, user_b, "B private")
+    await make_document(db, str(other_shared.id), "shared.txt")
+    await make_document(db, str(other_private.id), "leak.txt")
+    await make_document(db, str(own.id), "mine.txt")
 
-    listing = await client.get("/collections", headers=user_a_headers)
+    listing = await client.get("/library", headers=user_a_headers)
     assert listing.status_code == 200, listing.text
-    listed_ids = {row["id"] for row in listing.json()}
-    assert own_id in listed_ids
-    assert other_shared_id in listed_ids
-    assert other_private_id not in listed_ids
-
-    private_get = await client.get(f"/collections/{other_private_id}", headers=user_a_headers)
-    assert private_get.status_code == 404, private_get.text
-    private_patch = await client.patch(
-        f"/collections/{other_private_id}", json={"name": "leak"}, headers=user_a_headers
-    )
-    assert private_patch.status_code == 404, private_patch.text
-    private_delete = await client.delete(
-        f"/collections/{other_private_id}", headers=user_a_headers
-    )
-    assert private_delete.status_code == 404, private_delete.text
-
-    docs = await client.get(f"/collections/{other_shared_id}/documents", headers=user_a_headers)
-    assert docs.status_code == 200, docs.text
-    assert [row["id"] for row in docs.json()] == [str(other_shared_doc.id)]
-
-    chunks = await client.get(f"/documents/{other_shared_doc.id}/chunks", headers=user_a_headers)
-    assert chunks.status_code == 200, chunks.text
-    assert chunks.json()[0]["heading_path"] == "Section 1"
-
-    upload = await client.post(
-        f"/collections/{other_shared_id}/documents",
-        files={"file": ("a.txt", b"hello", "text/plain")},
-        headers=user_a_headers,
-    )
-    assert upload.status_code == 404, upload.text
-    patch_shared = await client.patch(
-        f"/collections/{other_shared_id}", json={"name": "x"}, headers=user_a_headers
-    )
-    assert patch_shared.status_code == 404, patch_shared.text
-    delete_shared = await client.delete(f"/collections/{other_shared_id}", headers=user_a_headers)
-    assert delete_shared.status_code == 404, delete_shared.text
-
-    forbidden = await client.patch(
-        f"/collections/{own_id}", json={"visibility": "shared"}, headers=user_a_headers
-    )
-    assert forbidden.status_code == 403, forbidden.text
-    admin_collection = await make_collection(client, admin_headers, "admin owned")
-    published = await client.patch(
-        f"/collections/{admin_collection}", json={"visibility": "shared"}, headers=admin_headers
-    )
-    assert published.status_code == 200, published.text
-    assert published.json()["visibility"] == "shared"
+    names = {row["name"] for row in listing.json()["documents"]}
+    assert names == {"shared.txt", "mine.txt"}
 
 
-async def test_document_private_other_user_is_not_visible_or_mutable(
-    db: AsyncSession,
+async def test_chat_documents_are_owner_only(
     client: AsyncClient,
+    db: AsyncSession,
+    user_a: User,
     user_a_headers: dict[str, str],
-    user_b_headers: dict[str, str],
-    make_collection: Callable[[AsyncClient, dict[str, str], str], Awaitable[str]],
+    user_b: User,
+    make_chat: Callable[..., Awaitable[Chat]],
+    direct_collection: Container,
     make_document: Callable[[AsyncSession, str, str], Awaitable[Document]],
     make_chunk: Callable[[AsyncSession, Document, int, int], Awaitable[object]],
     monkeypatch: pytest.MonkeyPatch,
@@ -122,56 +73,112 @@ async def test_document_private_other_user_is_not_visible_or_mutable(
     async def noop_defer(document_id: UUID) -> None:
         return None
 
-    monkeypatch.setattr("ingest.router.defer_ingest_document", noop_defer)
-    other_collection_id = await make_collection(client, user_b_headers, "B private")
-    other_doc = await make_document(db, other_collection_id, "b.txt")
-    await make_chunk(db, other_doc, 1, 1)
+    monkeypatch.setattr("ingest.upload.defer_ingest_document", noop_defer)
+    chat_b = await make_chat(db, user_b)
+    container = await direct_collection(db, user_b, "B chat", kind="chat", chat_id=chat_b.id)
+    document = await make_document(db, str(container.id), "b.txt")
+    await make_chunk(db, document, 1, 1)
 
+    chat = await client.get(f"/chats/{chat_b.id}", headers=user_a_headers)
+    assert chat.status_code == 404, chat.text
+    listing = await client.get(f"/chats/{chat_b.id}/documents", headers=user_a_headers)
+    assert listing.status_code == 404, listing.text
+    upload = await client.post(
+        f"/chats/{chat_b.id}/documents",
+        files={"file": ("a.txt", b"hello", "text/plain")},
+        headers=user_a_headers,
+    )
+    assert upload.status_code == 404, upload.text
+    own_doc = await make_document(db, str(container.id), "b2.txt")
     checks = [
-        await client.get(f"/documents/{other_doc.id}", headers=user_a_headers),
+        await client.get(f"/documents/{own_doc.id}", headers=user_a_headers),
         await client.patch(
-            f"/documents/{other_doc.id}", json={"tags": ["x"]}, headers=user_a_headers
+            f"/documents/{own_doc.id}", json={"tags": ["x"]}, headers=user_a_headers
         ),
-        await client.delete(f"/documents/{other_doc.id}", headers=user_a_headers),
-        await client.post(f"/documents/{other_doc.id}/reindex", headers=user_a_headers),
-        await client.get(f"/documents/{other_doc.id}/chunks", headers=user_a_headers),
+        await client.delete(f"/documents/{own_doc.id}", headers=user_a_headers),
+        await client.post(f"/documents/{own_doc.id}/reindex", headers=user_a_headers),
+        await client.get(f"/documents/{own_doc.id}/chunks", headers=user_a_headers),
     ]
     assert [response.status_code for response in checks] == [404, 404, 404, 404, 404]
-    assert await db.get(Document, other_doc.id) is not None
+    assert await db.get(Document, own_doc.id) is not None
+
+
+async def test_shared_documents_are_readable_but_not_editable(
+    client: AsyncClient,
+    db: AsyncSession,
+    user_a_headers: dict[str, str],
+    user_b: User,
+    direct_collection: Container,
+    make_document: Callable[[AsyncSession, str, str], Awaitable[Document]],
+    make_chunk: Callable[[AsyncSession, Document, int, int], Awaitable[object]],
+) -> None:
+    shared = await direct_collection(db, user_b, "B shared", visibility="shared")
+    document = await make_document(db, str(shared.id), "shared.txt")
+    await make_chunk(db, document, 1, 1)
+
+    document_id = document.id
+    read = await client.get(f"/documents/{document_id}", headers=user_a_headers)
+    assert read.status_code == 200, read.text
+    chunks = await client.get(f"/documents/{document_id}/chunks", headers=user_a_headers)
+    assert chunks.status_code == 200, chunks.text
+    assert chunks.json()[0]["heading_path"] == "Section 1"
+    patch = await client.patch(
+        f"/documents/{document_id}", json={"tags": ["x"]}, headers=user_a_headers
+    )
+    assert patch.status_code == 404, patch.text
+    delete = await client.delete(f"/documents/{document_id}", headers=user_a_headers)
+    assert delete.status_code == 404, delete.text
+    reindex = await client.post(f"/documents/{document_id}/reindex", headers=user_a_headers)
+    assert reindex.status_code == 404, reindex.text
+
+
+async def test_chat_containers_never_leak_into_the_library(
+    client: AsyncClient,
+    db: AsyncSession,
+    user_a: User,
+    user_a_headers: dict[str, str],
+    make_chat: Callable[..., Awaitable[Chat]],
+    direct_collection: Container,
+    make_document: Callable[[AsyncSession, str, str], Awaitable[Document]],
+) -> None:
+    chat = await make_chat(db, user_a)
+    container = await direct_collection(db, user_a, "chat", kind="chat", chat_id=chat.id)
+    await make_document(db, str(container.id), "chat-only.txt")
+
+    listing = await client.get("/library", headers=user_a_headers)
+    assert [row["name"] for row in listing.json()["documents"]] == []
 
 
 async def test_unauthenticated_sources_requests_are_401(client: AsyncClient) -> None:
-    collection_id = "018f0000-0000-7000-8000-000000000001"
+    chat_id = "018f0000-0000-7000-8000-000000000001"
     document_id = "018f0000-0000-7000-8000-000000000002"
     responses = [
-        await client.get("/collections"),
-        await client.post("/collections", json={"name": "x"}),
-        await client.get(f"/collections/{collection_id}/documents"),
+        await client.get("/library"),
+        await client.post("/library/documents"),
+        await client.get(f"/chats/{chat_id}/documents"),
+        await client.post(f"/chats/{chat_id}/documents"),
         await client.get(f"/documents/{document_id}"),
         await client.get(f"/documents/{document_id}/chunks"),
     ]
-    assert [response.status_code for response in responses] == [401, 401, 401, 401, 401]
+    assert [response.status_code for response in responses] == [401] * 6
 
 
-async def test_shared_collection_private_transition_is_owner_only(
-    db: AsyncSession,
-    client: AsyncClient,
-    user_a_headers: dict[str, str],
-    user_b_headers: dict[str, str],
-    make_collection: Callable[[AsyncClient, dict[str, str], str], Awaitable[str]],
+async def test_removed_collection_routes_are_gone(
+    client: AsyncClient, user_a_headers: dict[str, str]
 ) -> None:
-    shared_id = await make_collection(client, user_b_headers, "B shared")
-    await db.execute(
-        text("UPDATE collections SET visibility = 'shared' WHERE id = :id"), {"id": shared_id}
-    )
-    await db.commit()
-
-    not_owner = await client.patch(
-        f"/collections/{shared_id}", json={"visibility": "private"}, headers=user_a_headers
-    )
-    assert not_owner.status_code == 404, not_owner.text
-    owner = await client.patch(
-        f"/collections/{shared_id}", json={"visibility": "private"}, headers=user_b_headers
-    )
-    assert owner.status_code == 200, owner.text
-    assert owner.json()["visibility"] == "private"
+    headers = user_a_headers
+    collection_id = "018f0000-0000-7000-8000-000000000003"
+    responses = [
+        await client.get("/collections", headers=headers),
+        await client.post("/collections", json={"name": "x"}, headers=headers),
+        await client.get(f"/collections/{collection_id}", headers=headers),
+        await client.patch(f"/collections/{collection_id}", json={"name": "x"}, headers=headers),
+        await client.delete(f"/collections/{collection_id}", headers=headers),
+        await client.get(f"/collections/{collection_id}/documents", headers=headers),
+        await client.post(
+            f"/collections/{collection_id}/documents",
+            files={"file": ("a.txt", b"a", "text/plain")},
+            headers=headers,
+        ),
+    ]
+    assert [response.status_code for response in responses] == [404] * 7

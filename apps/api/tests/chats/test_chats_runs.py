@@ -11,7 +11,6 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from chats.router import _effective_collection_ids
 from db.models import Chat, Message
 from db.session import get_session_factory
 from graph.runner import _finalize
@@ -20,15 +19,6 @@ from tests.conftest import make_run_row
 
 TOKENS = ["Hello", " ", "world", "!", "!", "!"]
 FULL = "".join(TOKENS)
-
-
-def test_run_collection_filter_cannot_widen_chat_scope() -> None:
-    first = UUID("00000000-0000-0000-0000-000000000001")
-    second = UUID("00000000-0000-0000-0000-000000000002")
-
-    assert _effective_collection_ids([str(first), str(second)], [second]) == [second]
-    assert _effective_collection_ids([str(first)], [second]) == []
-    assert _effective_collection_ids([], [second]) == []
 
 
 async def _auth(client: AsyncClient, email: str = "owner@test.dev") -> dict[str, str]:
@@ -125,33 +115,27 @@ async def _parse_sse(
 
 async def test_chat_crud_and_model_persistence(client: AsyncClient) -> None:
     headers = await _auth(client)
-    collection = await client.post(
-        "/collections", json={"name": "Scoped corpus"}, headers=headers
-    )
-    assert collection.status_code == 201, collection.text
-    collection_id = collection.json()["id"]
 
-    created = await client.post(
-        "/chats", json={"title": "First", "collection_ids": [collection_id]}, headers=headers
-    )
+    created = await client.post("/chats", json={"title": "First"}, headers=headers)
     chat_id = created.json()["id"]
     assert created.json()["title"] == "First"
-    assert created.json()["collection_ids"] == [collection_id]
+    assert created.json()["include_library"] is True
     # generator role default
     assert created.json()["model_id"] == "openai/gpt-4o-mini"
 
     patched = await client.patch(
         f"/chats/{chat_id}",
-        json={"model_id": "anthropic/claude-haiku-4.5", "collection_ids": []},
+        json={"model_id": "anthropic/claude-haiku-4.5", "include_library": False},
         headers=headers,
     )
     assert patched.json()["model_id"] == "anthropic/claude-haiku-4.5"
-    assert patched.json()["collection_ids"] == []
+    assert patched.json()["include_library"] is False
 
     listed = await client.get("/chats", headers=headers)
     assert [c["id"] for c in listed.json()] == [chat_id]
     assert listed.json()[0]["model_id"] == "anthropic/claude-haiku-4.5"
-    assert listed.json()[0]["collection_ids"] == []
+    assert listed.json()[0]["include_library"] is False
+    assert listed.json()[0]["starter_questions"] == []
 
     deleted = await client.delete(f"/chats/{chat_id}", headers=headers)
     assert deleted.status_code == 204

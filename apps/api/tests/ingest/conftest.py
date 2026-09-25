@@ -1,13 +1,13 @@
 from collections.abc import Awaitable, Callable
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.passwords import hash_password
-from db.models import Chunk, Collection, Document, Section, User
+from db.models import Chat, Chunk, Collection, Document, Section, User
 from tests.conftest import signup
 
 
@@ -45,16 +45,6 @@ async def admin_headers(client: AsyncClient, db: AsyncSession) -> dict[str, str]
     )
     assert response.status_code == 200, response.text
     return {"Authorization": f"Bearer {response.json()['access_token']}"}
-
-
-@pytest.fixture
-def make_collection() -> Callable[[AsyncClient, dict[str, str], str], Awaitable[str]]:
-    async def create(client: AsyncClient, headers: dict[str, str], name: str) -> str:
-        response = await client.post("/collections", json={"name": name}, headers=headers)
-        assert response.status_code == 201, response.text
-        return str(response.json()["id"])
-
-    return create
 
 
 @pytest.fixture
@@ -109,14 +99,58 @@ def make_chunk() -> Callable[[AsyncSession, Document, int, int], Awaitable[Chunk
 
 
 @pytest.fixture
-def direct_collection() -> Callable[[AsyncSession, User, str, str], Awaitable[Collection]]:
+def direct_collection() -> Callable[..., Awaitable[Collection]]:
     async def create(
-        db: AsyncSession, owner: User, name: str, visibility: str = "private"
+        db: AsyncSession,
+        owner: User,
+        name: str,
+        visibility: str = "private",
+        *,
+        kind: str = "library",
+        chat_id: UUID | None = None,
     ) -> Collection:
-        collection = Collection(owner_id=owner.id, name=name, visibility=visibility)
+        collection = Collection(
+            owner_id=owner.id,
+            name=name,
+            visibility=visibility,
+            kind=kind,
+            chat_id=chat_id,
+        )
         db.add(collection)
         await db.commit()
         await db.refresh(collection)
         return collection
 
     return create
+
+
+@pytest.fixture
+def make_chat() -> Callable[..., Awaitable[Chat]]:
+    async def create(
+        db: AsyncSession, owner: User, *, include_library: bool = True
+    ) -> Chat:
+        chat = Chat(user_id=owner.id, title="t", include_library=include_library)
+        db.add(chat)
+        await db.commit()
+        await db.refresh(chat)
+        return chat
+
+    return create
+
+
+@pytest.fixture
+async def user_a(
+    db: AsyncSession, user_a_headers: dict[str, str]
+) -> User:
+    return await _user(db, "source-a@test.dev")
+
+
+@pytest.fixture
+async def user_b(
+    db: AsyncSession, user_b_headers: dict[str, str]
+) -> User:
+    return await _user(db, "source-b@test.dev")
+
+
+async def _user(db: AsyncSession, email: str) -> User:
+    return (await db.execute(select(User).where(User.email == email))).scalar_one()

@@ -6,14 +6,13 @@ from pydantic import BaseModel, Field
 
 class ChatCreate(BaseModel):
     title: str | None = Field(default=None, max_length=200)
-    collection_ids: list[uuid.UUID] | None = None
 
 
 class ChatPatch(BaseModel):
     title: str | None = Field(default=None, max_length=200)
     pinned: bool | None = None
     model_id: str | None = Field(default=None, max_length=128)
-    collection_ids: list[uuid.UUID] | None = None
+    include_library: bool | None = None
 
 
 class ChatOut(BaseModel):
@@ -21,7 +20,8 @@ class ChatOut(BaseModel):
     title: str
     pinned: bool
     model_id: str | None
-    collection_ids: list[str]
+    include_library: bool
+    starter_questions: list[str]
     created_at: datetime
     active_run_id: str | None = None
 
@@ -70,7 +70,6 @@ class RunCreateRequest(BaseModel):
     model_id: str | None = Field(default=None, max_length=128)
     mode: str = Field(default="fast", pattern="^(fast|auto|deep)$")
     source: str = Field(default="auto", pattern="^(auto|upload|web|both)$")
-    collection_ids: list[uuid.UUID] | None = None
     filters: RunFilters | None = None
 
 
@@ -89,7 +88,8 @@ def chat_out(
     title: str,
     pinned: bool,
     model_id: str | None,
-    collection_ids: list[str] | None,
+    include_library: bool,
+    starter_questions: list[str],
     created_at: datetime,
     active_run_id: uuid.UUID | None,
 ) -> ChatOut:
@@ -98,7 +98,8 @@ def chat_out(
         title=title,
         pinned=pinned,
         model_id=model_id,
-        collection_ids=[str(collection_id) for collection_id in (collection_ids or [])],
+        include_library=include_library,
+        starter_questions=starter_questions,
         created_at=created_at,
         active_run_id=str(active_run_id) if active_run_id else None,
     )

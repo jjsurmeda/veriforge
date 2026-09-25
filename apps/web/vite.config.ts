@@ -1,9 +1,17 @@
 /// <reference types="vitest/config" />
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import { defineConfig } from 'vite'
+import { defineConfig, type ProxyOptions } from 'vite'
 
 const apiTarget = process.env.API_PROXY_TARGET ?? 'http://localhost:8000'
+
+// API paths that collide with an SPA route (/library) must not swallow a
+// top-level navigation: a document request is rewritten to the SPA entry
+// instead of being proxied.
+const bypassDocumentNavigation: ProxyOptions['bypass'] = (request) =>
+  typeof request === 'string' || (request.headers.accept ?? '').includes('text/html')
+    ? '/index.html'
+    : undefined
 
 const proxy = Object.fromEntries(
   [
@@ -13,11 +21,16 @@ const proxy = Object.fromEntries(
     '/models',
     '/model-roles',
     '/me',
+    '/messages',
     '/admin/',
     '/healthz',
-    '/collections',
+    '/library',
+    '/web-sources',
     '/documents',
-  ].map((p) => [p, { target: apiTarget, changeOrigin: true }]),
+  ].map((path) => [
+    path,
+    { target: apiTarget, changeOrigin: true, bypass: bypassDocumentNavigation },
+  ]),
 )
 
 export default defineConfig({

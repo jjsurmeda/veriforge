@@ -33,7 +33,7 @@ export function SourcePicker({ value, disabled, onChange }: Props) {
       </SelectTrigger>
       <SelectContent>
         <SelectViewport>
-          {SOURCES.map((source) => <SelectItem key={source.value} value={source.value}><span className="flex flex-col"><span>{source.label}</span><span className="text-xs text-fg-muted">{source.description}</span></span></SelectItem>)}
+          {SOURCES.map((source) => <SelectItem key={source.value} value={source.value} description={source.description}>{source.label}</SelectItem>)}
         </SelectViewport>
       </SelectContent>
     </SelectRoot>

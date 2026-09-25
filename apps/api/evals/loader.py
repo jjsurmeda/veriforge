@@ -96,7 +96,9 @@ async def load_corpus(session: AsyncSession) -> UUID:
         )
     ).scalar_one_or_none()
     if collection is None:
-        collection = Collection(owner_id=user.id, name=CORPUS_NAME, visibility="shared")
+        collection = Collection(
+            owner_id=user.id, name=CORPUS_NAME, visibility="shared", kind="library"
+        )
         session.add(collection)
         await session.flush()
     has_chunks = (

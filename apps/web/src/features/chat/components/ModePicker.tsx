@@ -32,7 +32,7 @@ export function ModePicker({ value, disabled, onChange }: Props) {
       </SelectTrigger>
       <SelectContent>
         <SelectViewport>
-          {MODES.map((mode) => <SelectItem key={mode.value} value={mode.value}><span className="flex flex-col"><span>{mode.label}</span><span className="text-xs text-fg-muted">{mode.description}</span></span></SelectItem>)}
+          {MODES.map((mode) => <SelectItem key={mode.value} value={mode.value} description={mode.description}>{mode.label}</SelectItem>)}
         </SelectViewport>
       </SelectContent>
     </SelectRoot>

@@ -125,8 +125,8 @@ async def test_retrieval_web_chunks_scoped_to_owning_chat(
     user_a: User,
     user_b: User,
 ) -> None:
-    chat_a = await make_chat(db, user_a, [])
-    chat_b = await make_chat(db, user_b, [])
+    chat_a = await make_chat(db, user_a)
+    chat_b = await make_chat(db, user_b)
     own_web = await add_chunk(
         db, document=None, section=None, ord=0, text_=QUERY_TEXT,
         embedding=vec(1, bump=1), source_type="web", chat_id=chat_a.id,

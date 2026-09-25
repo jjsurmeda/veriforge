@@ -1,10 +1,9 @@
 import { useRef, useState } from 'react'
-import { ArrowUp, CircleAlert, Plus, Square, X } from 'lucide-react'
+import { ArrowUp, CircleAlert, Paperclip, Plus, Square, X } from 'lucide-react'
 
 import { PopoverClose, PopoverContent, PopoverRoot, PopoverTrigger } from '../../../components/ui/primitives'
 
-import type { CollectionOut, QuotaOut } from '../../../generated/types.gen'
-import { CollectionPicker } from './CollectionPicker'
+import type { QuotaOut } from '../../../generated/types.gen'
 import { ModelPicker } from './ModelPicker'
 import { ModePicker, type RunMode } from './ModePicker'
 import { SourcePicker, type RunSource } from './SourcePicker'
@@ -13,12 +12,11 @@ interface Props {
   streaming: boolean
   modelId: string | null
   quota?: QuotaOut
-  collections: CollectionOut[]
-  collectionIds: string[]
+  sourceCount: number
   error?: string | null
   emptyThread?: boolean
+  onFiles: (files: File[]) => void
   onModelChange: (modelId: string) => void
-  onCollectionChange: (collectionIds: string[]) => void
   onSend: (message: string, options: { mode: RunMode; source: RunSource }) => void
   onStop: () => void
 }
@@ -27,21 +25,21 @@ export function ChatComposer({
   streaming,
   modelId,
   quota,
-  collections,
-  collectionIds,
+  sourceCount,
   error,
   emptyThread = false,
+  onFiles,
   onModelChange,
-  onCollectionChange,
   onSend,
   onStop,
 }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [mode, setMode] = useState<RunMode>('auto')
   const [source, setSource] = useState<RunSource>('auto')
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
   const blocked = quota?.blocked ?? false
-  const selectedCollections = collections.filter((collection) => collectionIds.includes(collection.id))
 
   const submit = () => {
     const value = textareaRef.current?.value.trim() ?? ''
@@ -53,9 +51,7 @@ export function ChatComposer({
     }
   }
 
-  const removeCollection = (collectionId: string) => {
-    onCollectionChange(collectionIds.filter((id) => id !== collectionId))
-  }
+  const openFilePicker = () => fileInputRef.current?.click()
 
   return (
     <div className="sticky bottom-0 z-20 bg-main px-3 pb-3 pt-6 sm:px-6 sm:pb-4 sm:pt-8">
@@ -67,7 +63,21 @@ export function ChatComposer({
             <span>{error}</span>
           </div>
         )}
-        <div className="rounded-3xl border border-border bg-surface p-2 shadow-none transition-[border-color,box-shadow] duration-150 focus-within:border-border-strong/60 focus-within:shadow-none">
+        <div
+          onDragOver={(event) => {
+            event.preventDefault()
+            setDragOver(true)
+          }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={(event) => {
+            event.preventDefault()
+            setDragOver(false)
+            if (event.dataTransfer.files.length > 0) {
+              onFiles(Array.from(event.dataTransfer.files))
+            }
+          }}
+          className={`rounded-3xl border bg-surface p-2 transition-[border-color] duration-150 focus-within:border-border-strong/60 ${dragOver ? 'border-fg-muted' : 'border-border'}`}
+        >
           <textarea
             ref={textareaRef}
             aria-label="Question"
@@ -87,24 +97,22 @@ export function ChatComposer({
             }}
             className="block max-h-40 min-h-14 w-full resize-none rounded-2xl border-0 bg-transparent px-3 py-2.5 text-base leading-6 text-fg outline-none placeholder:text-fg-muted/80 disabled:cursor-not-allowed disabled:opacity-60"
           />
-          {selectedCollections.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 px-2 pb-1">
-              {selectedCollections.map((collection) => (
-                <span key={collection.id} className="inline-flex max-w-full items-center gap-1 rounded-full border border-border bg-raised px-2 py-1 text-xs text-fg-muted">
-                  <span className="max-w-[12rem] truncate">{collection.name}</span>
-                  <button type="button" aria-label={`Remove ${collection.name} collection`} onClick={() => removeCollection(collection.id)} className="icon-button size-4 rounded-full text-fg-muted hover:text-danger">
-                    <X size={11} strokeWidth={1.75} aria-hidden="true" />
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
           <div className="flex items-center justify-between gap-2 px-1 pt-2">
             <div className="flex min-w-0 items-center gap-1 overflow-x-auto">
               <PopoverRoot open={settingsOpen} onOpenChange={setSettingsOpen}>
                 <PopoverTrigger asChild><button type="button" aria-label="Run settings" aria-expanded={settingsOpen} disabled={streaming || blocked} className="icon-button size-8 shrink-0 disabled:cursor-not-allowed disabled:opacity-50"><Plus size={17} strokeWidth={1.75} aria-hidden="true" /></button></PopoverTrigger>
-                <PopoverContent side="top" align="start" className="w-[min(28rem,calc(100vw-1.5rem))] p-3"><div className="mb-2 flex items-center justify-between px-1"><p className="text-xs font-medium text-fg">Run settings</p><PopoverClose asChild><button type="button" aria-label="Close settings" className="icon-button size-7"><X size={14} strokeWidth={1.75} aria-hidden="true" /></button></PopoverClose></div><div className="grid gap-3 sm:grid-cols-2"><div className="space-y-2 rounded-xl border border-border bg-surface p-3"><ModelPicker value={modelId} disabled={streaming || blocked} onChange={onModelChange} /><ModePicker value={mode} disabled={streaming || blocked} onChange={setMode} /><SourcePicker value={source} disabled={streaming || blocked} onChange={setSource} /></div><CollectionPicker collections={collections} value={collectionIds} onChange={onCollectionChange} disabled={streaming || blocked} /></div></PopoverContent>
+                <PopoverContent side="top" align="start" className="w-[min(28rem,calc(100vw-1.5rem))] p-3"><div className="mb-2 flex items-center justify-between px-1"><p className="text-xs font-medium text-fg">Run settings</p><PopoverClose asChild><button type="button" aria-label="Close settings" className="icon-button size-7"><X size={14} strokeWidth={1.75} aria-hidden="true" /></button></PopoverClose></div><div className="space-y-3 rounded-xl border border-border bg-surface p-3"><ModelPicker value={modelId} disabled={streaming || blocked} onChange={onModelChange} /><ModePicker value={mode} disabled={streaming || blocked} onChange={setMode} /><SourcePicker value={source} disabled={streaming || blocked} onChange={setSource} /></div></PopoverContent>
               </PopoverRoot>
+              <button
+                type="button"
+                aria-label="Add sources"
+                onClick={openFilePicker}
+                disabled={streaming || blocked}
+                className="pressable inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-sm text-fg-muted hover:bg-raised hover:text-fg disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+              >
+                <Paperclip size={14} strokeWidth={1.75} aria-hidden="true" />
+                {sourceCount} source{sourceCount === 1 ? '' : 's'}
+              </button>
               <ModePicker value={mode} disabled={streaming || blocked} onChange={setMode} />
               <div className="hidden sm:block"><SourcePicker value={source} disabled={streaming || blocked} onChange={setSource} /></div>
             </div>
@@ -123,6 +131,17 @@ export function ChatComposer({
               )}
             </div>
           </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            aria-label="Source files"
+            onChange={(event) => {
+              onFiles(Array.from(event.currentTarget.files ?? []))
+              event.currentTarget.value = ''
+            }}
+          />
         </div>
       </div>
     </div>

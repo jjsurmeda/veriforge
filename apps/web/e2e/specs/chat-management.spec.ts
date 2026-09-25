@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-import { createChat, signUp } from '../support/auth'
+import { createChat, openNavigation, signUp, sidebar } from '../support/auth'
 import { makeTestUser } from '../support/seed'
 
 test('creates and deletes chats from the sidebar', async ({ page }) => {
@@ -9,7 +9,8 @@ test('creates and deletes chats from the sidebar', async ({ page }) => {
   await createChat(page)
   await createChat(page)
 
-  const rows = page.locator('aside nav > div')
+  await openNavigation(page)
+  const rows = page.locator('aside nav > div.group')
   await expect(rows).toHaveCount(2)
 
   await rows.first().hover()
@@ -22,13 +23,15 @@ test('offers rename and pin controls for a chat', async ({ page }) => {
   await signUp(page, user)
   await createChat(page)
 
-  const row = page.locator('aside nav > div').first()
+  await openNavigation(page)
+  const row = page.locator('aside nav > div.group').first()
   await row.hover()
   await expect(row.getByRole('button', { name: /rename/i })).toBeVisible()
   await expect(row.getByRole('button', { name: /pin/i })).toBeVisible()
 })
 
-test('collapses the chat sidebar and persists the rail preference', async ({ page }) => {
+test('collapses the chat sidebar and persists the rail preference', async ({ page, viewport }) => {
+  test.skip((viewport?.width ?? 0) < 1024, 'the rail only exists at lg and up')
   const user = makeTestUser()
   await signUp(page, user)
   await createChat(page)
@@ -37,7 +40,7 @@ test('collapses the chat sidebar and persists the rail preference', async ({ pag
   await collapse.click()
   const expand = page.getByRole('button', { name: 'Expand chat sidebar' })
   await expect(expand).toHaveAttribute('aria-pressed', 'true')
-  await expect(page.getByRole('complementary').first()).toHaveCSS('width', '64px')
+  await expect(sidebar(page)).toHaveCSS('width', '64px')
 
   await page.reload()
   await expect(page.getByRole('button', { name: 'Expand chat sidebar' })).toHaveAttribute('aria-pressed', 'true')

@@ -11,6 +11,10 @@ path, replacing slice 4's auto-with-a-notice fallback). Slice 6 adds
 risk-based delivery (TR-6) and the shared review tail (_finish_answer):
 claim verification, single revision pass, output guardrail, suggestions,
 runs.metrics and fire-and-forget async scoring.
+
+`collection_ids` on every entry point below is the *resolved scope* for the
+run — the router calls chats.scope.resolve_scope once and passes the result
+down, so nothing in here re-derives or re-validates it (ADR-002).
 """
 
 import asyncio

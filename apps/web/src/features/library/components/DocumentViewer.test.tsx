@@ -20,7 +20,6 @@ function chunk(partial: Partial<ChunkOut>): ChunkOut {
 function document(partial: Partial<DocumentOut>): DocumentOut {
   return {
     id: 'd1',
-    collection_id: 'c1',
     name: 'doc.pdf',
     mime: 'application/pdf',
     sha256: 'abcdef0123456789',

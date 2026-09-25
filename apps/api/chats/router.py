@@ -4,15 +4,22 @@ injected server-side on every query (CLAUDE.md non-negotiable)."""
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.deps import CurrentUser
+from chats.scope import (
+    chat_starter_questions,
+    dedupe,
+    library_starter_questions,
+    resolve_scope,
+)
 from db.models import (
     Chat,
     Chunk,
     Citation,
+    Collection,
     Document,
     LlmProvider,
     Message,
@@ -25,6 +32,9 @@ from db.session import get_session
 from errors import AppError
 from graph import runner
 from graph.chat_title import DEFAULT_CHAT_TITLE, collapse_instant_title
+from ingest.containers import get_chat_collection, get_or_create_chat_collection
+from ingest.repository import list_container_documents
+from ingest.upload import accept_upload, deny_read_only, document_out, read_upload
 from quota.service import gate_and_reserve
 from runtime import load_active_runtime
 from schemas.chats import (
@@ -38,6 +48,7 @@ from schemas.chats import (
     chat_out,
     message_out,
 )
+from schemas.sources import DocumentOut, DocumentUploadOut
 
 router = APIRouter(tags=["chats"])
 
@@ -93,18 +104,41 @@ async def list_chats(
             select(Chat, active_run).where(Chat.user_id == user.id).order_by(Chat.created_at.desc())
         )
     ).all()
+    questions = await _starter_questions_by_chat(session, user, [chat for chat, _ in rows])
     return [
         chat_out(
             chat.id,
             chat.title,
             chat.pinned,
             chat.model_id,
-            chat.collection_ids,
+            chat.include_library,
+            questions.get(chat.id, []),
             chat.created_at,
             active,
         )
         for chat, active in rows
     ]
+
+
+async def _starter_questions_by_chat(
+    session: AsyncSession, user: User, chats: list[Chat]
+) -> dict[UUID, list[str]]:
+    """One query for every chat's own questions; the Library is the fallback."""
+    own_rows = await session.execute(
+        select(Collection.chat_id, Collection.starter_questions).where(
+            Collection.kind == "chat", Collection.owner_id == user.id
+        )
+    )
+    own: dict[UUID, list[str]] = {}
+    for chat_id, questions in own_rows.all():
+        if chat_id is not None:
+            own[chat_id] = dedupe(q for q in (questions or []))
+    if any(chat.include_library and not own.get(chat.id) for chat in chats):
+        library = await library_starter_questions(session, user)
+        for chat in chats:
+            if chat.include_library and not own.get(chat.id):
+                own[chat.id] = library
+    return own
 
 
 @router.post("/chats", response_model=ChatOut, status_code=201)
@@ -117,7 +151,6 @@ async def create_chat(
         user_id=user.id,
         title=body.title or "New chat",
         model_id=await _default_model_id(session),
-        collection_ids=[str(collection_id) for collection_id in (body.collection_ids or [])],
     )
     session.add(chat)
     await session.flush()
@@ -126,7 +159,8 @@ async def create_chat(
         chat.title,
         chat.pinned,
         chat.model_id,
-        chat.collection_ids,
+        chat.include_library,
+        await chat_starter_questions(session, user, chat),
         chat.created_at,
         None,
     )
@@ -153,7 +187,8 @@ async def get_chat(
         chat.title,
         chat.pinned,
         chat.model_id,
-        chat.collection_ids,
+        chat.include_library,
+        await chat_starter_questions(session, user, chat),
         chat.created_at,
         active_run,
     )
@@ -174,15 +209,16 @@ async def patch_chat(
     if body.model_id is not None:
         await _assert_model_available(session, body.model_id)
         chat.model_id = body.model_id
-    if "collection_ids" in body.model_fields_set:
-        chat.collection_ids = [str(collection_id) for collection_id in (body.collection_ids or [])]
+    if body.include_library is not None:
+        chat.include_library = user.role == "demo" or body.include_library
     await session.flush()
     return chat_out(
         chat.id,
         chat.title,
         chat.pinned,
         chat.model_id,
-        chat.collection_ids,
+        chat.include_library,
+        await chat_starter_questions(session, user, chat),
         chat.created_at,
         None,
     )
@@ -296,13 +332,33 @@ async def _small_model_litellm(session: AsyncSession, fallback: str) -> str:
     return f"{row}/{role.model_id}"
 
 
-def _effective_collection_ids(
-    chat_collection_ids: list[str] | None, requested: list[UUID] | None
-) -> list[UUID]:
-    if requested is None:
-        return [UUID(str(collection_id)) for collection_id in (chat_collection_ids or [])]
-    allowed = {str(collection_id) for collection_id in (chat_collection_ids or [])}
-    return [collection_id for collection_id in requested if str(collection_id) in allowed]
+@router.get("/chats/{chat_id}/documents", response_model=list[DocumentOut])
+async def list_chat_documents(
+    chat_id: UUID,
+    user: CurrentUser,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[DocumentOut]:
+    chat = await _owned_chat(session, user, chat_id)
+    container = await get_chat_collection(session, chat.id)
+    if container is None:
+        return []
+    documents = await list_container_documents(session, container.id)
+    return [document_out(document) for document in documents]
+
+
+@router.post("/chats/{chat_id}/documents", response_model=DocumentUploadOut, status_code=201)
+async def upload_chat_document(
+    chat_id: UUID,
+    file: UploadFile,
+    user: CurrentUser,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> DocumentUploadOut:
+    chat = await _owned_chat(session, user, chat_id)
+    deny_read_only(user)
+    container = await get_or_create_chat_collection(session, user, chat)
+    filename, data = await read_upload(file)
+    document, deduped = await accept_upload(session, container, filename, data)
+    return DocumentUploadOut(**document_out(document).model_dump(), deduped=deduped)
 
 
 @router.post("/chats/{chat_id}/runs", response_model=RunCreateResponse, status_code=201)
@@ -332,7 +388,7 @@ async def create_run(
     session.add(assistant_message)
     await session.flush()
 
-    effective = _effective_collection_ids(chat.collection_ids, body.collection_ids)
+    scope = await resolve_scope(session, user, chat)
 
     run = Run(
         message_id=assistant_message.id,
@@ -373,7 +429,7 @@ async def create_run(
         source=body.source,
         user_message=body.message,
         run_filters=body.filters,
-        collection_ids=effective,
+        collection_ids=scope,
         quota_remaining_5h=reservation.remaining_5h,
         settings_version=runtime.version,
         instant_title=instant_title,

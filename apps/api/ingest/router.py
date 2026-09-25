@@ -1,294 +1,103 @@
-import hashlib
+"""Library and document routes (TRD §12; SR-1, SR-2, SR-3, SR-4, ADR-002).
+
+`collections` rows are internal containers: the Library flattens the user's
+own and the Shared ones into one list, and a chat's own sources are served
+from the chats router. Ownership is checked on every document.
+"""
+
 import logging
-from pathlib import PurePath
 from typing import Annotated
 from uuid import UUID
 
-import filetype
 from fastapi import APIRouter, Depends, UploadFile
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.deps import CurrentUser
-from config import get_settings
-from db.models import Collection, Document, User
+from chats.scope import library_starter_questions
+from db.models import Document, User
 from db.session import get_session
 from errors import AppError
+from ingest.containers import get_or_create_library_collection, get_or_create_shared_collection
 from ingest.repository import (
-    get_owned_collection,
     get_owned_document,
-    get_visible_collection,
     get_visible_document,
-    list_collection_documents,
     list_document_chunks,
-    visible_collections,
+    list_library_documents,
 )
-from ingest.storage import document_key, get_object_store
+from ingest.storage import get_object_store
 from ingest.tasks import defer_ingest_document
+from ingest.upload import accept_upload, deny_read_only, document_out, read_upload
 from schemas.sources import (
     ChunkOut,
-    CollectionCreate,
-    CollectionOut,
-    CollectionPatch,
     DocumentOut,
     DocumentPatch,
     DocumentUploadOut,
-    collection_out,
+    LibraryDocumentOut,
+    LibraryOut,
 )
 
-router = APIRouter(tags=["sources"])
+router = APIRouter(tags=["library"])
 logger = logging.getLogger(__name__)
-
-_SNIFFED_MIMES = {
-    "application/pdf",
-    "application/msword",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/vnd.ms-excel",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "application/vnd.ms-powerpoint",
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-}
-_TEXT_MIMES = {
-    ".csv": "text/csv",
-    ".html": "text/html",
-    ".md": "text/markdown",
-    ".txt": "text/plain",
-}
-
-
-class CollectionNotFound(AppError):
-    status_code = 404
 
 
 class DocumentNotFound(AppError):
     status_code = 404
 
 
-class UploadTooLarge(AppError):
-    status_code = 413
-
-
-class UnsupportedMediaType(AppError):
-    status_code = 415
-
-
 class Forbidden(AppError):
     status_code = 403
 
 
-def document_out(document: Document) -> DocumentOut:
-    return DocumentOut(
-        id=str(document.id),
-        collection_id=str(document.collection_id),
-        name=document.name,
-        mime=document.mime,
-        sha256=document.sha256,
-        status=document.status,
-        page_flags=document.page_flags,
-        error=document.error,
-        tags=document.tags,
-        created_at=document.created_at,
-    )
-
-
-def _upload_out(document: Document, *, deduped: bool) -> DocumentUploadOut:
+def upload_out(document: Document, deduped: bool) -> DocumentUploadOut:
     return DocumentUploadOut(**document_out(document).model_dump(), deduped=deduped)
 
 
-async def _owned_collection_or_404(
-    session: AsyncSession, user: User, collection_id: UUID
-) -> Collection:
-    collection = await get_owned_collection(session, user, collection_id)
-    if collection is None:
-        raise CollectionNotFound("collection_not_found", "Collection not found")
-    return collection
-
-
-async def _owned_document_or_404(session: AsyncSession, user: User, document_id: UUID) -> Document:
+async def _owned_document_or_404(
+    session: AsyncSession, user: User, document_id: UUID
+) -> Document:
     document = await get_owned_document(session, user, document_id)
     if document is None:
         raise DocumentNotFound("document_not_found", "Document not found")
     return document
 
 
-def _sniff_mime(filename: str, data: bytes) -> str:
-    guessed = filetype.guess(data)
-    if guessed is not None:
-        if guessed.mime in _SNIFFED_MIMES:
-            return str(guessed.mime)
-        raise UnsupportedMediaType("unsupported_media_type", "Unsupported media type")
-
-    suffix = PurePath(filename).suffix.lower()
-    mime = _TEXT_MIMES.get(suffix)
-    if mime is None:
-        raise UnsupportedMediaType("unsupported_media_type", "Unsupported media type")
-    try:
-        data.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        raise UnsupportedMediaType("unsupported_media_type", "Unsupported media type") from exc
-    return mime
-
-
-async def _multipart_file(file: UploadFile) -> tuple[str, bytes]:
-    settings = get_settings()
-    data = await file.read(settings.max_upload_bytes + 1)
-    if len(data) > settings.max_upload_bytes:
-        raise UploadTooLarge("upload_too_large", "Upload exceeds maximum size")
-    return file.filename or "upload", data
-
-
-@router.get("/collections", response_model=list[CollectionOut])
-async def list_collections(
+@router.get("/library", response_model=LibraryOut)
+async def get_library(
     user: CurrentUser,
     session: Annotated[AsyncSession, Depends(get_session)],
-) -> list[CollectionOut]:
-    rows = await visible_collections(session, user)
-    return [
-        collection_out(
-            collection.id,
-            collection.name,
-            collection.visibility,
-            collection.starter_questions,
-            count,
-            collection.created_at,
-        )
-        for collection, count in rows
-    ]
-
-
-@router.post("/collections", response_model=CollectionOut, status_code=201)
-async def create_collection(
-    body: CollectionCreate,
-    user: CurrentUser,
-    session: Annotated[AsyncSession, Depends(get_session)],
-) -> CollectionOut:
-    collection = Collection(owner_id=user.id, name=body.name, visibility="private")
-    session.add(collection)
-    await session.flush()
-    return collection_out(
-        collection.id,
-        collection.name,
-        collection.visibility,
-        collection.starter_questions,
-        0,
-        collection.created_at,
+) -> LibraryOut:
+    documents = await list_library_documents(session, user)
+    return LibraryOut(
+        documents=[
+            LibraryDocumentOut(
+                **document_out(document).model_dump(),
+                shared=container.visibility == "shared",
+                editable=container.visibility != "shared" or user.role == "admin",
+            )
+            for document, container in documents
+        ],
+        starter_questions=await library_starter_questions(session, user),
     )
 
 
-@router.get("/collections/{collection_id}", response_model=CollectionOut)
-async def get_collection(
-    collection_id: UUID,
-    user: CurrentUser,
-    session: Annotated[AsyncSession, Depends(get_session)],
-) -> CollectionOut:
-    collection = await get_visible_collection(session, user, collection_id)
-    if collection is None:
-        raise CollectionNotFound("collection_not_found", "Collection not found")
-    doc_count = (
-        await session.execute(select(Document.id).where(Document.collection_id == collection.id))
-    ).all()
-    return collection_out(
-        collection.id,
-        collection.name,
-        collection.visibility,
-        collection.starter_questions,
-        len(doc_count),
-        collection.created_at,
-    )
-
-
-@router.patch("/collections/{collection_id}", response_model=CollectionOut)
-async def patch_collection(
-    collection_id: UUID,
-    body: CollectionPatch,
-    user: CurrentUser,
-    session: Annotated[AsyncSession, Depends(get_session)],
-) -> CollectionOut:
-    collection = await _owned_collection_or_404(session, user, collection_id)
-    if body.visibility == "shared" and user.role != "admin":
-        raise Forbidden("forbidden", "Only admins can publish shared collections")
-    if body.name is not None:
-        collection.name = body.name
-    if body.visibility is not None:
-        collection.visibility = body.visibility
-    await session.flush()
-    doc_count = (
-        await session.execute(select(Document.id).where(Document.collection_id == collection.id))
-    ).all()
-    return collection_out(
-        collection.id,
-        collection.name,
-        collection.visibility,
-        collection.starter_questions,
-        len(doc_count),
-        collection.created_at,
-    )
-
-
-@router.delete("/collections/{collection_id}", status_code=204)
-async def delete_collection(
-    collection_id: UUID,
-    user: CurrentUser,
-    session: Annotated[AsyncSession, Depends(get_session)],
-) -> None:
-    collection = await _owned_collection_or_404(session, user, collection_id)
-    await session.delete(collection)
-
-
-@router.post(
-    "/collections/{collection_id}/documents",
-    response_model=DocumentUploadOut,
-    status_code=201,
-)
-async def upload_document(
-    collection_id: UUID,
+@router.post("/library/documents", response_model=DocumentUploadOut, status_code=201)
+async def upload_library_document(
     file: UploadFile,
     user: CurrentUser,
     session: Annotated[AsyncSession, Depends(get_session)],
+    shared: bool = False,
 ) -> DocumentUploadOut:
-    collection = await _owned_collection_or_404(session, user, collection_id)
-    filename, data = await _multipart_file(file)
-
-    sha256 = hashlib.sha256(data).hexdigest()
-    existing = (
-        await session.execute(
-            select(Document).where(
-                Document.collection_id == collection.id, Document.sha256 == sha256
-            )
-        )
-    ).scalar_one_or_none()
-    if existing is not None:
-        return _upload_out(existing, deduped=True)
-
-    mime = _sniff_mime(filename, data)
-    key = document_key(collection.id, sha256)
-    await get_object_store().put(key, data)
-    document = Document(
-        collection_id=collection.id,
-        name=filename,
-        mime=mime,
-        sha256=sha256,
-        s3_key=key,
-        status="queued",
-        tags=[],
+    deny_read_only(user)
+    if shared and user.role != "admin":
+        raise Forbidden("forbidden", "Only admins can publish shared documents")
+    container = (
+        await get_or_create_shared_collection(session, user)
+        if shared
+        else await get_or_create_library_collection(session, user)
     )
-    session.add(document)
-    await session.flush()
-    await session.commit()
-    await defer_ingest_document(document.id)
-    return _upload_out(document, deduped=False)
-
-
-@router.get("/collections/{collection_id}/documents", response_model=list[DocumentOut])
-async def get_collection_documents(
-    collection_id: UUID,
-    user: CurrentUser,
-    session: Annotated[AsyncSession, Depends(get_session)],
-) -> list[DocumentOut]:
-    documents = await list_collection_documents(session, user, collection_id)
-    if documents is None:
-        raise CollectionNotFound("collection_not_found", "Collection not found")
-    return [document_out(document) for document in documents]
+    filename, data = await read_upload(file)
+    document, deduped = await accept_upload(session, container, filename, data)
+    return upload_out(document, deduped)
 
 
 @router.get("/documents/{document_id}", response_model=DocumentOut)

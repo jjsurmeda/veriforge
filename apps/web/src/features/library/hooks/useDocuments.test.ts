@@ -6,7 +6,6 @@ import { shouldPoll } from './useDocuments'
 function doc(status: string): DocumentOut {
   return {
     id: 'd1',
-    collection_id: 'c1',
     name: 'doc.pdf',
     mime: 'application/pdf',
     sha256: 'ab',

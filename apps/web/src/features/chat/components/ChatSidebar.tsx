@@ -1,8 +1,9 @@
 import { useNavigate } from '@tanstack/react-router'
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Check,
   ChevronDown,
+  FileText,
   Library,
   MessageSquare,
   MoreHorizontal,
@@ -18,15 +19,14 @@ import {
 } from 'lucide-react'
 
 import { useMe } from '../../auth/hooks/useMe'
-import { useCollections } from '../../sources/hooks/useCollections'
 import { IconButton } from '../../../components/ui/IconButton'
 import { Menu, MenuContent, MenuItemWithIcon, MenuTrigger } from '../../../components/ui/primitives'
 import { ProfileMenu, QuotaBadge } from '../../../components/ProfileMenu'
-import { CollectionPicker } from './CollectionPicker'
+import { StatusChip } from '../../library/components/DocumentList'
+import { useChatDocuments, useLibrary, useUploadChatDocument } from '../../library/hooks/useDocuments'
 import { useChatList, useCreateChat, useDeleteChat, usePatchChat } from '../hooks/useChatList'
 
 const SIDEBAR_STORAGE_KEY = 'veriforge-chat-sidebar-collapsed'
-const SOURCES_SECTION_STORAGE_KEY = 'veriforge-chat-sources-collapsed'
 const CHATS_SECTION_STORAGE_KEY = 'veriforge-chat-chats-collapsed'
 
 function readStorage(key: string, fallback: string): string {
@@ -49,10 +49,12 @@ export function ChatSidebar({
   currentChatId,
   mobileOpen = false,
   onMobileClose,
+  onOpenDocument,
 }: {
   currentChatId: string | null
   mobileOpen?: boolean
   onMobileClose?: () => void
+  onOpenDocument?: (documentId: string) => void
 }) {
   const navigate = useNavigate()
   const { data: chats } = useChatList()
@@ -60,24 +62,22 @@ export function ChatSidebar({
   const createChat = useCreateChat()
   const deleteChat = useDeleteChat()
   const patchChat = usePatchChat()
-  const collections = useCollections()
+  const library = useLibrary()
+  const documents = useChatDocuments(currentChatId)
+  const upload = useUploadChatDocument(currentChatId)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [collapsed, setCollapsed] = useState(() => readStorage(SIDEBAR_STORAGE_KEY, 'false') === 'true')
-  const [sourcesCollapsed, setSourcesCollapsed] = useState(
-    () => readStorage(SOURCES_SECTION_STORAGE_KEY, 'false') === 'true',
-  )
   const [chatsCollapsed, setChatsCollapsed] = useState(
     () => readStorage(CHATS_SECTION_STORAGE_KEY, 'false') === 'true',
   )
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [creating, setCreating] = useState(false)
-  const [newChatCollectionIds, setNewChatCollectionIds] = useState<string[]>([])
   const [editingChatId, setEditingChatId] = useState<string | null>(null)
   const [titleDraft, setTitleDraft] = useState('')
   const rail = collapsed && !mobileOpen
 
   useEffect(() => writeStorage(SIDEBAR_STORAGE_KEY, String(collapsed)), [collapsed])
-  useEffect(() => writeStorage(SOURCES_SECTION_STORAGE_KEY, String(sourcesCollapsed)), [sourcesCollapsed])
   useEffect(() => writeStorage(CHATS_SECTION_STORAGE_KEY, String(chatsCollapsed)), [chatsCollapsed])
 
   const filteredChats = useMemo(() => {
@@ -104,7 +104,7 @@ export function ChatSidebar({
   const onNewChat = async () => {
     setCreating(true)
     try {
-      const chat = await createChat.mutateAsync({ collectionIds: newChatCollectionIds })
+      const chat = await createChat.mutateAsync()
       onMobileClose?.()
       void navigate({ to: '/chat/$chatId', params: { chatId: chat!.id } })
     } finally {
@@ -112,18 +112,67 @@ export function ChatSidebar({
     }
   }
 
-  const navigateToSources = () => {
+  const navigateToLibrary = () => {
     onMobileClose?.()
-    void navigate({ to: '/sources' })
+    void navigate({ to: '/library' })
+  }
+
+  const addSources = async (files: File[]) => {
+    for (const file of files) await upload.mutateAsync(file)
   }
 
   const toggleCollapsed = () => setCollapsed((value) => !value)
 
+  const renderActiveChatPanel = (chat: NonNullable<typeof chats>[number]) => (
+    <div className="mb-1 ml-2 border-l border-border pl-2">
+      {(documents.data ?? []).length === 0 ? (
+        <p className="px-1 py-1 text-xs text-fg-muted">No files in this chat yet.</p>
+      ) : (
+        <ul className="space-y-0.5">
+          {(documents.data ?? []).map((document) => (
+            <li key={document.id} className="flex min-h-8 items-center gap-1.5 px-1 text-xs text-fg-muted">
+              <FileText size={13} strokeWidth={1.75} className="min-w-0 shrink-0" aria-hidden="true" />
+              <button
+                type="button"
+                onClick={() => onOpenDocument?.(document.id)}
+                className="min-w-0 flex-1 truncate rounded-md text-left hover:text-fg focus-visible:outline-2 focus-visible:outline-focus-ring"
+              >
+                {document.name}
+              </button>
+              <StatusChip status={document.status} />
+            </li>
+          ))}
+        </ul>
+      )}
+      <label className="mt-1 flex min-h-8 cursor-pointer items-center gap-2 rounded-lg px-1 text-xs text-fg-muted hover:bg-raised-hover hover:text-fg focus-within:bg-raised-hover">
+        <input
+          type="checkbox"
+          checked={chat.include_library}
+          onChange={(event) =>
+            void patchChat.mutateAsync({
+              chatId: chat.id,
+              patch: { include_library: event.currentTarget.checked },
+            })
+          }
+          className="size-3.5 shrink-0 cursor-pointer appearance-none rounded border border-border-strong bg-surface checked:border-fg-strong checked:bg-fg-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+        />
+        Include Library
+      </label>
+      <button
+        type="button"
+        onClick={() => fileInputRef.current?.click()}
+        className="flex min-h-8 w-full items-center gap-2 rounded-lg px-1 text-left text-xs text-fg hover:bg-raised-hover focus-visible:outline-2 focus-visible:outline-focus-ring"
+      >
+        <Plus size={13} strokeWidth={1.75} aria-hidden="true" /> Add sources
+      </button>
+    </div>
+  )
+
   const renderChatRow = (chat: NonNullable<typeof chats>[number]) => {
     const active = chat.id === currentChatId
     return (
+      <Fragment key={chat.id}>
       <div
-        key={chat.id}
         className={`group relative flex min-h-10 items-center rounded-lg transition-[background-color,color] duration-150 ease-out ${
           rail ? 'justify-center px-1' : 'gap-0.5 px-1'
         } ${active ? 'bg-raised text-fg' : 'text-fg-muted hover:bg-raised-hover hover:text-fg'}`}
@@ -210,6 +259,8 @@ export function ChatSidebar({
           </>
         )}
       </div>
+      {!rail && active && renderActiveChatPanel(chat)}
+      </Fragment>
     )
   }
 
@@ -224,6 +275,7 @@ export function ChatSidebar({
         />
       )}
       <aside
+        aria-label="Chat navigation"
         className={`${mobileOpen ? 'fixed inset-y-0 left-0 z-50 flex w-[min(20rem,88vw)]' : 'hidden lg:flex'} ${collapsed ? 'lg:w-16' : 'lg:w-[280px]'} h-full shrink-0 flex-col border-r border-border bg-sidebar text-fg`}
       >
         <div className={`flex h-14 shrink-0 items-center border-b border-border ${rail ? 'justify-center px-2' : 'justify-between gap-2 px-4'}`}>
@@ -267,9 +319,14 @@ export function ChatSidebar({
             </span>
             {!rail && <span>New chat</span>}
           </button>
-          <button type="button" aria-label="Sources" title="Sources" onClick={navigateToSources} className={`pressable mt-1 flex min-h-10 w-full items-center rounded-lg text-sm ${rail ? 'justify-center px-2' : 'gap-2.5 px-2.5'} text-fg-muted hover:bg-raised-hover hover:text-fg`}>
+          <button type="button" aria-label="Library" title="Library" onClick={navigateToLibrary} className={`pressable mt-1 flex min-h-10 w-full items-center rounded-lg text-sm ${rail ? 'justify-center px-2' : 'gap-2.5 px-2.5'} text-fg-muted hover:bg-raised-hover hover:text-fg`}>
             <Library size={18} strokeWidth={1.75} aria-hidden="true" />
-            {!rail && <span>Sources</span>}
+            {!rail && <span className="min-w-0 flex-1 truncate text-left">Library</span>}
+            {!rail && (
+              <span className="font-mono text-[0.65rem] tabular-nums text-fg-muted">
+                {library.data?.documents.length ?? 0}
+              </span>
+            )}
           </button>
           {me?.role === 'admin' && (
             <button type="button" aria-label="Admin" title="Admin" onClick={() => void navigate({ to: '/admin' })} className={`pressable mt-1 flex min-h-10 w-full items-center rounded-lg text-sm ${rail ? 'justify-center px-2' : 'gap-2.5 px-2.5'} text-fg-muted hover:bg-raised-hover hover:text-fg`}>
@@ -285,40 +342,6 @@ export function ChatSidebar({
               <Search size={14} strokeWidth={1.75} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-fg-muted" aria-hidden="true" />
               <input aria-label="Search chats" value={searchQuery} onChange={(event) => setSearchQuery(event.currentTarget.value)} placeholder="Filter chats" className="h-9 w-full rounded-lg border border-border bg-surface pl-8 pr-2 text-xs text-fg placeholder:text-fg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring" />
             </label>
-          </div>
-        )}
-
-        {!rail && (
-          <section className="border-b border-border px-3 py-3" aria-labelledby="sidebar-sources-heading">
-            <button type="button" aria-expanded={!sourcesCollapsed} onClick={() => setSourcesCollapsed((value) => !value)} className="flex min-h-8 w-full items-center justify-between text-left text-[0.68rem] font-medium uppercase tracking-[0.12em] text-fg-subtle hover:text-fg focus-visible:outline-2 focus-visible:outline-focus-ring">
-              <span id="sidebar-sources-heading">Sources</span>
-              <ChevronDown size={14} strokeWidth={1.75} className={`transition-transform duration-150 ${sourcesCollapsed ? '-rotate-90' : ''}`} aria-hidden="true" />
-            </button>
-            {!sourcesCollapsed && (
-              <div className="mt-1 space-y-0.5">
-                {(collections.data ?? []).map((collection) => (
-                  <button key={collection.id} type="button" onClick={navigateToSources} className="flex min-h-9 w-full items-center gap-2 rounded-lg px-2 text-left text-sm text-fg-muted hover:bg-raised-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-focus-ring">
-                    <Library size={14} strokeWidth={1.75} className="shrink-0" aria-hidden="true" />
-                    <span className="min-w-0 flex-1 truncate">{collection.name}</span>
-                    <span className="font-mono text-[0.65rem] tabular-nums text-fg-muted">{collection.document_count}</span>
-                  </button>
-                ))}
-                {(collections.data ?? []).length === 0 && (
-                  <>
-                    <p className="px-2 py-2 text-xs text-fg-muted">No sources yet</p>
-                    <button type="button" onClick={navigateToSources} className="flex min-h-9 w-full items-center gap-2 rounded-lg px-2 text-left text-xs text-fg hover:bg-raised-hover focus-visible:outline-2 focus-visible:outline-focus-ring">
-                      <Plus size={14} strokeWidth={1.75} aria-hidden="true" /> Add source
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
-          </section>
-        )}
-
-        {currentChatId === null && !rail && (
-          <div className="border-b border-border px-3 py-3">
-            <CollectionPicker collections={collections.data ?? []} value={newChatCollectionIds} onChange={setNewChatCollectionIds} disabled={creating} />
           </div>
         )}
 
@@ -340,6 +363,18 @@ export function ChatSidebar({
             <p className="px-2 py-3 text-xs text-fg-muted">{searchQuery ? 'No chats match.' : 'No chats yet.'}</p>
           )}
         </nav>
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          aria-label="Chat source files"
+          onChange={(event) => {
+            void addSources(Array.from(event.currentTarget.files ?? []))
+            event.currentTarget.value = ''
+          }}
+        />
 
         <div className={`border-t border-border p-2 ${rail ? 'flex flex-col items-center gap-2' : 'space-y-2'}`}>
           <QuotaBadge side={rail ? 'right' : 'top'} align={rail ? 'start' : 'start'} className={rail ? 'mx-auto' : 'mx-auto w-fit'} />

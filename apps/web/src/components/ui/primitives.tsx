@@ -11,7 +11,10 @@ type PopoverContentProps = React.ComponentPropsWithoutRef<typeof Popover.Content
 type MenuContentProps = React.ComponentPropsWithoutRef<typeof DropdownMenu.Content>
 type MenuRadioItemProps = React.ComponentPropsWithoutRef<typeof DropdownMenu.RadioItem>
 type SelectContentProps = React.ComponentPropsWithoutRef<typeof Select.Content>
-type SelectItemProps = React.ComponentPropsWithoutRef<typeof Select.Item>
+type SelectItemProps = React.ComponentPropsWithoutRef<typeof Select.Item> & {
+  // Rendered outside ItemText so the closed trigger shows only `children`.
+  description?: string
+}
 type HoverCardContentProps = React.ComponentPropsWithoutRef<typeof HoverCard.Content>
 type TooltipContentProps = React.ComponentPropsWithoutRef<typeof Tooltip.Content>
 
@@ -83,7 +86,7 @@ export function SelectContent({ className = '', children, position = 'popper', .
   )
 }
 
-export function SelectItem({ children, className = '', ...props }: SelectItemProps) {
+export function SelectItem({ children, description, className = '', ...props }: SelectItemProps) {
   return (
     <Select.Item {...props} className={`${itemClass} relative pl-8 ${className}`}>
       <span className="absolute left-2">
@@ -92,6 +95,7 @@ export function SelectItem({ children, className = '', ...props }: SelectItemPro
         </Select.ItemIndicator>
       </span>
       <Select.ItemText>{children}</Select.ItemText>
+      {description && <span className="text-xs text-fg-muted">{description}</span>}
     </Select.Item>
   )
 }

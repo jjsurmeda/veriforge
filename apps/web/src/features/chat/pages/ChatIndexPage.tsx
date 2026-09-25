@@ -1,25 +1,25 @@
 import { useNavigate } from '@tanstack/react-router'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Menu } from 'lucide-react'
 
-import { createRunChatsChatIdRunsPost } from '../../../generated/sdk.gen'
+import { createRunChatsChatIdRunsPost, uploadChatDocumentChatsChatIdDocumentsPost } from '../../../generated/sdk.gen'
 import { useChatList, useCreateChat } from '../hooks/useChatList'
 import { useQuota } from '../hooks/useQuota'
 import { ChatComposer } from '../components/ChatComposer'
 import type { RunMode } from '../components/ModePicker'
 import type { RunSource } from '../components/SourcePicker'
 import { ChatSidebar } from '../components/ChatSidebar'
-import { useCollections } from '../../sources/hooks/useCollections'
-import { StarterQuestions } from '../../sources/components/StarterQuestions'
+import { useLibrary } from '../../library/hooks/useDocuments'
+import { StarterQuestions } from '../../library/components/StarterQuestions'
 
 export function ChatIndexPage() {
   const navigate = useNavigate()
   const { data: chats, isPending } = useChatList()
   const createChat = useCreateChat()
-  const collections = useCollections()
+  const library = useLibrary()
   const quota = useQuota()
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [collectionIds, setCollectionIds] = useState<string[]>([])
+  const pendingFiles = useRef<File[]>([])
 
   useEffect(() => {
     if (!isPending && chats && chats.length > 0) {
@@ -27,17 +27,32 @@ export function ChatIndexPage() {
     }
   }, [chats, isPending, navigate])
 
-  const starters: Array<{ question: string; collectionId: string }> = []
-  for (const collection of collections.data ?? []) {
-    for (const question of collection.starter_questions ?? []) {
-      if (!starters.some((starter) => starter.question === question)) starters.push({ question, collectionId: collection.id })
+  const uploadPendingInto = async (chatId: string) => {
+    for (const file of pendingFiles.current.splice(0)) {
+      await uploadChatDocumentChatsChatIdDocumentsPost({
+        path: { chat_id: chatId },
+        body: { file },
+      })
     }
   }
 
-  const startRun = async (message: string, options: { mode: RunMode; source: RunSource }, selectedCollectionIds = collectionIds) => {
-    const chat = await createChat.mutateAsync({ collectionIds: selectedCollectionIds })
+  const startRun = async (message: string, options: { mode: RunMode; source: RunSource }) => {
+    const chat = await createChat.mutateAsync()
     const chatId = chat!.id
-    await createRunChatsChatIdRunsPost({ path: { chat_id: chatId }, body: { message, mode: options.mode, source: options.source } })
+    await uploadPendingInto(chatId)
+    await createRunChatsChatIdRunsPost({
+      path: { chat_id: chatId },
+      body: { message, mode: options.mode, source: options.source },
+    })
+    void navigate({ to: '/chat/$chatId', params: { chatId } })
+  }
+
+  const onFiles = async (files: File[]) => {
+    if (files.length === 0) return
+    pendingFiles.current = [...pendingFiles.current, ...files]
+    const chat = await createChat.mutateAsync()
+    const chatId = chat!.id
+    await uploadPendingInto(chatId)
     void navigate({ to: '/chat/$chatId', params: { chatId } })
   }
 
@@ -55,11 +70,11 @@ export function ChatIndexPage() {
             <div className="mb-8 text-center">
               <h1 className="text-xs font-medium uppercase tracking-[0.12em] text-fg-subtle">No chat selected</h1>
               <h1 className="mt-3 text-3xl font-semibold tracking-tight text-fg sm:text-4xl">What do you want to know?</h1>
-              <p className="mx-auto mt-3 max-w-[42ch] text-sm leading-6 text-fg-muted">Ask a question and follow the evidence while the answer forms.</p>
+              <p className="mx-auto mt-3 max-w-[42ch] text-sm leading-6 text-fg-muted">Drop files to start, or just ask. Follow the evidence while the answer forms.</p>
             </div>
-            <ChatComposer streaming={false} modelId={null} quota={quota.data} collections={collections.data ?? []} collectionIds={collectionIds} emptyThread onModelChange={() => undefined} onCollectionChange={setCollectionIds} onSend={(message, options) => void startRun(message, options)} onStop={() => undefined} />
+            <ChatComposer streaming={false} modelId={null} quota={quota.data} sourceCount={library.data?.documents.length ?? 0} emptyThread onFiles={(files) => void onFiles(files)} onModelChange={() => undefined} onSend={(message, options) => void startRun(message, options)} onStop={() => undefined} />
             <div className="mx-auto mt-6 max-w-[720px]">
-              <StarterQuestions questions={starters.map((starter) => starter.question)} onSelect={(question) => { const starter = starters.find((entry) => entry.question === question); if (starter) void startRun(question, { mode: 'auto', source: 'auto' }, [starter.collectionId]) }} />
+              <StarterQuestions questions={library.data?.starter_questions ?? []} onSelect={(question) => void startRun(question, { mode: 'auto', source: 'auto' })} />
             </div>
           </section>
         </div>

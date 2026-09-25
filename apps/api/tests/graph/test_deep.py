@@ -95,7 +95,7 @@ async def _seed(db: AsyncSession, user: User) -> tuple[Chat, Message, Any]:
         text_="the AW-2000-XE ships with a 12 month blade warranty",
         embedding=vec(1, bump=1),
     )
-    chat = Chat(user_id=user.id, title="t", collection_ids=[str(collection.id)])
+    chat = Chat(user_id=user.id, title="t")
     db.add(chat)
     await db.commit()
     await db.refresh(chat)
