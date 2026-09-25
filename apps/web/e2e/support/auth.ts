@@ -94,3 +94,16 @@ export async function deleteCurrentChat(page: Page): Promise<void> {
   await page.getByRole('menuitem', { name: 'Delete' }).click()
   await page.waitForURL(/\/$/)
 }
+
+// The app header is dissolved on / and /chat/* (design-system.md §5), so the
+// theme toggle is reached through the sidebar footer on chat surfaces and
+// through the header on the surfaces that keep the shell.
+export async function toggleTheme(page: Page): Promise<void> {
+  const inHeader = page.locator('header button[aria-label^="Switch to"]')
+  if (await inHeader.first().isVisible().catch(() => false)) {
+    await inHeader.first().click()
+    return
+  }
+  await openNavigation(page)
+  await sidebar(page).locator('button[aria-label^="Switch to"]').first().click()
+}

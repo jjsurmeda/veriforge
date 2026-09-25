@@ -30,6 +30,7 @@ import {
   TooltipTrigger,
 } from '../../../components/ui/primitives'
 import { ProfileMenu } from '../../../components/ProfileMenu'
+import { ThemeToggle } from '../../../components/ThemeToggle'
 import { StatusChip } from '../../library/components/StatusChip'
 import { LibrarySection } from '../../library/components/LibrarySection'
 import { useChatDocuments, useUploadChatDocument } from '../../library/hooks/useDocuments'
@@ -447,8 +448,9 @@ export function ChatSidebar({
           }}
         />
 
-        <div className={`border-t border-border p-2 ${rail ? 'flex flex-col items-center gap-2' : ''}`}>
+        <div className={`flex items-center gap-1 border-t border-border p-2 ${rail ? 'flex-col' : 'justify-between'}`}>
           <ProfileMenu side={rail ? 'right' : 'top'} align="start" collapsed={rail} />
+          {!rail && <ThemeToggle />}
         </div>
       </aside>
     </>

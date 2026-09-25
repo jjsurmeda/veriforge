@@ -1,7 +1,7 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
 
 import { grantAdmin } from '../support/admin'
-import { createChat, login, signUp } from '../support/auth'
+import { createChat, login, signUp, toggleTheme } from '../support/auth'
 import { accessToken, startSeededRun } from '../support/live'
 import { makeTestUser, type TestUser } from '../support/seed'
 
@@ -135,11 +135,8 @@ test('marks fallback decisions and restores auto mode', async ({ page, request }
     await page.goto(`/chat/${chatId}`)
     await expect(page.getByRole('heading', { name: 'Ingress' })).toBeVisible({ timeout: 110_000 })
     await expect(page.getByTitle('Jev unavailable — answered by LLM fallback').first()).toBeVisible()
-    const profile = page.getByRole('button', { name: 'Profile menu' })
-    await profile.click()
-    await page.getByRole('menuitemradio', { name: 'Light' }).click()
-    await profile.click()
-    await expect(page.getByRole('menuitemradio', { name: 'Light' })).toBeVisible()
+    await toggleTheme(page)
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
   } finally {
     await setEngineMode(request, admin.token, 'auto')
   }
@@ -172,11 +169,9 @@ test('renders admin decision stats and breaker status', async ({ page, request }
   await expect(page.getByText('Fallback share')).toBeVisible()
   await expect(page.getByText('Circuit breaker')).toBeVisible()
   await expect(page.getByText(/closed|open|half open/)).toBeVisible()
-  const profile = page.getByRole('button', { name: 'Profile menu' })
-  await profile.click()
-  await page.getByRole('menuitemradio', { name: 'Light' }).click()
+  await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'light'))
   await page.screenshot({ path: 'e2e/screenshots/decision-layer-admin-light.png', fullPage: true })
-  await profile.click()
-  await page.getByRole('menuitemradio', { name: 'Dark' }).click()
+  await toggleTheme(page)
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
   await page.screenshot({ path: 'e2e/screenshots/decision-layer-admin-dark.png', fullPage: true })
 })

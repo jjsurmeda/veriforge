@@ -1,8 +1,7 @@
 import { ShieldCheck } from 'lucide-react'
 
-import { ProfileMenu, QuotaBadge } from './ProfileMenu'
-
-export { QuotaBadge } from './ProfileMenu'
+import { ProfileMenu } from './ProfileMenu'
+import { ThemeToggle } from './ThemeToggle'
 
 export function AppHeader() {
   return (
@@ -17,7 +16,7 @@ export function AppHeader() {
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-        <QuotaBadge side="bottom" align="end" />
+        <ThemeToggle />
         <ProfileMenu side="bottom" align="end" />
       </div>
     </header>
