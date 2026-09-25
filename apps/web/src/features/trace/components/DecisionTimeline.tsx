@@ -20,7 +20,7 @@ function EngineBadge({ engine }: { engine: Decision['engine'] }) {
   const fallback = engine === 'fallback'
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 font-mono text-[0.6rem] ${
+      className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 font-mono text-2xs ${
         fallback
           ? 'border-border/30 bg-raised text-warning'
           : 'border-border/25 bg-raised text-fg'
@@ -42,7 +42,7 @@ function Outcome({ label, tone }: { label: string; tone: OutcomeTone }) {
   }[tone]
   const Icon = tone === 'success' ? Check : tone === 'danger' ? X : tone === 'warning' ? AlertTriangle : Info
   return (
-    <span className={`inline-flex items-center gap-1 text-[0.65rem] font-medium ${toneClass}`}>
+    <span className={`inline-flex items-center gap-1 text-2xs font-medium ${toneClass}`}>
       <Icon size={11} aria-hidden="true" />
       {label}
     </span>
@@ -96,7 +96,7 @@ function NoulRow({ decision, stage }: { decision: Decision; stage: string | null
             />
           )}
         </div>
-        <span className="w-9 text-right font-mono text-[0.65rem] text-fg">{(probability ?? 0).toFixed(2)}</span>
+        <span className="w-9 text-right font-mono text-2xs text-fg">{(probability ?? 0).toFixed(2)}</span>
         <Outcome label={outcome.label} tone={outcome.tone} />
       </div>
       <Reasoning reasoning={decision.reasoning} />
@@ -121,7 +121,7 @@ function ChoiceRow({ decision, stage }: { decision: Decision; stage: string | nu
         )}
       </div>
       {spread.length > 0 && (
-        <div className="flex flex-wrap gap-x-3 gap-y-1 font-mono text-[0.65rem] text-fg-muted">
+        <div className="flex flex-wrap gap-x-3 gap-y-1 font-mono text-2xs text-fg-muted">
           {spread.map(([option, probability]) => (
             <span key={option}>
               {option} {(probability * 100).toFixed(0)}%
@@ -146,7 +146,7 @@ function ScoreRow({ decision }: { decision: Decision }) {
       </div>
       <div className="font-mono text-xs text-fg">{Number.isFinite(value) ? value.toFixed(2) : decision.value}</div>
       {lexical && vector !== null && (
-        <div className="font-mono text-[0.65rem] text-fg-muted">
+        <div className="font-mono text-2xs text-fg-muted">
           BM25 {(value * 100).toFixed(0)}% / vector {(vector * 100).toFixed(0)}%
         </div>
       )}
@@ -210,7 +210,7 @@ function DynamicSummary({
           {expanded ? <ChevronDown size={13} aria-hidden="true" /> : <ChevronRight size={13} aria-hidden="true" />}
           {decisions.length} {label}
         </span>
-        <span className="font-mono text-[0.65rem] text-fg-muted">show details</span>
+        <span className="font-mono text-2xs text-fg-muted">show details</span>
       </button>
       {expanded && (
         <ul className="mt-1 border-l border-border pl-2">
@@ -235,7 +235,7 @@ function DecisionGroupSection({ group }: { group: DecisionGroup }) {
     <section className="rounded-lg border border-border bg-surface">
       <header className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1 border-b border-border px-3 py-2">
         <h3 className="text-xs font-semibold text-fg">{decisionStageLabel(group.stage)}</h3>
-        <span className="font-mono text-[0.6rem] text-fg-muted">
+        <span className="font-mono text-2xs text-fg-muted">
           {callLabel} · {questionCount} questions · {maxLatency} ms
         </span>
       </header>
@@ -268,7 +268,7 @@ export function DecisionSummary({ decisions }: { decisions: Decision[] }) {
     ...groupDecisions(decisions).map((group) => Math.max(...group.decisions.map((decision) => decision.latency_ms))),
   )
   return (
-    <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-border bg-sidebar px-2.5 py-2 font-mono text-[0.65rem] text-fg-muted">
+    <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-border bg-sidebar px-2.5 py-2 font-mono text-2xs text-fg-muted">
       <span>{decisions.length} decisions</span>
       <span aria-hidden="true">·</span>
       <span>Jev {jevCount}/{decisions.length}</span>

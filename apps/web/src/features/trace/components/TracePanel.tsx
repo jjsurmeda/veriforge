@@ -33,7 +33,7 @@ function StepRow({ step }: { step: StepStarted | StepCompleted }) {
   return (
     <li className="flex items-baseline justify-between gap-2 border-b border-border/60 py-2 last:border-b-0">
       <span className="text-xs text-fg">{step.label}</span>
-      <span className="font-mono text-[0.65rem] tabular-nums text-fg-muted">{isCompleted ? `${(step as StepCompleted).duration_ms} ms` : '…'}</span>
+      <span className="font-mono text-2xs tabular-nums text-fg-muted">{isCompleted ? `${(step as StepCompleted).duration_ms} ms` : '…'}</span>
     </li>
   )
 }
@@ -49,7 +49,7 @@ function WaterfallRow({ label, ms, max }: { label: string; ms: number; max: numb
 }
 
 function StatTile({ label, value }: { label: string; value: string }) {
-  return <div className="rounded-lg border border-border bg-surface px-3 py-2.5"><p className="text-[0.62rem] text-fg-muted">{label}</p><p className="mt-1 font-mono text-lg tabular-nums text-fg">{value}</p></div>
+  return <div className="rounded-lg border border-border bg-surface px-3 py-2.5"><p className="text-2xs text-fg-muted">{label}</p><p className="mt-1 font-mono text-lg tabular-nums text-fg">{value}</p></div>
 }
 
 function MetricsTab({ metrics, decisions }: { metrics: Metrics | null; decisions: Decision[] }) {
@@ -137,7 +137,7 @@ export function TracePanel({ steps, decisions, thinking, streaming, chunks, metr
             ))}
           </nav>
           <div className="flex shrink-0 items-center gap-0.5">
-            {streaming && <span className="mr-1 inline-flex items-center gap-1.5 text-[0.65rem] text-fg"><span className="size-1.5 animate-pulse rounded-full bg-fg-strong" aria-hidden="true" />live</span>}
+            {streaming && <span className="mr-1 inline-flex items-center gap-1.5 text-2xs text-fg"><span className="size-1.5 animate-pulse rounded-full bg-fg-strong" aria-hidden="true" />live</span>}
             <button type="button" aria-label={isExpanded ? 'Restore workspace panel width' : 'Expand workspace panel'} aria-pressed={isExpanded} onClick={() => setExpanded(!isExpanded)} className="icon-button size-8"><Maximize2 size={15} strokeWidth={1.75} aria-hidden="true" /></button>
             <button type="button" aria-label="Collapse workspace panel" onClick={() => setOpen(false)} className="icon-button size-8"><PanelRight size={16} strokeWidth={1.75} aria-hidden="true" /></button>
           </div>
