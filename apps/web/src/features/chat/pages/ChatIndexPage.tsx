@@ -90,7 +90,7 @@ export function ChatIndexPage() {
               <h1 className="mt-3 text-3xl font-semibold tracking-tight text-fg sm:text-4xl">What do you want to know?</h1>
               <p className="mx-auto mt-3 max-w-[42ch] text-sm leading-6 text-fg-muted">Drop files to start, or just ask. Follow the evidence while the answer forms.</p>
             </div>
-            <ChatComposer streaming={false} modelId={null} quota={quota.data} sourceCount={library.data?.documents.length ?? 0} emptyThread onFiles={(files) => void onFiles(files)} onModelChange={() => undefined} onSend={(message, options) => void startRun(message, options)} onStop={() => undefined} />
+            <ChatComposer streaming={false} modelId={null} quota={quota.data} emptyThread onFiles={(files) => void onFiles(files)} onModelChange={() => undefined} onSend={(message, options) => void startRun(message, options)} onStop={() => undefined} />
             <div className="mx-auto mt-6 max-w-[720px]">
               <StarterQuestions questions={library.data?.starter_questions ?? []} onSelect={(question) => void startRun(question, { mode: 'auto', source: 'auto' })} />
             </div>

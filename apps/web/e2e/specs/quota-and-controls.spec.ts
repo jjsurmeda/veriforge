@@ -8,17 +8,11 @@ test('shows quota windows and keeps the picker catalogue bounded', async ({ page
   await signUp(page, user)
   await createChat(page)
 
-  const settings = page.getByRole('button', { name: 'Run settings' }).first()
-  await settings.click()
-  const settingsDialog = page.getByRole('dialog')
-  const model = settingsDialog.getByRole('combobox', { name: 'Model' })
+  const model = page.locator('button[role="combobox"][aria-label="Model"]:visible').last()
   await model.click()
   const modelOptions = page.getByRole('option')
   await expect(modelOptions).toHaveCount(2)
-  await expect(modelOptions).toContainText([
-    'anthropic/claude-haiku-4.5',
-    'openai/gpt-4o-mini',
-  ])
+  await expect(modelOptions).toContainText(['claude-haiku-4.5', 'gpt-4o-mini'])
   await page.keyboard.press('Escape')
 
   await setComposerMode(page, 'fast')

@@ -1,7 +1,5 @@
 import { useRef, useState } from 'react'
-import { ArrowUp, CircleAlert, Paperclip, Plus, Square, X } from 'lucide-react'
-
-import { PopoverClose, PopoverContent, PopoverRoot, PopoverTrigger } from '../../../components/ui/primitives'
+import { ArrowUp, CircleAlert, Square } from 'lucide-react'
 
 import type { QuotaOut } from '../../../generated/types.gen'
 import { ModelPicker } from './ModelPicker'
@@ -12,7 +10,6 @@ interface Props {
   streaming: boolean
   modelId: string | null
   quota?: QuotaOut
-  sourceCount: number
   error?: string | null
   emptyThread?: boolean
   onFiles: (files: File[]) => void
@@ -25,7 +22,6 @@ export function ChatComposer({
   streaming,
   modelId,
   quota,
-  sourceCount,
   error,
   emptyThread = false,
   onFiles,
@@ -34,10 +30,8 @@ export function ChatComposer({
   onStop,
 }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
   const [mode, setMode] = useState<RunMode>('auto')
   const [source, setSource] = useState<RunSource>('auto')
-  const [settingsOpen, setSettingsOpen] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const blocked = quota?.blocked ?? false
 
@@ -50,8 +44,6 @@ export function ChatComposer({
       textareaRef.current.style.height = 'auto'
     }
   }
-
-  const openFilePicker = () => fileInputRef.current?.click()
 
   return (
     <div className="sticky bottom-0 z-20 bg-main px-3 pb-3 pt-6 sm:px-6 sm:pb-4 sm:pt-8">
@@ -99,20 +91,6 @@ export function ChatComposer({
           />
           <div className="flex items-center justify-between gap-2 px-1 pt-2">
             <div className="flex min-w-0 items-center gap-1 overflow-x-auto">
-              <PopoverRoot open={settingsOpen} onOpenChange={setSettingsOpen}>
-                <PopoverTrigger asChild><button type="button" aria-label="Run settings" aria-expanded={settingsOpen} disabled={streaming || blocked} className="icon-button size-8 shrink-0 disabled:cursor-not-allowed disabled:opacity-50"><Plus size={17} strokeWidth={1.75} aria-hidden="true" /></button></PopoverTrigger>
-                <PopoverContent side="top" align="start" className="w-[min(28rem,calc(100vw-1.5rem))] p-3"><div className="mb-2 flex items-center justify-between px-1"><p className="text-xs font-medium text-fg">Run settings</p><PopoverClose asChild><button type="button" aria-label="Close settings" className="icon-button size-7"><X size={14} strokeWidth={1.75} aria-hidden="true" /></button></PopoverClose></div><div className="space-y-3 rounded-xl border border-border bg-surface p-3"><ModelPicker value={modelId} disabled={streaming || blocked} onChange={onModelChange} /><ModePicker value={mode} disabled={streaming || blocked} onChange={setMode} /><SourcePicker value={source} disabled={streaming || blocked} onChange={setSource} /></div></PopoverContent>
-              </PopoverRoot>
-              <button
-                type="button"
-                aria-label="Add sources"
-                onClick={openFilePicker}
-                disabled={streaming || blocked}
-                className="pressable inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-sm text-fg-muted hover:bg-raised hover:text-fg disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
-              >
-                <Paperclip size={14} strokeWidth={1.75} aria-hidden="true" />
-                {sourceCount} source{sourceCount === 1 ? '' : 's'}
-              </button>
               <ModePicker value={mode} disabled={streaming || blocked} onChange={setMode} />
               <div className="hidden sm:block"><SourcePicker value={source} disabled={streaming || blocked} onChange={setSource} /></div>
             </div>
@@ -131,17 +109,6 @@ export function ChatComposer({
               )}
             </div>
           </div>
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            className="hidden"
-            aria-label="Source files"
-            onChange={(event) => {
-              onFiles(Array.from(event.currentTarget.files ?? []))
-              event.currentTarget.value = ''
-            }}
-          />
         </div>
       </div>
     </div>
