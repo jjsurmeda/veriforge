@@ -283,6 +283,7 @@ async def list_messages(
     metrics_by_message: dict[UUID, dict[str, object] | None] = {
         run.message_id: run.metrics for run in runs
     }
+    run_id_by_message: dict[UUID, str] = {run.message_id: str(run.id) for run in runs}
     return [
         message_out(
             m.id,
@@ -293,6 +294,7 @@ async def list_messages(
             m.created_at,
             by_message.get(m.id, []),
             metrics_by_message.get(m.id),
+            run_id_by_message.get(m.id),
         )
         for m in messages
     ]

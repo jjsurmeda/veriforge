@@ -1381,6 +1381,17 @@
             "title": "Role",
             "type": "string"
           },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
           "status": {
             "anyOf": [
               {

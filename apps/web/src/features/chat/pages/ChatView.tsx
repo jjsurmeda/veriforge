@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ArrowDown, Check, MoreHorizontal, PanelRight, Pencil, Pin, Trash2 } from 'lucide-react'
 import { useNavigate } from '@tanstack/react-router'
 
+import type { MessageOut } from '../../../generated/types.gen'
 import { useChat, useMessages } from '../hooks/useChat'
 import { useCancelRun, useCreateRun } from '../hooks/useRuns'
 import { useRunStream } from '../hooks/useRunStream'
@@ -55,6 +56,7 @@ export function ChatView({ chatId }: { chatId: string }) {
   const reindexDocument = useReindexDocument()
   const [activeRunId, setActiveRunId] = useState<string | null>(null)
   const [traceRunId, setTraceRunId] = useState<string | null>(null)
+  const [traceScrollSignal, setTraceScrollSignal] = useState(0)
   const [sendError, setSendError] = useState<string | null>(null)
   const [optimisticQuestion, setOptimisticQuestion] = useState<string | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -81,6 +83,9 @@ export function ChatView({ chatId }: { chatId: string }) {
   }, [])
 
   const { resume } = useRunStream(activeRunId, chatId)
+  // A finished run has no store entry, so the stream is what replays its
+  // persisted run_events; invalidate: false keeps a replay from refetching.
+  useRunStream(traceRunId !== activeRunId ? traceRunId : null, chatId, { invalidate: false })
   const live = useChatRunStore((s) => (activeRunId ? s.runs[activeRunId] : undefined))
   const libraryDocument = (library.data?.documents ?? []).find(
     (entry) => entry.id === viewerDocumentId,
@@ -131,6 +136,16 @@ export function ChatView({ chatId }: { chatId: string }) {
     void onSend(lastQuestion, { mode: action === 'deep' ? 'deep' : 'auto', source: action === 'web' ? 'web' : 'auto' })
   }
 
+  const showSteps = (message: MessageOut) => {
+    if (!message.run_id) return
+    setRightPanelOpen(true)
+    setTraceTab('trace')
+    setTraceRunId(message.run_id)
+    setSelectedMessageId(message.id)
+    setFocusSource(null)
+    setTraceScrollSignal((n) => n + 1)
+  }
+
   const openSources = (sourceNumber?: number, messageId?: string) => {
     setRightPanelOpen(true)
     setTraceTab('sources')
@@ -176,7 +191,7 @@ export function ChatView({ chatId }: { chatId: string }) {
           </header>
           {chat.isError ? <p className="p-6 text-sm text-fg-muted">Chat not found.</p> : <>
             <div ref={threadScrollRef} onScroll={(event) => { const element = event.currentTarget; setShowScrollButton(element.scrollHeight - element.scrollTop - element.clientHeight > 160) }} className="min-h-0 flex-1 overflow-y-auto">
-              <MessageList messages={messages.data ?? []} live={live} optimisticQuestion={optimisticQuestion} onSuggestion={(question) => void onSend(question, { mode: 'auto', source: 'auto' })} onAbstainAction={onAbstainAction} onOpenSources={openSources} onSelectMessage={setSelectedMessageId} onShowSteps={() => { setRightPanelOpen(true); setTraceTab('trace') }} />
+              <MessageList messages={messages.data ?? []} live={live} optimisticQuestion={optimisticQuestion} onSuggestion={(question) => void onSend(question, { mode: 'auto', source: 'auto' })} onAbstainAction={onAbstainAction} onOpenSources={openSources} onSelectMessage={setSelectedMessageId} onShowSteps={showSteps} />
               {live?.status === 'failed' && live.error && <p role="alert" className="mx-auto max-w-[720px] px-4 pb-4 text-sm text-warning">{runFailureMessage(live.error)}</p>}
               {live?.status === 'connection_lost' && <div className="mx-auto max-w-[720px] px-4 pb-4"><button type="button" onClick={resume} className="pressable rounded-lg border border-border/40 px-3 py-1.5 text-sm text-danger hover:bg-raised focus-visible:outline-2 focus-visible:outline-danger">Connection lost — resume</button></div>}
             </div>
@@ -198,7 +213,7 @@ export function ChatView({ chatId }: { chatId: string }) {
             </div>
           )}
         </main>
-        <TracePanel steps={trace?.steps ?? []} decisions={trace?.decisions ?? []} thinking={trace?.thinking ?? ''} streaming={trace?.streaming ?? false} chunks={trace?.chunks ?? []} metrics={trace?.metrics ?? null} hold={trace?.hold ?? false} query={lastQuestion} open={rightPanelOpen} expanded={rightPanelExpanded} activeTab={traceTab} focusSource={focusSource} selectedMessage={selectedMessage} onOpenChange={setRightPanelOpen} onExpandedChange={setRightPanelExpanded} onTabChange={setTraceTab} onOpenDocument={() => void navigate({ to: '/library' })} />
+        <TracePanel steps={trace?.steps ?? []} decisions={trace?.decisions ?? []} thinking={trace?.thinking ?? ''} streaming={trace?.streaming ?? false} chunks={trace?.chunks ?? []} metrics={trace?.metrics ?? null} hold={trace?.hold ?? false} query={lastQuestion} open={rightPanelOpen} expanded={rightPanelExpanded} activeTab={traceTab} focusSource={focusSource} selectedMessage={selectedMessage} onOpenChange={setRightPanelOpen} onExpandedChange={setRightPanelExpanded} onTabChange={setTraceTab} onOpenDocument={setViewerDocumentId} scrollToTopSignal={traceScrollSignal} />
       </div>
     </div>
   )

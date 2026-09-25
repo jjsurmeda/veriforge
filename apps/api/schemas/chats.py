@@ -50,6 +50,9 @@ class MessageOut(BaseModel):
     # runs.metrics (latency by stage, tokens, credits, scores) for the
     # answer footer (TX-4); assistant messages only.
     metrics: dict[str, object] | None = None
+    # The run that produced this message. The client needs it to load that
+    # message's trace from the workspace panel rather than the latest run.
+    run_id: str | None = None
 
 
 class RunFilters(BaseModel):
@@ -114,6 +117,7 @@ def message_out(
     created_at: datetime,
     citations: list[CitationOut] | None = None,
     metrics: dict[str, object] | None = None,
+    run_id: str | None = None,
 ) -> MessageOut:
     return MessageOut(
         id=str(row_id),
@@ -124,4 +128,5 @@ def message_out(
         created_at=created_at,
         citations=citations or [],
         metrics=metrics,
+        run_id=run_id,
     )

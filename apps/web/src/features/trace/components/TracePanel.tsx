@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Gauge, ListTree, Maximize2, PanelRight, Quote } from 'lucide-react'
 
 import { formatCredits } from '../../../lib/format'
@@ -24,6 +24,7 @@ interface Props {
   onTabChange?: (tab: TraceTab) => void
   onOpenDocument?: (documentId: string) => void
   selectedMessage?: MessageOut | null
+  scrollToTopSignal?: number
 }
 
 export type TraceTab = 'trace' | 'sources' | 'metrics'
@@ -90,13 +91,19 @@ function MetricsTab({ metrics, decisions }: { metrics: Metrics | null; decisions
   )
 }
 
-export function TracePanel({ steps, decisions, thinking, streaming, chunks, metrics, hold, query, open, expanded, activeTab, focusSource, onOpenChange, onExpandedChange, onTabChange, onOpenDocument, selectedMessage }: Props) {
+export function TracePanel({ steps, decisions, thinking, streaming, chunks, metrics, hold, query, open, expanded, activeTab, focusSource, onOpenChange, onExpandedChange, onTabChange, onOpenDocument, selectedMessage, scrollToTopSignal }: Props) {
   const [internalOpen, setInternalOpen] = useState(true)
   const [internalExpanded, setInternalExpanded] = useState(false)
   const [internalTab, setInternalTab] = useState<TraceTab>('trace')
+  const bodyRef = useRef<HTMLDivElement>(null)
   const isOpen = open ?? internalOpen
   const isExpanded = expanded ?? internalExpanded
   const tab = activeTab ?? internalTab
+
+  useEffect(() => {
+    if (scrollToTopSignal === undefined) return
+    bodyRef.current?.scrollTo({ top: 0 })
+  }, [scrollToTopSignal])
 
   const setOpen = (next: boolean) => {
     setInternalOpen(next)
@@ -143,7 +150,7 @@ export function TracePanel({ steps, decisions, thinking, streaming, chunks, metr
           </div>
         </header>
         {hold && <p className="border-b border-border/20 bg-raised px-4 py-2 text-xs text-warning" role="status">Verifying… the reviewed answer lands when checks finish.</p>}
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+        <div ref={bodyRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
           {tab === 'trace' && <div id="workspace-trace" role="tabpanel" className="space-y-5">
             {thinking.length > 0 && <section><details><summary className="cursor-pointer text-xs font-medium text-fg-muted hover:text-fg">Thinking</summary><p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-fg-muted">{thinking}</p></details></section>}
             {steps.length > 0 && <section><h3 className="mb-1 text-xs font-medium text-fg-muted">Steps</h3><ul>{steps.map((step, index) => <StepRow key={index} step={step} />)}</ul></section>}

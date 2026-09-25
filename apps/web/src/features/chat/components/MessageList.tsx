@@ -33,7 +33,7 @@ interface Props {
   onAbstainAction?: (action: AbstainAction) => void
   onOpenSources?: (sourceNumber?: number, messageId?: string) => void
   onSelectMessage?: (messageId: string) => void
-  onShowSteps?: () => void
+  onShowSteps?: (message: MessageOut) => void
   optimisticQuestion?: string | null
 }
 
@@ -216,7 +216,7 @@ function AbstentionActions({ actions, onSelect }: { actions: AbstainAction[]; on
   )
 }
 
-function MessageActions({ message, content, onShowSteps }: { message: MessageOut; content: string; onShowSteps?: () => void }) {
+function MessageActions({ message, content, onShowSteps }: { message: MessageOut; content: string; onShowSteps?: (message: MessageOut) => void }) {
   const [copied, setCopied] = useState(false)
   const copy = async () => {
     if (!navigator.clipboard) return
@@ -237,7 +237,7 @@ function MessageActions({ message, content, onShowSteps }: { message: MessageOut
       <button type="button" aria-label="Link to message" title="Link to message" onClick={() => void link()} className="icon-button size-8">
         <Link2 size={15} strokeWidth={1.75} aria-hidden="true" />
       </button>
-      {onShowSteps && <button type="button" onClick={onShowSteps} className="ml-2 text-xs text-fg-muted underline decoration-transparent hover:text-fg hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring">Show steps</button>}
+      {onShowSteps && message.run_id && <button type="button" onClick={() => onShowSteps(message)} className="ml-2 text-xs text-fg-muted underline decoration-transparent hover:text-fg hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring">Show steps</button>}
     </div>
   )
 }

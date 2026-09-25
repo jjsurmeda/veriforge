@@ -14,7 +14,11 @@ export interface UseRunStream {
   resume: () => void
 }
 
-export function useRunStream(runId: string | null, chatId: string | null): UseRunStream {
+export function useRunStream(
+  runId: string | null,
+  chatId: string | null,
+  { invalidate = true }: { invalidate?: boolean } = {},
+): UseRunStream {
   const queryClient = useQueryClient()
   const retries = useRef(0)
   const [nonce, setNonce] = useState(0)
@@ -54,7 +58,7 @@ export function useRunStream(runId: string | null, chatId: string | null): UseRu
         if (!message.data) return
         const event = JSON.parse(message.data) as StreamEvent
         useChatRunStore.getState().applyEvent(runId, event)
-        if (TERMINAL_TYPES.has(event.type)) {
+        if (TERMINAL_TYPES.has(event.type) && invalidate) {
           void queryClient.invalidateQueries({ queryKey: ['messages', chatId] })
           void queryClient.invalidateQueries({ queryKey: ['chat', chatId] })
           if (event.type === 'run.completed') {
@@ -82,7 +86,7 @@ export function useRunStream(runId: string | null, chatId: string | null): UseRu
       stopped = true
       controller.abort()
     }
-  }, [runId, chatId, nonce, queryClient])
+  }, [runId, chatId, nonce, queryClient, invalidate])
 
   return { resume }
 }
