@@ -2376,6 +2376,54 @@
           }
         }
       }
+    },
+    "/admin/decisions/stats": {
+      "get": {
+        "operationId": "decision_stats_admin_decisions_stats_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "hours",
+            "required": false,
+            "schema": {
+              "default": 24,
+              "title": "Hours",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionStatsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Decision Stats",
+        "tags": [
+          "admin"
+        ]
+      }
     }
   },
   "components": {
@@ -5554,6 +5602,225 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "DecisionBreakerOut": {
+        "properties": {
+          "open_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Open Until"
+          },
+          "state": {
+            "enum": [
+              "closed",
+              "open",
+              "half_open"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "open_until"
+        ],
+        "title": "DecisionBreakerOut",
+        "type": "object"
+      },
+      "DecisionCountOut": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "fallback_count": {
+            "title": "Fallback Count",
+            "type": "integer"
+          },
+          "name_or_prefix": {
+            "title": "Name Or Prefix",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name_or_prefix",
+          "count",
+          "fallback_count"
+        ],
+        "title": "DecisionCountOut",
+        "type": "object"
+      },
+      "DecisionShadowDisagreementOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "decision": {
+            "title": "Decision",
+            "type": "string"
+          },
+          "fallback_answer": {
+            "additionalProperties": true,
+            "title": "Fallback Answer",
+            "type": "object"
+          },
+          "jev_answer": {
+            "additionalProperties": true,
+            "title": "Jev Answer",
+            "type": "object"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "decision",
+          "jev_answer",
+          "fallback_answer",
+          "created_at"
+        ],
+        "title": "DecisionShadowDisagreementOut",
+        "type": "object"
+      },
+      "DecisionShadowOut": {
+        "properties": {
+          "agree_rate": {
+            "title": "Agree Rate",
+            "type": "number"
+          },
+          "recent_disagreements": {
+            "items": {
+              "$ref": "#/components/schemas/DecisionShadowDisagreementOut"
+            },
+            "title": "Recent Disagreements",
+            "type": "array"
+          },
+          "sampled": {
+            "title": "Sampled",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sampled",
+          "agree_rate",
+          "recent_disagreements"
+        ],
+        "title": "DecisionShadowOut",
+        "type": "object"
+      },
+      "DecisionStatsOut": {
+        "properties": {
+          "breaker": {
+            "$ref": "#/components/schemas/DecisionBreakerOut"
+          },
+          "by_decision": {
+            "items": {
+              "$ref": "#/components/schemas/DecisionCountOut"
+            },
+            "title": "By Decision",
+            "type": "array"
+          },
+          "fallback_count": {
+            "title": "Fallback Count",
+            "type": "integer"
+          },
+          "fallback_share": {
+            "title": "Fallback Share",
+            "type": "number"
+          },
+          "ingress_p95_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ingress P95 Ms"
+          },
+          "jev_count": {
+            "title": "Jev Count",
+            "type": "integer"
+          },
+          "jev_latency_p50_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jev Latency P50 Ms"
+          },
+          "jev_latency_p95_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jev Latency P95 Ms"
+          },
+          "shadow": {
+            "$ref": "#/components/schemas/DecisionShadowOut"
+          },
+          "targets": {
+            "$ref": "#/components/schemas/DecisionTargetsOut"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "jev_count",
+          "fallback_count",
+          "fallback_share",
+          "jev_latency_p50_ms",
+          "jev_latency_p95_ms",
+          "ingress_p95_ms",
+          "by_decision",
+          "breaker",
+          "shadow",
+          "targets"
+        ],
+        "title": "DecisionStatsOut",
+        "type": "object"
+      },
+      "DecisionTargetsOut": {
+        "properties": {
+          "fallback_share": {
+            "title": "Fallback Share",
+            "type": "number"
+          },
+          "ingress_p95_ms": {
+            "title": "Ingress P95 Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ingress_p95_ms",
+          "fallback_share"
+        ],
+        "title": "DecisionTargetsOut",
+        "type": "object"
       }
     },
     "securitySchemes": {

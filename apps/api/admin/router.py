@@ -12,6 +12,7 @@ from db.session import get_session
 from schemas.admin import (
     AdminModelOut,
     AuditOut,
+    DecisionStatsOut,
     ModelCreate,
     ModelPatch,
     PlanCreate,
@@ -190,6 +191,15 @@ async def activate_settings(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> SettingsOut:
     return await service.activate_settings(session, actor_id=user.id, version=version)
+
+
+@router.get("/decisions/stats", response_model=DecisionStatsOut)
+async def decision_stats(
+    _: AdminUser,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    hours: Annotated[int, Query()] = 24,
+) -> DecisionStatsOut:
+    return await service.decision_stats(session, hours=hours)
 
 
 @router.get("/audit", response_model=list[AuditOut])

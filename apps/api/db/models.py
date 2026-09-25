@@ -184,6 +184,7 @@ class Run(Base):
 
 class RunEvent(Base):
     __tablename__ = "run_events"
+    __table_args__ = (Index("ix_run_events_type_created", "type", "created_at"),)
 
     run_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("runs.id", ondelete="CASCADE"), primary_key=True
@@ -568,6 +569,7 @@ class DecisionShadow(Base):
     __table_args__ = (
         Index("ix_decision_shadow_run", "run_id"),
         Index("ix_decision_shadow_agree", "agree"),
+        Index("ix_decision_shadow_created", "created_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid7)

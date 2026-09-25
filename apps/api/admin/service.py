@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import urlparse
 from uuid import UUID
@@ -18,12 +19,19 @@ from db.models import (
     User,
     UserQuotaOverride,
 )
+from decisions.breaker import get_breaker
 from errors import AppError
 from providers.credentials import decrypt_provider_key, encrypt_provider_key
 from runtime import RuntimeSettings
 from schemas.admin import (
     AdminModelOut,
     AuditOut,
+    DecisionBreakerOut,
+    DecisionCountOut,
+    DecisionShadowDisagreementOut,
+    DecisionShadowOut,
+    DecisionStatsOut,
+    DecisionTargetsOut,
     ModelCreate,
     ModelPatch,
     PlanCreate,
@@ -622,3 +630,161 @@ async def list_audit(session: AsyncSession, *, limit: int = 100) -> list[AuditOu
         )
         for row in rows
     ]
+
+
+async def decision_stats(session: AsyncSession, *, hours: int = 24) -> DecisionStatsOut:
+    window = max(1, min(168, hours))
+    cutoff = datetime.now(UTC) - timedelta(hours=window)
+    totals = (
+        await session.execute(
+            text(
+                """
+                SELECT
+                    COUNT(*) AS total,
+                    COUNT(*) FILTER (WHERE re.payload->>'engine' = 'jev') AS jev_count,
+                    COUNT(*) FILTER (WHERE re.payload->>'engine' = 'fallback') AS fallback_count
+                FROM run_events AS re
+                JOIN runs AS r ON r.id = re.run_id
+                WHERE re.type = 'decision' AND re.created_at >= :cutoff
+                """
+            ),
+            {"cutoff": cutoff},
+        )
+    ).mappings().one()
+    call_latency = (
+        await session.execute(
+            text(
+                """
+                WITH decision_events AS (
+                    SELECT
+                        re.run_id,
+                        re.seq,
+                        COALESCE(
+                            NULLIF(re.payload->>'call_id', ''),
+                            re.run_id::text || ':' || re.seq::text
+                        ) AS call_key,
+                        (re.payload->>'latency_ms')::double precision AS latency_ms,
+                        re.payload->>'engine' AS engine,
+                        re.payload->>'stage' AS stage
+                    FROM run_events AS re
+                    JOIN runs AS r ON r.id = re.run_id
+                    WHERE re.type = 'decision' AND re.created_at >= :cutoff
+                ), calls AS (
+                    SELECT
+                        run_id,
+                        call_key,
+                        MAX(latency_ms) AS latency_ms,
+                        BOOL_OR(engine = 'jev') AS is_jev,
+                        BOOL_OR(stage = 'ingress') AS is_ingress
+                    FROM decision_events
+                    GROUP BY run_id, call_key
+                )
+                SELECT
+                    percentile_cont(0.5) WITHIN GROUP (ORDER BY latency_ms)
+                        FILTER (WHERE is_jev) AS jev_p50,
+                    percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms)
+                        FILTER (WHERE is_jev) AS jev_p95,
+                    percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms)
+                        FILTER (WHERE is_ingress) AS ingress_p95
+                FROM calls
+                """
+            ),
+            {"cutoff": cutoff},
+        )
+    ).mappings().one()
+    by_decision_rows = (
+        await session.execute(
+            text(
+                """
+                SELECT
+                    CASE
+                        WHEN re.payload->>'name' LIKE 'chunk_injection_%'
+                            THEN 'chunk_injection_*'
+                        WHEN re.payload->>'stage' = 'claim_verdict'
+                            OR re.payload->>'name' LIKE 'claim_%'
+                            THEN 'claim_verdicts'
+                        ELSE re.payload->>'name'
+                    END AS name_or_prefix,
+                    COUNT(*) AS count,
+                    COUNT(*) FILTER (WHERE re.payload->>'engine' = 'fallback') AS fallback_count
+                FROM run_events AS re
+                JOIN runs AS r ON r.id = re.run_id
+                WHERE re.type = 'decision' AND re.created_at >= :cutoff
+                GROUP BY 1
+                ORDER BY count DESC, name_or_prefix
+                """
+            ),
+            {"cutoff": cutoff},
+        )
+    ).mappings().all()
+    shadow_totals = (
+        await session.execute(
+            text(
+                """
+                SELECT
+                    COUNT(*) AS sampled,
+                    AVG(CASE WHEN agree THEN 1.0 ELSE 0.0 END) AS agree_rate
+                FROM decision_shadow
+                WHERE created_at >= :cutoff
+                """
+            ),
+            {"cutoff": cutoff},
+        )
+    ).mappings().one()
+    disagreements = (
+        await session.execute(
+            text(
+                """
+                SELECT run_id, decision, jev_answer, fallback_answer, created_at
+                FROM decision_shadow
+                WHERE created_at >= :cutoff AND NOT agree
+                ORDER BY created_at DESC
+                LIMIT 20
+                """
+            ),
+            {"cutoff": cutoff},
+        )
+    ).mappings().all()
+
+    total = int(totals["total"])
+    fallback_count = int(totals["fallback_count"])
+    sampled = int(shadow_totals["sampled"])
+    breaker = get_breaker()
+    breaker_state = {
+        "closed": "closed",
+        "open": "open",
+        "probing": "half_open",
+    }[breaker.state.value]
+    return DecisionStatsOut(
+        total=total,
+        jev_count=int(totals["jev_count"]),
+        fallback_count=fallback_count,
+        fallback_share=fallback_count / total if total else 0.0,
+        jev_latency_p50_ms=call_latency["jev_p50"],
+        jev_latency_p95_ms=call_latency["jev_p95"],
+        ingress_p95_ms=call_latency["ingress_p95"],
+        by_decision=[
+            DecisionCountOut(
+                name_or_prefix=row["name_or_prefix"],
+                count=int(row["count"]),
+                fallback_count=int(row["fallback_count"]),
+            )
+            for row in by_decision_rows
+        ],
+        breaker=DecisionBreakerOut(state=breaker_state, open_until=breaker.open_until),
+        shadow=DecisionShadowOut(
+            sampled=sampled,
+            agree_rate=float(shadow_totals["agree_rate"] or 0.0),
+            recent_disagreements=[
+                DecisionShadowDisagreementOut(
+                    run_id=row["run_id"],
+                    decision=row["decision"],
+                    jev_answer=row["jev_answer"],
+                    fallback_answer=row["fallback_answer"],
+                    created_at=row["created_at"],
+                )
+                for row in disagreements
+            ],
+        ),
+        targets=DecisionTargetsOut(ingress_p95_ms=600, fallback_share=0.05),
+    )

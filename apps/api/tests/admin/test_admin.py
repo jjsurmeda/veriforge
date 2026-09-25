@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime
+from uuid import UUID
 
 import pytest
 from cryptography.fernet import Fernet
@@ -9,9 +11,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
-from db.models import AuditLog, Setting, User
+from db.models import AuditLog, DecisionShadow, RunEvent, Setting, User
 from runtime import load_active_runtime
-from tests.conftest import signup
+from schemas.events import Decision
+from tests.conftest import make_run_row, signup
 
 
 async def _admin_headers(client: AsyncClient, db: AsyncSession) -> dict[str, str]:
@@ -22,6 +25,176 @@ async def _admin_headers(client: AsyncClient, db: AsyncSession) -> dict[str, str
     user.role = "admin"
     await db.commit()
     return {"Authorization": f"Bearer {auth['access_token']}"}
+
+
+def _decision_event(
+    run_id: UUID,
+    seq: int,
+    *,
+    name: str,
+    value: str | float,
+    engine: str,
+    latency_ms: int,
+    call_id: str,
+    stage: str,
+    batch_size: int,
+    threshold: float | None,
+) -> RunEvent:
+    event = Decision(
+        run_id=str(run_id),
+        name=name,
+        value=value,
+        engine=engine,
+        latency_ms=latency_ms,
+        stage=stage,
+        call_id=call_id,
+        batch_size=batch_size,
+        threshold=threshold,
+    )
+    return RunEvent(
+        run_id=run_id,
+        seq=seq,
+        type="decision",
+        payload=event.model_dump(mode="json"),
+        created_at=datetime.now(UTC),
+    )
+
+
+async def test_decision_stats_use_call_latency_and_collapse_dynamic_names(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    run_id, _ = await make_run_row(db)
+    db.add_all(
+        [
+            _decision_event(
+                run_id,
+                1,
+                name="guard_injection",
+                value=0.03,
+                engine="jev",
+                latency_ms=100,
+                call_id="call-a",
+                stage="ingress",
+                batch_size=2,
+                threshold=0.85,
+            ),
+            _decision_event(
+                run_id,
+                2,
+                name="intent",
+                value="lookup",
+                engine="jev",
+                latency_ms=200,
+                call_id="call-a",
+                stage="ingress",
+                batch_size=2,
+                threshold=None,
+            ),
+            _decision_event(
+                run_id,
+                3,
+                name="chunk_injection_0",
+                value=0.8,
+                engine="fallback",
+                latency_ms=300,
+                call_id="call-b",
+                stage="sanitize",
+                batch_size=2,
+                threshold=0.70,
+            ),
+            _decision_event(
+                run_id,
+                4,
+                name="chunk_injection_1",
+                value=0.1,
+                engine="fallback",
+                latency_ms=400,
+                call_id="call-b",
+                stage="sanitize",
+                batch_size=2,
+                threshold=0.70,
+            ),
+            _decision_event(
+                run_id,
+                5,
+                name="c1",
+                value="supported",
+                engine="jev",
+                latency_ms=500,
+                call_id="call-c",
+                stage="claim_verdict",
+                batch_size=1,
+                threshold=None,
+            ),
+            _decision_event(
+                run_id,
+                6,
+                name="off_topic",
+                value=0.1,
+                engine="jev",
+                latency_ms=400,
+                call_id="call-d",
+                stage="ingress",
+                batch_size=1,
+                threshold=0.80,
+            ),
+        ]
+    )
+    db.add_all(
+        [
+            DecisionShadow(
+                run_id=run_id,
+                decision="intent",
+                jev_answer={"value": "lookup", "probability": 0.8},
+                fallback_answer={"value": "summarize", "probability": 0.7},
+                agree=False,
+                created_at=datetime.now(UTC),
+            ),
+            DecisionShadow(
+                run_id=run_id,
+                decision="risk",
+                jev_answer={"value": "low", "probability": 0.8},
+                fallback_answer={"value": "low", "probability": 0.75},
+                agree=True,
+                created_at=datetime.now(UTC),
+            ),
+        ]
+    )
+    await db.commit()
+    headers = await _admin_headers(client, db)
+
+    response = await client.get("/admin/decisions/stats?hours=24", headers=headers)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["total"] == 6
+    assert body["jev_count"] == 4
+    assert body["fallback_count"] == 2
+    assert body["fallback_share"] == pytest.approx(1 / 3)
+    assert body["jev_latency_p50_ms"] == pytest.approx(400)
+    assert body["jev_latency_p95_ms"] == pytest.approx(490)
+    assert body["ingress_p95_ms"] == pytest.approx(390)
+
+    by_decision = {row["name_or_prefix"]: row for row in body["by_decision"]}
+    assert by_decision["chunk_injection_*"]["count"] == 2
+    assert by_decision["chunk_injection_*"]["fallback_count"] == 2
+    assert by_decision["claim_verdicts"]["count"] == 1
+    assert body["shadow"]["sampled"] == 2
+    assert body["shadow"]["agree_rate"] == pytest.approx(0.5)
+    assert len(body["shadow"]["recent_disagreements"]) == 1
+    assert body["breaker"]["state"] == "closed"
+    assert body["targets"] == {"ingress_p95_ms": 600, "fallback_share": 0.05}
+
+    clamped = await client.get("/admin/decisions/stats?hours=999", headers=headers)
+    assert clamped.status_code == 200
+
+
+async def test_non_admin_cannot_access_decision_stats(client: AsyncClient) -> None:
+    auth = await signup(client, "decision-stats-user@test.dev")
+    response = await client.get(
+        "/admin/decisions/stats",
+        headers={"Authorization": f"Bearer {auth['access_token']}"},
+    )
+    assert response.status_code == 403
 
 
 async def test_settings_recover_inactive_seed_and_allocate_unique_versions(

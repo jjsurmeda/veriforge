@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import {
+  Activity,
   Boxes,
   CheckCircle2,
   CreditCard,
@@ -50,9 +51,10 @@ import type {
   UserOut,
   UserPatch,
 } from '../../generated/types.gen'
+import { DecisionLayerPanel } from './DecisionLayerPanel'
 import { useMe } from '../auth/hooks/useMe'
 
-type Section = 'providers' | 'models' | 'roles' | 'settings' | 'plans' | 'users' | 'audit'
+type Section = 'decisions' | 'providers' | 'models' | 'roles' | 'settings' | 'plans' | 'users' | 'audit'
 
 function valueAt(data: Record<string, unknown>, path: string, fallback: number): number {
   const value = path.split('.').reduce<unknown>((current, key) => {
@@ -334,6 +336,7 @@ export function AdminPage() {
   const currentThreshold = valueAt(data, 'thresholds.sufficient_retry.jev', settingsDraft.threshold)
   const currentMode = typeof data.decision_engine_mode === 'string' ? data.decision_engine_mode : settingsDraft.mode
   const tabs: Array<[Section, string, React.ReactNode]> = [
+    ['decisions', 'Decision layer', <Activity key="decisions" size={14} aria-hidden="true" />],
     ['settings', 'Settings', <Settings2 key="settings" size={14} aria-hidden="true" />],
     ['providers', 'Providers', <Server key="providers" size={14} aria-hidden="true" />],
     ['models', 'Models', <Boxes key="models" size={14} aria-hidden="true" />],
@@ -378,6 +381,7 @@ export function AdminPage() {
         </nav>
         <div className="min-w-0 space-y-4">
           {notice && <p role="status" className="flex items-center gap-2 rounded-lg border border-success/30 bg-success-soft px-3 py-2 text-sm text-success"><CheckCircle2 size={15} aria-hidden="true" />{notice}</p>}
+          {section === 'decisions' && <DecisionLayerPanel />}
           {section === 'settings' && (
             <>
               <Panel title="Runtime settings">

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -125,3 +125,47 @@ class AuditOut(BaseModel):
     before: dict[str, Any] | None
     after: dict[str, Any] | None
     created_at: datetime
+
+
+class DecisionCountOut(BaseModel):
+    name_or_prefix: str
+    count: int
+    fallback_count: int
+
+
+class DecisionBreakerOut(BaseModel):
+    state: Literal["closed", "open", "half_open"]
+    open_until: datetime | None
+
+
+class DecisionShadowDisagreementOut(BaseModel):
+    run_id: UUID
+    decision: str
+    jev_answer: dict[str, Any]
+    fallback_answer: dict[str, Any]
+    created_at: datetime
+
+
+class DecisionShadowOut(BaseModel):
+    sampled: int
+    agree_rate: float
+    recent_disagreements: list[DecisionShadowDisagreementOut]
+
+
+class DecisionTargetsOut(BaseModel):
+    ingress_p95_ms: int
+    fallback_share: float
+
+
+class DecisionStatsOut(BaseModel):
+    total: int
+    jev_count: int
+    fallback_count: int
+    fallback_share: float
+    jev_latency_p50_ms: float | None
+    jev_latency_p95_ms: float | None
+    ingress_p95_ms: float | None
+    by_decision: list[DecisionCountOut]
+    breaker: DecisionBreakerOut
+    shadow: DecisionShadowOut
+    targets: DecisionTargetsOut
