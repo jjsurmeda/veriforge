@@ -79,3 +79,32 @@ async def stream_grounded_answer(
         on_reasoning=on_reasoning,
     ):
         yield token
+
+
+def build_chitchat_messages(
+    message: str, history: list[tuple[str, str]]
+) -> list[dict[str, str]]:
+    messages: list[dict[str, str]] = [
+        {"role": "system", "content": load_prompt("chitchat.md")}
+    ]
+    for role, content in history[-4:]:
+        messages.append({"role": role, "content": content})
+    messages.append({"role": "user", "content": message})
+    return messages
+
+
+async def stream_chitchat_reply(
+    *,
+    litellm_model: str,
+    message: str,
+    history: list[tuple[str, str]],
+    metadata: dict[str, str],
+) -> AsyncIterator[str]:
+    """Small talk: a direct, sourceless reply. No retrieval, no citations, no
+    reviewer (TRD §7 ingress row)."""
+    async for token in stream_completion(
+        litellm_model=litellm_model,
+        messages=build_chitchat_messages(message, history),
+        metadata={**metadata, "role": "generator"},
+    ):
+        yield token

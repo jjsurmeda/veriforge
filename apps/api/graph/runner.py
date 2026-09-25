@@ -433,6 +433,7 @@ async def _finish_answer(
     plan: str,
     chat_id: UUID,
     instant_title: str | None,
+    chitchat: bool = False,
 ) -> None:
     """Shared tail for every mode: review phase (skipped for abstentions —
     the fixed template has no claims to verify), event order per delivery
@@ -472,6 +473,7 @@ async def _finish_answer(
             question=question,
             answer=final_text,
             small_model=small_model,
+            chitchat=chitchat,
         )
 
     await _with_session(session_factory, refine_title)
@@ -724,7 +726,8 @@ async def execute_run(
                 small_model=small_litellm_model,
                 tokens_in=prompt_tokens,
                 generate_ms=generate_ms,
-                abstained=auto_run.abstain_event is not None,
+                abstained=auto_run.abstain_event is not None or auto_run.chitchat,
+                chitchat=auto_run.chitchat,
                 plan=plan,
                 chat_id=chat_id,
                 instant_title=instant_title,

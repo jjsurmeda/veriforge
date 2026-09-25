@@ -90,14 +90,30 @@ async def refine_chat_title(
     question: str,
     answer: str,
     small_model: str,
+    chitchat: bool = False,
+    complete_fn: CompleteFn | None = None,
 ) -> str | None:
-    if instant_title is None:
-        return None
-    title = await generate_chat_title(question=question, answer=answer, small_model=small_model)
-    if title is None:
-        return None
+    """Replace the provisional question-shaped title with a topic title.
+
+    The chat is only re-titled while its title is still one this function (or
+    the run that created it) wrote, so a rename by the user always wins. A
+    chitchat turn is reverted to "New chat" instead, so the next real exchange
+    gets the title.
+    """
     chat = await session.get(Chat, chat_id)
-    if chat is None or chat.title != instant_title:
+    if chat is None:
+        return None
+    if chitchat:
+        if instant_title is not None and chat.title == instant_title:
+            chat.title = DEFAULT_CHAT_TITLE
+            return DEFAULT_CHAT_TITLE
+        return None
+    if instant_title is None or chat.title != instant_title:
+        return None
+    title = await generate_chat_title(
+        question=question, answer=answer, small_model=small_model, complete_fn=complete_fn
+    )
+    if title is None:
         return None
     chat.title = title
     return title
