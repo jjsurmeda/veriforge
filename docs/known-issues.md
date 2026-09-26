@@ -6,77 +6,11 @@ fix is. When you fix one, delete it and put its ID in the commit body.
 
 Logged 2026-09-26, after the UX pass and Gutenberg demo (`ea16d2b..725bbc5`).
 
-**Do these in order.** KI-1, KI-2 and KI-7 unblock KI-5, and KI-5 unblocks KI-6.
-KI-8 is independent. Do it before the next Playwright run.
+**Order:** KI-12 unblocks KI-5, and KI-5 unblocks KI-6. KI-1, KI-2 and KI-7
+were fixed in `d1da81d` on `fix/model-runtime`. KI-8 is independent. Do it
+before the next Playwright run.
 
 ---
-
-## KI-1: No output-token cap on LLM calls (a 402 waiting to happen)
-
-- **What:** `apps/api/providers/llm.py` never sets `max_tokens`. LiteLLM
-  falls back to the model's maximum (64k for some models), and OpenRouter
-  rejects the call with **402** when the key's balance can't cover that
-  worst case.
-- **Evidence:** every run failed this way before `44fe80e`. That commit
-  moved non-Jev calls to free models, which don't trip the balance check.
-  The cause is still in the code.
-- **Impact:** the first paid model (the fallback, the user-picked model
-  after KI-3, or the paid generator from KI-2) fails once the balance is
-  low. Chat titles also silently never refine, because the run dies first.
-- **Fix:** set an explicit `max_tokens` per role, passed from the call
-  sites through `complete()` / `stream()`. Starting points: generator
-  2048, planner 1024, claim extractor 1024, small/titler/suggestions 256.
-  Keep the limits in `config.py`.
-- **Test:** a pytest that asserts `max_tokens` is present on every LiteLLM
-  call. Mock at the LiteLLM boundary.
-
-## KI-2: Model plan: free Nemotron for runtime, pinned paid model for the eval gate
-
-- **What:** `44fe80e` put every non-Jev call on `:free` models with no
-  fallback chain. On 2026-09-26 the free pool returned 503
-  `provider_overloaded`, and `make smoke` turns 2–5 didn't finish.
-- **Live check, 2026-09-26:** each free model got a JSON-title task and a
-  cited-answer task with two quoted sources and one unanswerable part.
-
-  | Model | Result |
-  | --- | --- |
-  | `nvidia/nemotron-3-super-120b-a12b:free` | ✅ Valid JSON, correct `[n]`, admits the gap, 1–2 s |
-  | `nvidia/nemotron-3-ultra-550b-a55b:free` | ✅ Same quality, 4–6 s |
-  | `openrouter/free` | ✅ Routes to an available free model |
-  | `qwen/qwen3.8-27b:free`, `google/gemma-4-*:free` | 429, rate-limited upstream |
-  | `thinkingmachines/inkling*:free` | 403, agentic harnesses only |
-  | `nvidia/nemotron-3.5-lightning:free` | Prints its reasoning, 50–170 s |
-  | `liquid/lfm-2.5-2.6b:free`, `dots-studio/dots-3-note-preview:free` | Empty output on one of the two tasks |
-
-- **Fix:** set roles in the model seed and `config.py` defaults.
-
-  | Role | Model | Fallback |
-  | --- | --- | --- |
-  | generator, DecisionEngine fallback, small | Nemotron 3 Super `:free` | `openrouter/free` |
-  | planner, claim extractor | Nemotron 3 Ultra `:free` | Nemotron 3 Super `:free` |
-  | eval gate (all non-Jev roles) | **One pinned cheap paid model** via OpenRouter (DeepSeek V3 or Gemini Flash class), no fallback. The gate must fail, not switch models. | none |
-  | Jev | unchanged | TRD §8 |
-
-  Free ids churn. Re-run the check (a script under `apps/api/scripts/`)
-  before changing ids, and record the date.
-- **Why a paid model for the gate:** the free pool swaps, rate-limits and
-  retires models without notice, so a baseline on it drifts for reasons
-  unrelated to code. A gate run is about 500k tokens, which is about
-  $0.10–0.20.
-- **Not options:**
-  - The Kimi and GLM **coding-plan** subscriptions are licensed for coding
-    tools only. Don't use them in Veriforge's runtime or eval gate. They're
-    fine for driving Claude Code or other dev tooling.
-  - RunPod: idle GPU cost far above API cost at this volume.
-  - Ollama (8B on a 16 GB M5) is too weak for eval scoring. It's
-    optional for offline dev only (host-run, LiteLLM `ollama/…`,
-    `host.docker.internal:11434`). Don't build it unless asked.
-- **Budget:** the OpenRouter key had $4.99 of $100 left on 2026-09-26.
-  The spend isn't from free models. Check Activity in the OpenRouter
-  dashboard (it needs a management key) to see how much is Jev versus the
-  old Haiku fallback versus evals.
-- **Depends on:** KI-1. Without a token cap, a paid model reproduces the
-  402.
 
 ## KI-3: The model picker doesn't affect the generator
 
@@ -132,6 +66,9 @@ KI-8 is independent. Do it before the next Playwright run.
   eval gate. CLAUDE.md requires the gate for graph and prompt changes
   from slice 3 on. It was reported as blocked by KI-2. Being blocked
   should have held the merge.
+- **Note:** `evals/runner.py` already pins paid models (`gpt-4o-mini` as the
+  generator, Haiku as the small model), so the gate doesn't depend on the
+  free pool. A run costs cents plus Jev.
 - **Fix:** once KI-5 passes, run the 20-item fast subset. Because the
   models changed, record a **new baseline** with before/after numbers
   for faithfulness, abstention accuracy and p50 latency. If faithfulness
@@ -139,28 +76,6 @@ KI-8 is independent. Do it before the next Playwright run.
   graph work.
 - **Rule going forward:** no graph, prompt or model change lands on
   `main` until the gate has run green.
-
-## KI-7: No concurrency cap or 429 fallback on LLM calls
-
-- **What:** `providers/llm.py` sends every call as soon as it's made.
-  Free models allow about 20 requests per minute per model (and 1,000 per
-  day on an account with credits). One Auto question makes about 5–8 LLM
-  calls, so parallel eval items or Deep-mode hops trip 429.
-- **Fix:** in `providers/llm.py`, the one choke point every call already
-  goes through:
-  - a per-model `asyncio.Semaphore` with a configurable cap in `config.py`
-    (default 4)
-  - on 429, wait for `Retry-After` (capped), then move to the role's next
-    fallback model
-  - reuse the existing LiteLLM retry and fallback settings, with no new
-    retry layer
-
-  Per-process is enough (ADR-001: no Redis at Stage 1).
-  `# ponytail:` note: per-process cap, move to a Postgres-backed limiter
-  if multiple workers exceed provider limits.
-- **Test:** with a fake LiteLLM that returns 429 then 200, the call
-  succeeds on the fallback model. With cap 2 and 5 concurrent calls, at
-  most 2 are ever in flight.
 
 ## KI-8: Six Playwright specs drive live LLM runs
 
@@ -193,3 +108,104 @@ KI-8 is independent. Do it before the next Playwright run.
   390px next to the Deep and Web toggles. Don't hide it.
 - **Test:** a vitest check that the composer renders the model trigger at
   a mobile viewport, or that the wrapper has no `hidden` class.
+
+## KI-10: Cohere rerank is out of quota
+
+- **What:** the Cohere key is a trial key capped at 1,000 calls per month,
+  and it's used up (checked 2026-09-26). Since `d1da81d`, retrieval
+  degrades to fused order instead of failing the run, but answers lose
+  the rerank step. That matters for KI-12.
+- **Fix, pick one:**
+  - a Cohere production key
+  - NVIDIA's free rerank NIM (`nv-rerankqa` family, same NVIDIA key as
+    in KI-2's discussion) behind the existing `RerankProvider` protocol
+  - unset `COHERE_API_KEY` to use fused order on purpose
+- **Test:** the provider unit test with a mocked transport, as
+  `CohereRerank` has.
+
+## KI-11: The sanitizer sends every retrieved chunk to Jev
+
+- **What:** each Auto run asks Jev about 50 `chunk_injection_n`
+  questions (one batched call) before rerank trims to the top 8. Seen in
+  run events on 2026-09-26.
+- **Impact:** Jev is the only paid call left, and its price isn't
+  published (`typesafe/jev-router` lists `-1`). This is the likeliest
+  source of the unexplained $95 OpenRouter spend.
+- **Fix:** sanitize after rerank, only the chunks that reach the
+  generator (top 8), or confirm in the OpenRouter Activity page that Jev
+  bills per call, not per question, before changing anything. Check TRD
+  §11 for the required order.
+
+## KI-12: Grounded answers are wrong even when the right book is retrieved
+
+Seen in `make smoke` on `fix/model-runtime`, with the LLM path now
+working:
+- **Darcy's proposal:** it abstains ("not enough evidence") while listing
+  *Pride and Prejudice* chunks. The proposal text exists in the corpus. A
+  direct call with those chunks answers correctly in 2 s, so it's either
+  retrieval (lexical_weight came back 0.01, so near-pure vector search,
+  with no rerank because of KI-10) or the `sufficient` decision threshold
+  (0.6).
+- **Sherlock/Afghanistan:** the scene isn't in the corpus (*A Study in
+  Scarlet*), so the answer should abstain. Instead `sufficient` scored
+  exactly 0.6 = threshold, generation ran on unrelated chunks, and the
+  answer was the literal text `[1], [7], [2]`. The reviewer then marked
+  it **supported** (claim "The answer references sources [1], [7], and
+  [2]"). The reviewer should treat an answer with no factual content as a
+  failure.
+- **Frankenstein vs Time Machine:** it abstains while retrieving both
+  books.
+- **Also:** Jev's ingress chose `source: web` for a book question (the
+  toggles on `feat/sources-panel` remove that choice from Auto). The
+  abstain message still tells users to "click the source picker", which
+  is outdated once the toggles land.
+- **Fix:** trace one run per case end to end (retrieved chunk ids, then
+  rerank, then sufficiency inputs), fix the root cause, then re-run
+  `make smoke`. A threshold change needs the eval gate.
+
+## KI-13: Chat title never refines
+
+- **What:** after a smoke conversation with a completed grounded turn,
+  the title stays "New chat". `6b865fc` was meant to title the chat after
+  the first non-chitchat exchange.
+- **Fix:** find out whether refinement is skipped (abstained turns?),
+  fails silently, or doesn't commit. Add a test for "chitchat, then
+  grounded completes, then the title is a topic".
+
+---
+
+## Reference: provider findings, 2026-09-26
+
+These aren't defects, but check them before changing models or providers.
+
+- **Nemotron reasoning is on by default on OpenRouter.** It adds 5–10 s
+  and, under a tight `max_tokens`, spills into `content`.
+  `providers/llm.py` sends `extra_body={"reasoning": {"enabled": false}}`
+  except for `llm_reasoning_roles` and thinking-stream callers.
+- **LiteLLM's built-in `fallbacks=` kwarg returned an empty stream with no
+  error** when the primary failed (live test, streaming). Don't switch to
+  it. The explicit one-hop failover in `providers/llm._open` is
+  deliberate.
+- **Free OpenRouter models that work:** Nemotron 3 Super (1–2 s, clean
+  JSON, correct `[n]`) and Nemotron 3 Ultra (4–6 s). `openrouter/free`
+  routes to whatever free model is up.
+  - Unusable that day: Qwen3.8 and Gemma 4 (429), Inkling (403: coding
+    harnesses only), Nemotron 3.5 Lightning (prints its reasoning), LFM
+    2.5 and Dots 3 (empty output on one task).
+- **Jev exists only on OpenRouter** (System One endpoint,
+  `typesafe/jev-1.13`; the public list shows `typesafe/jev-router` at
+  price `-1`). It isn't in NVIDIA's catalogue.
+- **NVIDIA API catalogue** (`integrate.api.nvidia.com/v1`, free key from
+  build.nvidia.com): 82 models, including Nemotron 3 Super/Ultra, Kimi K3,
+  GLM 5.3 / 5.3 Flash and DeepSeek V4.1 Flash, plus rerank and embedding
+  models.
+  - Its terms are for prototyping and evaluation, roughly 40 req/min.
+  - A candidate second provider and a free reranker (KI-10). Keep the
+    embeddings on `text-embedding-3-small`, because
+    `chunks.embedding` is `vector(1536)`.
+- **The Kimi and GLM subscriptions are coding plans.** They're licensed
+  for coding tools only, so they're not for Veriforge's runtime or evals.
+- **The OpenRouter key** had $4.99 of $100 left. Free models cost
+  nothing, so the spend is Jev, the old Haiku fallback, eval runs or
+  embeddings. See KI-11.
+- **Cohere:** the trial key is 10 calls/min and 1,000/month.

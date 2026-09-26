@@ -52,15 +52,11 @@ class CohereRerank:
         else:
             async with httpx.AsyncClient(timeout=10) as client:
                 response = await call(client)
-        # Trial-tier Cohere keys rate-limit aggressively; back off and retry
-        # rather than failing the whole retrieval path. Deep mode runs
-        # several hops' reranks concurrently, so this needs more headroom
-        # than a single-hop Auto/Fast call ever hits.
-        for attempt in range(6):
-            if response.status_code != 429:
-                break
-            wait_s = float(response.headers.get("retry-after", 2 * (attempt + 1)))
-            await asyncio.sleep(wait_s)
+        # One short retry for a per-minute 429. A trial key's monthly cap also
+        # answers 429, and waiting on it only delays apply_rerank's fused-order
+        # fallback, so the wait is capped rather than honouring retry-after.
+        if response.status_code == 429:
+            await asyncio.sleep(min(float(response.headers.get("retry-after", 2)), 2.0))
             if self._client is not None:
                 response = await call(self._client)
             else:
@@ -101,5 +97,12 @@ async def apply_rerank(
         return chunks[: int(runtime_value("retrieval.top_k", top_n))]
     if top_n == RERANK_TOP_N:
         top_n = int(runtime_value("retrieval.top_k", top_n))
-    ranked = await provider.rerank(query=query, documents=[c.text for c in chunks], top_n=top_n)
+    try:
+        ranked = await provider.rerank(query=query, documents=[c.text for c in chunks], top_n=top_n)
+    except httpx.HTTPError as exc:
+        # A rerank outage degrades retrieval to fused order; it never fails the run.
+        logger.warning("rerank failed (%s); using fused order", exc)
+        ranked = await FusedOrderRerank().rerank(
+            query=query, documents=[c.text for c in chunks], top_n=top_n
+        )
     return [chunks[index].with_rerank(score) for index, score in ranked]

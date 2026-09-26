@@ -14,7 +14,10 @@ CATALOGUE: dict[str, FreeModel] = {
         "context_window": 262_144,
         "name": "Nemotron 3 Super",
     },
-    "nvidia/nemotron-3.5-lightning:free": {"context_window": 1_000_000, "name": "Nemotron 3.5"},
+    "nvidia/nemotron-3-ultra-550b-a55b:free": {
+        "context_window": 1_000_000,
+        "name": "Nemotron 3 Ultra",
+    },
     "some/paid-model": {"context_window": 200_000, "name": "Paid"},
 }
 
@@ -44,7 +47,7 @@ async def test_seed_is_idempotent() -> None:
     seeded = {model_id for model_id, *_rest in first if model_id.endswith(":free")}
     assert seeded == {
         "nvidia/nemotron-3-super-120b-a12b:free",
-        "nvidia/nemotron-3.5-lightning:free",
+        "nvidia/nemotron-3-ultra-550b-a55b:free",
     }
 
 
@@ -93,7 +96,9 @@ async def test_role_resolution_returns_a_free_model() -> None:
     for role, _tier, _candidates, _floor in ROLES:
         assert roles[role].endswith(":free"), role
     assert roles["generator"] == "nvidia/nemotron-3-super-120b-a12b:free"
-    assert roles["small"] == "nvidia/nemotron-3.5-lightning:free"
+    assert roles["small"] == "nvidia/nemotron-3-super-120b-a12b:free"
+    assert roles["planner"] == "nvidia/nemotron-3-ultra-550b-a55b:free"
+    assert roles["claim_extractor"] == "nvidia/nemotron-3-ultra-550b-a55b:free"
     assert providers["openrouter"] == "openrouter"
 
 
@@ -101,5 +106,5 @@ def test_pick_falls_back_when_the_preferred_id_is_gone() -> None:
     preferred = "nvidia/nemotron-3-super-120b-a12b:free"
     assert pick(CATALOGUE, [preferred], 8_000) == preferred
     retired = {k: v for k, v in CATALOGUE.items() if "nemotron-3-super" not in k}
-    assert pick(retired, [preferred], 8_000) == "nvidia/nemotron-3.5-lightning:free"
-    assert pick(retired, ["nope:free"], 8_000) == "nvidia/nemotron-3.5-lightning:free"
+    assert pick(retired, [preferred], 8_000) == "nvidia/nemotron-3-ultra-550b-a55b:free"
+    assert pick(retired, ["nope:free"], 8_000) == "nvidia/nemotron-3-ultra-550b-a55b:free"

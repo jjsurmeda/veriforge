@@ -172,3 +172,15 @@ def test_trim_context_truncates_first_when_oversize() -> None:
     kept, used = trim_context(contexts, window_tokens=1_000, history_tokens=0)
     assert len(kept) == 1
     assert used <= 600
+
+
+async def test_apply_rerank_falls_back_to_fused_order_when_the_provider_fails() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(429, json={"message": "trial key monthly limit"})
+
+    provider = CohereRerank("k", "rerank-v3.5", client=httpx.AsyncClient(
+        transport=httpx.MockTransport(handler)
+    ))
+    chunks = [_chunk(i) for i in range(5)]
+    ranked = await apply_rerank(provider, query="q", chunks=chunks, top_n=3)
+    assert [c.chunk_id for c in ranked] == [c.chunk_id for c in chunks[:3]]

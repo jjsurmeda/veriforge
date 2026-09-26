@@ -70,10 +70,30 @@ class Settings(BaseSettings):
     # scripts/seed_models.py). Free ids are rate-limited per minute and per
     # day, so LiteLLM's own retry is capped rather than left unbounded.
     fallback_model: str = "openrouter/nvidia/nemotron-3-super-120b-a12b:free"
-    llm_max_retries: int = 4
+    # One LiteLLM retry, then providers/llm.py fails over once to
+    # llm_fallback_model on 429/5xx/timeout (known-issues KI-7). Retrying the
+    # same saturated free id four times only delayed the failure.
+    llm_max_retries: int = 1
     # A retry cap is meaningless without a per-attempt deadline: a saturated
     # free endpoint can hold a streaming response open indefinitely.
     llm_timeout_seconds: float = 90.0
+    llm_fallback_model: str = "openrouter/openrouter/free"
+    # Calls in flight per model per process; free ids allow ~20 req/min.
+    llm_max_concurrency: int = 4
+    # Explicit output caps (KI-1): without one, LiteLLM asks for the model's
+    # maximum and OpenRouter rejects the call with 402 on a low balance.
+    llm_default_max_tokens: int = 512
+    llm_max_tokens: dict[str, int] = {
+        "generator": 2048,
+        "rewriter": 2048,  # also writes the revised answer (graph/review.py)
+        "claim_extractor": 2048,
+        "planner": 1024,
+        "async_judge": 1024,
+    }
+    # OpenRouter reasoning models think by default: seconds of latency, and
+    # under a tight cap the reasoning spills into the answer. Only these
+    # roles keep it on.
+    llm_reasoning_roles: list[str] = ["planner"]
     breaker_failure_threshold: int = 3
     breaker_window_seconds: float = 60.0
     breaker_cooldown_seconds: float = 60.0

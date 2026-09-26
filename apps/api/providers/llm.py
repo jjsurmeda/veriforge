@@ -4,16 +4,48 @@ Langfuse tracing is env-gated: when LANGFUSE_PUBLIC_KEY/SECRET_KEY are set,
 every completion is forwarded as a Langfuse generation (TRD §15).
 """
 
+import asyncio
+import logging
 import os
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
 
 import litellm
+from litellm.exceptions import (
+    APIConnectionError,
+    InternalServerError,
+    RateLimitError,
+    ServiceUnavailableError,
+    Timeout,
+)
 
 from config import get_settings
 from quota.usage import get_usage_context
 
+logger = logging.getLogger(__name__)
+
 _callbacks_configured = False
+
+# Transient provider failures worth one hop to llm_fallback_model (KI-7).
+_FAILOVER_ERRORS = (
+    RateLimitError,
+    ServiceUnavailableError,
+    InternalServerError,
+    Timeout,
+    APIConnectionError,
+)
+
+# ponytail: per-process cap keyed by (event loop, model); move to a
+# Postgres-backed limiter if several workers together exceed provider limits.
+_slots: dict[tuple[int, str], asyncio.Semaphore] = {}
+
+
+def _slot(model: str) -> asyncio.Semaphore:
+    key = (id(asyncio.get_running_loop()), model)
+    slot = _slots.get(key)
+    if slot is None:
+        slot = _slots[key] = asyncio.Semaphore(get_settings().llm_max_concurrency)
+    return slot
 
 
 def _field(value: Any, name: str) -> Any:
@@ -58,6 +90,71 @@ def _api_key(model: str) -> str | None:
     return context.api_key_for(model) if context is not None else None
 
 
+def _request_kwargs(
+    model: str,
+    metadata: dict[str, str],
+    inherited_key: str | None = None,
+    *,
+    reasoning: bool = False,
+) -> dict[str, Any]:
+    settings = get_settings()
+    role = metadata.get("role", "unknown")
+    kwargs: dict[str, Any] = {
+        "max_tokens": settings.llm_max_tokens.get(role, settings.llm_default_max_tokens),
+        "num_retries": settings.llm_max_retries,
+        "timeout": settings.llm_timeout_seconds,
+        "metadata": {
+            "trace_id": metadata.get("job", metadata.get("run_id", "")),
+            "run_id": metadata.get("run_id", ""),
+            "user_id": metadata.get("user_id", ""),
+            "role": role,
+        },
+    }
+    api_key = _api_key(model) or inherited_key
+    if api_key is not None:
+        kwargs["api_key"] = api_key
+    reasoning = reasoning or role in settings.llm_reasoning_roles
+    if model.startswith("openrouter/") and not reasoning:
+        kwargs["extra_body"] = {"reasoning": {"enabled": False}}
+    return kwargs
+
+
+async def _open(
+    model: str,
+    messages: list[dict[str, str]],
+    metadata: dict[str, str],
+    *,
+    reasoning: bool = False,
+    **extra: Any,
+) -> tuple[str, Any]:
+    """Start one completion, capped per model; on a transient failure hop once
+    to llm_fallback_model. Returns the model that answered and its response.
+
+    The cap covers opening the call, not reading a stream: provider limits
+    count requests started. A stream never fails over after its first token.
+    """
+    kwargs = _request_kwargs(model, metadata, reasoning=reasoning)
+    try:
+        async with _slot(model):
+            return model, await litellm.acompletion(
+                model=model, messages=messages, **kwargs, **extra
+            )
+    except _FAILOVER_ERRORS as exc:
+        fallback = get_settings().llm_fallback_model
+        if not fallback or fallback == model:
+            raise
+        logger.warning(
+            "llm %s failed (%s); failing over to %s", model, type(exc).__name__, fallback
+        )
+        same_provider = model.split("/", 1)[0] == fallback.split("/", 1)[0]
+        inherited = kwargs.get("api_key") if same_provider else None
+        fallback_kwargs = _request_kwargs(fallback, metadata, inherited, reasoning=reasoning)
+        async with _slot(fallback):
+            return fallback, await litellm.acompletion(
+                model=fallback, messages=messages, **fallback_kwargs, **extra
+            )
+
+
 def _configure_langfuse() -> None:
     global _callbacks_configured
     if _callbacks_configured:
@@ -90,24 +187,14 @@ async def stream_completion(
     """
     _configure_langfuse()
     model = await _resolved_model(litellm_model, metadata)
-    request_kwargs: dict[str, Any] = {}
-    api_key = _api_key(model)
-    if api_key is not None:
-        request_kwargs["api_key"] = api_key
-    response = await litellm.acompletion(
-        model=model,
-        messages=messages,
-        num_retries=get_settings().llm_max_retries,
-        timeout=get_settings().llm_timeout_seconds,
+    model, response = await _open(
+        model,
+        messages,
+        metadata,
+        # A caller that renders the thinking stream (Deep mode) needs it on.
+        reasoning=on_reasoning is not None,
         stream=True,
         stream_options={"include_usage": True},
-        metadata={
-            "trace_id": metadata.get("run_id", ""),
-            "run_id": metadata.get("run_id", ""),
-            "user_id": metadata.get("user_id", ""),
-            "role": metadata.get("role", "unknown"),
-        },
-        **request_kwargs,
     )
     usage: tuple[int, int] | None = None
     async for chunk in response:
@@ -143,23 +230,7 @@ async def complete(
     """
     _configure_langfuse()
     model = await _resolved_model(litellm_model, metadata)
-    request_kwargs: dict[str, Any] = {}
-    api_key = _api_key(model)
-    if api_key is not None:
-        request_kwargs["api_key"] = api_key
-    response = await litellm.acompletion(
-        model=model,
-        messages=messages,
-        num_retries=get_settings().llm_max_retries,
-        timeout=get_settings().llm_timeout_seconds,
-        metadata={
-            "trace_id": metadata.get("job", metadata.get("run_id", "")),
-            "run_id": metadata.get("run_id", ""),
-            "user_id": metadata.get("user_id", ""),
-            "role": metadata.get("role", "unknown"),
-        },
-        **request_kwargs,
-    )
+    model, response = await _open(model, messages, metadata)
     usage = _usage(response)
     if usage is not None:
         await _record_usage(model, metadata, *usage)

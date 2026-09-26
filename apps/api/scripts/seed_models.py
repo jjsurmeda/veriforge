@@ -32,28 +32,30 @@ PROVIDER_NAME = "openrouter"
 
 JEV_MODEL_ID = "typesafe/jev-1.13"
 
-STRONG: list[str] = ["nvidia/nemotron-3-super-120b-a12b:free"]
-SMALL: list[str] = ["nvidia/nemotron-3.5-lightning:free"]
+SUPER = "nvidia/nemotron-3-super-120b-a12b:free"
+ULTRA = "nvidia/nemotron-3-ultra-550b-a55b:free"
+FAST: list[str] = [SUPER]
+DEEP: list[str] = [ULTRA, SUPER]
 
-# Each entry is (role, tier, [candidate ids], context floor). Chosen 2026-09-26
-# from the 17 free ids OpenRouter listed that day: a 120B-class MoE for the
-# strong tier, a fast one for the small tier. When a preferred id retires the
-# tier falls back within itself, and the strong tier never lands on the model
-# the small tier already took.
+# Each entry is (role, tier, [candidate ids], context floor). Chosen by a live
+# check on 2026-09-26 (docs/known-issues.md KI-2): Super answered JSON and cited
+# tasks cleanly in 1-2 s, Ultra matched it at 4-6 s, and nemotron-3.5-lightning
+# spent 50-170 s printing its reasoning, so it is not used. When a preferred id
+# retires, pick() falls back to the largest-context free model.
 ROLES: list[tuple[str, str, list[str], int]] = [
-    ("generator", "strong", STRONG, 32_000),
-    ("planner", "strong", STRONG, 32_000),
-    ("decision_fallback", "strong", STRONG, 32_000),
-    ("small", "small", SMALL, 32_000),
-    ("titler", "small", SMALL, 8_000),
-    ("rewriter", "small", SMALL, 8_000),
-    ("suggester", "small", SMALL, 8_000),
-    ("claim_extractor", "small", SMALL, 8_000),
+    ("generator", "fast", FAST, 32_000),
+    ("decision_fallback", "fast", FAST, 32_000),
+    ("small", "fast", FAST, 32_000),
+    ("titler", "fast", FAST, 8_000),
+    ("rewriter", "fast", FAST, 8_000),
+    ("suggester", "fast", FAST, 8_000),
+    ("planner", "deep", DEEP, 32_000),
+    ("claim_extractor", "deep", DEEP, 32_000),
 ]
 
 EXTRA_PREFERRED = [
-    "nvidia/nemotron-3.5-lightning:free",
-    "nvidia/nemotron-3-super-120b-a12b:free",
+    SUPER,
+    ULTRA,
     "google/gemma-4-31b-it:free",
     "qwen/qwen3.8-27b:free",
     "google/gemma-4-26b-a4b-it:free",
@@ -89,27 +91,20 @@ def pick(
     catalogue: dict[str, FreeModel],
     candidates: list[str],
     floor: int,
-    exclude: frozenset[str] = frozenset(),
 ) -> str | None:
     for model_id in candidates:
         entry = catalogue.get(model_id)
-        if entry is not None and entry["context_window"] >= floor and model_id not in exclude:
+        if entry is not None and entry["context_window"] >= floor:
             return model_id
     usable = sorted(
         (
             (entry["context_window"], model_id)
             for model_id, entry in catalogue.items()
-            if entry["context_window"] >= floor and model_id not in exclude
+            if entry["context_window"] >= floor
         ),
         reverse=True,
     )
     return usable[0][1] if usable else None
-
-
-def _strong_tier_exclude(tier: str, small_tier: str | None) -> frozenset[str]:
-    if tier != "strong" or small_tier is None:
-        return frozenset()
-    return frozenset({small_tier})
 
 
 async def seed(catalogue: dict[str, FreeModel] | None = None) -> None:
@@ -117,12 +112,8 @@ async def seed(catalogue: dict[str, FreeModel] | None = None) -> None:
     print(f"catalogue: {len(catalogue)} free models on OpenRouter")
 
     wanted: dict[str, FreeModel] = {JEV_MODEL_ID: {"context_window": 32_768, "name": "Jev"}}
-    # Small roles pick first so the strong tier can exclude whatever they took;
-    # otherwise a retired small id would also become the generator.
-    small_tier = pick(catalogue, SMALL, 32_000)
-    for role, tier, candidates, floor in sorted(ROLES, key=lambda row: row[3]):
-        exclude = _strong_tier_exclude(tier, small_tier)
-        chosen = pick(catalogue, candidates, floor, exclude)
+    for role, _tier, candidates, floor in ROLES:
+        chosen = pick(catalogue, candidates, floor)
         if chosen is None:
             raise SystemExit(f"no free model with a {floor}-token window for role {role}")
         wanted[chosen] = catalogue[chosen]
@@ -165,9 +156,8 @@ async def seed(catalogue: dict[str, FreeModel] | None = None) -> None:
                 )
             )
 
-        for role, _tier, candidates, floor in sorted(ROLES, key=lambda row: row[3]):
-            exclude = _strong_tier_exclude(_tier, small_tier)
-            chosen = pick(catalogue, candidates, floor, exclude)
+        for role, _tier, candidates, floor in ROLES:
+            chosen = pick(catalogue, candidates, floor)
             if chosen is None:
                 raise SystemExit(f"no free model with a {floor}-token window for role {role}")
             await session.execute(
