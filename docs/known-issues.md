@@ -180,3 +180,16 @@ KI-8 is independent. Do it before the next Playwright run.
 - **Done when:** a default `playwright test` run makes zero LLM calls.
   Assert this by checking that the provider usage ledger is unchanged
   across the run.
+
+## KI-9: The model picker is hidden on mobile (CH-8)
+
+- **What:** since `a087f38` (the redesign v3.1 fix pass), `ModelPicker`
+  sits inside a `hidden sm:block` wrapper in the composer, so below 640px
+  it's `display: none`.
+- **Impact:** mobile users can't choose the answer model, which breaks
+  PRD CH-8.
+- **Fix:** show a compact trigger on mobile: the short name only, or an
+  icon button that opens the same menu, sized to fit the composer row at
+  390px next to the Deep and Web toggles. Don't hide it.
+- **Test:** a vitest check that the composer renders the model trigger at
+  a mobile viewport, or that the wrapper has no `hidden` class.

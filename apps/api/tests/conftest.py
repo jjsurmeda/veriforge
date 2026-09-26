@@ -15,6 +15,10 @@ TEST_DATABASE_URL = os.environ.get(
 )
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ["COOKIE_SECURE"] = "false"  # tests run over plain http
+# Never reach live providers from tests (testing.md); .env and Compose
+# otherwise leak real keys in, and rerank/web tests hit Cohere/Tavily/Brave.
+for _key in ("COHERE_API_KEY", "TAVILY_API_KEY", "BRAVE_API_KEY"):
+    os.environ[_key] = ""
 
 import time  # noqa: E402
 
