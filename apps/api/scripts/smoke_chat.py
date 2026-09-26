@@ -59,6 +59,15 @@ async def sign_up(client: httpx.AsyncClient) -> str:
     )
     if response.status_code != 201:
         raise SystemExit(f"signup failed: {response.status_code} {response.text[:200]}")
+    return email
+
+
+async def sign_in(client: httpx.AsyncClient, email: str) -> str:
+    response = await client.post(
+        "/auth/login", json={"email": email, "password": PASSWORD}
+    )
+    if response.status_code != 200:
+        raise SystemExit(f"login failed: {response.status_code} {response.text[:200]}")
     return str(response.json()["access_token"])
 
 
@@ -145,16 +154,20 @@ async def run_turn(
 async def main() -> None:
     timeout = httpx.Timeout(connect=30.0, read=RUN_TIMEOUT_SECONDS, write=60.0, pool=60.0)
     async with httpx.AsyncClient(base_url=API_URL, timeout=timeout) as client:
-        token = await sign_up(client)
+        email = await sign_up(client)
+        token = await sign_in(client, email)
         chat = (
             await client.post(
                 "/chats", headers={"Authorization": f"Bearer {token}"}, json={"title": None}
             )
         ).json()
         chat_id = str(chat["id"])
-        print(f"chat {chat_id} (Include Library on by default)\n")
+        print(f"chat {chat_id} as {email} (Include Library on by default)\n")
 
         for label, message in TURNS:
+            # Access tokens are short-lived and a slow provider can push the
+            # whole script past their lifetime, so take a fresh one per turn.
+            token = await sign_in(client, email)
             print("=" * 72)
             print(f"[{label}] {message}")
             result = await run_turn(client, token, chat_id, message)

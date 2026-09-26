@@ -44,10 +44,12 @@ export function ModelPicker({ value, disabled, onChange }: Props) {
     <SelectRoot value={value ?? undefined} disabled={disabled} onValueChange={onChange}>
       <SelectTrigger
         aria-label="Model"
-        className="inline-flex h-8 min-w-0 max-w-[13rem] items-center gap-1.5 rounded-lg px-2.5 text-sm text-fg-muted outline-none transition-[background-color,color,transform] duration-150 ease-out hover:bg-raised hover:text-fg active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:pointer-events-none disabled:opacity-40 data-[placeholder]:text-fg-muted motion-reduce:transform-none"
+        className="inline-flex h-8 min-w-0 max-w-[13rem] items-center gap-1.5 overflow-hidden rounded-lg px-2.5 text-sm text-fg-muted outline-none transition-[background-color,color,transform] duration-150 ease-out hover:bg-raised hover:text-fg active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:pointer-events-none disabled:opacity-40 data-[placeholder]:text-fg-muted motion-reduce:transform-none"
       >
         <SelectValue placeholder="Model">
-          {selected ? shortModelName(selected.model_id) : 'Model'}
+          <span className="truncate">
+            {selected ? shortModelName(selected.model_id) : 'Model'}
+          </span>
         </SelectValue>
         <ChevronDown size={13} strokeWidth={1.75} aria-hidden="true" />
       </SelectTrigger>
