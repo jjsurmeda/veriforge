@@ -21,6 +21,9 @@ agentic RAG chatbot showcase. Read this before writing code, every slice.
    Read the relevant one before adding a new component, package, test,
    e2e spec, or opening a branch.
 
+Open defects and process debt are tracked in **`docs/known-issues.md`**
+(`KI-n`). Read it before starting work; fix in its stated order.
+
 If a change would contradict the PRD/TRD, don't silently diverge — flag it
 and propose the change against the doc first.
 
