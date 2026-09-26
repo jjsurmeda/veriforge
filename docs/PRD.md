@@ -120,8 +120,8 @@ and tests. All are v1 unless marked.
 
 | ID | Requirement |
 | --- | --- |
-| CH-1 | Composer offers mode Auto (default), Fast and Deep, and source Auto (default), Upload, Web and Both. |
-| CH-2 | Auto mode decides source and single-hop vs multi-hop per question; the decision and its probability appear in the trace. |
+| CH-1 | Composer offers two toggles, both off by default: **Deep search** (off = Auto mode, on = Deep mode) and **Web search** (off = documents only, on = documents and web). Fast mode remains an API/eval option, not a composer control. |
+| CH-2 | Auto mode decides single-hop vs multi-hop per question (the source is set by the Web search toggle); the decision and its probability appear in the trace. |
 | CH-3 | Fast mode forces single-hop with no plan and no retry loop; review runs after delivery. |
 | CH-4 | Deep mode forces multi-hop: plan, sub-questions, up to 4 hops or the credit budget, whichever comes first. |
 | CH-5 | Answers stream token by token; time to first token for Auto single-hop is under 3 s at p50. |
@@ -147,11 +147,11 @@ and tests. All are v1 unless marked.
 
 | ID | Requirement |
 | --- | --- |
-| SR-1 | Each chat has its own sources, uploaded into that chat and deleted with it. Each user has a Library of sources that applies to every chat; admins publish Shared sources that appear read-only in every user's Library. A per-chat "Include Library" switch (on by default) adds the Library to that chat's scope. Users never manage collections (ADR-002). |
+| SR-1 | Each chat has its own sources, uploaded from the composer or the right panel's Sources tab and deleted with the chat. Admins manage a Shared library (admin-only page) that every chat also searches; users see it read-only in the Sources tab. Users never manage collections (ADR-002). |
 | SR-2 | Drag-and-drop upload with per-file ingestion status (queued, parsing, embedding, ready, failed). |
 | SR-3 | Document viewer shows chunks, pages and metadata; users edit tags and delete or re-index documents. |
 | SR-4 | Pages that look scanned or table-heavy are flagged with a warning icon. |
-| SR-5 | Web results used in a chat are listed as temporary sources; users can pin one into the chat's sources or their Library. |
+| SR-5 | Web results used in a chat are listed as temporary sources; users can pin one into the chat's sources. |
 | SR-6 | Metadata filters (source type, document, tag, date range, file type) are available in the composer. |
 
 ### 4.4 Transparency and metrics

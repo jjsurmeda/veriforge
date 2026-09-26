@@ -44,9 +44,9 @@ Deep mode runs up to 4 hops or stops at its credit budget.
 typed, calibrated decisions (probabilities, choices, scores) rather than
 free text; used for every decision in the graph.
 
-**Library** — A user's sources that apply to every chat whose "Include
-Library" switch is on (the default). Shows the user's own documents plus
-read-only Shared documents published by admins (ADR-002).
+**Shared library** — Admin-managed documents that every chat searches in
+addition to its own sources. Managed on the admin page; read-only for
+users (ADR-002).
 
 **Minimum claim support** — The lowest per-claim support probability in a
 message. The revision pass triggers on this, not on the mean faithfulness

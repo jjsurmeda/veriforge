@@ -232,8 +232,8 @@ their surrounding context.
 ### 9.1 Ingestion pipeline (worker)
 
 1. **Accept.** Validate MIME by content sniffing, size ≤ 20 MB, SHA-256
-   dedupe per collection (a chat's sources and a Library are separate
-   collections, ADR-002); store the original in S3.
+   dedupe per collection (a chat's sources and the Shared library are
+   separate collections, ADR-002); store the original in S3.
 2. **Parse.** markitdown to markdown; pdfplumber fallback for PDFs
    markitdown fails on.
 3. **Page quality.** Per page: characters per page below 200 →
@@ -247,7 +247,7 @@ their surrounding context.
    100.
 6. **Index.** Rows written in one transaction; document status set to
    `ready`. Starter questions for the document's collection (chat or
-   Library) are regenerated in the
+   Shared library) are regenerated in the
    background.
 
 **Resource limits.** Worker concurrency is 1 ingestion job at a time plus
@@ -266,9 +266,9 @@ fused  = Σ weight_i / (60 + rank_i)
 
 - **Filter.** `owner_id or shared` and `collection_id in (scope)` are
   always injected server-side. The scope is resolved server-side from the
-  chat, never from the request: the chat's own collection, plus, when
-  `chats.include_library` is true, the user's Library collections and all
-  shared collections (ADR-002). Client filters (source
+  chat, never from the request: the chat's own collection plus all
+  shared collections (ADR-002). Users' private `library` collections are
+  not in scope. Client filters (source
   type, document, tags, date range, MIME, page) can only narrow.
 - **Multi-query.** In Auto single-hop, the original plus 3 variants run in
   parallel; lists are fused with RRF before rerank.
@@ -288,7 +288,7 @@ Pages are chunked like documents into chat-scoped temporary rows
 (`source_type = web`, `chat_id` set, 7-day TTL) and pass the sanitizer.
 Results are cached by normalised query for 24 h. Brave plus
 fetch-and-clean is used if Tavily fails. Pinning copies the rows into the
-chat's collection or the user's Library.
+chat's collection.
 
 ### 9.4 Caching
 
@@ -418,9 +418,9 @@ generated from it.
 | `POST /runs/{id}/cancel` | Cancel |
 | `POST /messages/{id}/feedback` | Thumbs and comment |
 | `GET/POST /chats/{id}/documents` | The chat's own sources (list, upload) |
-| `GET /library`, `POST /library/documents` | Library documents (own + shared) and Library starter questions; `shared=true` upload is admin-only |
+| `GET /library`, `POST /library/documents` | Shared library documents and starter questions (GET: any user); upload is admin-only and always Shared |
 | `GET/PATCH/DELETE /documents/{id}`, `POST /documents/{id}/reindex`, `GET /documents/{id}/chunks` | Any document the user can see |
-| `POST /web-sources/{id}/pin` | Pin a web page into the chat's sources or the Library: `{target: chat \| library}` |
+| `POST /web-sources/{id}/pin` | Pin a web page into the chat's sources |
 | `GET /me/usage`, `GET /me/quota` | Usage and quota |
 | `/admin/providers`, `/admin/models`, `/admin/roles`, `/admin/settings`, `/admin/plans`, `/admin/users`, `/admin/evals/*`, `/admin/audit` | Admin (role `admin`) |
 
@@ -470,7 +470,7 @@ every table has `created_at`.
 | `chunks` | document_id, section_id, ord, page, text, embedding vector(1536), metadata jsonb, source_type, chat_id, expires_at | HNSW index on embedding; pg_search BM25 index on text; GIN on metadata |
 | `query_cache` | query_hash, embedding, created_at | 30-day TTL |
 | `web_cache` | query_hash, results jsonb | 24 h TTL |
-| `chats` | user_id, title, pinned, model_id, include_library, summary | include_library default true |
+| `chats` | user_id, title, pinned, model_id, include_library, summary | include_library: always true, no UI (ADR-002 addendum) |
 | `messages` | chat_id, role, content, status, revised_from | status: complete, cancelled, abstained, failed |
 | `runs` | message_id, mode, source, settings_version, metrics jsonb, langfuse_trace_id | |
 | `run_events` | run_id, seq, type, payload jsonb | Replay |
