@@ -30,7 +30,7 @@ API_URL = os.environ.get("VERIFORGE_API_URL", "http://localhost:8000").rstrip("/
 # A throwaway credential: the email is random per run, so this account is abandoned
 # the moment the script exits.
 PASSWORD = "SmokeChat!234"  # noqa: S105
-RUN_TIMEOUT_SECONDS = float(os.environ.get("SMOKE_RUN_TIMEOUT", "420"))
+RUN_TIMEOUT_SECONDS = float(os.environ.get("SMOKE_RUN_TIMEOUT", "240"))
 
 TURNS: list[tuple[str, str]] = [
     ("small talk", "hi there, how's it going?"),
@@ -89,13 +89,12 @@ async def run_turn(
     answer = ""
     status = "timeout"
     deadline = time.monotonic() + RUN_TIMEOUT_SECONDS
-    try:
+    async def read_events() -> None:
+        nonlocal intent, answer, status
         async with client.stream(
             "GET", f"/runs/{run_id}/stream", headers=headers, params={"after_seq": 0}
         ) as response:
             async for line in response.aiter_lines():
-                if time.monotonic() > deadline:
-                    break
                 if not line.startswith("data: "):
                     continue
                 event = json.loads(line[6:])
@@ -115,6 +114,11 @@ async def run_turn(
                 elif kind == "run.cancelled":
                     status = "cancelled"
                     break
+
+    try:
+        await asyncio.wait_for(read_events(), timeout=max(1.0, deadline - time.monotonic()))
+    except TimeoutError:
+        status = "timeout"
     except httpx.HTTPError as error:
         status = f"stream dropped ({type(error).__name__})"
 
