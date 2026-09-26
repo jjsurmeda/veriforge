@@ -6,7 +6,8 @@ fix is. When you fix one, delete it and put its ID in the commit body.
 
 Logged 2026-09-26, after the UX pass and Gutenberg demo (`ea16d2b..725bbc5`).
 
-**Do these in order.** KI-1 and KI-2 unblock KI-5, and KI-5 unblocks KI-6.
+**Do these in order.** KI-1, KI-2 and KI-7 unblock KI-5, and KI-5 unblocks KI-6.
+KI-8 is independent. Do it before the next Playwright run.
 
 ---
 
@@ -29,19 +30,51 @@ Logged 2026-09-26, after the UX pass and Gutenberg demo (`ea16d2b..725bbc5`).
 - **Test:** a pytest that asserts `max_tokens` is present on every LiteLLM
   call. Mock at the LiteLLM boundary.
 
-## KI-2: Free OpenRouter pool too unreliable for the generator
+## KI-2: Model plan: free Nemotron for runtime, pinned paid model for the eval gate
 
-- **What:** `44fe80e` put every non-Jev call on `:free` models. The free
-  pool is shared and regularly returns **503 `provider_overloaded`**, with
-  calls taking minutes.
-- **Impact:** `make smoke` turns 2–5 (anything that needs the generator)
-  don't finish. The eval gate can't run (KI-6).
-- **Fix:** run the **generator** and the **DecisionEngine fallback** on a
-  cheap paid model (DeepSeek V3 or Gemini Flash class, about
-  $0.10–0.30/M tokens). Keep `:free` for the `small` role (titles,
-  suggestions), where a failure only costs polish. Jev is unchanged.
-  Update the model seed and `config.py` defaults (`fallback_model`
-  currently points at `nvidia/nemotron-3-super-120b-a12b:free`).
+- **What:** `44fe80e` put every non-Jev call on `:free` models with no
+  fallback chain. On 2026-09-26 the free pool returned 503
+  `provider_overloaded`, and `make smoke` turns 2–5 didn't finish.
+- **Live check, 2026-09-26:** each free model got a JSON-title task and a
+  cited-answer task with two quoted sources and one unanswerable part.
+
+  | Model | Result |
+  | --- | --- |
+  | `nvidia/nemotron-3-super-120b-a12b:free` | ✅ Valid JSON, correct `[n]`, admits the gap, 1–2 s |
+  | `nvidia/nemotron-3-ultra-550b-a55b:free` | ✅ Same quality, 4–6 s |
+  | `openrouter/free` | ✅ Routes to an available free model |
+  | `qwen/qwen3.8-27b:free`, `google/gemma-4-*:free` | 429, rate-limited upstream |
+  | `thinkingmachines/inkling*:free` | 403, agentic harnesses only |
+  | `nvidia/nemotron-3.5-lightning:free` | Prints its reasoning, 50–170 s |
+  | `liquid/lfm-2.5-2.6b:free`, `dots-studio/dots-3-note-preview:free` | Empty output on one of the two tasks |
+
+- **Fix:** set roles in the model seed and `config.py` defaults.
+
+  | Role | Model | Fallback |
+  | --- | --- | --- |
+  | generator, DecisionEngine fallback, small | Nemotron 3 Super `:free` | `openrouter/free` |
+  | planner, claim extractor | Nemotron 3 Ultra `:free` | Nemotron 3 Super `:free` |
+  | eval gate (all non-Jev roles) | **One pinned cheap paid model** via OpenRouter (DeepSeek V3 or Gemini Flash class), no fallback. The gate must fail, not switch models. | none |
+  | Jev | unchanged | TRD §8 |
+
+  Free ids churn. Re-run the check (a script under `apps/api/scripts/`)
+  before changing ids, and record the date.
+- **Why a paid model for the gate:** the free pool swaps, rate-limits and
+  retires models without notice, so a baseline on it drifts for reasons
+  unrelated to code. A gate run is about 500k tokens, which is about
+  $0.10–0.20.
+- **Not options:**
+  - The Kimi and GLM **coding-plan** subscriptions are licensed for coding
+    tools only. Don't use them in Veriforge's runtime or eval gate. They're
+    fine for driving Claude Code or other dev tooling.
+  - RunPod: idle GPU cost far above API cost at this volume.
+  - Ollama (8B on a 16 GB M5) is too weak for eval scoring. It's
+    optional for offline dev only (host-run, LiteLLM `ollama/…`,
+    `host.docker.internal:11434`). Don't build it unless asked.
+- **Budget:** the OpenRouter key had $4.99 of $100 left on 2026-09-26.
+  The spend isn't from free models. Check Activity in the OpenRouter
+  dashboard (it needs a management key) to see how much is Jev versus the
+  old Haiku fallback versus evals.
 - **Depends on:** KI-1. Without a token cap, a paid model reproduces the
   402.
 
@@ -106,3 +139,44 @@ Logged 2026-09-26, after the UX pass and Gutenberg demo (`ea16d2b..725bbc5`).
   graph work.
 - **Rule going forward:** no graph, prompt or model change lands on
   `main` until the gate has run green.
+
+## KI-7: No concurrency cap or 429 fallback on LLM calls
+
+- **What:** `providers/llm.py` sends every call as soon as it's made.
+  Free models allow about 20 requests per minute per model (and 1,000 per
+  day on an account with credits). One Auto question makes about 5–8 LLM
+  calls, so parallel eval items or Deep-mode hops trip 429.
+- **Fix:** in `providers/llm.py`, the one choke point every call already
+  goes through:
+  - a per-model `asyncio.Semaphore` with a configurable cap in `config.py`
+    (default 4)
+  - on 429, wait for `Retry-After` (capped), then move to the role's next
+    fallback model
+  - reuse the existing LiteLLM retry and fallback settings, with no new
+    retry layer
+
+  Per-process is enough (ADR-001: no Redis at Stage 1).
+  `# ponytail:` note: per-process cap, move to a Postgres-backed limiter
+  if multiple workers exceed provider limits.
+- **Test:** with a fake LiteLLM that returns 429 then 200, the call
+  succeeds on the fallback model. With cap 2 and 5 concurrent calls, at
+  most 2 are ever in flight.
+
+## KI-8: Six Playwright specs drive live LLM runs
+
+- **What:** `abstain`, `suggestions`, `cancel-mid-stream`,
+  `decision-layer`, `metrics` and `citations` specs import
+  `e2e/support/live.ts` and start real runs. `docs/conventions/playwright.md`
+  says streaming UI specs replay recorded SSE fixtures
+  (`e2e/fixtures/runs/*.json`) through the `ENV=test` replay route.
+- **Impact:** e2e burns rate limit and budget, and is slow and flaky on
+  provider latency.
+- **Fix:** move each spec whose assertions are about UI (chip colours,
+  hold state, trace rendering, metrics, suggestions, abstain actions,
+  cancel) to fixture replay, recording a fixture from one real run where
+  none exists. Anything that must hit the real stack gets tagged `@live`
+  and is excluded by default (`grepInvert` in `playwright.config.ts`), and
+  is run manually before a release.
+- **Done when:** a default `playwright test` run makes zero LLM calls.
+  Assert this by checking that the provider usage ledger is unchanged
+  across the run.
