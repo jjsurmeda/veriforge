@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   CreditCard,
   History,
+  Library as LibraryIcon,
   Plus,
   RefreshCw,
   Save,
@@ -52,9 +53,19 @@ import type {
   UserPatch,
 } from '../../generated/types.gen'
 import { DecisionLayerPanel } from './DecisionLayerPanel'
+import { SharedLibraryPanel } from './SharedLibraryPanel'
 import { useMe } from '../auth/hooks/useMe'
 
-type Section = 'decisions' | 'providers' | 'models' | 'roles' | 'settings' | 'plans' | 'users' | 'audit'
+type Section =
+  | 'decisions'
+  | 'providers'
+  | 'models'
+  | 'roles'
+  | 'settings'
+  | 'library'
+  | 'plans'
+  | 'users'
+  | 'audit'
 
 function valueAt(data: Record<string, unknown>, path: string, fallback: number): number {
   const value = path.split('.').reduce<unknown>((current, key) => {
@@ -341,6 +352,7 @@ export function AdminPage() {
     ['providers', 'Providers', <Server key="providers" size={14} aria-hidden="true" />],
     ['models', 'Models', <Boxes key="models" size={14} aria-hidden="true" />],
     ['roles', 'Roles', <ShieldCheck key="roles" size={14} aria-hidden="true" />],
+    ['library', 'Shared library', <LibraryIcon key="library" size={14} aria-hidden="true" />],
     ['plans', 'Plans', <CreditCard key="plans" size={14} aria-hidden="true" />],
     ['users', 'Users', <Users key="users" size={14} aria-hidden="true" />],
     ['audit', 'Audit', <History key="audit" size={14} aria-hidden="true" />],
@@ -509,6 +521,11 @@ export function AdminPage() {
                  <TableHeader left="Plan / 5h credits" right="Monthly / action" />
                  {(plans.data ?? []).map((plan: PlanOut) => <PlanRow key={plan.id} plan={plan} onSave={(body) => planUpdate.mutate({ id: plan.id, body })} />)}
                </div>
+            </Panel>
+          )}
+          {section === 'library' && (
+            <Panel title="Shared library">
+              <SharedLibraryPanel />
             </Panel>
           )}
           {section === 'users' && (

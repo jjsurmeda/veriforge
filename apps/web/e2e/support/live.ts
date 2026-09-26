@@ -13,7 +13,6 @@ interface LibraryResponse {
 
 interface ChatResponse {
   id: string
-  include_library: boolean
 }
 
 interface RunResponse {
@@ -55,7 +54,6 @@ export async function startSeededRun(
   })
   expect(chatResponse.ok()).toBeTruthy()
   const chat = (await chatResponse.json()) as ChatResponse
-  expect(chat.include_library).toBe(true)
   const runResponse = await request.post(`/chats/${chat.id}/runs`, {
     headers: { Authorization: `Bearer ${token}` },
     data: { message: question, mode, source: 'upload' },

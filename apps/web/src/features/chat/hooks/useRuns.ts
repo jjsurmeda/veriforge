@@ -4,12 +4,13 @@ import {
   cancelRunRunsRunIdCancelPost,
   createRunChatsChatIdRunsPost,
 } from '../../../generated/sdk.gen'
+import type { RunMode, RunSource } from '../components/ChatComposer'
 
 interface CreateRunOptions {
   message: string
   modelId?: string | null
-  mode?: 'fast' | 'auto' | 'deep'
-  source?: 'auto' | 'upload' | 'web' | 'both'
+  mode?: RunMode
+  source?: RunSource
 }
 
 export function useCreateRun(chatId: string) {
@@ -21,7 +22,7 @@ export function useCreateRun(chatId: string) {
           message,
           model_id: modelId ?? null,
           mode: mode ?? 'auto',
-          source: source ?? 'auto',
+          source: source ?? 'upload',
         },
       })
       if (error) throw error

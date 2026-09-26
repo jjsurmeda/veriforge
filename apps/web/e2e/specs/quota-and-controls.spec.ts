@@ -8,17 +8,19 @@ test('shows quota windows in the profile menu and keeps the picker catalogue bou
   await signUp(page, user)
   await createChat(page)
 
-  const model = page.locator('button[role="combobox"][aria-label="Model"]:visible').last()
+  const model = page.getByRole('button', { name: 'Model', exact: true })
   await model.click()
   const modelOptions = page.getByRole('option')
   await expect(modelOptions).toHaveCount(2)
   await expect(modelOptions).toContainText(['claude-haiku-4.5', 'gpt-4o-mini'])
   await page.keyboard.press('Escape')
 
-  await setComposerMode(page, 'fast')
-  await setComposerSource(page, 'upload')
-  await expect(page.locator('button[role="combobox"][aria-label="Run mode"]:visible').last()).toContainText('Fast')
-  await expect(page.locator('button[role="combobox"][aria-label="Run source"]:visible').last()).toContainText('Upload')
+  await expect(page.getByRole('button', { name: 'Deep', exact: true })).toHaveAttribute('aria-pressed', 'false')
+  await expect(page.getByRole('button', { name: 'Web', exact: true })).toHaveAttribute('aria-pressed', 'false')
+  await setComposerMode(page, true)
+  await setComposerSource(page, true)
+  await expect(page.getByRole('button', { name: 'Deep', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('button', { name: 'Web', exact: true })).toHaveAttribute('aria-pressed', 'true')
 
   // Credits live in the profile popup, which is in the sidebar — a drawer
   // below 1024px — so this runs last and never has to close it again.

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@tanstack/react-router', () => ({
@@ -10,16 +10,15 @@ const me = { email: 'demo@example.com', role: 'user' as 'user' | 'admin' }
 
 vi.mock('../../../generated/sdk.gen', () => ({
   meMeGet: vi.fn(async () => ({ data: me })),
-  listChatsChatsGet: vi.fn(async () => ({ data: [] })),
+  listChatsChatsGet: vi.fn(async () => ({
+    data: [
+      { id: 'c1', title: 'Pinned chat', pinned: true, model_id: null, starter_questions: [] },
+      { id: 'c2', title: 'Other chat', pinned: false, model_id: null, starter_questions: [] },
+    ],
+  })),
   createChatChatsPost: vi.fn(async () => ({ data: { id: 'c1' } })),
   deleteChatChatsChatIdDelete: vi.fn(async () => ({ data: undefined })),
   patchChatChatsChatIdPatch: vi.fn(async () => ({ data: undefined })),
-  listChatDocumentsChatsChatIdDocumentsGet: vi.fn(async () => ({ data: [] })),
-  uploadChatDocumentChatsChatIdDocumentsPost: vi.fn(async () => ({ data: undefined })),
-  getLibraryLibraryGet: vi.fn(async () => ({
-    data: { documents: [], starter_questions: [] },
-  })),
-  uploadLibraryDocumentLibraryDocumentsPost: vi.fn(async () => ({ data: undefined })),
 }))
 
 const { ChatSidebar } = await import('./ChatSidebar')
@@ -32,85 +31,41 @@ function renderSidebar() {
     <ThemeProvider>
       <TooltipProvider>
         <QueryClientProvider client={client}>
-          <ChatSidebar currentChatId={null} />
+          <ChatSidebar currentChatId="c1" />
         </QueryClientProvider>
       </TooltipProvider>
     </ThemeProvider>,
   )
 }
 
-const librarySection = () => screen.getByRole('button', { name: /^Library$/ })
-const chatsSection = () => screen.getByRole('button', { name: /^Chats$/ })
-const chatsBody = () => screen.queryByText('No chats yet.')
-const libraryBody = () => screen.queryByText('Drop files or browse')
+afterEach(cleanup)
+beforeEach(() => window.localStorage.clear())
 
-describe('ChatSidebar section accordion', () => {
-  beforeEach(() => {
-    window.localStorage.clear()
-  })
-
-  afterEach(cleanup)
-
-  it('opens Chats and collapses Library when the Chats header is clicked', async () => {
+describe('ChatSidebar', () => {
+  it('renders only chat rows and the header controls', async () => {
     renderSidebar()
-    await waitFor(() => expect(librarySection()).toBeTruthy())
 
-    expect(chatsBody()).toBeTruthy()
-    expect(libraryBody()).toBeNull()
-
-    fireEvent.click(librarySection())
-    await waitFor(() => expect(libraryBody()).toBeTruthy())
-    expect(chatsBody()).toBeNull()
-
-    fireEvent.click(chatsSection())
-    await waitFor(() => expect(chatsBody()).toBeTruthy())
-    expect(libraryBody()).toBeNull()
-  })
-
-  it('marks exactly one section as expanded at a time', async () => {
-    renderSidebar()
-    await waitFor(() => expect(librarySection()).toBeTruthy())
-    expect(chatsSection().getAttribute('aria-expanded')).toBe('true')
-    expect(librarySection().getAttribute('aria-expanded')).toBe('false')
-
-    fireEvent.click(librarySection())
-    await waitFor(() => expect(libraryBody()).toBeTruthy())
-    expect(chatsSection().getAttribute('aria-expanded')).toBe('false')
-    expect(librarySection().getAttribute('aria-expanded')).toBe('true')
-  })
-
-  it('offers exactly one search and one new-chat control', async () => {
-    renderSidebar()
-    await waitFor(() => expect(librarySection()).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('Pinned chat')).toBeTruthy())
+    expect(screen.getByText('Other chat')).toBeTruthy()
+    expect(screen.getByText('Pinned')).toBeTruthy()
     expect(screen.getAllByRole('button', { name: 'New chat' })).toHaveLength(1)
     expect(screen.getAllByRole('button', { name: 'Search chats' })).toHaveLength(1)
   })
 
-  it('remembers the open section across mounts', async () => {
-    const first = renderSidebar()
-    await waitFor(() => expect(librarySection()).toBeTruthy())
-    fireEvent.click(librarySection())
-    await waitFor(() => expect(screen.getByText('Drop files or browse')).toBeTruthy())
-    first.unmount()
-
+  it('has no Library section and no source UI, even on the active chat', async () => {
     renderSidebar()
-    await waitFor(() => expect(libraryBody()).toBeTruthy())
-    expect(chatsBody()).toBeNull()
+
+    await waitFor(() => expect(screen.getByText('Pinned chat')).toBeTruthy())
+    expect(screen.queryByRole('button', { name: /^Library$/ })).toBeNull()
+    expect(screen.queryByText('Library')).toBeNull()
+    expect(screen.queryByText('Include Library')).toBeNull()
+    expect(screen.queryByRole('button', { name: /Add sources/ })).toBeNull()
+    expect(document.querySelector('input[type="file"]')).toBeNull()
   })
 
-  it('shows the upload target toggle only to admins', async () => {
-    me.role = 'user'
-    const user = renderSidebar()
-    await waitFor(() => expect(librarySection()).toBeTruthy())
-    fireEvent.click(librarySection())
-    await waitFor(() => expect(libraryBody()).toBeTruthy())
-    expect(screen.queryByRole('group', { name: 'Upload target' })).toBeNull()
-    user.unmount()
-
-    me.role = 'admin'
+  it('has no open-section state to remember', async () => {
     renderSidebar()
-    await waitFor(() => expect(librarySection()).toBeTruthy())
-    fireEvent.click(librarySection())
-    await waitFor(() => expect(screen.getByRole('group', { name: 'Upload target' })).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('Pinned chat')).toBeTruthy())
+    expect(window.localStorage.getItem('veriforge-sidebar-section')).toBeNull()
   })
 })

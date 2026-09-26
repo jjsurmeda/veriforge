@@ -1,10 +1,23 @@
-import { useRef, useState } from 'react'
-import { ArrowUp, CircleAlert, Square } from 'lucide-react'
+import { useRef, useState, type ReactNode } from 'react'
+import { ArrowUp, CircleAlert, Globe2, Layers3, Plus, Square } from 'lucide-react'
 
 import type { QuotaOut } from '../../../generated/types.gen'
+import { IconButton } from '../../../components/ui/IconButton'
+import {
+  TooltipContent,
+  TooltipRoot,
+  TooltipTrigger,
+} from '../../../components/ui/primitives'
 import { ModelPicker } from './ModelPicker'
-import { ModePicker, type RunMode } from './ModePicker'
-import { SourcePicker, type RunSource } from './SourcePicker'
+
+// Narrower than the API's RunCreateRequest on purpose: the composer only
+// sends these, while the eval runner still uses fast and web.
+export type RunMode = 'auto' | 'deep'
+export type RunSource = 'upload' | 'both'
+
+export function runOptions(deep: boolean, web: boolean): { mode: RunMode; source: RunSource } {
+  return { mode: deep ? 'deep' : 'auto', source: web ? 'both' : 'upload' }
+}
 
 interface Props {
   streaming: boolean
@@ -12,10 +25,45 @@ interface Props {
   quota?: QuotaOut
   error?: string | null
   emptyThread?: boolean
+  deep: boolean
+  web: boolean
   onFiles: (files: File[]) => void
   onModelChange: (modelId: string) => void
+  onToggleDeep: (value: boolean) => void
+  onToggleWeb: (value: boolean) => void
   onSend: (message: string, options: { mode: RunMode; source: RunSource }) => void
   onStop: () => void
+}
+
+function ToggleChip({
+  icon,
+  label,
+  pressed,
+  disabled,
+  onToggle,
+}: {
+  icon: ReactNode
+  label: string
+  pressed: boolean
+  disabled?: boolean
+  onToggle: (value: boolean) => void
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={pressed}
+      disabled={disabled}
+      onClick={() => onToggle(!pressed)}
+      className={`pressable inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-xs transition-[background-color,color,border-color] duration-150 focus-visible:outline-2 focus-visible:outline-focus-ring disabled:pointer-events-none disabled:opacity-40 ${
+        pressed
+          ? 'border border-border-strong bg-raised text-fg'
+          : 'border border-transparent text-fg-muted hover:bg-raised-hover hover:text-fg'
+      }`}
+    >
+      {icon}
+      {label}
+    </button>
+  )
 }
 
 export function ChatComposer({
@@ -24,21 +72,25 @@ export function ChatComposer({
   quota,
   error,
   emptyThread = false,
+  deep,
+  web,
   onFiles,
   onModelChange,
+  onToggleDeep,
+  onToggleWeb,
   onSend,
   onStop,
 }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const [mode, setMode] = useState<RunMode>('auto')
-  const [source, setSource] = useState<RunSource>('auto')
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [dragOver, setDragOver] = useState(false)
   const blocked = quota?.blocked ?? false
+  const disabled = streaming || blocked
 
   const submit = () => {
     const value = textareaRef.current?.value.trim() ?? ''
-    if (!value || streaming || blocked) return
-    onSend(value, { mode, source })
+    if (!value || disabled) return
+    onSend(value, runOptions(deep, web))
     if (textareaRef.current) {
       textareaRef.current.value = ''
       textareaRef.current.style.height = 'auto'
@@ -91,11 +143,37 @@ export function ChatComposer({
           />
           <div className="flex items-center justify-between gap-2 px-1 pt-2">
             <div className="flex min-w-0 items-center gap-1 overflow-x-auto">
-              <ModePicker value={mode} disabled={streaming || blocked} onChange={setMode} />
-              <div className="hidden sm:block"><SourcePicker value={source} disabled={streaming || blocked} onChange={setSource} /></div>
+              <TooltipRoot>
+                <TooltipTrigger asChild>
+                  <IconButton
+                    size={32}
+                    aria-label="Add sources"
+                    disabled={disabled}
+                    onClick={() => fileInputRef.current?.click()}
+                    className="shrink-0 border border-border bg-surface text-fg-muted hover:bg-raised-hover hover:text-fg"
+                  >
+                    <Plus size={16} strokeWidth={1.75} aria-hidden="true" />
+                  </IconButton>
+                </TooltipTrigger>
+                <TooltipContent>Add sources</TooltipContent>
+              </TooltipRoot>
+              <ToggleChip
+                icon={<Layers3 size={14} strokeWidth={1.75} aria-hidden="true" />}
+                label="Deep"
+                pressed={deep}
+                disabled={disabled}
+                onToggle={onToggleDeep}
+              />
+              <ToggleChip
+                icon={<Globe2 size={14} strokeWidth={1.75} aria-hidden="true" />}
+                label="Web"
+                pressed={web}
+                disabled={disabled}
+                onToggle={onToggleWeb}
+              />
             </div>
             <div className="flex shrink-0 items-center gap-2">
-              <div className="hidden sm:block"><ModelPicker value={modelId} disabled={streaming || blocked} onChange={onModelChange} /></div>
+              <div className="hidden sm:block"><ModelPicker value={modelId} disabled={disabled} onChange={onModelChange} /></div>
               {streaming ? (
                 <button type="button" aria-label="Stop" onClick={onStop} className="pressable inline-flex size-8 items-center justify-center rounded-full bg-fg-strong text-on-strong hover:bg-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring">
                   <Square size={15} fill="currentColor" strokeWidth={1.75} aria-hidden="true" />
@@ -109,6 +187,18 @@ export function ChatComposer({
               )}
             </div>
           </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            aria-label="Add sources to the chat"
+            onChange={(event) => {
+              const files = Array.from(event.currentTarget.files ?? [])
+              event.currentTarget.value = ''
+              if (files.length > 0) onFiles(files)
+            }}
+          />
         </div>
       </div>
     </div>

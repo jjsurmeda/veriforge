@@ -12,7 +12,6 @@ class ChatPatch(BaseModel):
     title: str | None = Field(default=None, max_length=200)
     pinned: bool | None = None
     model_id: str | None = Field(default=None, max_length=128)
-    include_library: bool | None = None
 
 
 class ChatOut(BaseModel):
@@ -20,7 +19,6 @@ class ChatOut(BaseModel):
     title: str
     pinned: bool
     model_id: str | None
-    include_library: bool
     starter_questions: list[str]
     created_at: datetime
     active_run_id: str | None = None
@@ -91,7 +89,6 @@ def chat_out(
     title: str,
     pinned: bool,
     model_id: str | None,
-    include_library: bool,
     starter_questions: list[str],
     created_at: datetime,
     active_run_id: uuid.UUID | None,
@@ -101,7 +98,6 @@ def chat_out(
         title=title,
         pinned=pinned,
         model_id=model_id,
-        include_library=include_library,
         starter_questions=starter_questions,
         created_at=created_at,
         active_run_id=str(active_run_id) if active_run_id else None,

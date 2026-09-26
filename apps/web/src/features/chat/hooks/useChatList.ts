@@ -55,7 +55,6 @@ export function usePatchChat() {
         title?: string | null
         pinned?: boolean | null
         model_id?: string | null
-        include_library?: boolean | null
       }
     }) => {
       const { data, error } = await patchChatChatsChatIdPatch({

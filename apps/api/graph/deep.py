@@ -231,7 +231,12 @@ async def prepare_deep_run(
         if params.source == "auto":
             source_filter = ingress.source
         if source_filter in {"web", "both"}:
-            await ensure_web_chunks(session, query=params.question, chat_id=params.chat_id)
+            await ensure_web_chunks(
+                session,
+                query=params.question,
+                chat_id=params.chat_id,
+                optional=source_filter == "both",
+            )
 
         plan = await _step(
             "plan",

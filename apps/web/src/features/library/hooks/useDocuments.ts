@@ -5,7 +5,6 @@ import {
   getLibraryLibraryGet,
   listChatDocumentsChatsChatIdDocumentsGet,
   patchDocumentDocumentsDocumentIdPatch,
-  pinWebSourceWebSourcesWebPageIdPinPost,
   reindexDocumentDocumentsDocumentIdReindexPost,
   uploadChatDocumentChatsChatIdDocumentsPost,
   uploadLibraryDocumentLibraryDocumentsPost,
@@ -59,26 +58,13 @@ export function useUploadChatDocument(chatId: string | null) {
   })
 }
 
-export function useUploadLibraryDocument(shared: boolean) {
+export function useUploadLibraryDocument() {
   return useDocumentMutation(async (file: File) => {
     const { error } = await uploadLibraryDocumentLibraryDocumentsPost({
-      query: { shared },
       body: { file },
     })
     if (error) throw error
   })
-}
-
-export function usePinWebSource() {
-  return useDocumentMutation(
-    async ({ webPageId, target }: { webPageId: string; target: 'chat' | 'library' }) => {
-      const { error } = await pinWebSourceWebSourcesWebPageIdPinPost({
-        path: { web_page_id: webPageId },
-        body: { target },
-      })
-      if (error) throw error
-    },
-  )
 }
 
 export function usePatchDocumentTags() {

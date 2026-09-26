@@ -119,22 +119,19 @@ async def test_chat_crud_and_model_persistence(client: AsyncClient) -> None:
     created = await client.post("/chats", json={"title": "First"}, headers=headers)
     chat_id = created.json()["id"]
     assert created.json()["title"] == "First"
-    assert created.json()["include_library"] is True
     # generator role default
     assert created.json()["model_id"] == "openai/gpt-4o-mini"
 
     patched = await client.patch(
         f"/chats/{chat_id}",
-        json={"model_id": "anthropic/claude-haiku-4.5", "include_library": False},
+        json={"model_id": "anthropic/claude-haiku-4.5"},
         headers=headers,
     )
     assert patched.json()["model_id"] == "anthropic/claude-haiku-4.5"
-    assert patched.json()["include_library"] is False
 
     listed = await client.get("/chats", headers=headers)
     assert [c["id"] for c in listed.json()] == [chat_id]
     assert listed.json()[0]["model_id"] == "anthropic/claude-haiku-4.5"
-    assert listed.json()[0]["include_library"] is False
     assert listed.json()[0]["starter_questions"] == []
 
     deleted = await client.delete(f"/chats/{chat_id}", headers=headers)

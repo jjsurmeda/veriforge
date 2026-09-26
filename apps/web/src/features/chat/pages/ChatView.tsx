@@ -7,16 +7,12 @@ import { useChat, useMessages } from '../hooks/useChat'
 import { useCancelRun, useCreateRun } from '../hooks/useRuns'
 import { useRunStream } from '../hooks/useRunStream'
 import { useQuota } from '../hooks/useQuota'
-import { useChatDocuments, useLibrary, usePatchDocumentTags, useReindexDocument, useUploadChatDocument } from '../../library/hooks/useDocuments'
-import { useDocumentChunks } from '../../library/hooks/useDocumentChunks'
-import { DocumentViewer } from '../../library/components/DocumentViewer'
+import { useUploadChatDocument } from '../../library/hooks/useDocuments'
 import { useDeleteChat, usePatchChat } from '../hooks/useChatList'
 import { useChatRunStore } from '../store'
-import { ChatComposer } from '../components/ChatComposer'
+import { ChatComposer, runOptions, type RunMode, type RunSource } from '../components/ChatComposer'
 import { ChatSidebar } from '../components/ChatSidebar'
 import { MessageList } from '../components/MessageList'
-import type { RunMode } from '../components/ModePicker'
-import type { RunSource } from '../components/SourcePicker'
 import { TracePanel, type TraceTab } from '../../trace/components/TracePanel'
 import { useTrace } from '../../trace/hooks/useTrace'
 import { Menu, MenuContent, MenuItemWithIcon, MenuTrigger } from '../../../components/ui/primitives'
@@ -48,12 +44,8 @@ export function ChatView({ chatId }: { chatId: string }) {
   const createRun = useCreateRun(chatId)
   const cancelRun = useCancelRun()
   const quota = useQuota()
-  const documents = useChatDocuments(chatId)
-  const library = useLibrary()
   const upload = useUploadChatDocument(chatId)
   const [viewerDocumentId, setViewerDocumentId] = useState<string | null>(null)
-  const patchTags = usePatchDocumentTags()
-  const reindexDocument = useReindexDocument()
   const [activeRunId, setActiveRunId] = useState<string | null>(null)
   const [traceRunId, setTraceRunId] = useState<string | null>(null)
   const [traceScrollSignal, setTraceScrollSignal] = useState(0)
@@ -65,6 +57,8 @@ export function ChatView({ chatId }: { chatId: string }) {
   const [traceTab, setTraceTab] = useState<TraceTab>('trace')
   const [focusSource, setFocusSource] = useState<number | null>(null)
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null)
+  const [deep, setDeep] = useState(false)
+  const [web, setWeb] = useState(false)
   const [threadEditing, setThreadEditing] = useState(false)
   const [threadTitleDraft, setThreadTitleDraft] = useState('')
   const [showScrollButton, setShowScrollButton] = useState(false)
@@ -87,17 +81,6 @@ export function ChatView({ chatId }: { chatId: string }) {
   // persisted run_events; invalidate: false keeps a replay from refetching.
   useRunStream(traceRunId !== activeRunId ? traceRunId : null, chatId, { invalidate: false })
   const live = useChatRunStore((s) => (activeRunId ? s.runs[activeRunId] : undefined))
-  const libraryDocument = (library.data?.documents ?? []).find(
-    (entry) => entry.id === viewerDocumentId,
-  )
-  const viewerDocument =
-    (documents.data ?? []).find((entry) => entry.id === viewerDocumentId) ?? libraryDocument
-  const viewerLive =
-    viewerDocument !== undefined &&
-    (viewerDocument.status === 'parsing' ||
-      viewerDocument.status === 'embedding' ||
-      viewerDocument.status === 'queued')
-  const viewerChunks = useDocumentChunks(viewerDocumentId, viewerLive)
 
   useEffect(() => {
     if (live?.status === 'completed' || live?.status === 'failed' || live?.status === 'cancelled') setOptimisticQuestion(null)
@@ -124,6 +107,9 @@ export function ChatView({ chatId }: { chatId: string }) {
 
   const onFiles = async (files: File[]) => {
     setSendError(null)
+    setRightPanelOpen(true)
+    setTraceTab('sources')
+    setViewerDocumentId(null)
     try {
       for (const file of files) await upload.mutateAsync(file)
     } catch (error) {
@@ -133,7 +119,9 @@ export function ChatView({ chatId }: { chatId: string }) {
 
   const onAbstainAction = (action: 'web' | 'deep') => {
     if (!lastQuestion) return
-    void onSend(lastQuestion, { mode: action === 'deep' ? 'deep' : 'auto', source: action === 'web' ? 'web' : 'auto' })
+    if (action === 'deep') setDeep(true)
+    else setWeb(true)
+    void onSend(lastQuestion, runOptions(action === 'deep' || deep, action === 'web' || web))
   }
 
   const showSteps = (message: MessageOut) => {
@@ -146,11 +134,17 @@ export function ChatView({ chatId }: { chatId: string }) {
     setTraceScrollSignal((n) => n + 1)
   }
 
-  const openSources = (sourceNumber?: number, messageId?: string) => {
+  const openCitations = (sourceNumber?: number, messageId?: string) => {
     setRightPanelOpen(true)
-    setTraceTab('sources')
+    setTraceTab('citations')
     setFocusSource(sourceNumber ?? null)
     if (messageId) setSelectedMessageId(messageId)
+  }
+
+  const viewDocument = (documentId: string) => {
+    setRightPanelOpen(true)
+    setTraceTab('sources')
+    setViewerDocumentId(documentId)
   }
 
   const saveThreadRename = async () => {
@@ -171,7 +165,7 @@ export function ChatView({ chatId }: { chatId: string }) {
 
   return (
     <div className="flex h-full min-h-0 bg-main text-fg">
-      <ChatSidebar currentChatId={chatId} mobileOpen={sidebarOpen} onMobileClose={() => setSidebarOpen(false)} onOpenDocument={setViewerDocumentId} />
+      <ChatSidebar currentChatId={chatId} mobileOpen={sidebarOpen} onMobileClose={() => setSidebarOpen(false)} />
       <div className="flex min-w-0 flex-1">
         <main className="flex min-w-0 flex-1 flex-col">
           <header className="relative z-10 flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border bg-main px-3 sm:px-5">
@@ -191,29 +185,15 @@ export function ChatView({ chatId }: { chatId: string }) {
           </header>
           {chat.isError ? <p className="p-6 text-sm text-fg-muted">Chat not found.</p> : <>
             <div ref={threadScrollRef} onScroll={(event) => { const element = event.currentTarget; setShowScrollButton(element.scrollHeight - element.scrollTop - element.clientHeight > 160) }} className="min-h-0 flex-1 overflow-y-auto">
-              <MessageList messages={messages.data ?? []} live={live} optimisticQuestion={optimisticQuestion} onSuggestion={(question) => void onSend(question, { mode: 'auto', source: 'auto' })} onAbstainAction={onAbstainAction} onOpenSources={openSources} onSelectMessage={setSelectedMessageId} onShowSteps={showSteps} />
+              <MessageList messages={messages.data ?? []} live={live} optimisticQuestion={optimisticQuestion} onSuggestion={(question) => void onSend(question, runOptions(deep, web))} onAbstainAction={onAbstainAction} onOpenSources={openCitations} onSelectMessage={setSelectedMessageId} onShowSteps={showSteps} />
               {live?.status === 'failed' && live.error && <p role="alert" className="mx-auto max-w-[720px] px-4 pb-4 text-sm text-warning">{runFailureMessage(live.error)}</p>}
               {live?.status === 'connection_lost' && <div className="mx-auto max-w-[720px] px-4 pb-4"><button type="button" onClick={resume} className="pressable rounded-lg border border-border/40 px-3 py-1.5 text-sm text-danger hover:bg-raised focus-visible:outline-2 focus-visible:outline-danger">Connection lost — resume</button></div>}
             </div>
             {showScrollButton && <button type="button" aria-label="Scroll to bottom" onClick={scrollToBottom} className="icon-button absolute bottom-[9.5rem] left-1/2 z-20 size-9 -translate-x-1/2 rounded-full border border-border bg-raised"><ArrowDown size={16} strokeWidth={1.75} aria-hidden="true" /></button>}
-            <ChatComposer streaming={streaming} modelId={chat.data?.model_id ?? null} quota={quota.data} error={sendError} emptyThread={(messages.data ?? []).length === 0} onFiles={(files) => void onFiles(files)} onModelChange={(modelId) => void patchChat.mutateAsync({ chatId, patch: { model_id: modelId } })} onSend={(message, options) => void onSend(message, options)} onStop={() => activeRunId && cancelRun.mutate(activeRunId)} />
+            <ChatComposer streaming={streaming} modelId={chat.data?.model_id ?? null} quota={quota.data} error={sendError} emptyThread={(messages.data ?? []).length === 0} deep={deep} web={web} onFiles={(files) => void onFiles(files)} onModelChange={(modelId) => void patchChat.mutateAsync({ chatId, patch: { model_id: modelId } })} onToggleDeep={setDeep} onToggleWeb={setWeb} onSend={(message, options) => void onSend(message, options)} onStop={() => activeRunId && cancelRun.mutate(activeRunId)} />
           </>}
-          {viewerDocument && (
-            <div className="w-full shrink-0 lg:w-[42rem]">
-              <DocumentViewer
-                document={viewerDocument}
-                chunks={viewerChunks.data ?? []}
-                readOnly={libraryDocument !== undefined && !libraryDocument.editable}
-                onClose={() => setViewerDocumentId(null)}
-                onSaveTags={async (tags) => {
-                  await patchTags.mutateAsync({ documentId: viewerDocument.id, tags })
-                }}
-                onReindex={() => void reindexDocument.mutateAsync(viewerDocument.id)}
-              />
-            </div>
-          )}
         </main>
-        <TracePanel steps={trace?.steps ?? []} decisions={trace?.decisions ?? []} thinking={trace?.thinking ?? ''} streaming={trace?.streaming ?? false} chunks={trace?.chunks ?? []} metrics={trace?.metrics ?? null} hold={trace?.hold ?? false} query={lastQuestion} open={rightPanelOpen} expanded={rightPanelExpanded} activeTab={traceTab} focusSource={focusSource} selectedMessage={selectedMessage} onOpenChange={setRightPanelOpen} onExpandedChange={setRightPanelExpanded} onTabChange={setTraceTab} onOpenDocument={setViewerDocumentId} scrollToTopSignal={traceScrollSignal} />
+        <TracePanel steps={trace?.steps ?? []} decisions={trace?.decisions ?? []} thinking={trace?.thinking ?? ''} streaming={trace?.streaming ?? false} chunks={trace?.chunks ?? []} metrics={trace?.metrics ?? null} hold={trace?.hold ?? false} query={lastQuestion} chatId={chatId} viewerDocumentId={viewerDocumentId} open={rightPanelOpen} expanded={rightPanelExpanded} activeTab={traceTab} focusSource={focusSource} selectedMessage={selectedMessage} onOpenChange={setRightPanelOpen} onExpandedChange={setRightPanelExpanded} onTabChange={setTraceTab} onViewDocument={viewDocument} onCloseViewer={() => setViewerDocumentId(null)} scrollToTopSignal={traceScrollSignal} />
       </div>
     </div>
   )

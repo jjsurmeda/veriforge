@@ -12,7 +12,7 @@ test('shows the latency waterfall and answer usage metrics', async ({ page, requ
   const { chatId } = await startSeededRun(request, user, question, 'deep')
 
   await page.goto(`/chat/${chatId}`)
-  const metricsTab = page.getByRole('button', { name: 'Metrics' })
+  const metricsTab = page.getByRole('tab', { name: 'Metrics' })
   await expect(metricsTab).toBeVisible({ timeout: 30_000 })
   await metricsTab.click()
 

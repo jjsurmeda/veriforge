@@ -64,12 +64,11 @@ async def _run_item(
         chat = Chat(
             user_id=user.id,
             title=f"eval:{item.question[:40]}",
-            include_library=True,
         )
         session.add(chat)
         await session.flush()
         chat_id = chat.id
-        scope = await resolve_scope(session, user, chat)
+        scope = await resolve_scope(session, chat)
         user_message = Message(
             chat_id=chat_id, role="user", content=item.question, status="complete"
         )

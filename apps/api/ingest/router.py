@@ -17,12 +17,12 @@ from chats.scope import library_starter_questions
 from db.models import Document, User
 from db.session import get_session
 from errors import AppError
-from ingest.containers import get_or_create_library_collection, get_or_create_shared_collection
+from ingest.containers import get_or_create_shared_collection
 from ingest.repository import (
     get_owned_document,
     get_visible_document,
     list_document_chunks,
-    list_library_documents,
+    list_shared_documents,
 )
 from ingest.storage import get_object_store
 from ingest.tasks import defer_ingest_document
@@ -66,17 +66,15 @@ async def get_library(
     user: CurrentUser,
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> LibraryOut:
-    documents = await list_library_documents(session, user)
+    documents = await list_shared_documents(session)
     return LibraryOut(
         documents=[
             LibraryDocumentOut(
-                **document_out(document).model_dump(),
-                shared=container.visibility == "shared",
-                editable=container.visibility != "shared" or user.role == "admin",
+                **document_out(document).model_dump(), shared=True, editable=user.role == "admin"
             )
-            for document, container in documents
+            for document in documents
         ],
-        starter_questions=await library_starter_questions(session, user),
+        starter_questions=await library_starter_questions(session),
     )
 
 
@@ -85,16 +83,11 @@ async def upload_library_document(
     file: UploadFile,
     user: CurrentUser,
     session: Annotated[AsyncSession, Depends(get_session)],
-    shared: bool = False,
 ) -> DocumentUploadOut:
     deny_read_only(user)
-    if shared and user.role != "admin":
-        raise Forbidden("forbidden", "Only admins can publish shared documents")
-    container = (
-        await get_or_create_shared_collection(session, user)
-        if shared
-        else await get_or_create_library_collection(session, user)
-    )
+    if user.role != "admin":
+        raise Forbidden("forbidden", "Only admins can publish to the Shared library")
+    container = await get_or_create_shared_collection(session, user)
     filename, data = await read_upload(file)
     document, deduped = await accept_upload(session, container, filename, data)
     return upload_out(document, deduped)

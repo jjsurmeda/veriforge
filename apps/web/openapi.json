@@ -331,10 +331,6 @@
             "title": "Id",
             "type": "string"
           },
-          "include_library": {
-            "title": "Include Library",
-            "type": "boolean"
-          },
           "model_id": {
             "anyOf": [
               {
@@ -367,7 +363,6 @@
           "title",
           "pinned",
           "model_id",
-          "include_library",
           "starter_questions",
           "created_at"
         ],
@@ -376,17 +371,6 @@
       },
       "ChatPatch": {
         "properties": {
-          "include_library": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Include Library"
-          },
           "model_id": {
             "anyOf": [
               {
@@ -1756,7 +1740,7 @@
         "properties": {
           "target": {
             "default": "chat",
-            "pattern": "^(chat|library)$",
+            "pattern": "^chat$",
             "title": "Target",
             "type": "string"
           }
@@ -5338,18 +5322,6 @@
     "/library/documents": {
       "post": {
         "operationId": "upload_library_document_library_documents_post",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "shared",
-            "required": false,
-            "schema": {
-              "default": false,
-              "title": "Shared",
-              "type": "boolean"
-            }
-          }
-        ],
         "requestBody": {
           "content": {
             "multipart/form-data": {

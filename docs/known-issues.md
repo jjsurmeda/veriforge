@@ -7,26 +7,10 @@ fix is. When you fix one, delete it and put its ID in the commit body.
 Logged 2026-09-26, after the UX pass and Gutenberg demo (`ea16d2b..725bbc5`).
 
 **Order:** KI-12 unblocks KI-5, and KI-5 unblocks KI-6. KI-1, KI-2 and KI-7
-were fixed in `d1da81d` on `fix/model-runtime`. KI-8 is independent. Do it
+were fixed in `b600bed`, and KI-3 in the sources-panel merge. KI-8 is independent. Do it
 before the next Playwright run.
 
 ---
-
-## KI-3: The model picker doesn't affect the generator
-
-- **What:** `graph/generate.py:78,108` (`stream_grounded_answer`) tags
-  calls with `role: "generator"`. `quota/usage.py:34` `resolve_model`
-  returns `model_roles.get(role, requested)`, so the admin **role mapping
-  overrides the model the user picked**.
-- **Impact:** the composer's model picker is decorative for answers. This
-  breaks the PRD model-picker requirement (AC-2/CH-8 area).
-- **Fix:** the user's requested model wins for the generator. The
-  `generator` role is only the default when the chat has no `model_id`.
-  Other roles (small, extractor, planner) stay admin-controlled. Before
-  changing `resolve_model`, check whether the quota ledger prices calls
-  by the resolved model.
-- **Test:** a chat with `model_id = X` generates with X even when the
-  `generator` role maps to Y. A chat with no model uses Y.
 
 ## KI-4: The sweep window was widened instead of fixing the heartbeat
 
@@ -171,6 +155,19 @@ working:
 - **Fix:** find out whether refinement is skipped (abstained turns?),
   fails silently, or doesn't commit. Add a test for "chitchat, then
   grounded completes, then the title is a topic".
+
+## KI-14: Ingest chat-documents tests are flaky in the full suite
+
+- **What:** after the sources-panel merge, 2 of 4 full `pytest` runs had
+  one failure or error in the chat-documents tests
+  (`tests/ingest/test_documents_api.py::test_chat_documents_are_created_listed_and_cascade_deleted`,
+  `tests/ingest/test_ownership_filters.py::test_chat_documents_are_owner_only`).
+  Both pass in isolation every time, so it's likely order or state leakage
+  (lazy chat-collection creation, queued ingest jobs, or truncation
+  between tests).
+- **Fix:** reproduce with `pytest -p randomly` or by running
+  `tests/ingest` after `tests/chats`, find the shared state, and fix the
+  fixture. Don't add retries.
 
 ---
 

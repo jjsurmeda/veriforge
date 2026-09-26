@@ -35,7 +35,7 @@ async def test_repository_visibility_branches(
     assert await get_owned_collection(db, user_a, shared.id) is None
 
 
-async def test_library_lists_own_and_shared_only(
+async def test_library_lists_shared_only(
     db: AsyncSession,
     client: AsyncClient,
     user_a: User,
@@ -55,7 +55,7 @@ async def test_library_lists_own_and_shared_only(
     listing = await client.get("/library", headers=user_a_headers)
     assert listing.status_code == 200, listing.text
     names = {row["name"] for row in listing.json()["documents"]}
-    assert names == {"shared.txt", "mine.txt"}
+    assert names == {"shared.txt"}
 
 
 async def test_chat_documents_are_owner_only(

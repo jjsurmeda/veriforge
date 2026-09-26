@@ -14,7 +14,7 @@ from ingest.storage import get_object_store
 
 async def test_upload_dedupe_and_stores_object(
     client: AsyncClient,
-    user_a_headers: dict[str, str],
+    admin_headers: dict[str, str],
     db: AsyncSession,
     monkeypatch: MonkeyPatch,
     tmp_path: Path,
@@ -32,7 +32,7 @@ async def test_upload_dedupe_and_stores_object(
     first = await client.post(
         "/library/documents",
         files={"file": ("doc.pdf", payload, "application/pdf")},
-        headers=user_a_headers,
+        headers=admin_headers,
     )
     assert first.status_code == 201, first.text
     body = first.json()
@@ -40,16 +40,17 @@ async def test_upload_dedupe_and_stores_object(
     assert body["status"] == "queued"
     assert len(body["sha256"]) == 64
     assert len(calls) == 1
-    container_id = str(
-        (await db.execute(select(Collection).where(Collection.kind == "library"))).scalar_one().id
-    )
+    shared = (
+        await db.execute(select(Collection).where(Collection.visibility == "shared"))
+    ).scalar_one()
+    container_id = str(shared.id)
     stored = await get_object_store().get(f"{container_id}/{body['sha256']}")
     assert stored == payload
 
     second = await client.post(
         "/library/documents",
         files={"file": ("again.pdf", payload, "application/pdf")},
-        headers=user_a_headers,
+        headers=admin_headers,
     )
     assert second.status_code == 201, second.text
     assert second.json()["deduped"] is True
@@ -61,8 +62,7 @@ async def test_upload_dedupe_and_stores_object(
 
 async def test_library_uploads_land_in_one_container(
     client: AsyncClient,
-    user_a_headers: dict[str, str],
-    db: AsyncSession,
+    admin_headers: dict[str, str],
     monkeypatch: MonkeyPatch,
 ) -> None:
     async def fake_defer(document_id: UUID) -> None:
@@ -73,25 +73,25 @@ async def test_library_uploads_land_in_one_container(
     first = await client.post(
         "/library/documents",
         files={"file": ("a.txt", b"alpha", "text/plain")},
-        headers=user_a_headers,
+        headers=admin_headers,
     )
     second = await client.post(
         "/library/documents",
         files={"file": ("b.txt", b"beta", "text/plain")},
-        headers=user_a_headers,
+        headers=admin_headers,
     )
     assert first.status_code == 201 and second.status_code == 201
 
-    listing = await client.get("/library", headers=user_a_headers)
+    listing = await client.get("/library", headers=admin_headers)
     assert listing.status_code == 200, listing.text
     body = listing.json()
     assert {row["name"] for row in body["documents"]} == {"a.txt", "b.txt"}
-    assert all(row["shared"] is False and row["editable"] is True for row in body["documents"])
+    assert all(row["shared"] is True for row in body["documents"])
 
 
 async def test_upload_limits_and_unsupported_type(
     client: AsyncClient,
-    user_a_headers: dict[str, str],
+    admin_headers: dict[str, str],
     monkeypatch: MonkeyPatch,
 ) -> None:
     async def fake_defer(document_id: UUID) -> None:
@@ -104,7 +104,7 @@ async def test_upload_limits_and_unsupported_type(
     too_large = await client.post(
         "/library/documents",
         files={"file": ("doc.txt", b"12345", "text/plain")},
-        headers=user_a_headers,
+        headers=admin_headers,
     )
     assert too_large.status_code == 413, too_large.text
 
@@ -112,41 +112,9 @@ async def test_upload_limits_and_unsupported_type(
     unsupported = await client.post(
         "/library/documents",
         files={"file": ("app.exe", b"MZ", "application/octet-stream")},
-        headers=user_a_headers,
-    )
-    assert unsupported.status_code == 415, unsupported.text
-
-
-async def test_shared_upload_is_admin_only(
-    client: AsyncClient,
-    user_a_headers: dict[str, str],
-    admin_headers: dict[str, str],
-    db: AsyncSession,
-    monkeypatch: MonkeyPatch,
-) -> None:
-    async def fake_defer(document_id: UUID) -> None:
-        return None
-
-    monkeypatch.setattr("ingest.upload.defer_ingest_document", fake_defer)
-
-    forbidden = await client.post(
-        "/library/documents?shared=true",
-        files={"file": ("a.txt", b"alpha", "text/plain")},
-        headers=user_a_headers,
-    )
-    assert forbidden.status_code == 403, forbidden.text
-
-    published = await client.post(
-        "/library/documents?shared=true",
-        files={"file": ("policy.txt", b"policy", "text/plain")},
         headers=admin_headers,
     )
-    assert published.status_code == 201, published.text
-
-    listing = await client.get("/library", headers=user_a_headers)
-    shared_rows = [row for row in listing.json()["documents"] if row["shared"]]
-    assert [row["name"] for row in shared_rows] == ["policy.txt"]
-    assert shared_rows[0]["editable"] is False
+    assert unsupported.status_code == 415, unsupported.text
 
 
 async def test_demo_role_can_read_the_library_but_not_upload(
@@ -160,7 +128,7 @@ async def test_demo_role_can_read_the_library_but_not_upload(
 
     monkeypatch.setattr("ingest.upload.defer_ingest_document", fake_defer)
     published = await client.post(
-        "/library/documents?shared=true",
+        "/library/documents",
         files={"file": ("demo.txt", b"demo corpus", "text/plain")},
         headers=admin_headers,
     )
@@ -192,12 +160,6 @@ async def test_demo_role_can_read_the_library_but_not_upload(
     assert blocked.status_code == 403, blocked.text
 
     chat = await client.post("/chats", json={}, headers=headers)
-    assert chat.json()["include_library"] is True
-    patched = await client.patch(
-        f"/chats/{chat.json()['id']}", json={"include_library": False}, headers=headers
-    )
-    assert patched.json()["include_library"] is True
-
     chat_upload = await client.post(
         f"/chats/{chat.json()['id']}/documents",
         files={"file": ("mine.txt", b"nope", "text/plain")},
@@ -208,7 +170,7 @@ async def test_demo_role_can_read_the_library_but_not_upload(
 
 async def test_patch_delete_and_reindex_document(
     client: AsyncClient,
-    user_a_headers: dict[str, str],
+    admin_headers: dict[str, str],
     db: AsyncSession,
     monkeypatch: MonkeyPatch,
     tmp_path: Path,
@@ -225,13 +187,14 @@ async def test_patch_delete_and_reindex_document(
     uploaded = await client.post(
         "/library/documents",
         files={"file": ("note.md", b"# hello", "text/markdown")},
-        headers=user_a_headers,
+        headers=admin_headers,
     )
     assert uploaded.status_code == 201, uploaded.text
     document_id = uploaded.json()["id"]
-    container_id = str(
-        (await db.execute(select(Collection).where(Collection.kind == "library"))).scalar_one().id
-    )
+    shared = (
+        await db.execute(select(Collection).where(Collection.visibility == "shared"))
+    ).scalar_one()
+    container_id = str(shared.id)
     document = await db.get(Document, UUID(document_id))
     assert document is not None
     document.status = "failed"
@@ -239,18 +202,18 @@ async def test_patch_delete_and_reindex_document(
     await db.commit()
 
     patch = await client.patch(
-        f"/documents/{document_id}", json={"tags": ["alpha", "beta"]}, headers=user_a_headers
+        f"/documents/{document_id}", json={"tags": ["alpha", "beta"]}, headers=admin_headers
     )
     assert patch.status_code == 200, patch.text
     assert patch.json()["tags"] == ["alpha", "beta"]
 
-    reindex = await client.post(f"/documents/{document_id}/reindex", headers=user_a_headers)
+    reindex = await client.post(f"/documents/{document_id}/reindex", headers=admin_headers)
     assert reindex.status_code == 200, reindex.text
     assert reindex.json()["status"] == "queued"
     assert reindex.json()["error"] is None
     assert calls == [UUID(document_id), UUID(document_id)]
 
-    delete = await client.delete(f"/documents/{document_id}", headers=user_a_headers)
+    delete = await client.delete(f"/documents/{document_id}", headers=admin_headers)
     assert delete.status_code == 204, delete.text
     db.expire_all()
     assert await db.get(Document, UUID(document_id)) is None

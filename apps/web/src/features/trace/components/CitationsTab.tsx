@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { ChevronDown, FileText, Globe2 } from 'lucide-react'
+import { ChevronDown, FileText, Globe2, Quote } from 'lucide-react'
 
 import type { MessageOut, RetrievedChunk } from '../../../generated/types.gen'
+import { PanelEmpty } from '../../../components/ui/PanelEmpty'
 
 interface Props {
   chunks: RetrievedChunk[]
@@ -31,14 +32,15 @@ function chunkForCitation(citation: NonNullable<MessageOut['citations']>[number]
   }
 }
 
-export function SourcesTab({ chunks, message, query, onOpenDocument }: Props) {
+export function CitationsTab({ chunks, message, query, onOpenDocument }: Props) {
   const [alsoOpen, setAlsoOpen] = useState(false)
   if (chunks.length === 0 && !message?.citations?.length) {
     return (
-      <div className="px-4 py-10 text-center">
-        <p className="text-sm text-fg">No sources were retrieved.</p>
-        <p className="mx-auto mt-2 max-w-[28ch] text-xs leading-5 text-fg-muted">Evidence will appear here when retrieval finds a matching document or web source.</p>
-      </div>
+      <PanelEmpty
+        icon={<Quote size={18} strokeWidth={1.75} aria-hidden="true" />}
+        title="No citations yet."
+        hint="The evidence behind an answer appears here once a run retrieves it."
+      />
     )
   }
 

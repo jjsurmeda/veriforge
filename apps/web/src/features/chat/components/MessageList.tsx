@@ -23,7 +23,7 @@ import {
   worstVerdict,
   type ChipSource,
 } from '../../trace/components/CitationChip'
-import { SourcesTab } from '../../trace/components/SourcesTab'
+import { CitationsTab } from '../../trace/components/CitationsTab'
 import type { RunLive } from '../store'
 
 interface Props {
@@ -340,10 +340,10 @@ export function MessageList({ messages, live, onSuggestion, onAbstainAction, onO
                 {isLivePlaceholder && (live?.chunks.length ?? 0) > 0 && (
                   <details className="group mt-4 overflow-hidden rounded-lg border border-border bg-sidebar open:bg-raised">
                     <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-xs text-fg-muted transition-colors duration-150 hover:bg-raised-hover focus-visible:outline-2 focus-visible:outline-focus-ring [&::-webkit-details-marker]:hidden">
-                      <span className="inline-flex items-center gap-1.5"><FileText size={13} strokeWidth={1.75} aria-hidden="true" /> Sources ({live?.chunks.length ?? 0})</span>
+                      <span className="inline-flex items-center gap-1.5"><FileText size={13} strokeWidth={1.75} aria-hidden="true" /> Citations ({live?.chunks.length ?? 0})</span>
                       <ChevronDown size={14} strokeWidth={1.75} aria-hidden="true" className="transition-transform duration-150 group-open:rotate-180" />
                    </summary>
-                     <SourcesTab chunks={live?.chunks ?? []} />
+                     <CitationsTab chunks={live?.chunks ?? []} />
 
                   </details>
                 )}

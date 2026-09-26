@@ -52,4 +52,4 @@ class LibraryOut(BaseModel):
 
 
 class PinRequest(BaseModel):
-    target: str = Field(default="chat", pattern="^(chat|library)$")
+    target: str = Field(default="chat", pattern="^chat$")

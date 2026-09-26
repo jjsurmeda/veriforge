@@ -338,7 +338,12 @@ async def prepare_auto_run(
             source_filter = ingress.source
 
         if source_filter in {"web", "both"}:
-            await ensure_web_chunks(session, query=params.question, chat_id=params.chat_id)
+            await ensure_web_chunks(
+                session,
+                query=params.question,
+                chat_id=params.chat_id,
+                optional=source_filter == "both",
+            )
 
         async def retrieval_work() -> tuple[list[ScoredChunk], list[Retrieval]]:
             variants = await _generate_query_variants(

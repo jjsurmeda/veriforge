@@ -32,6 +32,11 @@ class UsageContext:
     _reference_price: float | None = field(default=None, repr=False)
 
     async def resolve_model(self, requested: str, role: str) -> str:
+        if role == "generator":
+            # The composer's pick wins. The role mapping is only the default,
+            # and chats/router._default_model_id applies it when the chat has
+            # no model_id (KI-3).
+            return requested
         return self.model_roles.get(role, requested)
 
     def api_key_for(self, model: str) -> str | None:

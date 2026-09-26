@@ -55,30 +55,18 @@ export async function closeNavigation(page: Page): Promise<void> {
 }
 
 export async function addChatSource(page: Page, files: string | string[]): Promise<void> {
-  await openNavigation(page)
-  await sidebar(page).locator('input[aria-label="Chat source files"]').setInputFiles(files)
+  await page.locator('input[aria-label="Add sources to the chat"]').setInputFiles(files)
+  await expect(page.getByRole('tab', { name: 'Sources' })).toHaveAttribute('aria-selected', 'true')
 }
 
-export async function uploadLibraryDocument(page: Page, file: string): Promise<void> {
-  await openNavigation(page)
-  await sidebar(page).getByRole('button', { name: /^Library$/ }).click()
-  await sidebar(page).getByText('Drop files or browse').waitFor({ state: 'visible' })
-  await sidebar(page).locator('input[type="file"]').first().setInputFiles(file)
+export async function setComposerMode(page: Page, on: boolean): Promise<void> {
+  const chip = page.getByRole('button', { name: 'Deep', exact: true })
+  if ((await chip.getAttribute('aria-pressed')) !== String(on)) await chip.click()
 }
 
-export async function setComposerMode(page: Page, value: 'auto' | 'fast' | 'deep'): Promise<void> {
-  const trigger = page.locator('button[role="combobox"][aria-label="Run mode"]:visible').last()
-  await trigger.click()
-  await page.getByRole('option', { name: new RegExp(`^${value}`, 'i') }).click()
-}
-
-export async function setComposerSource(
-  page: Page,
-  value: 'auto' | 'upload' | 'web' | 'both',
-): Promise<void> {
-  const trigger = page.locator('button[role="combobox"][aria-label="Run source"]:visible').last()
-  await trigger.click()
-  await page.getByRole('option', { name: new RegExp(`^${value}`, 'i') }).click()
+export async function setComposerSource(page: Page, on: boolean): Promise<void> {
+  const chip = page.getByRole('button', { name: 'Web', exact: true })
+  if ((await chip.getAttribute('aria-pressed')) !== String(on)) await chip.click()
 }
 
 export async function waitForRunToFinish(page: Page): Promise<void> {

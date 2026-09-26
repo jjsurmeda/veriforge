@@ -1,5 +1,5 @@
-"""Web-source routes (TRD §12, SR-5): pin a fetched web page into a chat's
-own sources or the user's Library."""
+"""Web-source routes (TRD §12, SR-5): pin a fetched web page into its own
+chat's sources."""
 
 from typing import Annotated
 from uuid import UUID
@@ -12,7 +12,7 @@ from auth.deps import CurrentUser
 from db.models import Chat, WebPage
 from db.session import get_session
 from errors import AppError
-from ingest.containers import get_or_create_chat_collection, get_or_create_library_collection
+from ingest.containers import get_or_create_chat_collection
 from ingest.upload import deny_read_only
 from retrieval.web import pin_web_page
 from schemas.sources import PinRequest
@@ -35,13 +35,10 @@ async def pin_web_source(
     page = await session.get(WebPage, web_page_id)
     if page is None:
         raise AppError("web_source_not_found", "Web source not found", status_code=404)
-    if body.target == "chat":
-        chat = await session.get(Chat, page.chat_id)
-        if chat is None or chat.user_id != user.id:
-            raise AppError("web_source_not_found", "Web source not found", status_code=404)
-        container = await get_or_create_chat_collection(session, user, chat)
-    else:
-        container = await get_or_create_library_collection(session, user)
+    chat = await session.get(Chat, page.chat_id)
+    if chat is None or chat.user_id != user.id:
+        raise AppError("web_source_not_found", "Web source not found", status_code=404)
+    container = await get_or_create_chat_collection(session, user, chat)
     document = await pin_web_page(
         session, user_id=user.id, web_page_id=web_page_id, collection_id=container.id
     )

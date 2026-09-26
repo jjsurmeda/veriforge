@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Gauge, ListTree, Maximize2, PanelRight, Quote } from 'lucide-react'
+import { FileText, Gauge, ListTree, Maximize2, PanelRight, Quote } from 'lucide-react'
 
 import { formatCredits } from '../../../lib/format'
+import { PanelEmpty } from '../../../components/ui/PanelEmpty'
 import type { Decision, MessageOut, Metrics, RetrievedChunk, StepCompleted, StepStarted } from '../../../generated/types.gen'
-import { SourcesTab } from './SourcesTab'
+import { SourcesTab } from '../../chat/components/SourcesTab'
+import { CitationsTab } from './CitationsTab'
 import { DecisionSummary, DecisionTimeline } from './DecisionTimeline'
 
 interface Props {
@@ -15,6 +17,8 @@ interface Props {
   metrics: Metrics | null
   hold: boolean
   query?: string | null
+  chatId: string | null
+  viewerDocumentId: string | null
   open?: boolean
   expanded?: boolean
   activeTab?: TraceTab
@@ -22,12 +26,13 @@ interface Props {
   onOpenChange?: (open: boolean) => void
   onExpandedChange?: (expanded: boolean) => void
   onTabChange?: (tab: TraceTab) => void
-  onOpenDocument?: (documentId: string) => void
+  onViewDocument?: (documentId: string) => void
+  onCloseViewer?: () => void
   selectedMessage?: MessageOut | null
   scrollToTopSignal?: number
 }
 
-export type TraceTab = 'trace' | 'sources' | 'metrics'
+export type TraceTab = 'sources' | 'citations' | 'trace' | 'metrics'
 
 function StepRow({ step }: { step: StepStarted | StepCompleted }) {
   const isCompleted = step.type === 'step.completed'
@@ -62,7 +67,11 @@ function MetricsTab({ metrics, decisions }: { metrics: Metrics | null; decisions
     <div className="space-y-5 text-xs">
       <DecisionSummary decisions={decisions} />
       {!metrics ? (
-        <p className="py-8 text-center text-fg-muted">Metrics land when the run completes.</p>
+        <PanelEmpty
+          icon={<Gauge size={18} strokeWidth={1.75} aria-hidden="true" />}
+          title="No metrics yet."
+          hint="Latency, tokens, credits and scores land when the run completes."
+        />
       ) : (
         <>
           <div className="grid grid-cols-2 gap-2">
@@ -91,7 +100,7 @@ function MetricsTab({ metrics, decisions }: { metrics: Metrics | null; decisions
   )
 }
 
-export function TracePanel({ steps, decisions, thinking, streaming, chunks, metrics, hold, query, open, expanded, activeTab, focusSource, onOpenChange, onExpandedChange, onTabChange, onOpenDocument, selectedMessage, scrollToTopSignal }: Props) {
+export function TracePanel({ steps, decisions, thinking, streaming, chunks, metrics, hold, query, chatId, viewerDocumentId, open, expanded, activeTab, focusSource, onOpenChange, onExpandedChange, onTabChange, onViewDocument, onCloseViewer, selectedMessage, scrollToTopSignal }: Props) {
   const [internalOpen, setInternalOpen] = useState(true)
   const [internalExpanded, setInternalExpanded] = useState(false)
   const [internalTab, setInternalTab] = useState<TraceTab>('trace')
@@ -119,15 +128,16 @@ export function TracePanel({ steps, decisions, thinking, streaming, chunks, metr
   }
 
   useEffect(() => {
-    if (focusSource === null || focusSource === undefined || tab !== 'sources' || !isOpen) return
+    if (focusSource === null || focusSource === undefined || tab !== 'citations' || !isOpen) return
     const target = document.getElementById(`trace-source-${focusSource}`)
     target?.scrollIntoView({ block: 'center' })
   }, [focusSource, isOpen, tab])
 
   const citedCount = selectedMessage?.citations?.length ?? chunks.length
   const tabs: Array<{ id: TraceTab; label: string; icon: ReactNode }> = [
+    { id: 'sources', label: 'Sources', icon: <FileText size={14} strokeWidth={1.75} aria-hidden="true" /> },
+    { id: 'citations', label: `Citations${citedCount ? ` (${citedCount})` : ''}`, icon: <Quote size={14} strokeWidth={1.75} aria-hidden="true" /> },
     { id: 'trace', label: 'Trace', icon: <ListTree size={14} strokeWidth={1.75} aria-hidden="true" /> },
-    { id: 'sources', label: `Sources${citedCount ? ` (${citedCount})` : ''}`, icon: <Quote size={14} strokeWidth={1.75} aria-hidden="true" /> },
     { id: 'metrics', label: 'Metrics', icon: <Gauge size={14} strokeWidth={1.75} aria-hidden="true" /> },
   ]
 
@@ -138,8 +148,8 @@ export function TracePanel({ steps, decisions, thinking, streaming, chunks, metr
         <header className="flex min-h-14 shrink-0 items-center justify-between gap-2 border-b border-border px-3">
           <nav className="flex min-w-0 items-center gap-0.5" aria-label="Trace tabs" role="tablist">
             {tabs.map((item, index) => (
-              <button key={item.id} id={`workspace-tab-${item.id}`} type="button" aria-selected={tab === item.id} aria-controls={`workspace-${item.id}`} tabIndex={tab === item.id ? 0 : -1} onClick={() => setTab(item.id)} onKeyDown={(event) => { if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return; event.preventDefault(); const nextIndex = event.key === 'ArrowRight' ? (index + 1) % tabs.length : (index - 1 + tabs.length) % tabs.length; const next = tabs[nextIndex]; setTab(next.id); document.getElementById(`workspace-tab-${next.id}`)?.focus() }} className={`inline-flex min-h-9 items-center gap-1.5 rounded-lg px-2 text-xs transition-[background-color,color] duration-150 focus-visible:outline-2 focus-visible:outline-focus-ring ${tab === item.id ? 'bg-raised font-medium text-fg' : 'text-fg-muted hover:bg-raised-hover hover:text-fg'}`}>
-                {item.icon}<span className="hidden sm:inline">{item.label}</span>
+              <button key={item.id} id={`workspace-tab-${item.id}`} type="button" role="tab" aria-selected={tab === item.id} aria-controls={`workspace-${item.id}`} tabIndex={tab === item.id ? 0 : -1} onClick={() => setTab(item.id)} onKeyDown={(event) => { if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return; event.preventDefault(); const nextIndex = event.key === 'ArrowRight' ? (index + 1) % tabs.length : (index - 1 + tabs.length) % tabs.length; const next = tabs[nextIndex]; setTab(next.id); document.getElementById(`workspace-tab-${next.id}`)?.focus() }} className={`inline-flex min-h-9 items-center gap-1.5 rounded-lg px-2 text-xs transition-[background-color,color] duration-150 focus-visible:outline-2 focus-visible:outline-focus-ring ${tab === item.id ? 'bg-raised font-medium text-fg' : 'text-fg-muted hover:bg-raised-hover hover:text-fg'}`}>
+                {item.icon}<span className="sr-only sm:not-sr-only sm:inline">{item.label}</span>
               </button>
             ))}
           </nav>
@@ -150,14 +160,21 @@ export function TracePanel({ steps, decisions, thinking, streaming, chunks, metr
           </div>
         </header>
         {hold && <p className="border-b border-border/20 bg-raised px-4 py-2 text-xs text-warning" role="status">Verifying… the reviewed answer lands when checks finish.</p>}
-        <div ref={bodyRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+        <div ref={bodyRef} className={`min-h-0 flex-1 overflow-y-auto ${tab === 'sources' ? 'flex flex-col overflow-hidden p-0' : 'px-4 py-4'}`}>
+          {tab === 'sources' && <div id="workspace-sources" role="tabpanel" className="flex min-h-0 flex-1 flex-col"><SourcesTab chatId={chatId} viewerDocumentId={viewerDocumentId} onViewDocument={(documentId) => onViewDocument?.(documentId)} onCloseViewer={() => onCloseViewer?.()} /></div>}
+          {tab === 'citations' && <div id="workspace-citations" role="tabpanel"><CitationsTab chunks={chunks} message={selectedMessage} query={query} onOpenDocument={onViewDocument} /></div>}
           {tab === 'trace' && <div id="workspace-trace" role="tabpanel" className="space-y-5">
             {thinking.length > 0 && <section><details><summary className="cursor-pointer text-xs font-medium text-fg-muted hover:text-fg">Thinking</summary><p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-fg-muted">{thinking}</p></details></section>}
             {steps.length > 0 && <section><h3 className="mb-1 text-xs font-medium text-fg-muted">Steps</h3><ul>{steps.map((step, index) => <StepRow key={index} step={step} />)}</ul></section>}
             {decisions.length > 0 && <section aria-labelledby="decision-timeline-heading"><h3 id="decision-timeline-heading" className="mb-2 text-xs font-medium text-fg-muted">Decision timeline</h3><DecisionTimeline decisions={decisions} /></section>}
-            {steps.length === 0 && decisions.length === 0 && thinking.length === 0 && <p className="py-8 text-center text-fg-muted">Decisions and reasoning stream here while a run is in flight.</p>}
+            {steps.length === 0 && decisions.length === 0 && thinking.length === 0 && (
+              <PanelEmpty
+                icon={<ListTree size={18} strokeWidth={1.75} aria-hidden="true" />}
+                title="No run yet."
+                hint="Decisions and reasoning stream here while a run is in flight."
+              />
+            )}
           </div>}
-          {tab === 'sources' && <div id="workspace-sources" role="tabpanel"><SourcesTab chunks={chunks} message={selectedMessage} query={query} onOpenDocument={onOpenDocument} /></div>}
           {tab === 'metrics' && <div id="workspace-metrics" role="tabpanel"><MetricsTab metrics={metrics} decisions={decisions} /></div>}
         </div>
       </aside>

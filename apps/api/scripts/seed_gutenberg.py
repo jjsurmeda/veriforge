@@ -1,10 +1,11 @@
 """Download public-domain books from Project Gutenberg and ingest them as
 Shared Library documents.
 
-Uploads go over HTTP to POST /library/documents?shared=true as the admin, so a
-book lands in the same object store the workers read from and is queued,
-parsed, chunked and embedded by exactly the pipeline a browser upload uses.
-sha256 dedupe means a rerun is a no-op.
+Uploads go over HTTP to POST /library/documents as the admin. That route is
+admin-only and always lands in Shared, so a book reaches the same object
+store the workers read from and is queued, parsed, chunked and embedded by
+exactly the pipeline a browser upload uses. sha256 dedupe means a rerun is a
+no-op.
 
 The texts are not committed: they are cached under .data/gutenberg/ (which is
 gitignored) and fetched on demand. Project Gutenberg's licence terms are in
@@ -104,7 +105,6 @@ async def upload_book(
     data = path.read_bytes()
     response = await client.post(
         "/library/documents",
-        params={"shared": "true"},
         headers={"Authorization": f"Bearer {token}"},
         files={"file": (f"{title}.txt", data, "text/plain")},
     )

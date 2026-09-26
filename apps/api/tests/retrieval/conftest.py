@@ -122,8 +122,8 @@ async def add_chunk(
     return chunk
 
 
-async def make_chat(db: AsyncSession, user: User, *, include_library: bool = True) -> Chat:
-    chat = Chat(user_id=user.id, title="t", include_library=include_library)
+async def make_chat(db: AsyncSession, user: User) -> Chat:
+    chat = Chat(user_id=user.id, title="t")
     db.add(chat)
     await db.commit()
     await db.refresh(chat)

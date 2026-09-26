@@ -1,4 +1,6 @@
-"""Critical tier (testing.md): who is in a chat's scope (ADR-002, TRD §9.2).
+"""Critical tier (testing.md): who is in a chat's scope (ADR-002 addendum,
+TRD §9.2). A chat searches its own sources plus every Shared collection — a
+private `library` collection drops out of scope entirely.
 
 Every container is seeded for real and the last test goes all the way
 through build_scope + hybrid_search, because the scope list is only
@@ -20,8 +22,8 @@ QUERY_TEXT = "zebra quoll aardvark"
 QUERY_VEC = vec(1)
 
 
-async def make_chat(db: AsyncSession, user: User, *, include_library: bool = True) -> Chat:
-    chat = Chat(user_id=user.id, title="t", include_library=include_library)
+async def make_chat(db: AsyncSession, user: User) -> Chat:
+    chat = Chat(user_id=user.id, title="t")
     db.add(chat)
     await db.commit()
     await db.refresh(chat)
@@ -32,65 +34,43 @@ async def make_chat_container(db: AsyncSession, user: User, chat: Chat) -> Colle
     return await make_collection(db, user, "chat", kind="chat", chat_id=chat.id)
 
 
-async def test_other_users_chat_and_private_library_are_never_in_scope(
+async def test_scope_is_the_chats_own_container_plus_every_shared_collection(
     db: AsyncSession, user_a: User, user_b: User
 ) -> None:
     chat_a = await make_chat(db, user_a)
     own = await make_chat_container(db, user_a, chat_a)
-    library_a = await make_collection(db, user_a, "A library")
-    chat_b = await make_chat(db, user_b)
-    chat_container_b = await make_chat_container(db, user_b, chat_b)
+    private_library = await make_collection(db, user_a, "A library")
+    shared_b = await make_collection(db, user_b, "shared-b", visibility="shared")
+    shared_c = await make_collection(db, user_a, "shared-a", visibility="shared")
+    chat_container_b = await make_chat_container(db, user_b, await make_chat(db, user_b))
     library_b = await make_collection(db, user_b, "B library")
 
-    scope = set(await resolve_scope(db, user_a, chat_a))
+    scope = set(await resolve_scope(db, chat_a))
 
     assert own.id in scope
-    assert library_a.id in scope
-    assert chat_container_b.id not in scope
+    assert {shared_b.id, shared_c.id} <= scope
+    assert private_library.id not in scope
     assert library_b.id not in scope
+    assert chat_container_b.id not in scope
 
 
-async def test_shared_is_included_only_when_include_library_is_on(
-    db: AsyncSession, user_a: User, user_b: User
-) -> None:
-    chat_on = await make_chat(db, user_a)
-    chat_off = await make_chat(db, user_a, include_library=False)
-    shared = await make_collection(db, user_b, "shared", visibility="shared")
-
-    assert shared.id in await resolve_scope(db, user_a, chat_on)
-    assert shared.id not in await resolve_scope(db, user_a, chat_off)
-
-
-async def test_include_library_off_leaves_only_the_chats_own_container(
-    db: AsyncSession, user_a: User
-) -> None:
-    chat = await make_chat(db, user_a, include_library=False)
-    own = await make_chat_container(db, user_a, chat)
-    library = await make_collection(db, user_a, "library")
-
-    assert await resolve_scope(db, user_a, chat) == [own.id]
-    assert library.id not in await resolve_scope(db, user_a, chat)
-
-
-async def test_chat_without_a_container_resolves_to_its_library_only(
+async def test_a_chat_without_a_container_still_reaches_shared(
     db: AsyncSession, user_a: User
 ) -> None:
     chat = await make_chat(db, user_a)
-    library = await make_collection(db, user_a, "library")
+    shared = await make_collection(db, user_a, "shared", visibility="shared")
 
-    assert await resolve_scope(db, user_a, chat) == [library.id]
+    assert await resolve_scope(db, chat) == [shared.id]
 
 
-async def test_web_chunks_stay_reachable_with_include_library_off(
-    db: AsyncSession, user_a: User
-) -> None:
-    chat = await make_chat(db, user_a, include_library=False)
+async def test_web_chunks_stay_reachable(db: AsyncSession, user_a: User) -> None:
+    chat = await make_chat(db, user_a)
     web_chunk = await add_chunk(
         db, document=None, section=None, ord=0, text_=QUERY_TEXT,
         embedding=vec(1, bump=1), source_type="web", chat_id=chat.id,
     )
     ownership = Ownership(
-        user_id=user_a.id, collection_ids=await resolve_scope(db, user_a, chat), chat_id=chat.id
+        user_id=user_a.id, collection_ids=await resolve_scope(db, chat), chat_id=chat.id
     )
 
     results = await hybrid_search(
@@ -105,20 +85,22 @@ async def test_web_chunks_stay_reachable_with_include_library_off(
     assert web_chunk.id in {result.chunk_id for result in results}
 
 
-async def test_retrieval_returns_only_documents_inside_the_resolved_scope(
+async def test_retrieval_reaches_shared_and_own_documents_and_nothing_else(
     db: AsyncSession, user_a: User, user_b: User
 ) -> None:
     chat = await make_chat(db, user_a)
     own_container = await make_chat_container(db, user_a, chat)
-    library = await make_collection(db, user_a, "library")
+    shared = await make_collection(db, user_b, "shared", visibility="shared")
+    private_library = await make_collection(db, user_a, "library")
     foreign_container = await make_chat_container(db, user_b, await make_chat(db, user_b))
-    foreign_library = await make_collection(db, user_b, "library")
+    foreign_library = await make_collection(db, user_b, "B library")
 
     expected = {
         (await _document(db, own_container, "chat.txt")).id,
-        (await _document(db, library, "library.txt")).id,
+        (await _document(db, shared, "shared.txt")).id,
     }
     excluded = {
+        (await _document(db, private_library, "my-library.txt")).id,
         (await _document(db, foreign_container, "b-chat.txt")).id,
         (await _document(db, foreign_library, "b-library.txt")).id,
     }
@@ -126,7 +108,7 @@ async def test_retrieval_returns_only_documents_inside_the_resolved_scope(
         await _chunk(db, document_id, QUERY_TEXT, vec(1, bump=1))
 
     ownership = Ownership(
-        user_id=user_a.id, collection_ids=await resolve_scope(db, user_a, chat), chat_id=chat.id
+        user_id=user_a.id, collection_ids=await resolve_scope(db, chat), chat_id=chat.id
     )
     results = await hybrid_search(
         db,
@@ -178,38 +160,21 @@ async def _chunk(db: AsyncSession, document_id: UUID, text: str, embedding: list
     await db.commit()
 
 
-async def test_starter_questions_prefer_the_chat_then_the_library(
+async def test_starter_questions_read_shared_only_and_fall_back_to_it(
     db: AsyncSession, user_a: User, user_b: User
 ) -> None:
     chat = await make_chat(db, user_a)
-    library = await make_collection(db, user_a, "library")
-    library.starter_questions = ["What is the policy?", "How do I start?"]
+    private_library = await make_collection(db, user_a, "library")
+    private_library.starter_questions = ["What is my policy?"]
     shared = await make_collection(db, user_b, "shared", visibility="shared")
     shared.starter_questions = ["What is the policy?", "Who owns this?"]
     await db.commit()
 
-    assert await library_starter_questions(db, user_a) == [
-        "What is the policy?",
-        "How do I start?",
-        "Who owns this?",
-    ]
-    assert await chat_starter_questions(db, user_a, chat) == await library_starter_questions(
-        db, user_a
-    )
+    assert await library_starter_questions(db) == ["What is the policy?", "Who owns this?"]
+    assert await chat_starter_questions(db, chat) == await library_starter_questions(db)
 
     own = await make_chat_container(db, user_a, chat)
     own.starter_questions = ["What did this chat upload?"]
     await db.commit()
 
-    assert await chat_starter_questions(db, user_a, chat) == ["What did this chat upload?"]
-
-
-async def test_starter_questions_skip_the_library_when_it_is_excluded(
-    db: AsyncSession, user_a: User
-) -> None:
-    chat = await make_chat(db, user_a, include_library=False)
-    library = await make_collection(db, user_a, "library")
-    library.starter_questions = ["What is the policy?"]
-    await db.commit()
-
-    assert await chat_starter_questions(db, user_a, chat) == []
+    assert await chat_starter_questions(db, chat) == ["What did this chat upload?"]

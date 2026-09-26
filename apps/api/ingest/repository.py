@@ -44,17 +44,16 @@ async def get_owned_collection(
     ).scalar_one_or_none()
 
 
-async def list_library_documents(
-    session: AsyncSession, user: User
-) -> Sequence[tuple[Document, Collection]]:
-    """The Library: the user's own containers plus Shared, newest first."""
+async def list_shared_documents(session: AsyncSession) -> Sequence[Document]:
+    """Every Shared document, newest first (ADR-002 addendum: the only
+    library a user sees)."""
     rows = await session.execute(
-        select(Document, Collection)
+        select(Document)
         .join(Collection, Document.collection_id == Collection.id)
-        .where(Collection.kind == "library", _visible_to(user))
+        .where(Collection.visibility == "shared")
         .order_by(Document.created_at.desc())
     )
-    return [(document, collection) for document, collection in rows.all()]
+    return rows.scalars().all()
 
 
 async def list_container_documents(

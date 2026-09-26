@@ -140,3 +140,14 @@ async def test_pin_copies_web_rows_into_owned_collection(
     assert document.mime == "text/markdown"
     stored = await db.get(Document, document.id)
     assert stored is not None and stored.status == "ready"
+
+
+async def test_optional_web_search_degrades_when_unconfigured(
+    db: AsyncSession, user_a: User
+) -> None:
+    """source=both with no web provider answers from documents (0 pages);
+    source=web still fails loudly. conftest blanks every web key."""
+    chat_id = (await make_chat(db, user_a)).id
+    assert await ensure_web_chunks(db, query="q-optional", chat_id=chat_id, optional=True) == 0
+    with pytest.raises(AppError):
+        await ensure_web_chunks(db, query="q-required", chat_id=chat_id)

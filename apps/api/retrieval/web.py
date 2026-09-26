@@ -153,12 +153,24 @@ async def _search(query: str) -> list[WebResult]:
     raise AppError("web_search_unconfigured", "No web search provider is configured")
 
 
-async def ensure_web_chunks(session: AsyncSession, *, query: str, chat_id: UUID) -> int:
+async def ensure_web_chunks(
+    session: AsyncSession, *, query: str, chat_id: UUID, optional: bool = False
+) -> int:
     """Fetch (or reuse cached) web results and index them as chat-scoped
-    chunks. Returns the number of pages available for this chat+query."""
+    chunks. Returns the number of pages available for this chat+query.
+
+    `optional` is for source=both: documents alone can still answer, so an
+    unconfigured or failing web provider degrades to 0 pages, not a failed run.
+    """
     results = await get_web_results(session, query)
     if results is None:
-        fresh = await _search(query)
+        try:
+            fresh = await _search(query)
+        except AppError as exc:
+            if not optional:
+                raise
+            logger.warning("web search skipped for source=both: %s", exc.error_code)
+            return 0
         results = [{"url": r.url, "title": r.title, "content": r.content} for r in fresh]
         await put_web_results(session, query, results)
 

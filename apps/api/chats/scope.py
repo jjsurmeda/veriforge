@@ -11,51 +11,46 @@ from uuid import UUID
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.models import Chat, Collection, User
+from db.models import Chat, Collection
 
 
-async def resolve_scope(session: AsyncSession, user: User, chat: Chat) -> list[UUID]:
-    """The chat's own container, plus the Library and Shared when included."""
-    clauses = [and_(Collection.kind == "chat", Collection.chat_id == chat.id)]
-    if chat.include_library:
-        clauses.append(
+async def resolve_scope(session: AsyncSession, chat: Chat) -> list[UUID]:
+    """The chat's own container plus every shared container (ADR-002 addendum).
+
+    A private `library` container is never in scope: with no UI it would be an
+    invisible source quietly changing answers. `chats.include_library` stays in
+    the schema but is no longer read.
+    """
+    rows = await session.execute(
+        select(Collection.id).where(
             or_(
-                and_(Collection.kind == "library", Collection.owner_id == user.id),
+                and_(Collection.kind == "chat", Collection.chat_id == chat.id),
                 Collection.visibility == "shared",
             )
         )
-    rows = await session.execute(select(Collection.id).where(or_(*clauses)))
+    )
     return list(rows.scalars())
 
 
-async def library_starter_questions(session: AsyncSession, user: User) -> list[str]:
-    """The user's Library plus Shared questions, deduped, in one query."""
+async def library_starter_questions(session: AsyncSession) -> list[str]:
+    """Shared questions, deduped, in one query."""
     rows = await session.execute(
-        select(Collection.starter_questions).where(
-            Collection.kind == "library",
-            or_(Collection.owner_id == user.id, Collection.visibility == "shared"),
-        )
+        select(Collection.starter_questions).where(Collection.visibility == "shared")
     )
     return dedupe(q for questions in rows.scalars() for q in (questions or []))
 
 
-async def chat_starter_questions(
-    session: AsyncSession, user: User, chat: Chat
-) -> list[str]:
-    """The chat container's questions, falling back to the Library's.
-
-    The fallback is gated on include_library so suggestions only ever point
-    at evidence the run can actually reach.
-    """
+async def chat_starter_questions(session: AsyncSession, chat: Chat) -> list[str]:
+    """The chat container's questions, falling back to the Shared ones."""
     rows = await session.execute(
         select(Collection.starter_questions).where(
             Collection.kind == "chat", Collection.chat_id == chat.id
         )
     )
     own = dedupe(q for questions in rows.scalars() for q in (questions or []))
-    if own or not chat.include_library:
+    if own:
         return own
-    return await library_starter_questions(session, user)
+    return await library_starter_questions(session)
 
 
 def dedupe(questions: Iterable[str]) -> list[str]:

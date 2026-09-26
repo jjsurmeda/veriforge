@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -24,17 +25,31 @@ vi.mock('../../../generated/sdk.gen', () => ({
         enabled: true,
         capabilities: null,
       },
+      {
+        model_id: 'anthropic/claude-haiku-4.5',
+        provider: 'anthropic',
+        context_window: 200000,
+        price_in: 1,
+        price_out: 5,
+        enabled: true,
+        capabilities: null,
+      },
     ],
   })),
 }))
 
-const { ChatComposer } = await import('./ChatComposer')
+const { ChatComposer, runOptions } = await import('./ChatComposer')
 const { ModelPicker, isFree, shortModelName } = await import('./ModelPicker')
+const { TooltipProvider } = await import('../../../components/ui/primitives')
 const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query')
 
 function withClient(ui: React.ReactElement) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>)
+  return render(
+    <TooltipProvider>
+      <QueryClientProvider client={client}>{ui}</QueryClientProvider>
+    </TooltipProvider>,
+  )
 }
 
 Element.prototype.scrollIntoView = () => undefined
@@ -59,60 +74,147 @@ describe('model display helpers', () => {
 })
 
 describe('ModelPicker', () => {
-  it('lists the catalogue and fires onChange', async () => {
+  it('renders every model from /models, grouped by provider', async () => {
+    withClient(<ModelPicker value="openai/gpt-4o-mini" onChange={vi.fn()} />)
+
+    const trigger = screen.getByRole('button', { name: 'Model' })
+    await waitFor(() => expect(trigger.textContent).toContain('gpt-4o-mini'))
+    fireEvent.click(trigger)
+
+    const options = await screen.findAllByRole('option')
+    expect(options).toHaveLength(3)
+    expect(options.map((option) => option.textContent)).toEqual([
+      expect.stringContaining('nemotron-3-super-120b-a12b'),
+      expect.stringContaining('gpt-4o-mini'),
+      expect.stringContaining('claude-haiku-4.5'),
+    ])
+    expect(screen.getByRole('group', { name: 'openrouter' })).toBeTruthy()
+    expect(screen.getByRole('group', { name: 'anthropic' })).toBeTruthy()
+    expect(screen.getByText('262k · Free')).toBeTruthy()
+  })
+
+  it('marks the current model and fires onChange for another', async () => {
     const onChange = vi.fn()
     withClient(<ModelPicker value="openai/gpt-4o-mini" onChange={onChange} />)
 
-    const trigger = screen.getByRole('combobox', { name: 'Model' })
+    const trigger = screen.getByRole('button', { name: 'Model' })
     await waitFor(() => expect(trigger.textContent).toContain('gpt-4o-mini'))
+    fireEvent.click(trigger)
+    const current = await screen.findByRole('option', { name: /gpt-4o-mini/ })
+    expect(current.getAttribute('aria-selected')).toBe('true')
 
-    fireEvent.keyDown(trigger, { key: 'ArrowDown' })
-    const option = await screen.findByRole('option', { name: /nemotron-3-super-120b-a12b/ })
-    expect(option.textContent).toContain('Free')
-    expect(option.textContent).toContain('262k')
+    fireEvent.click(screen.getByRole('option', { name: /claude-haiku-4.5/ }))
+    expect(onChange).toHaveBeenCalledWith('anthropic/claude-haiku-4.5')
+  })
 
-    fireEvent.click(option)
-    expect(onChange).toHaveBeenCalledWith('nvidia/nemotron-3-super-120b-a12b:free')
+  it('is keyboard navigable', async () => {
+    const onChange = vi.fn()
+    withClient(<ModelPicker value="openai/gpt-4o-mini" onChange={onChange} />)
+
+    const trigger = screen.getByRole('button', { name: 'Model' })
+    await waitFor(() => expect(trigger.textContent).toContain('gpt-4o-mini'))
+    fireEvent.click(trigger)
+    const listbox = await screen.findByRole('listbox', { name: 'Models' })
+    fireEvent.keyDown(listbox, { key: 'ArrowDown' })
+    await waitFor(() =>
+      expect(listbox.getAttribute('aria-activedescendant')).toContain('claude-haiku-4.5'),
+    )
+
+    fireEvent.keyDown(listbox, { key: 'Enter' })
+    expect(onChange).toHaveBeenCalledWith('anthropic/claude-haiku-4.5')
   })
 })
 
 describe('ChatComposer', () => {
   const noop = () => undefined
 
-  it('renders no attach button and no context meter', () => {
-    withClient(
-      <ChatComposer
-        streaming={false}
-        modelId={null}
-        onFiles={noop}
-        onModelChange={noop}
-        onSend={noop}
-        onStop={noop}
-      />,
-    )
+  function renderComposer(overrides: Record<string, unknown> = {}) {
+    const props = {
+      streaming: false,
+      modelId: null,
+      deep: false,
+      web: false,
+      onFiles: noop,
+      onModelChange: noop,
+      onToggleDeep: noop,
+      onToggleWeb: noop,
+      onSend: noop,
+      onStop: noop,
+      ...overrides,
+    }
+    return withClient(<ChatComposer {...props} />)
+  }
 
-    expect(screen.queryByRole('button', { name: 'Add sources' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Run settings' })).toBeNull()
-    expect(screen.queryByText(/source[s]?$/)).toBeNull()
-    expect(document.querySelector('input[type="file"]')).toBeNull()
-    expect(screen.getByRole('textbox', { name: 'Question' })).toBeTruthy()
+  it('maps the toggles to mode and source in the run request', () => {
+    const onSend = vi.fn()
+
+    function Harness() {
+      const [deep, setDeep] = useState(false)
+      const [web, setWeb] = useState(false)
+      return (
+        <ChatComposer
+          streaming={false}
+          modelId={null}
+          deep={deep}
+          web={web}
+          onFiles={noop}
+          onModelChange={noop}
+          onToggleDeep={setDeep}
+          onToggleWeb={setWeb}
+          onSend={onSend}
+          onStop={noop}
+        />
+      )
+    }
+    withClient(<Harness />)
+
+    const send = (value: string) => {
+      fireEvent.change(screen.getByRole('textbox', { name: 'Question' }), {
+        target: { value },
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+    }
+
+    send('plain question')
+    expect(onSend).toHaveBeenLastCalledWith('plain question', { mode: 'auto', source: 'upload' })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Deep' }))
+    expect(screen.getByRole('button', { name: 'Deep' }).getAttribute('aria-pressed')).toBe('true')
+    send('deep question')
+    expect(onSend).toHaveBeenLastCalledWith('deep question', { mode: 'deep', source: 'upload' })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Web' }))
+    send('both question')
+    expect(onSend).toHaveBeenLastCalledWith('both question', { mode: 'deep', source: 'both' })
   })
 
-  it('accepts dropped files without any visible attach chrome', () => {
+  it('runOptions covers both toggle states', () => {
+    expect(runOptions(false, false)).toEqual({ mode: 'auto', source: 'upload' })
+    expect(runOptions(true, false)).toEqual({ mode: 'deep', source: 'upload' })
+    expect(runOptions(false, true)).toEqual({ mode: 'auto', source: 'both' })
+    expect(runOptions(true, true)).toEqual({ mode: 'deep', source: 'both' })
+  })
+
+  it('opens the file picker from the + and hands the files over', () => {
     const onFiles = vi.fn()
-    withClient(
-      <ChatComposer
-        streaming={false}
-        modelId={null}
-        onFiles={onFiles}
-        onModelChange={noop}
-        onSend={noop}
-        onStop={noop}
-      />,
-    )
+    renderComposer({ onFiles })
+
+    expect(screen.getByRole('button', { name: 'Add sources' })).toBeTruthy()
+    const file = new File(['hi'], 'note.txt', { type: 'text/plain' })
+    fireEvent.change(screen.getByLabelText('Add sources to the chat'), {
+      target: { files: [file] },
+    })
+    expect(onFiles).toHaveBeenCalledWith([file])
+  })
+
+  it('accepts dropped files', () => {
+    const onFiles = vi.fn()
+    renderComposer({ onFiles })
 
     const file = new File(['hi'], 'note.txt', { type: 'text/plain' })
-    fireEvent.drop(screen.getByRole('textbox', { name: 'Question' }), { dataTransfer: { files: [file] } })
+    fireEvent.drop(screen.getByRole('textbox', { name: 'Question' }), {
+      dataTransfer: { files: [file] },
+    })
     expect(onFiles).toHaveBeenCalledWith([file])
   })
 })

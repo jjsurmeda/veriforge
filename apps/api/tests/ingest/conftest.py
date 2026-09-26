@@ -126,10 +126,8 @@ def direct_collection() -> Callable[..., Awaitable[Collection]]:
 
 @pytest.fixture
 def make_chat() -> Callable[..., Awaitable[Chat]]:
-    async def create(
-        db: AsyncSession, owner: User, *, include_library: bool = True
-    ) -> Chat:
-        chat = Chat(user_id=owner.id, title="t", include_library=include_library)
+    async def create(db: AsyncSession, owner: User) -> Chat:
+        chat = Chat(user_id=owner.id, title="t")
         db.add(chat)
         await db.commit()
         await db.refresh(chat)

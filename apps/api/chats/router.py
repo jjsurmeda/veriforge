@@ -111,7 +111,6 @@ async def list_chats(
             chat.title,
             chat.pinned,
             chat.model_id,
-            chat.include_library,
             questions.get(chat.id, []),
             chat.created_at,
             active,
@@ -133,10 +132,10 @@ async def _starter_questions_by_chat(
     for chat_id, questions in own_rows.all():
         if chat_id is not None:
             own[chat_id] = dedupe(q for q in (questions or []))
-    if any(chat.include_library and not own.get(chat.id) for chat in chats):
-        library = await library_starter_questions(session, user)
+    if any(not own.get(chat.id) for chat in chats):
+        library = await library_starter_questions(session)
         for chat in chats:
-            if chat.include_library and not own.get(chat.id):
+            if not own.get(chat.id):
                 own[chat.id] = library
     return own
 
@@ -159,8 +158,7 @@ async def create_chat(
         chat.title,
         chat.pinned,
         chat.model_id,
-        chat.include_library,
-        await chat_starter_questions(session, user, chat),
+        await chat_starter_questions(session, chat),
         chat.created_at,
         None,
     )
@@ -187,8 +185,7 @@ async def get_chat(
         chat.title,
         chat.pinned,
         chat.model_id,
-        chat.include_library,
-        await chat_starter_questions(session, user, chat),
+        await chat_starter_questions(session, chat),
         chat.created_at,
         active_run,
     )
@@ -209,16 +206,13 @@ async def patch_chat(
     if body.model_id is not None:
         await _assert_model_available(session, body.model_id)
         chat.model_id = body.model_id
-    if body.include_library is not None:
-        chat.include_library = user.role == "demo" or body.include_library
     await session.flush()
     return chat_out(
         chat.id,
         chat.title,
         chat.pinned,
         chat.model_id,
-        chat.include_library,
-        await chat_starter_questions(session, user, chat),
+        await chat_starter_questions(session, chat),
         chat.created_at,
         None,
     )
@@ -390,7 +384,7 @@ async def create_run(
     session.add(assistant_message)
     await session.flush()
 
-    scope = await resolve_scope(session, user, chat)
+    scope = await resolve_scope(session, chat)
 
     run = Run(
         message_id=assistant_message.id,
