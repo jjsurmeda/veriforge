@@ -1,5 +1,5 @@
 """Auto mode pipeline (TRD §7 mode table): ingress (parallel with rewrite)
-→ multi-query hybrid retrieval → sanitizer → rerank → small-to-big →
+→ multi-query hybrid retrieval → rerank → sanitizer → small-to-big →
 sufficient-check retry loop → conflict check → generate. On insufficient
 evidence after retries the run abstains (TR-4).
 
@@ -11,8 +11,11 @@ via the mode picker rather than through an Auto complexity branch.
 
 import asyncio
 import logging
+import math
+import re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from functools import partial
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -32,7 +35,7 @@ from retrieval.context import count_tokens, trim_context
 from retrieval.expand import ExpandedContext, dedupe_adjacent, expand_context
 from retrieval.filters import ClientFilters, Ownership
 from retrieval.hybrid import ScoredChunk, hybrid_search
-from retrieval.rerank import apply_rerank, get_reranker
+from retrieval.rerank import RERANK_TOP_N, RerankProvider, apply_rerank, get_reranker
 from retrieval.web import ensure_web_chunks
 from runtime import runtime_value
 from schemas.decisions import Noul
@@ -48,8 +51,30 @@ logger = logging.getLogger(__name__)
 
 EXCERPT_CHARS = 240
 MULTI_QUERY_VARIANTS = 3
+# A multi-part question ("... and how does she answer?") retrieves on the
+# whole question as one query, so the part after the "and" is out of the
+# question the embedding encodes and its chunks never surface — that is why
+# the Darcy turn in `make smoke` abstained (KI-12). One extra small-role call
+# lists the parts; each becomes its own retrieval and, through `provenance`,
+# its own equal share of the top-k in `_rerank_candidates`.
+MULTI_PART_VARIANTS = 3
+MULTI_PARTS = (
+    "The question above has more than one part. Then, after the "
+    f"{MULTI_QUERY_VARIANTS} alternative phrasings, add one line per part of "
+    "the question, each restated as a standalone search query that keeps that "
+    "part's own subject. Do not answer them and do not merge them. No commentary."
+)
 MAX_SUFFICIENT_RETRIES = 2
 TOP_CHUNKS_FOR_SUFFICIENT = 5
+SUFFICIENT_EVIDENCE_CHARS = 4_000
+# 250 measured, not guessed (KI-6, batch 5). 3x fast20 at each value, 20/20
+# items scored in all six runs. p50 medians 24088 ms (500) vs 22822 ms (250) —
+# a 5.3% difference smaller than the within-variant spread, so the budget
+# does not drive latency. But 250 is equal or better on quality: faithfulness
+# 0.9958 vs 0.9917, and abstention accuracy 1.00 (3/3 runs) vs 0.58 (1/3).
+# More evidence per source makes the sufficiency Noul over-confident, so it
+# generates when it should have abstained.
+SUFFICIENT_EVIDENCE_CHARS_PER_SOURCE = 250
 
 
 @dataclass(frozen=True)
@@ -138,11 +163,12 @@ async def _history(
 
 
 async def _generate_query_variants(
-    question: str, small_model: str, complete_fn: CompleteFn, n: int
+    question: str, small_model: str, complete_fn: CompleteFn, n: int, instruction: str | None = None
 ) -> list[str]:
     """Multi-query rewrite (TRD §7 mode table, Auto only). n variants in
-    one LLM call; first variant is the rewritten query itself."""
-    if n <= 1:
+    one LLM call; first variant is the rewritten query itself. With
+    `instruction` the call asks for that shape instead (see MULTI_PARTS)."""
+    if n <= 1 and instruction is None:
         return [question]
     from prompts.load import load_prompt
 
@@ -157,6 +183,8 @@ async def _generate_query_variants(
         f"one per line. Each should target a different retrieval angle "
         f"(synonyms, narrower scope, broader scope). No commentary."
     )
+    if instruction is not None:
+        prompt += f"\n\n{instruction}"
     response = await complete_fn(
         litellm_model=small_model,
         messages=[{"role": "system", "content": prompt}, {"role": "user", "content": question}],
@@ -194,11 +222,73 @@ def _fuse_multi_query(result_sets: list[list[ScoredChunk]]) -> list[ScoredChunk]
     return [dc_replace(chunk, fused_score=score) for chunk, score in ordered]
 
 
-def _sufficient_question(question: str, top_chunks: list[ScoredChunk]) -> Noul:
-    evidence = (
-        "\n\n".join(f"[{i + 1}] {chunk.text[:400]}" for i, chunk in enumerate(top_chunks))
-        or "(no evidence retrieved)"
-    )
+def _entity_queries(question: str, intent: str) -> list[str]:
+    """One retrieval per named entity in a compare question."""
+    # ponytail: capitalised-noun regex — misses ALL-CAPS titles, quoted names
+    # and lowercase proper nouns, and treats a sentence-initial word as a name.
+    # Reuse the entities the rewrite step already produces instead of parsing
+    # them again here if compare coverage matters.
+    if intent != "compare":
+        return []
+    entities = [
+        re.sub(r"^(?:Compare|How|What|Why|When|Where|Who)\s+", "", entity)
+        for entity in re.findall(r"\b[A-Z][a-z]+(?:\s+(?:[A-Z][a-z]+|the))*(?=\b)", question)
+        if entity not in {"Compare", "How", "What", "Why", "When", "Where", "Who"}
+    ]
+    return list(dict.fromkeys(entities))
+
+
+def _add_rerank_scores(events: list[Retrieval], reranked: list[ScoredChunk]) -> None:
+    scores = {str(chunk.chunk_id): chunk.rerank_score for chunk in reranked}
+    for event in events:
+        for chunk in event.chunks:
+            if chunk.chunk_id in scores:
+                chunk.rerank_score = scores[chunk.chunk_id]
+
+
+async def _rerank_candidates(
+    reranker: RerankProvider,
+    *,
+    query: str,
+    chunks: list[ScoredChunk],
+    provenance: dict[UUID, str],
+    limit: int,
+) -> list[ScoredChunk]:
+    """Rerank the fused set, except when a compare run's chunks came from
+    several named entities: rerank each entity's own set and take an equal
+    share of `limit` from each, so the second book can't be scored out of
+    the top-k entirely (KI-12). The "" group is the chunks no entity
+    surfaced; it takes a share too, reranked on the original query."""
+    groups: dict[str, list[ScoredChunk]] = {}
+    for chunk in chunks:
+        groups.setdefault(provenance.get(chunk.chunk_id, ""), []).append(chunk)
+    if len(groups) < 2:
+        return await apply_rerank(reranker, query=query, chunks=chunks, top_n=limit)
+    share = math.ceil(limit / len(groups))
+    picked: list[ScoredChunk] = []
+    for label, group in groups.items():
+        picked.extend(
+            await apply_rerank(reranker, query=label or query, chunks=group, top_n=share)
+        )
+    return picked
+
+
+def _sufficient_question(question: str, top_contexts: list[ExpandedContext]) -> Noul:
+    remaining = SUFFICIENT_EVIDENCE_CHARS
+    entries: list[str] = []
+    for i, context in enumerate(top_contexts):
+        if remaining <= 0:
+            break
+        # Per source, not per run: a shared pool lets one long child eat the
+        # whole budget, so the judge sees a lone [1] and calls the evidence thin.
+        allowance = min(SUFFICIENT_EVIDENCE_CHARS_PER_SOURCE, remaining)
+        matched = context.chunk.text[:allowance]
+        parent = context.context_text
+        if parent != context.chunk.text:
+            matched += f"\n[parent context]\n{parent[: allowance - len(matched)]}"
+        remaining -= len(matched)
+        entries.append(f"[{i + 1}] [matched passage]\n{matched}")
+    evidence = "\n\n".join(entries) or "(no evidence retrieved)"
     return Noul(
         prompt=(
             "Do the following retrieved chunks together contain enough "
@@ -230,7 +320,7 @@ async def prepare_auto_run(
     *,
     publish: EventPublisher | None = None,
 ) -> AutoRun:
-    """Run ingress + rewrite + multi-query retrieval + sanitize + rerank +
+    """Run ingress + rewrite + multi-query retrieval + rerank + sanitize +
     sufficient-check retry + conflict check; returns everything the runner
     needs to stream the answer."""
 
@@ -345,12 +435,33 @@ async def prepare_auto_run(
                 optional=source_filter == "both",
             )
 
-        async def retrieval_work() -> tuple[list[ScoredChunk], list[Retrieval]]:
+        async def retrieve_queries(
+            query: str,
+        ) -> tuple[list[ScoredChunk], list[Retrieval], dict[UUID, str]]:
             variants = await _generate_query_variants(
-                rewritten, params.small_model, complete, MULTI_QUERY_VARIANTS
+                query, params.small_model, complete, MULTI_QUERY_VARIANTS
             )
+            parts: list[str] = []
+            if ingress.intent == "multi-part":
+                parts = await _generate_query_variants(
+                    query,
+                    params.small_model,
+                    complete,
+                    MULTI_PART_VARIANTS,
+                    instruction=MULTI_PARTS,
+                )
+            part_queries = [
+                candidate
+                for candidate in (
+                    *_entity_queries(params.question, ingress.intent),
+                    *parts,
+                )
+                if candidate not in variants
+            ]
+            variants.extend(part_queries)
             result_sets: list[list[ScoredChunk]] = []
             events: list[Retrieval] = []
+            provenance: dict[UUID, str] = {}
             for variant in variants:
                 embedding = await get_query_embedding(session, variant)
                 ownership = Ownership(
@@ -367,6 +478,9 @@ async def prepare_auto_run(
                     lexical_weight=ingress.lexical_weight,
                 )
                 result_sets.append(fused)
+                if variant in part_queries:
+                    for c in fused:
+                        provenance.setdefault(c.chunk_id, variant)
                 events.append(
                     Retrieval(
                         run_id=str(params.run_id),
@@ -391,46 +505,67 @@ async def prepare_auto_run(
                         ],
                     )
                 )
-            return _fuse_multi_query(result_sets), events
+            return _fuse_multi_query(result_sets), events, provenance
 
-        fused, retrieval_events = await _step("retrieve", retrieval_work)
-
-        kept, dropped, sanitize_answers = await _step(
-            "sanitize",
-            lambda: sanitize_chunks(engine, run_id=str(params.run_id), chunks=fused),
+        fused, retrieval_events, provenance = await _step(
+            "retrieve", lambda: retrieve_queries(rewritten)
         )
-        for name, answer in sanitize_answers.items():
-            decision_events.append(
-                Decision(
-                    run_id=str(params.run_id),
-                    name=name,
-                    value=answer.value,
-                    probability=answer.probability,
-                    probabilities=answer.probabilities,
-                    engine=answer.engine,
-                    latency_ms=answer.latency_ms,
-                    reasoning=answer.reasoning,
-                )
-            )
-        dropped_ids = {c.chunk_id for c in dropped}
-        for event in retrieval_events:
-            for chunk in event.chunks:
-                if chunk.chunk_id in {str(c) for c in dropped_ids}:
-                    chunk.dropped = True
+        attempt_events = retrieval_events
 
         retry_limit = int(runtime_value("retrieval.retry_limit", MAX_SUFFICIENT_RETRIES))
         retries_left = retry_limit
         current_query = rewritten
+        dropped: list[ScoredChunk] = []
+        expanded_contexts: list[ExpandedContext] = []
+        abstain_threshold = 0.0
         while True:
-            winners = dedupe_adjacent(
-                await apply_rerank(get_reranker(), query=current_query, chunks=kept)
+            reranked = await _step(
+                "rerank",
+                partial(
+                    _rerank_candidates,
+                    get_reranker(),
+                    query=current_query,
+                    chunks=fused,
+                    provenance=provenance,
+                    limit=int(runtime_value("retrieval.top_k", RERANK_TOP_N)),
+                ),
             )
-            top_for_check = winners[
+            _add_rerank_scores(attempt_events, reranked)
+            winners = dedupe_adjacent(reranked)
+            # Sanitize after rerank (TRD §11 layer 4, amended for KI-11):
+            # only the chunks that can reach the generator are asked about,
+            # and a dropped chunk is not backfilled from beyond the reranked
+            # set — generation simply sees fewer chunks.
+            winners, sanitize_dropped, sanitize_answers = await _step(
+                "sanitize",
+                partial(sanitize_chunks, engine, run_id=str(params.run_id), chunks=winners),
+            )
+            for name, answer in sanitize_answers.items():
+                decision_events.append(
+                    Decision(
+                        run_id=str(params.run_id),
+                        name=name,
+                        value=answer.value,
+                        probability=answer.probability,
+                        probabilities=answer.probabilities,
+                        engine=answer.engine,
+                        latency_ms=answer.latency_ms,
+                        reasoning=answer.reasoning,
+                    )
+                )
+            dropped.extend(sanitize_dropped)
+            expanded_contexts = await expand_context(session, winners)
+            top_for_check = expanded_contexts[
                 : int(runtime_value("retrieval.top_k", TOP_CHUNKS_FOR_SUFFICIENT))
             ]
-            sufficient_answer = await engine.decide(
-                state={"run_id": str(params.run_id), "kind": "sufficient"},
-                questions={"sufficient": _sufficient_question(current_query, top_for_check)},
+            sufficient_question = _sufficient_question(current_query, top_for_check)
+            sufficient_answer = await _step(
+                "sufficient",
+                partial(
+                    engine.decide,
+                    state={"run_id": str(params.run_id), "kind": "sufficient"},
+                    questions={"sufficient": sufficient_question},
+                ),
             )
             sufficient = sufficient_answer["sufficient"]
             decision_events.append(
@@ -446,11 +581,9 @@ async def prepare_auto_run(
                 )
             )
             p_sufficient = float(sufficient.value)
-            retry_threshold = threshold("sufficient_retry", sufficient.engine)
             abstain_threshold = threshold("sufficient_abstain", sufficient.engine)
+            retry_threshold = threshold("sufficient_retry", sufficient.engine)
             if p_sufficient >= retry_threshold:
-                break
-            if p_sufficient < abstain_threshold and retries_left == 0:
                 break
             if retries_left > 0:
                 retries_left -= 1
@@ -461,64 +594,20 @@ async def prepare_auto_run(
                     small_model=params.small_model,
                     complete_fn=complete,
                 )
-                embedding = await get_query_embedding(session, current_query)
-                ownership = Ownership(
-                    user_id=params.user_id,
-                    collection_ids=list(params.collection_ids),
-                    chat_id=params.chat_id,
+                fused, retry_events, provenance = await _step(
+                    "retrieve", partial(retrieve_queries, current_query)
                 )
-                fused_retry = await hybrid_search(
-                    session,
-                    query_text=current_query,
-                    query_embedding=embedding,
-                    ownership=ownership,
-                    filters=params.client_filters,
-                    lexical_weight=ingress.lexical_weight,
-                )
-                kept_retry, dropped_retry, retry_answers = await sanitize_chunks(
-                    engine, run_id=str(params.run_id), chunks=fused_retry
-                )
-                for name, answer in retry_answers.items():
-                    decision_events.append(
-                        Decision(
-                            run_id=str(params.run_id),
-                            name=name,
-                            value=answer.value,
-                            probability=answer.probability,
-                            probabilities=answer.probabilities,
-                            engine=answer.engine,
-                            latency_ms=answer.latency_ms,
-                            reasoning=answer.reasoning,
-                        )
-                    )
-                kept = kept_retry
-                dropped = dropped + dropped_retry
-                retrieval_events.append(
-                    Retrieval(
-                        run_id=str(params.run_id),
-                        hop=retry_limit - retries_left,
-                        query=current_query,
-                        chunks=[
-                            RetrievedChunk(
-                                chunk_id=str(c.chunk_id),
-                                document_id=str(c.document_id) if c.document_id else None,
-                                document_name=c.document_name,
-                                page=c.page,
-                                heading_path=c.heading_path,
-                                source_type=c.source_type,
-                                excerpt=c.text[:EXCERPT_CHARS],
-                                vector_score=c.vector_score,
-                                bm25_score=c.bm25_score,
-                                fused_score=c.fused_score,
-                                rerank_score=c.rerank_score,
-                                dropped=c.chunk_id in {d.chunk_id for d in dropped_retry},
-                            )
-                            for c in fused_retry
-                        ],
-                    )
-                )
+                retrieval_events.extend(retry_events)
+                attempt_events = retry_events
                 continue
             break
+
+        kept = winners
+        dropped_ids = {str(c.chunk_id) for c in dropped}
+        for event in retrieval_events:
+            for chunk in event.chunks:
+                if chunk.chunk_id in dropped_ids:
+                    chunk.dropped = True
 
         last_decision = decision_events[-1] if decision_events else None
         p_sufficient_final = (
@@ -528,14 +617,13 @@ async def prepare_auto_run(
         )
         abstain_event: Abstain | None = None
         conflict_event: Conflict | None = None
-        contexts: list[ExpandedContext] = []
+        contexts = expanded_contexts
 
-        if p_sufficient_final < threshold("sufficient_abstain", "jev"):
+        if p_sufficient_final < abstain_threshold:
             abstain_event = build_abstain_event(
                 str(params.run_id), kept, offered_actions=["web", "deep"]
             )
         else:
-            contexts = await expand_context(session, winners)
             conflict_answer_map = await engine.decide(
                 state={"run_id": str(params.run_id), "kind": "conflict"},
                 questions={"conflict": _conflict_question(winners[:TOP_CHUNKS_FOR_SUFFICIENT])},

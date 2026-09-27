@@ -22,16 +22,24 @@ import json
 import logging
 import statistics
 import time
+from collections.abc import Awaitable, Callable
+from functools import partial
 from pathlib import Path
 from uuid import UUID
 
+import asyncpg
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.exc import TimeoutError as PoolTimeoutError
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 from chats.scope import resolve_scope
+from config import get_settings
 from db.ids import uuid7
 from db.models import Chat, EvalDataset, EvalItem, EvalResult, EvalRun, Message, User
-from db.session import get_session_factory
 from decisions import DecisionEngine
 from evals.judge import judge_answer
 from evals.loader import EVAL_USER_EMAIL, STATE_FILE
@@ -50,6 +58,56 @@ BASELINE_FAST20_FILE = SEED_DIR / "baseline_fast20.json"
 GENERATOR_MODEL = "openrouter/openai/gpt-4o-mini"
 SMALL_MODEL = "openrouter/anthropic/claude-haiku-4.5"
 CONTEXT_WINDOW = 128_000
+
+# The harness drives one item at a time, so its own small pool is the whole
+# connection budget; db/session.py's server defaults (5+10) are sized for a
+# web process, not a batch job. ponytail: one item at a time — raise this and
+# give the pool matching headroom if a run ever needs to overlap items.
+EVAL_POOL_SIZE = 2
+EVAL_MAX_OVERFLOW = 2
+# A ParadeDB backend crash takes every client connection with it and refuses
+# new ones for ~30s (verified: 2026-09-27 07:24:47 "server process exited with
+# exit code 2" → "the database system is not yet accepting connections").
+# Without a retry that window silently kills every item it touches; with one
+# the item is re-measured instead. The retry cannot hide a product defect: a
+# still-failing item is persisted with `error` and fails the gate.
+DB_RETRY_DELAYS_S = (1.0, 3.0, 6.0)
+
+
+def _eval_factory() -> async_sessionmaker[AsyncSession]:
+    engine = create_async_engine(
+        get_settings().database_url,
+        pool_size=EVAL_POOL_SIZE,
+        max_overflow=EVAL_MAX_OVERFLOW,
+        pool_pre_ping=True,
+        connect_args={"timeout": 10},
+    )
+    return async_sessionmaker(engine, expire_on_commit=False)
+
+
+def _is_transient_db_error(exc: BaseException) -> bool:
+    # asyncpg.PostgresError covers CannotConnectNowError (the database is in
+    # recovery) and ConnectionDoesNotExistError (a killed backend's prepared
+    # statement). InterfaceError is a dead pooled connection and
+    # PoolTimeoutError is a checkout that waited out pool_timeout.
+    return isinstance(
+        exc, asyncpg.PostgresError | asyncpg.InterfaceError | OSError | PoolTimeoutError
+    )
+
+
+async def _retry_transient[T](work: Callable[[], Awaitable[T]], *, what: str) -> T:
+    for attempt, delay in enumerate((*DB_RETRY_DELAYS_S, 0.0)):
+        try:
+            return await work()
+        except Exception as exc:
+            if attempt == len(DB_RETRY_DELAYS_S) or not _is_transient_db_error(exc):
+                raise
+            logger.warning(
+                "eval item retrying after db error",
+                extra={"what": what, "attempt": attempt + 1, "error": repr(exc)[:200]},
+            )
+            await asyncio.sleep(delay)
+    raise AssertionError("unreachable")
 
 
 async def _run_item(
@@ -97,6 +155,7 @@ async def _run_item(
             ),
             engine,
         )
+        generate_started = time.monotonic()
         answer = "".join(
             [
                 token
@@ -104,6 +163,7 @@ async def _run_item(
                 if kind == "content"
             ]
         )
+        generate_ms = int((time.monotonic() - generate_started) * 1000)
         tokens_in = sum(
             count_tokens(m["content"])
             for m in build_grounded_messages(
@@ -112,8 +172,9 @@ async def _run_item(
         )
         tokens_out = count_tokens(answer)
         latency_ms = int((time.monotonic() - started) * 1000)
+        stage_ms = {**deep_run.latency_ms, "generate": generate_ms}
         await finalize_deep_run(
-            factory, deep_run, generate_ms=0, tokens_in=tokens_in, tokens_out=tokens_out
+            factory, deep_run, generate_ms=generate_ms, tokens_in=tokens_in, tokens_out=tokens_out
         )
         abstained = deep_run.abstain_event is not None
         contexts = deep_run.contexts
@@ -135,15 +196,18 @@ async def _run_item(
             ),
             engine,
         )
+        generate_started = time.monotonic()
         answer = "".join([token async for token in run.stream_answer()])
+        generate_ms = int((time.monotonic() - generate_started) * 1000)
         tokens_in = sum(
             count_tokens(m["content"])
             for m in build_grounded_messages(run.rewritten, run.contexts, run.history)
         )
         tokens_out = count_tokens(answer)
         latency_ms = int((time.monotonic() - started) * 1000)
+        stage_ms = {**run.latency_ms, "generate": generate_ms}
         await finalize_auto_run(
-            factory, run, generate_ms=0, tokens_in=tokens_in, tokens_out=tokens_out
+            factory, run, generate_ms=generate_ms, tokens_in=tokens_in, tokens_out=tokens_out
         )
         abstained = run.abstain_event is not None
         contexts = run.contexts
@@ -155,6 +219,7 @@ async def _run_item(
     faithfulness: float | None = None
     citation_precision: float | None = None
     if not abstained:
+        review_started = time.monotonic()
         review = await review_answer(
             engine=engine,
             run_id=str(pipeline_run_id),
@@ -164,6 +229,7 @@ async def _run_item(
             small_model=SMALL_MODEL,
             litellm_model=GENERATOR_MODEL,
         )
+        stage_ms["review"] = int((time.monotonic() - review_started) * 1000)
         if review.scores is not None:
             faithfulness = review.scores.faithfulness
             citation_precision = review.scores.citation_precision
@@ -187,6 +253,7 @@ async def _run_item(
         context_recall=scores.context_recall if scores else None,
         abstained=abstained,
         latency_ms=latency_ms,
+        stage_ms=stage_ms,
         tokens_in=tokens_in,
         tokens_out=tokens_out,
     )
@@ -206,7 +273,7 @@ async def run_eval(
     fast20 = set(payload.get("fast20_ids", []))
     seed_ids = _seed_ids(payload)
 
-    factory = get_session_factory()
+    factory = _eval_factory()
     async with factory() as session, session.begin():
         user = (
             await session.execute(select(User).where(User.email == EVAL_USER_EMAIL))
@@ -235,18 +302,26 @@ async def run_eval(
         eval_run_id = eval_run.id
 
     results: list[tuple[EvalItem, EvalResult]] = []
+    # One item at a time. A concurrent `gather` here would multiply the DB
+    # footprint by the item count; if that ever becomes worth it, raise
+    # EVAL_POOL_SIZE/EVAL_MAX_OVERFLOW with it.
     for item in items:
         try:
-            result = await _run_item(
-                factory,
-                user=user,
-                eval_run_id=eval_run_id,
-                item=item,
-                mode=mode,
+            result = await _retry_transient(
+                partial(
+                    _run_item,
+                    factory,
+                    user=user,
+                    eval_run_id=eval_run_id,
+                    item=item,
+                    mode=mode,
+                ),
+                what=seed_ids.get(item.question, str(item.id)),
             )
-        except Exception:
-            # One flaky item (e.g. Jev + fallback both fail on a decision)
-            # records as unscored instead of aborting the remaining items.
+        except Exception as exc:
+            # An item that raised was not measured. Persist the failure so the
+            # report can count it and the gate can refuse it, instead of
+            # letting a latency_ms=0 row drag the median down.
             logger.exception(
                 "eval item failed",
                 extra={"item": seed_ids.get(item.question, str(item.id))},
@@ -256,7 +331,10 @@ async def run_eval(
                 item_id=item.id,
                 answer="",
                 latency_ms=0,
+                error=f"{type(exc).__name__}: {exc}"[:2000],
             )
+            async with factory() as session, session.begin():
+                session.add(result)
         results.append((item, result))
         logger.info(
             "eval item done",
@@ -275,23 +353,39 @@ def _seed_ids(payload: dict[str, object]) -> dict[str, str]:
 
 
 def aggregate(results: list[tuple[EvalItem, EvalResult]]) -> dict[str, float | None]:
+    """Roll up a run. An item whose `error` is set was never measured, so it
+    is left out of every mean and every latency percentile — a zero there would
+    pull the median down and hide the failure from the gate.
+
+    `answer_rate` is the share of answerable items that produced an answer.
+    It is not defined in terms of the outcome it measures, which is what
+    makes it a counterweight: `faithfulness` scores an abstention 1.0, so a
+    run that abstained on everything reports perfect faithfulness *and*
+    perfect abstention accuracy (TRD §15)."""
+
     def mean(values: list[float]) -> float | None:
         return statistics.mean(values) if values else None
 
-    faithfulness = mean([r.faithfulness for _, r in results if r.faithfulness is not None])
-    context_recall = mean([r.context_recall for _, r in results if r.context_recall is not None])
-    abstain_items = [(i, r) for i, r in results if i.should_abstain]
+    scored = [(i, r) for i, r in results if not r.error]
+    faithfulness = mean([r.faithfulness for _, r in scored if r.faithfulness is not None])
+    context_recall = mean([r.context_recall for _, r in scored if r.context_recall is not None])
+    abstain_items = [(i, r) for i, r in scored if i.should_abstain]
     abstention_accuracy = (
         mean([1.0 if r.abstained else 0.0 for _, r in abstain_items]) if abstain_items else None
     )
-    latencies = sorted(r.latency_ms for _, r in results)
+    answerable = [(i, r) for i, r in scored if not i.should_abstain]
+    answer_rate = mean([0.0 if r.abstained else 1.0 for _, r in answerable]) if answerable else None
+    latencies = sorted(r.latency_ms for _, r in scored)
     p50 = float(statistics.median(latencies)) if latencies else None
     return {
         "faithfulness": faithfulness,
         "context_recall": context_recall,
         "abstention_accuracy": abstention_accuracy,
+        "answer_rate": answer_rate,
         "p50_latency_ms": p50,
         "items": float(len(results)),
+        "scored": float(len(scored)),
+        "failed": float(len(results) - len(scored)),
     }
 
 

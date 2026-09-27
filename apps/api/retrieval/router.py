@@ -1,16 +1,14 @@
 """Web-source routes (TRD §12, SR-5): pin a fetched web page into its own
 chat's sources."""
 
-from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.deps import CurrentUser
 from db.models import Chat, WebPage
-from db.session import get_session
+from db.session import SessionDep
 from errors import AppError
 from ingest.containers import get_or_create_chat_collection
 from ingest.upload import deny_read_only
@@ -29,7 +27,7 @@ async def pin_web_source(
     web_page_id: UUID,
     body: PinRequest,
     user: CurrentUser,
-    session: Annotated[AsyncSession, Depends(get_session)],
+    session: SessionDep,
 ) -> PinResponse:
     deny_read_only(user)
     page = await session.get(WebPage, web_page_id)

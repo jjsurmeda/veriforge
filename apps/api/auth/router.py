@@ -7,7 +7,7 @@ from typing import Annotated
 from urllib.parse import quote
 from uuid import UUID
 
-from fastapi import APIRouter, Cookie, Depends, Request, Response
+from fastapi import APIRouter, Cookie, Request, Response
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,7 +31,7 @@ from auth.tokens import (
 )
 from config import get_settings
 from db.models import OauthAccount, Plan, User
-from db.session import get_session
+from db.session import SessionDep
 from errors import AppError
 from schemas.auth import (
     ForgotPasswordRequest,
@@ -88,7 +88,7 @@ async def _token_response(session: AsyncSession, response: Response, user: User)
 
 @me_router.get("/me", response_model=UserPublic)
 async def me(
-    user: CurrentUser, session: Annotated[AsyncSession, Depends(get_session)]
+    user: CurrentUser, session: SessionDep
 ) -> UserPublic:
     return await _user_public(session, user)
 
@@ -97,7 +97,7 @@ async def me(
 async def signup(
     body: SignupRequest,
     response: Response,
-    session: Annotated[AsyncSession, Depends(get_session)],
+    session: SessionDep,
 ) -> TokenResponse:
     existing = await session.execute(select(User).where(User.email == body.email))
     if existing.scalar_one_or_none() is not None:
@@ -117,7 +117,7 @@ async def signup(
 async def login(
     body: LoginRequest,
     response: Response,
-    session: Annotated[AsyncSession, Depends(get_session)],
+    session: SessionDep,
 ) -> TokenResponse:
     user = (
         await session.execute(select(User).where(User.email == body.email))
@@ -132,7 +132,7 @@ async def login(
 @router.post("/refresh", response_model=TokenResponse)
 async def refresh(
     response: Response,
-    session: Annotated[AsyncSession, Depends(get_session)],
+    session: SessionDep,
     vf_refresh: Annotated[str | None, Cookie()] = None,
 ) -> TokenResponse:
     if not vf_refresh:
@@ -152,7 +152,7 @@ async def refresh(
 @router.post("/logout", status_code=204)
 async def logout(
     response: Response,
-    session: Annotated[AsyncSession, Depends(get_session)],
+    session: SessionDep,
     vf_refresh: Annotated[str | None, Cookie()] = None,
 ) -> None:
     if vf_refresh:
@@ -188,7 +188,7 @@ async def google_login(request: Request) -> RedirectResponse:
 async def google_callback(
     request: Request,
     response: Response,
-    session: Annotated[AsyncSession, Depends(get_session)],
+    session: SessionDep,
     code: str | None = None,
     state: str | None = None,
     vf_oauth_state: Annotated[str | None, Cookie()] = None,
@@ -248,7 +248,7 @@ async def google_callback(
 @router.post("/forgot-password", status_code=202)
 async def forgot_password(
     body: ForgotPasswordRequest,
-    session: Annotated[AsyncSession, Depends(get_session)],
+    session: SessionDep,
 ) -> dict[str, str]:
     user = (
         await session.execute(select(User).where(User.email == body.email))
@@ -268,7 +268,7 @@ async def forgot_password(
 @router.post("/reset-password", status_code=204)
 async def reset_password(
     body: ResetPasswordRequest,
-    session: Annotated[AsyncSession, Depends(get_session)],
+    session: SessionDep,
 ) -> None:
     try:
         claims = decode_token(body.token, expected_type=PASSWORD_RESET_TOKEN_TYPE)

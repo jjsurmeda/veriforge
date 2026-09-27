@@ -24,7 +24,9 @@ _DEFAULTS: dict[str, dict[Engine, float]] = {
     "choice_min_confidence": {"jev": 0.50, "fallback": 0.50},
     "chunk_injection_drop": {"jev": 0.70, "fallback": 0.70},
     "sufficient_retry": {"jev": 0.60, "fallback": 0.60},
-    "sufficient_abstain": {"jev": 0.35, "fallback": 0.35},
+    # Deliberately equal to sufficient_retry by default (abstain whatever
+    # didn't clear the retry bar) but separately overridable, per AD-4.
+    "sufficient_abstain": {"jev": 0.60, "fallback": 0.60},
     "conflict_disclose": {"jev": 0.60, "fallback": 0.60},
     "output_toxicity_block": {"jev": 0.85, "fallback": 0.85},
     # Slice 6: 0.60 abstained Deep runs on corpus-answerable questions —

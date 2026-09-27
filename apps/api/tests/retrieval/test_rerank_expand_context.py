@@ -1,16 +1,24 @@
 """Rerank application, dedupe/expansion and context budget (TRD §9.2)."""
 
+import json
 from uuid import UUID, uuid4
 
 import httpx
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from config import Settings
 from db.models import Chunk, Document, Section, User
 from retrieval.context import count_tokens, trim_context
 from retrieval.expand import ExpandedContext, dedupe_adjacent, expand_context
 from retrieval.hybrid import ScoredChunk
-from retrieval.rerank import CohereRerank, FusedOrderRerank, apply_rerank
+from retrieval.rerank import (
+    CohereRerank,
+    FusedOrderRerank,
+    NvidiaRerank,
+    apply_rerank,
+    get_reranker,
+)
 from tests.retrieval.conftest import make_collection
 
 
@@ -66,6 +74,45 @@ async def test_cohere_rerank_parses_response() -> None:
     assert ranked[0].rerank_score == pytest.approx(0.9)
 
 
+async def test_nvidia_rerank_sorts_by_logit_and_caps_top_n() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.host == "ai.api.nvidia.com"
+        assert request.url.path == "/v1/retrieval/nvidia/llama-nemotron-rerank-vl-1b-v2/reranking"
+        body = json.loads(request.content)
+        assert body["model"] == "nvidia/llama-nemotron-rerank-vl-1b-v2"
+        assert body["query"] == {"text": "q"}
+        assert body["passages"] == [{"text": "a"}, {"text": "b"}, {"text": "c"}]
+        assert body["truncate"] == "END"
+        # deliberately unsorted: c > a > b
+        return httpx.Response(200, json={"rankings": [{"index": 1, "logit": 0.1},
+                                                       {"index": 2, "logit": 4.2},
+                                                       {"index": 0, "logit": 1.3}]})
+
+    provider = NvidiaRerank("k", "nvidia/llama-nemotron-rerank-vl-1b-v2", client=httpx.AsyncClient(
+        transport=httpx.MockTransport(handler)
+    ))
+    chunks = [_chunk(0, text="a"), _chunk(1, text="b"), _chunk(2, text="c")]
+    ranked = await apply_rerank(provider, query="q", chunks=chunks, top_n=2)
+    assert [c.text for c in ranked] == ["c", "a"]
+    assert ranked[0].rerank_score == pytest.approx(4.2)
+
+
+def test_get_reranker_precedence_cohere_then_nvidia_then_fused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def settings(cohere: str, nvidia: str) -> Settings:
+        return Settings(cohere_api_key=cohere, nvidia_api_key=nvidia)
+
+    monkeypatch.setattr("retrieval.rerank.get_settings", lambda: settings("k", "k"))
+    assert isinstance(get_reranker(), CohereRerank)
+
+    monkeypatch.setattr("retrieval.rerank.get_settings", lambda: settings("", "k"))
+    assert isinstance(get_reranker(), NvidiaRerank)
+
+    monkeypatch.setattr("retrieval.rerank.get_settings", lambda: settings("", ""))
+    assert isinstance(get_reranker(), FusedOrderRerank)
+
+
 def test_dedupe_adjacent_keeps_first_winner_per_document() -> None:
     doc_a, doc_b = uuid4(), uuid4()
     section = uuid4()
@@ -78,6 +125,16 @@ def test_dedupe_adjacent_keeps_first_winner_per_document() -> None:
     ]
     kept = dedupe_adjacent(winners)
     assert [c.fused_score for c in kept] == [0.9, 0.7, 0.6, 0.5]
+
+
+def test_dedupe_adjacent_keeps_same_ordinal_from_different_sections() -> None:
+    document = uuid4()
+    winners = [
+        _chunk(0, document, uuid4(), score=0.9),
+        _chunk(0, document, uuid4(), score=0.8),
+    ]
+
+    assert dedupe_adjacent(winners) == winners
 
 
 async def test_expand_uses_small_parent_whole(

@@ -32,6 +32,7 @@ BATCH_TOKEN_BUDGET = 28_000
 _CHUNK_CAP = 2000
 
 _FENCE_RE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
+_CITATION_RE = re.compile(r"\[(\d{1,2})\]")
 
 
 @dataclass(frozen=True)
@@ -141,6 +142,13 @@ def parse_claims(response: str) -> list[ExtractedClaim]:
             )
         )
     return claims
+
+
+def _citation_only_claim(answer: str) -> ExtractedClaim | None:
+    citation_ids = sorted({int(n) for n in _CITATION_RE.findall(answer)})
+    if not citation_ids or re.sub(r"[\W_]+", "", _CITATION_RE.sub("", answer)):
+        return None
+    return ExtractedClaim("c1", answer.strip(), citation_ids, True)
 
 
 async def extract_claims(
@@ -310,6 +318,12 @@ async def review_answer(
     """Full pipeline: extract → verify → scores → at most one revision
     pass (re-extract + re-verify on the revised text, TRD §10 step 5)."""
     result = ReviewResult()
+    citation_only = _citation_only_claim(answer)
+    if citation_only is not None:
+        unsupported = VerifiedClaim(citation_only, "unsupported", 0.0, "n/a")
+        result.claims = [unsupported]
+        result.scores = score_review(result.claims, citation_count)
+        return result
     claims = await extract_claims(answer=answer, small_model=small_model, complete_fn=complete_fn)
     if not claims:
         return result

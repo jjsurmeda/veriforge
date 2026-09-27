@@ -1,15 +1,13 @@
 """Model catalogue read endpoints (CH-8): the picker reads these;
 administrators use the separate /admin catalogue routes."""
 
-from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.deps import CurrentUser
 from db.models import LlmProvider, Model, ModelRole
-from db.session import get_session
+from db.session import SessionDep
 from schemas.models import ModelOut, ModelRoleOut
 
 router = APIRouter(tags=["models"])
@@ -18,7 +16,7 @@ router = APIRouter(tags=["models"])
 @router.get("/models", response_model=list[ModelOut])
 async def list_models(
     user: CurrentUser,
-    session: Annotated[AsyncSession, Depends(get_session)],
+    session: SessionDep,
 ) -> list[ModelOut]:
     rows = (
         await session.execute(
@@ -46,7 +44,7 @@ async def list_models(
 @router.get("/model-roles", response_model=list[ModelRoleOut])
 async def list_model_roles(
     user: CurrentUser,
-    session: Annotated[AsyncSession, Depends(get_session)],
+    session: SessionDep,
 ) -> list[ModelRoleOut]:
     roles = (
         await session.execute(select(ModelRole).order_by(ModelRole.role))

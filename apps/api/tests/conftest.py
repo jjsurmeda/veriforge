@@ -17,7 +17,7 @@ os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ["COOKIE_SECURE"] = "false"  # tests run over plain http
 # Never reach live providers from tests (testing.md); .env and Compose
 # otherwise leak real keys in, and rerank/web tests hit Cohere/Tavily/Brave.
-for _key in ("COHERE_API_KEY", "TAVILY_API_KEY", "BRAVE_API_KEY"):
+for _key in ("COHERE_API_KEY", "NVIDIA_API_KEY", "TAVILY_API_KEY", "BRAVE_API_KEY"):
     os.environ[_key] = ""
 
 import time  # noqa: E402
@@ -133,6 +133,12 @@ def reset_default_breaker() -> Iterator[None]:
 
 @pytest.fixture(autouse=True)
 async def clean_db() -> AsyncIterator[None]:
+    # A finished run leaves the async judge and the usage settle pending on the
+    # session-scoped loop. TRUNCATE takes an exclusive lock on every table, so
+    # draining first keeps a leaked task from racing the next test (KI-15).
+    from graph.runner import drain_background_tasks
+
+    await drain_background_tasks()
     factory = get_session_factory()
     async with factory() as session:
         await session.execute(text(f"TRUNCATE {ALL_TABLES} CASCADE"))

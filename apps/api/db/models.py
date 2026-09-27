@@ -570,8 +570,14 @@ class EvalResult(Base):
     context_recall: Mapped[float | None] = mapped_column(nullable=True)
     abstained: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     latency_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Per-stage breakdown of the same item (graph/timing.make_step_timer), so a
+    # red p50 can be attributed to a stage instead of guessed at (KI-6).
+    stage_ms: Mapped[dict[str, int] | None] = mapped_column(JSONB, nullable=True)
     tokens_in: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     tokens_out: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Non-null means the item raised: no score was measured. Such a row is
+    # excluded from every aggregate and fails the gate (KI-6).
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

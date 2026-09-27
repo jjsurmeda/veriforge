@@ -205,6 +205,30 @@ def _ctx() -> list[ExpandedContext]:
 
 
 class TestVerifyClaims:
+    async def test_citation_only_answer_is_unsupported_without_provider_calls(self) -> None:
+        engine = _RecordingEngine()
+
+        async def failing_complete(**kwargs: object) -> str:
+            raise AssertionError("citation-only output must bypass claim extraction")
+
+        result = await review_answer(
+            engine=engine,
+            run_id="r",
+            answer="[1], [7], [2]",
+            contexts=_ctx(),
+            citation_count=3,
+            small_model="small",
+            litellm_model="generator",
+            complete_fn=failing_complete,
+        )
+
+        assert [(claim.verdict, claim.p_supported) for claim in result.claims] == [
+            ("unsupported", 0.0)
+        ]
+        assert result.scores is not None
+        assert result.scores.faithfulness == 0.0
+        assert engine.calls == []
+
     async def test_uncited_claim_scores_unsupported_without_jev_call(self) -> None:
         engine = _RecordingEngine()
         claims = [

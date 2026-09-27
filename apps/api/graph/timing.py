@@ -22,7 +22,9 @@ def make_step_timer(
         started = time.monotonic()
         result = await work()
         duration = int((time.monotonic() - started) * 1000)
-        latency_ms[label] = duration
+        # `+=`, not `=`: the Auto retry loop re-enters `retrieve`/`sanitize`,
+        # and overwriting dropped every attempt but the last from the totals.
+        latency_ms[label] = latency_ms.get(label, 0) + duration
         if publish is not None:
             await publish(run_id, StepCompleted(node=node, label=label, duration_ms=duration))
         return result

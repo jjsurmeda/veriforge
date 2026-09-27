@@ -1,7 +1,9 @@
-"""Chunk sanitizer (TRD §11 layer 4): a `chunk_injection` Noul over every
-retrieved chunk and web page. Chunks scoring at or above the drop
-threshold are removed before generation but kept in the Retrieval event
-with `dropped=True` so the Sources tab can show them greyed.
+"""Chunk sanitizer (TRD §11 layer 4, amended for KI-11): a
+`chunk_injection` Noul over every chunk that reaches the generator (the
+post-rerank top-k) and every web page used. Chunks scoring at or above
+the drop threshold are removed before generation but kept in the
+Retrieval event with `dropped=True` so the Sources tab can show them
+greyed.
 
 One batched `decide` call per run — Jev supports several questions per
 call, and N chunks in one round trip beats N round trips.

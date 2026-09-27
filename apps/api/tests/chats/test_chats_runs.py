@@ -9,11 +9,12 @@ from uuid import UUID
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.models import Chat, Message
+from db.models import Chat, Message, UsageLedger
 from db.session import get_session_factory
-from graph.runner import _finalize
+from graph.runner import _background_tasks, _finalize, drain_background_tasks
 from quota.usage import get_usage_context
 from tests.conftest import make_run_row
 
@@ -431,3 +432,41 @@ async def test_active_run_id_surfaces_on_chat(client: AsyncClient, fake_llm: Non
     await asyncio.sleep(0.05)
     chat_after = (await client.get(f"/chats/{chat_id}", headers=headers)).json()
     assert chat_after["active_run_id"] is None
+
+
+async def test_completed_run_leaves_no_unowned_background_work(
+    client: AsyncClient, fake_llm: None
+) -> None:
+    """KI-15: the async judge and the usage settle are fire-and-forget, and
+    `run.completed` is published before either finishes. Nothing held a handle,
+    so a shutdown dropped the settle and the ledger row stayed `reserved`
+    (TRD §14), and a leaked task raced the next test's TRUNCATE."""
+
+    headers = await _auth(client)
+    chat_id = await _make_chat(client, headers)
+    run_id = (
+        await client.post(
+            f"/chats/{chat_id}/runs", json={"message": "What is RRF?"}, headers=headers
+        )
+    ).json()["run_id"]
+
+    async with client.stream("GET", f"/runs/{run_id}/stream", headers=headers) as response:
+        async for event_type, _ in _parse_sse(response.aiter_lines()):
+            if event_type == "run.completed":
+                break
+
+    await drain_background_tasks()
+
+    assert not _background_tasks
+    async with get_session_factory()() as session:
+        row = (
+            (
+                await session.execute(
+                    select(UsageLedger).where(UsageLedger.run_id == UUID(run_id))
+                )
+            )
+            .scalars()
+            .first()
+        )
+    assert row is not None, "the run reserved usage but left no ledger row"
+    assert row.status == "settled"

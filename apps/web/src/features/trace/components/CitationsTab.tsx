@@ -26,6 +26,7 @@ function chunkForCitation(citation: NonNullable<MessageOut['citations']>[number]
     document_id: citation.document_id ?? null,
     document_name: citation.document_name ?? null,
     page: citation.page ?? null,
+    heading_path: citation.heading_path ?? null,
     excerpt: citation.excerpt ?? null,
     rerank_score: citation.rerank_score ?? null,
     source_type: 'document',
@@ -62,7 +63,7 @@ export function CitationsTab({ chunks, message, query, onOpenDocument }: Props) 
               <>
                 <div className="mb-1 flex items-center justify-between gap-3">
                   <span className="flex min-w-0 items-center gap-2 text-xs font-medium text-fg"><span className="inline-flex h-4 min-w-4 items-center justify-center rounded bg-raised px-1 font-mono text-[10px] tabular-nums text-fg-muted">{index + 1}</span><SourceName chunk={chunk} /></span>
-                  {chunk.page != null && <span className="shrink-0 font-mono text-2xs text-fg-muted">p.{chunk.page}</span>}
+          {(chunk.page != null || chunk.heading_path) && <span className="shrink-0 truncate font-mono text-2xs text-fg-muted">{chunk.page != null ? `p.${chunk.page}` : chunk.heading_path}</span>}
                 </div>
                 <p className="line-clamp-3 whitespace-pre-wrap text-xs leading-5 text-fg-muted">{chunk.excerpt}</p>
               </>

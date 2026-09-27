@@ -507,6 +507,17 @@
             ],
             "title": "Excerpt"
           },
+          "heading_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Heading Path"
+          },
           "n": {
             "title": "N",
             "type": "integer"

@@ -108,7 +108,7 @@ async def refine_chat_title(
             chat.title = DEFAULT_CHAT_TITLE
             return DEFAULT_CHAT_TITLE
         return None
-    if instant_title is None or chat.title != instant_title:
+    if chat.title != DEFAULT_CHAT_TITLE and chat.title != instant_title:
         return None
     title = await generate_chat_title(
         question=question, answer=answer, small_model=small_model, complete_fn=complete_fn

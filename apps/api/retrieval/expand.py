@@ -29,6 +29,7 @@ def dedupe_adjacent(winners: list[ScoredChunk]) -> list[ScoredChunk]:
         adjacent = any(
             chunk.document_id is not None
             and chunk.document_id == other.document_id
+            and chunk.section_id == other.section_id
             and abs(chunk.ord - other.ord) <= 1
             for other in kept
         )

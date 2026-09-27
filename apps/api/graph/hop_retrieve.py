@@ -65,9 +65,14 @@ async def run_hop(
         filters=client_filters,
         lexical_weight=lexical_weight,
     )
-    kept, dropped, answers = await sanitize_chunks(engine, run_id=str(run_id), chunks=fused)
-    winners = dedupe_adjacent(
-        await apply_rerank(get_reranker(), query=sub_question.question, chunks=kept)
+    reranked = dedupe_adjacent(
+        await apply_rerank(get_reranker(), query=sub_question.question, chunks=fused)
+    )
+    # Sanitize after rerank (TRD §11 layer 4, amended for KI-11): only the
+    # chunks that can reach the generator are asked about; a dropped chunk
+    # is not backfilled from beyond the reranked set.
+    winners, dropped, answers = await sanitize_chunks(
+        engine, run_id=str(run_id), chunks=reranked
     )
 
     dropped_ids = {c.chunk_id for c in dropped}

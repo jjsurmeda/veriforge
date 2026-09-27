@@ -195,6 +195,15 @@ describe('ChatComposer', () => {
     expect(runOptions(true, true)).toEqual({ mode: 'deep', source: 'both' })
   })
 
+  it('renders the model trigger unhidden, so mobile keeps CH-8', () => {
+    renderComposer()
+    const trigger = screen.getByRole('button', { name: 'Model' })
+    expect(trigger.classList.contains('hidden')).toBe(false)
+    // no ancestor wraps it in display:none either (KI-9 regression guard;
+    // the hidden file input elsewhere in the composer is fine)
+    expect(trigger.closest('.hidden')).toBeNull()
+  })
+
   it('opens the file picker from the + and hands the files over', () => {
     const onFiles = vi.fn()
     renderComposer({ onFiles })

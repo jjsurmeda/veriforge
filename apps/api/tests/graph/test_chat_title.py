@@ -71,6 +71,44 @@ async def test_refine_writes_a_topic_title(db: AsyncSession) -> None:
     assert chat.title == "Darcy's first proposal"
 
 
+async def test_refine_titles_the_first_grounded_turn_after_chitchat(db: AsyncSession) -> None:
+    from tests.retrieval.conftest import make_user
+
+    user = await make_user(db, "title-after-chitchat@test.dev")
+    chat = Chat(user_id=user.id, title="hello")
+    db.add(chat)
+    await db.commit()
+
+    await refine_chat_title(
+        session=db,
+        chat_id=chat.id,
+        instant_title="hello",
+        question="hello",
+        answer="Hello!",
+        small_model="openrouter/small",
+        chitchat=True,
+    )
+    assert chat.title == "New chat"
+
+    async def fake_complete(
+        *, litellm_model: str, messages: list[dict[str, str]], metadata: dict[str, str]
+    ) -> str:
+        return '{"title": "Darcy\'s first proposal"}'
+
+    title = await refine_chat_title(
+        session=db,
+        chat_id=chat.id,
+        instant_title=None,
+        question="What does Darcy say in his first proposal?",
+        answer="He proposes.",
+        small_model="openrouter/small",
+        complete_fn=fake_complete,
+    )
+
+    assert title == "Darcy's first proposal"
+    assert chat.title == "Darcy's first proposal"
+
+
 async def test_refine_skips_a_user_renamed_chat(db: AsyncSession) -> None:
     from tests.retrieval.conftest import make_user
 

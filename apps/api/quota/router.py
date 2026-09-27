@@ -1,10 +1,9 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, Query
 
 from auth.deps import CurrentUser
-from db.session import get_session
+from db.session import SessionDep
 from quota.service import quota_summary
 from runtime import load_active_runtime
 from schemas.quota import QuotaOut
@@ -15,7 +14,7 @@ router = APIRouter(tags=["quota"])
 @router.get("/me/quota", response_model=QuotaOut)
 async def get_quota(
     user: CurrentUser,
-    session: Annotated[AsyncSession, Depends(get_session)],
+    session: SessionDep,
     mode: Annotated[str, Query(pattern="^(fast|auto|deep)$")] = "auto",
 ) -> QuotaOut:
     settings = await load_active_runtime(session)

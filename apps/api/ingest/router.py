@@ -6,16 +6,15 @@ from the chats router. Ownership is checked on every document.
 """
 
 import logging
-from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, UploadFile
+from fastapi import APIRouter, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.deps import CurrentUser
 from chats.scope import library_starter_questions
 from db.models import Document, User
-from db.session import get_session
+from db.session import SessionDep
 from errors import AppError
 from ingest.containers import get_or_create_shared_collection
 from ingest.repository import (
@@ -64,7 +63,7 @@ async def _owned_document_or_404(
 @router.get("/library", response_model=LibraryOut)
 async def get_library(
     user: CurrentUser,
-    session: Annotated[AsyncSession, Depends(get_session)],
+    session: SessionDep,
 ) -> LibraryOut:
     documents = await list_shared_documents(session)
     return LibraryOut(
@@ -82,7 +81,7 @@ async def get_library(
 async def upload_library_document(
     file: UploadFile,
     user: CurrentUser,
-    session: Annotated[AsyncSession, Depends(get_session)],
+    session: SessionDep,
 ) -> DocumentUploadOut:
     deny_read_only(user)
     if user.role != "admin":
@@ -97,7 +96,7 @@ async def upload_library_document(
 async def get_document(
     document_id: UUID,
     user: CurrentUser,
-    session: Annotated[AsyncSession, Depends(get_session)],
+    session: SessionDep,
 ) -> DocumentOut:
     document = await get_visible_document(session, user, document_id)
     if document is None:
@@ -110,7 +109,7 @@ async def patch_document(
     document_id: UUID,
     body: DocumentPatch,
     user: CurrentUser,
-    session: Annotated[AsyncSession, Depends(get_session)],
+    session: SessionDep,
 ) -> DocumentOut:
     document = await _owned_document_or_404(session, user, document_id)
     document.tags = body.tags
@@ -122,7 +121,7 @@ async def patch_document(
 async def delete_document(
     document_id: UUID,
     user: CurrentUser,
-    session: Annotated[AsyncSession, Depends(get_session)],
+    session: SessionDep,
 ) -> None:
     document = await _owned_document_or_404(session, user, document_id)
     key = document.s3_key
@@ -138,7 +137,7 @@ async def delete_document(
 async def reindex_document(
     document_id: UUID,
     user: CurrentUser,
-    session: Annotated[AsyncSession, Depends(get_session)],
+    session: SessionDep,
 ) -> DocumentOut:
     document = await _owned_document_or_404(session, user, document_id)
     document.status = "queued"
@@ -153,7 +152,7 @@ async def reindex_document(
 async def get_document_chunks(
     document_id: UUID,
     user: CurrentUser,
-    session: Annotated[AsyncSession, Depends(get_session)],
+    session: SessionDep,
 ) -> list[ChunkOut]:
     rows = await list_document_chunks(session, user, document_id)
     if rows is None:

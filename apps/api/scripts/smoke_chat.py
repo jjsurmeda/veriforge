@@ -36,8 +36,7 @@ TURNS: list[tuple[str, str]] = [
     ("small talk", "hi there, how's it going?"),
     (
         "grounded",
-        "What does Mr. Darcy say in his first proposal to Elizabeth, and how "
-        "does she answer?",
+        "What does Mr. Darcy say in his first proposal to Elizabeth, and how does she answer?",
     ),
     (
         "abstain",
@@ -54,18 +53,14 @@ TURNS: list[tuple[str, str]] = [
 
 async def sign_up(client: httpx.AsyncClient) -> str:
     email = f"smoke-{uuid.uuid4().hex[:12]}@example.com"
-    response = await client.post(
-        "/auth/signup", json={"email": email, "password": PASSWORD}
-    )
+    response = await client.post("/auth/signup", json={"email": email, "password": PASSWORD})
     if response.status_code != 201:
         raise SystemExit(f"signup failed: {response.status_code} {response.text[:200]}")
     return email
 
 
 async def sign_in(client: httpx.AsyncClient, email: str) -> str:
-    response = await client.post(
-        "/auth/login", json={"email": email, "password": PASSWORD}
-    )
+    response = await client.post("/auth/login", json={"email": email, "password": PASSWORD})
     if response.status_code != 200:
         raise SystemExit(f"login failed: {response.status_code} {response.text[:200]}")
     return str(response.json()["access_token"])
@@ -78,7 +73,7 @@ async def run_turn(
     created = await client.post(
         f"/chats/{chat_id}/runs",
         headers=headers,
-        json={"message": message, "mode": "auto", "source": "auto"},
+        json={"message": message, "mode": "auto", "source": "upload"},
     )
     if created.status_code != 201:
         raise SystemExit(f"run failed: {created.status_code} {created.text[:200]}")
@@ -89,6 +84,7 @@ async def run_turn(
     answer = ""
     status = "timeout"
     deadline = time.monotonic() + RUN_TIMEOUT_SECONDS
+
     async def read_events() -> None:
         nonlocal intent, answer, status
         async with client.stream(
@@ -140,8 +136,8 @@ async def run_turn(
             document = citation.get("document_name") or citation.get("document_id") or "?"
             where = citation.get("page")
             section = citation.get("section_id")
-            locator = f" p.{where}" if where is not None else (
-                f" §{section[:8]}" if section else ""
+            locator = (
+                f" p.{where}" if where is not None else (f" §{section[:8]}" if section else "")
             )
             citations.append(f"[{citation.get('n')}] {document}{locator}")
     if answer and assistant and not assistant[-1].get("content"):
@@ -190,9 +186,7 @@ async def main() -> None:
             print()
 
         title = (
-            await client.get(
-                f"/chats/{chat_id}", headers={"Authorization": f"Bearer {token}"}
-            )
+            await client.get(f"/chats/{chat_id}", headers={"Authorization": f"Bearer {token}"})
         ).json()["title"]
         print("=" * 72)
         print(f"final title: {title!r}")

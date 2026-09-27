@@ -22,6 +22,7 @@ import logging
 import re
 import time
 from collections.abc import Awaitable, Callable
+from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -85,6 +86,24 @@ _REVIEW_REFUSAL = (
 )
 
 _active_tasks: dict[UUID, asyncio.Task[None]] = {}
+# Per-run work that outlives the response on purpose (async judge, then the
+# usage settle). Nothing awaits it, so it has to be tracked to be drainable at
+# shutdown and between tests — otherwise the settle is lost and the ledger row
+# stays `reserved` (KI-15).
+_background_tasks: set[asyncio.Task[None]] = set()
+
+
+def _track_background(task: asyncio.Task[None]) -> asyncio.Task[None]:
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+    return task
+
+
+async def drain_background_tasks() -> None:
+    """Await every tracked per-run tail. Loops because a drained task can
+    register another one before it returns."""
+    while _background_tasks:
+        await asyncio.gather(*list(_background_tasks), return_exceptions=True)
 
 
 async def _runtime_context(
@@ -199,6 +218,18 @@ async def _touch_heartbeat(session_factory: async_sessionmaker[AsyncSession], ru
         )
 
     await _with_session(session_factory, work)
+
+
+async def _heartbeat_loop(
+    bus: PostgresRunBus,
+    session_factory: async_sessionmaker[AsyncSession],
+    run_id: UUID,
+    interval: float,
+) -> None:
+    while True:
+        await asyncio.sleep(interval)
+        await _touch_heartbeat(session_factory, run_id)
+        await bus.publish(run_id, Heartbeat(run_id=str(run_id)))
 
 
 async def _persist_review(
@@ -404,6 +435,7 @@ async def _settle_after_scoring(
     try:
         await scoring_task
     finally:
+
         async def work(session: AsyncSession) -> None:
             context = get_usage_context()
             snapshot = context.snapshot() if context is not None else None
@@ -534,10 +566,9 @@ async def _finish_answer(
         settle_usage=scoring_task is None,
     )
     if scoring_task is not None:
-        settle_task = asyncio.create_task(
-            _settle_after_scoring(session_factory, run_id, scoring_task)
+        _track_background(
+            asyncio.create_task(_settle_after_scoring(session_factory, run_id, scoring_task))
         )
-        settle_task.add_done_callback(lambda _: None)
     await bus.publish(
         run_id,
         RunCompleted(
@@ -570,11 +601,10 @@ async def execute_run(
     instant_title: str | None = None,
 ) -> None:
     text = ""
+    heartbeat_task: asyncio.Task[None] | None = None
     try:
         settings = get_settings()
-        runtime, model_roles, api_keys = await _runtime_context(
-            session_factory, settings_version
-        )
+        runtime, model_roles, api_keys = await _runtime_context(session_factory, settings_version)
         usage_context = UsageContext(
             session_factory=session_factory,
             user_id=user_id,
@@ -621,6 +651,9 @@ async def execute_run(
             ),
         )
         await _touch_heartbeat(session_factory, run_id)
+        heartbeat_task = asyncio.create_task(
+            _heartbeat_loop(bus, session_factory, run_id, settings.heartbeat_interval_seconds)
+        )
 
         async def emit_decision(name: str, answer: Answer, call: DecisionCall) -> None:
             await bus.publish(
@@ -927,6 +960,10 @@ async def execute_run(
         )
 
     finally:
+        if heartbeat_task is not None:
+            heartbeat_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await heartbeat_task
         reset_usage_context(usage_token)
         reset_runtime_settings(runtime_token)
 

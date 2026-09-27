@@ -3,11 +3,10 @@ from uuid import UUID
 
 from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.tokens import ACCESS_TOKEN_TYPE, TokenError, decode_token
 from db.models import User
-from db.session import get_session
+from db.session import SessionDep
 from errors import AppError
 
 _bearer = HTTPBearer(auto_error=False)
@@ -19,7 +18,7 @@ class Unauthorized(AppError):
 
 async def get_current_user(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
-    session: Annotated[AsyncSession, Depends(get_session)],
+    session: SessionDep,
 ) -> User:
     if credentials is None:
         raise Unauthorized("unauthorized", "Missing bearer token")

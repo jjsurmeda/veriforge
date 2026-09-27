@@ -149,7 +149,7 @@ export function AdminPage() {
     retry_limit: 2,
     deep_cap: 40000,
     threshold: 0.6,
-    abstain_threshold: 0.35,
+    abstain_threshold: 0.6,
     mode: 'auto',
     guardrails: true,
     injection_action: 'block',

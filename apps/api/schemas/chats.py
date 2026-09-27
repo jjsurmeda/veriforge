@@ -30,6 +30,7 @@ class CitationOut(BaseModel):
     document_id: str | None = None
     document_name: str | None = None
     page: int | None = None
+    heading_path: str | None = None
     excerpt: str | None = None
     rerank_score: float | None = None
     # Reviewer fields — null until slice 6 (TRD §10).

@@ -1,10 +1,9 @@
 """Chat CRUD, messages, run creation (TRD §12). Ownership filters are
 injected server-side on every query (CLAUDE.md non-negotiable)."""
 
-from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request, UploadFile
+from fastapi import APIRouter, Request, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,9 +25,10 @@ from db.models import (
     Model,
     ModelRole,
     Run,
+    Section,
     User,
 )
-from db.session import get_session
+from db.session import SessionDep
 from errors import AppError
 from graph import runner
 from graph.chat_title import DEFAULT_CHAT_TITLE, collapse_instant_title
@@ -89,7 +89,7 @@ async def _default_model_id(session: AsyncSession) -> str:
 @router.get("/chats", response_model=list[ChatOut])
 async def list_chats(
     user: CurrentUser,
-    session: Annotated[AsyncSession, Depends(get_session)],
+    session: SessionDep,
 ) -> list[ChatOut]:
     active_run = (
         select(Run.id)
@@ -144,7 +144,7 @@ async def _starter_questions_by_chat(
 async def create_chat(
     body: ChatCreate,
     user: CurrentUser,
-    session: Annotated[AsyncSession, Depends(get_session)],
+    session: SessionDep,
 ) -> ChatOut:
     chat = Chat(
         user_id=user.id,
@@ -168,7 +168,7 @@ async def create_chat(
 async def get_chat(
     chat_id: UUID,
     user: CurrentUser,
-    session: Annotated[AsyncSession, Depends(get_session)],
+    session: SessionDep,
 ) -> ChatOut:
     chat = await _owned_chat(session, user, chat_id)
     active_run = (
@@ -196,7 +196,7 @@ async def patch_chat(
     chat_id: UUID,
     body: ChatPatch,
     user: CurrentUser,
-    session: Annotated[AsyncSession, Depends(get_session)],
+    session: SessionDep,
 ) -> ChatOut:
     chat = await _owned_chat(session, user, chat_id)
     if body.title is not None:
@@ -222,7 +222,7 @@ async def patch_chat(
 async def delete_chat(
     chat_id: UUID,
     user: CurrentUser,
-    session: Annotated[AsyncSession, Depends(get_session)],
+    session: SessionDep,
 ) -> None:
     chat = await _owned_chat(session, user, chat_id)
     await session.delete(chat)
@@ -233,7 +233,7 @@ async def delete_chat(
 async def list_messages(
     chat_id: UUID,
     user: CurrentUser,
-    session: Annotated[AsyncSession, Depends(get_session)],
+    session: SessionDep,
 ) -> list[MessageOut]:
     await _owned_chat(session, user, chat_id)
     messages = (
@@ -247,15 +247,16 @@ async def list_messages(
     )
     citations = (
         await session.execute(
-            select(Citation, Chunk, Document)
+            select(Citation, Chunk, Document, Section)
             .join(Chunk, Citation.chunk_id == Chunk.id, isouter=True)
             .join(Document, Chunk.document_id == Document.id, isouter=True)
+            .join(Section, Chunk.section_id == Section.id, isouter=True)
             .where(Citation.message_id.in_([m.id for m in messages]))
             .order_by(Citation.message_id, Citation.n)
         )
     ).all()
     by_message: dict[UUID, list[CitationOut]] = {}
-    for citation, chunk, document in citations:
+    for citation, chunk, document, section in citations:
         by_message.setdefault(citation.message_id, []).append(
             CitationOut(
                 n=citation.n,
@@ -263,6 +264,7 @@ async def list_messages(
                 document_id=str(document.id) if document is not None else None,
                 document_name=document.name if document is not None else None,
                 page=chunk.page if chunk is not None else None,
+                heading_path=section.heading_path if section is not None else None,
                 excerpt=(chunk.text[:240] if chunk is not None else None),
                 rerank_score=citation.rerank_score,
                 verdict=citation.verdict,
@@ -332,7 +334,7 @@ async def _small_model_litellm(session: AsyncSession, fallback: str) -> str:
 async def list_chat_documents(
     chat_id: UUID,
     user: CurrentUser,
-    session: Annotated[AsyncSession, Depends(get_session)],
+    session: SessionDep,
 ) -> list[DocumentOut]:
     chat = await _owned_chat(session, user, chat_id)
     container = await get_chat_collection(session, chat.id)
@@ -347,7 +349,7 @@ async def upload_chat_document(
     chat_id: UUID,
     file: UploadFile,
     user: CurrentUser,
-    session: Annotated[AsyncSession, Depends(get_session)],
+    session: SessionDep,
 ) -> DocumentUploadOut:
     chat = await _owned_chat(session, user, chat_id)
     deny_read_only(user)
@@ -363,7 +365,7 @@ async def create_run(
     body: RunCreateRequest,
     request: Request,
     user: CurrentUser,
-    session: Annotated[AsyncSession, Depends(get_session)],
+    session: SessionDep,
 ) -> RunCreateResponse:
     chat = await _owned_chat(session, user, chat_id)
     model_id = body.model_id or chat.model_id

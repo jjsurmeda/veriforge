@@ -173,7 +173,7 @@ export function ChatComposer({
               />
             </div>
             <div className="flex shrink-0 items-center gap-2">
-              <div className="hidden sm:block"><ModelPicker value={modelId} disabled={disabled} onChange={onModelChange} /></div>
+              <ModelPicker value={modelId} disabled={disabled} onChange={onModelChange} />
               {streaming ? (
                 <button type="button" aria-label="Stop" onClick={onStop} className="pressable inline-flex size-8 items-center justify-center rounded-full bg-fg-strong text-on-strong hover:bg-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring">
                   <Square size={15} fill="currentColor" strokeWidth={1.75} aria-hidden="true" />

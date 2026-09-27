@@ -2,9 +2,8 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Annotated
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -15,7 +14,7 @@ from admin import router as admin_router
 from auth import router as auth_router
 from chats import router as chats_router
 from config import get_settings
-from db.session import get_session
+from db.session import SessionDep
 from errors import AppError
 from graph import runner
 from ingest import router as sources_router
@@ -47,6 +46,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     yield
     sweep.cancel()
     await queue_app.close_async()
+    await runner.drain_background_tasks()
     await bus.stop()
     await engine.dispose()
 
@@ -100,7 +100,7 @@ async def unhandled_error_handler(request: Request, exc: Exception) -> JSONRespo
 
 @app.get("/healthz", response_model=None)
 async def healthz(
-    session: Annotated[AsyncSession, Depends(get_session)],
+    session: SessionDep,
 ) -> dict[str, str] | JSONResponse:
     try:
         await session.execute(text("SELECT 1"))

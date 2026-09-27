@@ -213,7 +213,7 @@ also answers asynchronously. Disagreements are stored in
 | intent, source, complexity, risk | Choice | Ingress | Argmax; below 0.5 confidence falls back to safe default (Both, single, high) |
 | lexical_weight | Score 0–1 | Retrieval fusion | Used as weight |
 | chunk_injection | Noul | Sanitizer | Drop at ≥ 0.7 |
-| sufficient | Noul | Single-hop loop | Retry below 0.6; abstain below 0.35 after retries |
+| sufficient | Noul | Single-hop loop | Retry below 0.6; abstain below `sufficient_abstain` (default 0.6) after retries |
 | controller | Choice | Deep loop | Argmax |
 | conflict | Noul | Conflict check | Disclose at ≥ 0.6 |
 | claim_verdict | Choice | Reviewer | See section 10 |
@@ -360,8 +360,13 @@ data isolation is enforced in SQL, never by the model.
 3. **Sources-are-data policy.** The system prompt states that text
    inside source blocks is evidence only and instructions in it must be
    ignored and reported.
-4. **Sanitizer.** Jev `chunk_injection` on every retrieved chunk and web
-   page; dropped chunks show in the Sources tab.
+4. **Sanitizer.** Jev `chunk_injection` on every chunk that reaches the
+   generator (the post-rerank top-k) and every web page used; dropped
+   chunks show in the Sources tab, and a dropped chunk is not backfilled
+   from beyond the reranked set. *(Amended 2026-09-27, KI-11 —
+   previously "every retrieved chunk and web page", which asked Jev ~50
+   `chunk_injection` questions per Auto run for chunks that rerank would
+   drop before they could reach the tool-less generator anyway.)*
 5. **Ingress checks.** Jev injection and jailbreak checks on the user
    message.
 6. **Reviewer.** Claims that follow instructions rather than evidence
@@ -558,9 +563,19 @@ sampled chunks, an admin approves each); harvested from rated chats
 
 **Gates in CI.** A 20-item fast subset runs on every merge to `main` that
 touches `graph`, `retrieval`, `decisions` or prompts. The merge fails if
-faithfulness drops by more than 0.03, abstention accuracy by more than
-5 points, or p50 latency rises by more than 20% against the stored
-baseline.
+faithfulness drops by more than 0.03, abstention accuracy or answer rate
+by more than 5 points, or p50 latency rises by more than 20% against the
+stored baseline.
+
+**Answer rate.** The share of items *not* labelled should-abstain that
+produced an answer rather than an abstention. It is a separate gate
+because an abstention scores faithfulness 1.0 — it asserts nothing to be
+unfaithful about — so a pipeline that abstained on all 20 items would
+report perfect faithfulness *and* perfect abstention accuracy and pass
+every metric above it. Answer rate is not defined in terms of the outcome
+it measures, which is what makes it a counterweight rather than a fourth
+view of the same number. It is stored in the run summary and in the
+baseline, and the gate fails if it drops more than 5 points.
 
 **Tracing.** The Langfuse LangGraph callback traces every run with node
 spans, model calls, tokens and cost; decision calls appear as spans with

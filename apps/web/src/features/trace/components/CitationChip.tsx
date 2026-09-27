@@ -7,6 +7,7 @@ import type { CitationOut, RetrievedChunk } from '../../../generated/types.gen'
 export interface ChipSource {
   documentName: string | null
   page: number | null
+  headingPath: string | null
   excerpt: string | null
   rerankScore: number | null
   sourceType: string
@@ -15,11 +16,11 @@ export interface ChipSource {
 }
 
 export function chipSourceFromCitation(citation: CitationOut): ChipSource {
-  return { documentName: citation.document_name ?? null, page: citation.page ?? null, excerpt: citation.excerpt ?? null, rerankScore: citation.rerank_score ?? null, sourceType: 'document', verdict: citation.verdict ?? null, pSupported: citation.p_supported ?? null }
+  return { documentName: citation.document_name ?? null, page: citation.page ?? null, headingPath: citation.heading_path ?? null, excerpt: citation.excerpt ?? null, rerankScore: citation.rerank_score ?? null, sourceType: 'document', verdict: citation.verdict ?? null, pSupported: citation.p_supported ?? null }
 }
 
 export function chipSourceFromChunk(chunk: RetrievedChunk): ChipSource {
-  return { documentName: chunk.document_name ?? null, page: chunk.page ?? null, excerpt: chunk.excerpt ?? '', rerankScore: chunk.rerank_score ?? null, sourceType: chunk.source_type ?? 'document', verdict: null, pSupported: null }
+  return { documentName: chunk.document_name ?? null, page: chunk.page ?? null, headingPath: chunk.heading_path ?? null, excerpt: chunk.excerpt ?? '', rerankScore: chunk.rerank_score ?? null, sourceType: chunk.source_type ?? 'document', verdict: null, pSupported: null }
 }
 
 export type VerdictTone = 'pending' | 'supported' | 'partial' | 'unsupported'
@@ -65,7 +66,7 @@ export function CitationChip({ n, source, verdict, onOpen, onHover, highlighted 
         <div className="mb-1 flex items-center gap-2">
           {source?.sourceType === 'web' ? <Globe2 size={14} strokeWidth={1.75} className="text-fg-muted" aria-hidden="true" /> : <FileText size={14} strokeWidth={1.75} className="text-fg-muted" aria-hidden="true" />}
           <span className="truncate text-[13px] font-medium text-fg">{label}</span>
-          {source?.page !== null && source?.page !== undefined && <span className="ml-auto shrink-0 font-mono text-[11px] text-fg-muted">p.{source.page}</span>}
+          {(source?.page != null || source?.headingPath) && <span className="ml-auto shrink-0 truncate font-mono text-[11px] text-fg-muted">{source.page != null ? `p.${source.page}` : source.headingPath}</span>}
         </div>
         <p className="line-clamp-4 whitespace-pre-wrap text-xs leading-5 text-fg-muted">{source?.excerpt ?? '(source expired)'}</p>
         <div className="mt-2 flex items-center justify-between gap-3 border-t border-border pt-2 font-mono text-[10px] text-fg-muted">

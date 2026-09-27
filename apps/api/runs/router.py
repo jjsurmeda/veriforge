@@ -4,14 +4,14 @@ from collections.abc import AsyncIterator
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.deps import CurrentUser
 from db.models import Chat, Message, Run, User
-from db.session import get_session
+from db.session import SessionDep
 from errors import AppError
 from schemas.chats import RunCancelResponse
 from schemas.events import RunStreamResponse
@@ -48,7 +48,7 @@ async def stream_run(
     run_id: UUID,
     request: Request,
     user: CurrentUser,
-    session: Annotated[AsyncSession, Depends(get_session)],
+    session: SessionDep,
     after_seq: Annotated[int, Query(ge=0)] = 0,
 ) -> StreamingResponse:
     await _owned_run(session, user, run_id)
@@ -75,7 +75,7 @@ async def cancel_run(
     run_id: UUID,
     request: Request,
     user: CurrentUser,
-    session: Annotated[AsyncSession, Depends(get_session)],
+    session: SessionDep,
 ) -> RunCancelResponse:
     run, _, _ = await _owned_run(session, user, run_id)
     if run.status == "running":

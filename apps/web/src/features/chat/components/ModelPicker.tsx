@@ -119,7 +119,7 @@ export function ModelPicker({ value, disabled, onChange }: Props) {
           aria-label="Model"
           aria-expanded={open}
           disabled={disabled}
-          className="inline-flex h-8 min-w-0 max-w-[13rem] items-center gap-1.5 overflow-hidden rounded-lg px-2.5 text-sm text-fg-muted outline-none transition-[background-color,color] duration-150 ease-out hover:bg-raised hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:pointer-events-none disabled:opacity-40"
+          className="inline-flex h-8 min-w-0 max-w-[7.5rem] items-center gap-1.5 overflow-hidden rounded-lg px-2.5 text-sm text-fg-muted outline-none transition-[background-color,color] duration-150 ease-out hover:bg-raised hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:pointer-events-none disabled:opacity-40 sm:max-w-[13rem]"
         >
           <span className="truncate">{selected ? shortModelName(selected.model_id) : 'Model'}</span>
           <ChevronDown

@@ -1,8 +1,9 @@
-"""Cohere Rerank behind a provider interface (TRD §9.2: top 40 → top 8).
+"""Cohere / NVIDIA rerank behind a provider interface (TRD §9.2: top 40 → top 8).
 
-No SDK — httpx is already a dependency. Without COHERE_API_KEY the fused
-order passes through unchanged (local dev), which the fused_score doubles
-as the rerank score. Rerank results are never cached (TRD §9.4).
+No SDK — httpx is already a dependency. Without COHERE_API_KEY or
+NVIDIA_API_KEY the fused order passes through unchanged (local dev), which
+the fused_score doubles as the rerank score. Rerank results are never
+cached (TRD §9.4).
 """
 
 import asyncio
@@ -67,6 +68,55 @@ class CohereRerank:
         return [(int(r["index"]), float(r["relevance_score"])) for r in results]
 
 
+class NvidiaRerank:
+    """NVIDIA NIM reranking (ai.api.nvidia.com, model-in-path URL).
+
+    The endpoint has no top_n parameter and does not guarantee ordering, so
+    results are sorted by logit and sliced here.
+    """
+
+    def __init__(self, api_key: str, model: str, client: httpx.AsyncClient | None = None) -> None:
+        self._api_key = api_key
+        self._model = model
+        self._client = client
+
+    async def rerank(self, *, query: str, documents: list[str], top_n: int) -> RerankResult:
+        async def call(client: httpx.AsyncClient) -> httpx.Response:
+            return await client.post(
+                f"https://ai.api.nvidia.com/v1/retrieval/{self._model}/reranking",
+                headers={"Authorization": f"Bearer {self._api_key}"},
+                json={
+                    "model": self._model,
+                    "query": {"text": query},
+                    "passages": [{"text": d} for d in documents],
+                    "truncate": "END",
+                },
+            )
+
+        if self._client is not None:
+            response = await call(self._client)
+        else:
+            async with httpx.AsyncClient(timeout=10) as client:
+                response = await call(client)
+        # Same capped single retry as CohereRerank for per-minute 429s; the
+        # fused-order fallback in apply_rerank covers persistent failures.
+        if response.status_code == 429:
+            await asyncio.sleep(2.0)
+            if self._client is not None:
+                response = await call(self._client)
+            else:
+                async with httpx.AsyncClient(timeout=10) as client:
+                    response = await call(client)
+        response.raise_for_status()
+        rankings = response.json()["rankings"]
+        pairs = sorted(
+            ((int(r["index"]), float(r["logit"])) for r in rankings),
+            key=lambda pair: pair[1],
+            reverse=True,
+        )
+        return pairs[:top_n]
+
+
 class FusedOrderRerank:
     """Local fallback: identity ranking over the fused order (score = fused)."""
 
@@ -80,6 +130,8 @@ def get_reranker() -> RerankProvider:
     settings = get_settings()
     if settings.cohere_api_key:
         return CohereRerank(settings.cohere_api_key, settings.cohere_rerank_model)
+    if settings.nvidia_api_key:
+        return NvidiaRerank(settings.nvidia_api_key, settings.nvidia_rerank_model)
     return FusedOrderRerank()
 
 

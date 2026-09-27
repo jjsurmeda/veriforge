@@ -31,11 +31,7 @@ class Settings(BaseSettings):
     # RunBus tuning (TRD §7, ADR-001).
     delta_coalesce_ms: int = 50
     heartbeat_interval_seconds: int = 15
-    # A run is only orphaned if it goes quiet for longer than one worst-case
-    # LLM call: llm_max_retries * llm_timeout_seconds, plus margin. At 60 s a
-    # slow provider was swept as dead while it was still waiting on a reply,
-    # which killed every retrieval-bearing run on the free models.
-    heartbeat_sweep_seconds: int = 480
+    heartbeat_sweep_seconds: int = 60
 
     # Ingestion (TRD §9.1). Object storage is a local directory at Stage 1;
     # slice 9 points the same ObjectStore interface at S3.
@@ -55,6 +51,10 @@ class Settings(BaseSettings):
     brave_api_key: str = ""
     cohere_api_key: str = ""
     cohere_rerank_model: str = "rerank-v3.5"
+    # NVIDIA NIM reranking; second choice after Cohere. The model is also
+    # the URL path segment on ai.api.nvidia.com.
+    nvidia_api_key: str = ""
+    nvidia_rerank_model: str = "nvidia/llama-nemotron-rerank-vl-1b-v2"
     retrieval_statement_timeout_ms: int = 1500
     query_cache_ttl_days: int = 30
     web_cache_ttl_hours: int = 24

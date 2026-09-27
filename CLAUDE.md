@@ -17,7 +17,9 @@ agentic RAG chatbot showcase. Read this before writing code, every slice.
    relevant ADR before changing anything it governs.
 6. **`docs/conventions/`** — the concrete how-to for each area, so it's
    answered the same way across slices and sessions:
-   `react.md`, `python.md`, `testing.md`, `playwright.md`, `git.md`.
+   `react.md`, `python.md`, `testing.md`, `playwright.md`, `git.md`,
+   `agents.md` (time boxes, prove-then-fix, commit early; read it before
+   any unattended run or before writing a dispatch prompt).
    Read the relevant one before adding a new component, package, test,
    e2e spec, or opening a branch.
 
