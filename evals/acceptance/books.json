@@ -1,0 +1,55 @@
+{
+  "about": "Usability acceptance set: questions a real user asks about the five Gutenberg books in the Shared library. Each item states the behaviour the user should get. expect: answer | library | not_in_sources | smalltalk. cite: at least one citation must come from a document whose name contains one of these. mention: the answer must contain at least one of these (case-insensitive). Multi-turn items send turns in order in one chat; checks apply to the last turn.",
+  "corpus": [
+    "Pride and Prejudice",
+    "The Adventures of Sherlock Holmes",
+    "Frankenstein",
+    "Alice's Adventures in Wonderland",
+    "The Time Machine"
+  ],
+  "items": [
+    {"id": "smalltalk-hi", "turns": ["hi"], "expect": "smalltalk"},
+    {"id": "smalltalk-thanks", "turns": ["thanks, that's helpful!"], "expect": "smalltalk"},
+
+    {"id": "library-list", "turns": ["what books do we have?"], "expect": "library",
+     "mention": ["Pride and Prejudice", "Sherlock", "Frankenstein", "Alice", "Time Machine"]},
+    {"id": "library-count", "turns": ["how many documents are in my sources?"], "expect": "library",
+     "mention": ["5", "five"]},
+
+    {"id": "broad-sherlock", "turns": ["tell me something about the adventures of sherlock holmes"], "expect": "answer",
+     "cite": ["Sherlock"], "mention": ["Holmes", "Watson"]},
+    {"id": "broad-frankenstein", "turns": ["summarize Frankenstein in a few sentences"], "expect": "answer",
+     "cite": ["Frankenstein"], "mention": ["Victor", "creature", "monster"]},
+
+    {"id": "quote-darcy", "turns": ["What does Mr. Darcy say in his first proposal to Elizabeth, and how does she answer?"], "expect": "answer",
+     "cite": ["Pride and Prejudice"], "mention": ["ardently", "admire", "love"]},
+    {"id": "character-collins", "turns": ["Who is Mr. Collins?"], "expect": "answer",
+     "cite": ["Pride and Prejudice"], "mention": ["clergyman", "cousin", "Longbourn", "entail"]},
+    {"id": "fact-bennet-sisters", "turns": ["How many Bennet sisters are there?"], "expect": "answer",
+     "cite": ["Pride and Prejudice"], "mention": ["five", "5"]},
+    {"id": "fact-irene-adler", "turns": ["Who is Irene Adler?"], "expect": "answer",
+     "cite": ["Sherlock"], "mention": ["the woman", "Bohemia", "photograph"]},
+    {"id": "plot-red-headed-league", "turns": ["What was the real purpose of the Red-Headed League?"], "expect": "answer",
+     "cite": ["Sherlock"], "mention": ["tunnel", "bank", "vault"]},
+    {"id": "plot-speckled-band", "turns": ["In The Speckled Band, what killed Julia Stoner?"], "expect": "answer",
+     "cite": ["Sherlock"], "mention": ["snake", "adder", "swamp"]},
+    {"id": "fact-morlocks", "turns": ["Who are the Morlocks and how do they relate to the Eloi?"], "expect": "answer",
+     "cite": ["Time Machine"], "mention": ["underground", "Eloi", "feed", "prey"]},
+    {"id": "fact-weena", "turns": ["Who is Weena?"], "expect": "answer",
+     "cite": ["Time Machine"], "mention": ["Eloi"]},
+    {"id": "scene-tea-party", "turns": ["Who is at the Mad Tea-Party in Alice?"], "expect": "answer",
+     "cite": ["Alice"], "mention": ["Hatter", "March Hare", "Dormouse"]},
+    {"id": "frame-walton", "turns": ["Who narrates the opening of Frankenstein, and to whom?"], "expect": "answer",
+     "cite": ["Frankenstein"], "mention": ["Walton", "sister", "Saville", "letters"]},
+
+    {"id": "compare-inventors", "turns": ["Compare how Victor Frankenstein and the Time Traveller deal with the consequences of their inventions."], "expect": "answer",
+     "cite": ["Frankenstein", "Time Machine"]},
+
+    {"id": "followup-adler", "turns": ["Who is Irene Adler?", "How does she outwit Holmes?"], "expect": "answer",
+     "cite": ["Sherlock"], "mention": ["disguise", "photograph", "escape", "married", "left"]},
+
+    {"id": "outside-whitman", "turns": ["What does Walt Whitman find distinct between loving by allowance and loving with personal love?"], "expect": "not_in_sources"},
+    {"id": "outside-study-in-scarlet", "turns": ["How does Sherlock Holmes figure out Watson had been in Afghanistan?"], "expect": "not_in_sources"},
+    {"id": "outside-general", "turns": ["What is the capital of Australia?"], "expect": "not_in_sources"}
+  ]
+}
