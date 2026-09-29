@@ -198,7 +198,7 @@ def test_chunk_document_maps_children_to_pdf_pages(monkeypatch: MonkeyPatch) -> 
     assert len(sections) == 1
     pages = [child.page for child in sections[0].children]
     assert 1 in pages and 2 in pages
-    assert pages == sorted(pages)
+    assert pages == sorted(p for p in pages if p is not None)
 
 
 def test_cross_section_prefix_keeps_page_of_core_text(monkeypatch: MonkeyPatch) -> None:

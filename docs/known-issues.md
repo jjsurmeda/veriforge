@@ -592,14 +592,100 @@ working:
   slots for chunks that rank fused-top in ≥3 of the ≥5 per-variant
   result sets (a consensus signal the pipeline already computes; the
   Darcy chunk qualifies in every run) — behind the KI-6 eval gate;
-  (ii) align chunk boundaries at dialogue turns at ingest so a famous
-  quote can lead a chunk (fixes the family at the source, v1.1-sized);
-  (iii) surface `_sufficient_question`'s 250-char head window to a
-  question-term-overlap window so the judge scores what the generator
-  sees. Tooling left in place for the next run: `acceptance.py --only
+  ~~(ii) align chunk boundaries at dialogue turns at ingest~~ **done in
+  round 2** (sentence-aware chunking, `6a25d8d`);
+  ~~(iii) surface `_sufficient_question`'s 250-char head window~~ **done
+  in round 2** (whole child, `9513836`). Tooling left in place for the
+  next run: `acceptance.py --only
   id[,id…]` and retrieval-event capture (chunk ids + rerank scores) in
   both acceptance and smoke results. Spend this run: $0.11 of OpenRouter
   credits.
+
+- **Note (2026-09-29, round 2 — chunking/embedding overhaul):** the two
+  ingest-side fixes landed and are verified by test and by inspection of
+  the re-indexed corpus, but the live acceptance measurement is
+  **blocked on the OpenRouter key cap** (see KI-19):
+
+  - **The proposal now leads a child.** With sentence-aware ~300-token
+    children (`6a25d8d`), "In vain have I struggled… love you." starts
+    at char 1 of `Pride and Prejudice.txt` section `CHAPTER XXXIV.`,
+    child ord 2 (781 chars), and the previous child's tail carries it as
+    overlap. Round 1's mechanism — a 1,236-char chunk with the quote
+    buried at offset 1094 — is gone.
+  - **The sufficiency judge sees the whole child** (`9513836`): no more
+    250-char head window; whole child per source, ~9,000-char total.
+  - **Embeddings are `text-embedding-3-large` at `dimensions=1536`**
+    (`4e585fd`), verified live (1536-length vectors, en/ja/es); the
+    query cache is keyed by embedding model. All 11 Shared books, all
+    re-indexable user documents and the eval seed corpus were re-chunked
+    and re-embedded: 24,390 → 43,965 chunks total (5 English books:
+    1,244 → 2,062; 6 new multilingual books: 8,642).
+  - **Ranks (BM25 leg only — vector leg unmeasurable without a query
+    embedding):** the proposal child ranks 969 of 12,853 matched under
+    the compound question, 1,825 under part 1 ("What does Mr. Darcy
+    say…?"), 2,137 under part 2 ("How does Elizabeth Bennet respond…?").
+    BM25 alone never surfaced this chunk; that was true before. The
+    fused/rerank rank — the number that decides whether window-level
+    rerank is needed — still needs one live `quote-darcy` run once the
+    key cap is lifted. **Not yet established:** whether `quote-darcy`
+    passes 3/3 with the proposal quoted and cited and the proposal child
+    in the top 8; the "window-level rerank likely unnecessary" call
+    waits on that.
+  - **Rerank was never re-measured against the new children.** The
+    round-1 finding (NVIDIA ranks the old tail-buried chunk 14th) does
+    not transfer automatically: the new proposal-led child is a
+    different, much more on-topic passage.
+
+## KI-19: CJK BM25 leg is dead for natural-language questions
+
+Found 2026-09-29, round 2 (measured, not assumed). With the default
+pg_search tokenizer, individual CJK terms are indexed and match fine
+(`孫悟空` → 112 chunks, `兵器` → 122, `羅生門` → 12, `老婆` → 22), but a
+natural Chinese or Japanese *question* is one unsegmented token run and
+matches **nothing**: `paradedb.parse('孫悟空的兵器是什麼？', lenient =>
+true)` → 0 rows; `'羅生門で老婆は何をしていましたか？'` → 0 rows. The same
+terms space-separated match (32 and 1,215 rows).
+
+**Effect:** for CJK questions the BM25 leg of hybrid search contributes
+zero candidates; retrieval is pure vector. Fusion weights the dead leg
+at `lexical_weight`, so CJK retrieval quality is capped below what the
+embedding model could deliver.
+
+**Not fixed in this dispatch** (explicitly deferred to the next one,
+with the reranker comparison): needs a CJK-capable tokenizer or a
+pre-parse segmentation step. Evidence above is reproducible with one
+`psql` query per term.
+
+## KI-20: OpenRouter key total-limit blocks all live runs
+
+The OpenRouter key (`…2dcf2`) has a hard **total** usage limit of $100,
+hit 2026-09-29 during the round-2 re-index (`usage: 100.031`,
+`credits: 105` — the account balance is irrelevant; the key cap binds).
+Every live call 403s: Jev, the LLM fallback, and embeddings
+(`litellm.APIError: Key limit exceeded (total limit)`).
+
+Consequences:
+- 34 pre-existing user documents (old test uploads: `field-manual.md`,
+  the AI-Engineering PDFs, Jekyll, Faust, …) failed re-indexing at the
+  embedding step and sit at `status='failed'`. Their old chunks remain
+  in place and searchable — but they are old-model vectors in a
+  new-model index, so their retrieval quality is silently degraded until
+  re-indexed. Requeue with
+  `UPDATE documents SET status='queued' WHERE status='failed'` plus a
+  `defer_ingest_document` per row once the key works.
+- `acceptance.py` and `make smoke` cannot run: quote-darcy failed 3×
+  with `run_error` (the 403), so the round-2 acceptance measurement is
+  pending, not failing.
+- **The cap exposed live-provider leaks in the test suite** (the
+  agents.md "a key leaked in" case): with the key dead, four tests fail
+  on real 403s — `test_run_streams_to_completion_and_saves_message`,
+  `test_first_run_sets_instant_title_then_refines`,
+  `test_title_usage_lands_before_metrics_and_settle` (all
+  `tests/chats/test_chats_runs.py`, an unfaked completion seam) and
+  `test_pin_copies_web_rows_into_owned_collection`
+  (`tests/retrieval/test_cache_and_web.py`, real `embed_batch` from the
+  pin path). They passed while the key had budget. Fix: fake the seams;
+  the failures are reproducible offline only while the key is capped.
 
 ## Reference: provider findings, 2026-09-26
 
@@ -627,9 +713,12 @@ These aren't defects, but check them before changing models or providers.
   GLM 5.3 / 5.3 Flash and DeepSeek V4.1 Flash, plus rerank and embedding
   models.
   - Its terms are for prototyping and evaluation, roughly 40 req/min.
-  - A candidate second provider and a free reranker (KI-10). Keep the
+  - A candidate second provider and a free reranker (KI-10). ~~Keep the
     embeddings on `text-embedding-3-small`, because
-    `chunks.embedding` is `vector(1536)`.
+    `chunks.embedding` is `vector(1536)`.~~ Superseded 2026-09-29:
+    embeddings moved to `text-embedding-3-large` with
+    `dimensions=1536` — same column, no schema change (round 2, owner
+    decision).
 - **The Kimi and GLM subscriptions are coding plans.** They're licensed
   for coding tools only, so they're not for Veriforge's runtime or evals.
 - **The OpenRouter key** had $4.99 of $100 left. Free models cost
