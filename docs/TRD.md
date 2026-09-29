@@ -128,10 +128,10 @@ round trip.
 
 | Node | Engine | Behaviour |
 | --- | --- | --- |
-| Ingress | Jev, one call | Questions: `guard_injection`, `guard_jailbreak`, `guard_pii`, `off_topic` (noul); `intent` (choice: chitchat, lookup, compare, summarize, multi-part, follow-up); `source` (choice, if source = Auto); `complexity` (choice, if mode = Auto); `lexical_weight` (score 0–1); `risk` (choice: low, high). `intent = chitchat` (and not `off_topic`) routes to a direct small-talk reply: no retrieval, no citations, no reviewer, no abstention. |
+| Ingress | Jev, one call | Questions: `guard_injection`, `guard_jailbreak`, `guard_pii`, `off_topic` (noul); `intent` (choice: chitchat, lookup, compare, summarize, multi-part, follow-up); `source` (choice, if source = Auto); `complexity` (choice, if mode = Auto); `lexical_weight` (score 0–1); `risk` (choice: low, high). `intent = chitchat` (and not `off_topic`) routes to a direct small-talk reply: no retrieval, no citations, no reviewer, no abstention. *(Amended 2026-09-28, batch A — greeting fast path: a raw message of ≤ 40 chars whose normalised form (NFKC, lowercase, letters/spaces only, ≤ 4 words) exactly matches the greeting allowlist skips ingress and retrieval; the generator receives the canonical phrase only.)* |
 | Rewrite + summary | Small LLM | Condenses the question with history; refreshes the rolling chat summary every 10 turns. |
 | Multi-query retrieve | Small LLM + SQL | 3 query variants (Auto only), each through hybrid search; results fused. Fast uses the rewritten query only. |
-| Sufficient? | Jev | `sufficient` noul over question + top chunks. Below threshold with retries left (max 2): rewrite and retry. |
+| Sufficient? | Jev | `sufficient` noul over question + top chunks. Answer-first *(amended 2026-09-28, batch A)*: at or above `sufficient_abstain`, generate; below it, rewrite and retry once, then abstain. |
 | Plan | Planner LLM | Streams a plan; emits 2–5 sub-questions with dependencies. |
 | Hop retrieve | SQL + small LLM | Independent sub-questions run in parallel; notes extracted per hop with chunk ids kept. |
 | Controller | Jev | `sufficient` / `need_more` + next sub-question type. Stops at 4 hops or the credit budget. |
@@ -213,7 +213,7 @@ also answers asynchronously. Disagreements are stored in
 | intent, source, complexity, risk | Choice | Ingress | Argmax; below 0.5 confidence falls back to safe default (Both, single, high) |
 | lexical_weight | Score 0–1 | Retrieval fusion | Used as weight |
 | chunk_injection | Noul | Sanitizer | Drop at ≥ 0.7 |
-| sufficient | Noul | Single-hop loop | Retry below 0.6; abstain below `sufficient_abstain` (default 0.6) after retries |
+| sufficient | Noul | Single-hop loop | Answer-first *(amended 2026-09-28, batch A)*: generate at or above `sufficient_abstain`; below it one rewrite + retry, then abstain. `sufficient_retry` is removed; default floor 0.05 |
 | controller | Choice | Deep loop | Argmax |
 | conflict | Noul | Conflict check | Disclose at ≥ 0.6 |
 | claim_verdict | Choice | Reviewer | See section 10 |
@@ -368,7 +368,12 @@ data isolation is enforced in SQL, never by the model.
    `chunk_injection` questions per Auto run for chunks that rerank would
    drop before they could reach the tool-less generator anyway.)*
 5. **Ingress checks.** Jev injection and jailbreak checks on the user
-   message.
+   message. *(Exception, added 2026-09-28 batch A: the greeting fast path
+   in §7's ingress row bypasses these checks for a fixed allowlist. It is
+   safe because the model only ever sees the canonical allowlist phrase,
+   never the raw message — invisible characters and tag smuggling are
+   normalised away before matching, and anything else, including
+   "hi, who is Darcy?", runs full ingress.)*
 6. **Reviewer.** Claims that follow instructions rather than evidence
    fail verification.
 

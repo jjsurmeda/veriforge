@@ -14,6 +14,7 @@ Usage: `uv run python scripts/smoke_chat.py` (or `make smoke`).
 """
 
 import asyncio
+import contextlib
 import json
 import os
 import sys
@@ -70,6 +71,7 @@ async def run_turn(
     client: httpx.AsyncClient, token: str, chat_id: str, message: str
 ) -> dict[str, Any]:
     headers = {"Authorization": f"Bearer {token}"}
+    started = time.monotonic()
     created = await client.post(
         f"/chats/{chat_id}/runs",
         headers=headers,
@@ -83,10 +85,12 @@ async def run_turn(
     steps: list[str] = []
     answer = ""
     status = "timeout"
+    ttft_ms: int | None = None
+    sufficient: list[float] = []
     deadline = time.monotonic() + RUN_TIMEOUT_SECONDS
 
     async def read_events() -> None:
-        nonlocal intent, answer, status
+        nonlocal intent, answer, status, ttft_ms
         async with client.stream(
             "GET", f"/runs/{run_id}/stream", headers=headers, params={"after_seq": 0}
         ) as response:
@@ -97,9 +101,14 @@ async def run_turn(
                 kind = event.get("type")
                 if kind == "decision" and event.get("name") == "intent":
                     intent = str(event.get("value"))
+                elif kind == "decision" and event.get("name") == "sufficient":
+                    with contextlib.suppress(TypeError, ValueError):
+                        sufficient.append(float(event.get("value")))
                 elif kind == "step.started":
                     steps.append(str(event.get("label")))
                 elif kind == "answer.delta":
+                    if ttft_ms is None:
+                        ttft_ms = int((time.monotonic() - started) * 1000)
                     answer += str(event.get("text", ""))
                 elif kind == "run.completed":
                     status = "completed"
@@ -131,7 +140,9 @@ async def run_turn(
     except httpx.HTTPError as error:
         status = f"messages unavailable ({type(error).__name__})"
     citations: list[str] = []
+    message_status: str | None = None
     if assistant:
+        message_status = str(assistant[-1].get("status"))
         for citation in assistant[-1].get("citations") or []:
             document = citation.get("document_name") or citation.get("document_id") or "?"
             where = citation.get("page")
@@ -148,6 +159,10 @@ async def run_turn(
         "answer": answer.strip(),
         "citations": citations,
         "steps": steps,
+        "ttft_ms": ttft_ms,
+        "sufficient": sufficient,
+        "message_status": message_status,
+        "run_id": run_id,
     }
 
 

@@ -54,7 +54,11 @@ abstention accuracy and p50 latency.
 - **All routing, classification, scoring and verification decisions go
   through `DecisionEngine`** (Jev primary via OpenRouter System One, LLM
   fallback, circuit breaker). Never call an LLM directly for something that
-  fits a `Noul`, `Choice` or `Score` question — see TRD §8.
+  fits a `Noul`, `Choice` or `Score` question — see TRD §8. One approved
+  exception (batch A, 2026-09-28): the greeting fast path in
+  `graph/auto.py` skips ingress for a fixed allowlist of raw messages of
+  ≤ 40 chars that normalise to an exact greeting match; the generator
+  receives only the canonical phrase.
 - **Every retrieval query gets its ownership filter injected server-side.**
   Client-supplied filters (collection, tags, date range, etc.) may only
   narrow results, never widen them. Write a test for this on every new

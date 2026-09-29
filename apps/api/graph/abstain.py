@@ -1,6 +1,6 @@
 """Abstain node (TR-4): shared between Auto and Deep — both modes hit the
 same fixed template and offered-actions list when evidence is insufficient
-(graph/auto.py's single-hop path via `sufficient_retry`, graph/deep.py's
+(graph/auto.py's single-hop path via `sufficient_abstain`, graph/deep.py's
 multi-hop path via the controller's E/H exit per TRD §7's flowchart)."""
 
 from collections.abc import AsyncIterator

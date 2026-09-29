@@ -475,7 +475,9 @@ async def _finish_answer(
     suggestions: list[str] = []
     guard: OutputGuardResult | None = None
     blocked = False
-    if not abstained:
+    # Small talk skips the reviewer (no claims, no citations) but is NOT an
+    # abstention — its message status is complete (batch A item 3).
+    if not abstained and not chitchat:
         final_text, review, suggestions, guard = await _compute_review(
             bus=bus,
             session_factory=session_factory,
@@ -551,7 +553,7 @@ async def _finish_answer(
     status = "abstained" if abstained else "complete"
     scoring_task = (
         None
-        if abstained
+        if abstained or chitchat
         else asyncio.create_task(
             score_run_async(run_id=run_id, question=question, answer=final_text, contexts=contexts)
         )
@@ -702,12 +704,14 @@ async def execute_run(
 
             plan = (
                 "stream"
-                if auto_run.abstain_event is not None
+                # Small talk has no claims to review, so "hold" would park the
+                # reply in a branch that only publishes deltas after review.
+                if auto_run.abstain_event is not None or auto_run.chitchat
                 else plan_delivery(
                     mode="auto",
                     risk=auto_run.ingress.risk,
                     sufficiency_p=auto_run.sufficiency_p,
-                    sufficient_threshold=threshold("sufficient_retry", "jev"),
+                    sufficient_threshold=threshold("sufficient_abstain", "jev"),
                 )
             )
             if plan == "hold":
@@ -759,7 +763,7 @@ async def execute_run(
                 small_model=small_litellm_model,
                 tokens_in=prompt_tokens,
                 generate_ms=generate_ms,
-                abstained=auto_run.abstain_event is not None or auto_run.chitchat,
+                abstained=auto_run.abstain_event is not None,
                 chitchat=auto_run.chitchat,
                 plan=plan,
                 chat_id=chat_id,

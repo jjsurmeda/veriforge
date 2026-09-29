@@ -13,6 +13,7 @@ from typing import Any
 import litellm
 from litellm.exceptions import (
     APIConnectionError,
+    BadRequestError,
     InternalServerError,
     RateLimitError,
     ServiceUnavailableError,
@@ -119,6 +120,22 @@ def _request_kwargs(
     return kwargs
 
 
+async def _acomplete(
+    model: str, messages: list[dict[str, str]], kwargs: dict[str, Any], extra: dict[str, Any]
+) -> Any:
+    """One completion. Some free endpoints (openrouter/free resolving to
+    nemotron-3.5-lightning:free) reject reasoning-disabled calls outright
+    ("Reasoning is mandatory"); retry once letting the provider default
+    (reasoning on) apply rather than failing the run."""
+    try:
+        return await litellm.acompletion(model=model, messages=messages, **kwargs, **extra)
+    except BadRequestError as exc:
+        if "reasoning is mandatory" not in str(exc).lower() or not kwargs.get("extra_body"):
+            raise
+        kwargs = {k: v for k, v in kwargs.items() if k != "extra_body"}
+        return await litellm.acompletion(model=model, messages=messages, **kwargs, **extra)
+
+
 async def _open(
     model: str,
     messages: list[dict[str, str]],
@@ -136,9 +153,7 @@ async def _open(
     kwargs = _request_kwargs(model, metadata, reasoning=reasoning)
     try:
         async with _slot(model):
-            return model, await litellm.acompletion(
-                model=model, messages=messages, **kwargs, **extra
-            )
+            return model, await _acomplete(model, messages, kwargs, extra)
     except _FAILOVER_ERRORS as exc:
         fallback = get_settings().llm_fallback_model
         if not fallback or fallback == model:
@@ -150,9 +165,7 @@ async def _open(
         inherited = kwargs.get("api_key") if same_provider else None
         fallback_kwargs = _request_kwargs(fallback, metadata, inherited, reasoning=reasoning)
         async with _slot(fallback):
-            return fallback, await litellm.acompletion(
-                model=fallback, messages=messages, **fallback_kwargs, **extra
-            )
+            return fallback, await _acomplete(fallback, messages, fallback_kwargs, extra)
 
 
 def _configure_langfuse() -> None:

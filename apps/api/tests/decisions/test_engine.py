@@ -276,7 +276,7 @@ class TestDisplayThresholds:
     def test_display_threshold_honors_runtime_override(self) -> None:
         token = set_runtime_settings(
             RuntimeSettings.from_data(
-                1, {"thresholds": {"sufficient_retry": {"fallback": 0.42}}}
+                1, {"thresholds": {"sufficient_abstain": {"fallback": 0.42}}}
             )
         )
         try:

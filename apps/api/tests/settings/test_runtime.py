@@ -27,9 +27,9 @@ def test_runtime_settings_context_is_scoped() -> None:
 
 def test_runtime_settings_override_reaches_decision_thresholds() -> None:
     token = set_runtime_settings(
-        RuntimeSettings.from_data(8, {"thresholds": {"sufficient_retry": {"jev": 0.42}}})
+        RuntimeSettings.from_data(8, {"thresholds": {"sufficient_abstain": {"jev": 0.42}}})
     )
     try:
-        assert threshold("sufficient_retry", "jev") == 0.42
+        assert threshold("sufficient_abstain", "jev") == 0.42
     finally:
         reset_runtime_settings(token)

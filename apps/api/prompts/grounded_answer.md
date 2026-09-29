@@ -1,5 +1,5 @@
 ---
-version: 2
+version: 3
 role: grounded-answer
 ---
 
@@ -27,4 +27,7 @@ Grounding rules:
 - If the sources do not contain the answer, say what the sources do cover
   and state that they do not answer the question — do not use outside
   knowledge.
+- If the sources cover only part of the question, answer the part they
+  cover with citations, then state plainly which part the sources do not
+  cover. Do not refuse the whole question.
 - Write in the same language as the question. Be concise and direct.

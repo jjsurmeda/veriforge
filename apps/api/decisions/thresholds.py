@@ -23,10 +23,13 @@ _DEFAULTS: dict[str, dict[Engine, float]] = {
     "off_topic_warn": {"jev": 0.80, "fallback": 0.80},
     "choice_min_confidence": {"jev": 0.50, "fallback": 0.50},
     "chunk_injection_drop": {"jev": 0.70, "fallback": 0.70},
-    "sufficient_retry": {"jev": 0.60, "fallback": 0.60},
-    # Deliberately equal to sufficient_retry by default (abstain whatever
-    # didn't clear the retry bar) but separately overridable, per AD-4.
-    "sufficient_abstain": {"jev": 0.60, "fallback": 0.60},
+    # Answer-first (batch A, 2026-09-28): generate at or above the floor,
+    # one rewrite + retry below it, then abstain. 0.05 measured on the
+    # books acceptance set: answer-class items scored 0.06-0.49 while
+    # not-in-sources items scored 0.01-0.04, so 0.05 separates the groups
+    # (thin margin — rerank score is the fallback second signal if it
+    # closes). sufficient_retry is removed: with one retry there is one bar.
+    "sufficient_abstain": {"jev": 0.05, "fallback": 0.05},
     "conflict_disclose": {"jev": 0.60, "fallback": 0.60},
     "output_toxicity_block": {"jev": 0.85, "fallback": 0.85},
     # Slice 6: 0.60 abstained Deep runs on corpus-answerable questions —
@@ -41,7 +44,7 @@ DISPLAY_THRESHOLDS: dict[str, str] = {
     "guard_jailbreak": "guard_jailbreak_block",
     "guard_pii": "guard_pii_warn",
     "off_topic": "off_topic_warn",
-    "sufficient": "sufficient_retry",
+    "sufficient": "sufficient_abstain",
     "conflict": "conflict_disclose",
     "controller": "controller_sufficient",
     "output_toxicity": "output_toxicity_block",

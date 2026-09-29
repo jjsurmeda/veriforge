@@ -3,6 +3,7 @@ the reviewer and abstention. Jev is a fixture, the generator is a stub — no
 live model."""
 
 from collections.abc import AsyncIterator
+from dataclasses import replace as dc_replace
 from typing import Any
 from uuid import UUID
 
@@ -14,7 +15,13 @@ from db.models import Chat, Chunk, Collection, Document, Message, Section, User
 from db.session import get_session_factory
 from decisions.engine import DecisionEngine
 from graph import auto as auto_module
-from graph.auto import AutoRunInput, _entity_queries, _sufficient_question, prepare_auto_run
+from graph.auto import (
+    AutoRunInput,
+    _entity_queries,
+    _sufficient_question,
+    greeting_canonical,
+    prepare_auto_run,
+)
 from retrieval.expand import ExpandedContext
 from retrieval.filters import ClientFilters
 from retrieval.hybrid import ScoredChunk
@@ -368,38 +375,305 @@ async def test_lookup_still_retrieves(
     assert no_llm["retrieval"] != []
 
 
-async def test_uncertain_sufficiency_abstains_after_retries_are_exhausted(
+async def test_small_talk_message_status_is_complete(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Batch A item 3: a small-talk reply completes with text, so the
+    message status must be complete — not abstained — and the reviewer
+    (engine=None here) must not run."""
+
+    from graph import runner as runner_module
+
+    seen: dict[str, Any] = {}
+
+    async def fake_finalize(
+        session_factory: object,
+        run_id: UUID,
+        message_id: UUID,
+        *,
+        status: str,
+        text: str,
+        metrics: dict[str, object] | None = None,
+        settle_usage: bool = True,
+    ) -> None:
+        seen["status"] = status
+        seen["settle_usage"] = settle_usage
+
+    async def fake_with_session(session_factory: object, work: Any) -> None:
+        await work(None)
+
+    monkeypatch.setattr(runner_module, "_finalize", fake_finalize)
+    monkeypatch.setattr(runner_module, "_with_session", fake_with_session)
+
+    async def fake_refine_title(**kwargs: Any) -> None:
+        return None
+
+    monkeypatch.setattr(runner_module, "refine_chat_title", fake_refine_title)
+
+    class _Bus:
+        async def publish(self, run_id: UUID, event: Any) -> None:
+            seen.setdefault("events", []).append(event.type)
+
+    await runner_module._finish_answer(
+        bus=_Bus(),  # type: ignore[arg-type]
+        session_factory=None,  # type: ignore[arg-type]
+        engine=None,  # type: ignore[arg-type]  # would crash if review ran
+        run_id=UUID(int=1),
+        message_id=UUID(int=2),
+        question="hi",
+        text="Hello! What can I help you with?",
+        contexts=[],
+        latency_ms={},
+        context_used=0,
+        context_window=1_000,
+        litellm_model="openrouter/some-model",
+        small_model="openrouter/some-small-model",
+        tokens_in=1,
+        generate_ms=5,
+        abstained=False,
+        chitchat=True,
+        plan="stream",
+        chat_id=UUID(int=3),
+        instant_title=None,
+    )
+
+    assert seen["status"] == "complete"
+    assert seen["settle_usage"] is True
+    assert seen["events"] == ["metrics", "run.completed"]
+
+
+# --- Greeting fast path (batch A item 4) -------------------------------------
+
+
+def test_greeting_canonical_normalisation() -> None:
+    assert greeting_canonical("Hi!") == "hi"
+    assert greeting_canonical("  THANKS! ") == "thanks"
+    assert greeting_canonical("thanks a lot!") == "thanks a lot"
+    assert greeting_canonical("hi") == "hi"
+    assert greeting_canonical("ok") == "ok"
+    # invisible Unicode tag characters survive NFKC but are not letters
+    assert greeting_canonical("hi\U000e0041\U000e0042\U000e0000") == "hi"
+    # fullwidth letters fold through NFKC
+    assert greeting_canonical("\uff48\uff49") == "hi"
+    # too long raw, too many words, or off the allowlist
+    assert greeting_canonical("hi there my friend, I have a quick question for you") is None
+    assert greeting_canonical("hi who is darcy") is None
+    assert greeting_canonical("good morining") is None
+    # non-letters split words, never merge them
+    assert greeting_canonical("g-o-o-d") is None
+    assert greeting_canonical("h2hi") is None
+
+
+class _CountingJev(_IngressJev):
+    def __init__(self, intent: str = "lookup") -> None:
+        super().__init__(intent)
+        self.calls = 0
+
+    async def decide(
+        self, *, state: dict[str, Any] | str, questions: dict[str, Question]
+    ) -> dict[str, Answer]:
+        self.calls += 1
+        return await super().decide(state=state, questions=questions)
+
+
+async def _greeting_run(
+    db: AsyncSession,
+    user_a: User,
+    monkeypatch: pytest.MonkeyPatch,
+    question: str,
+    intent: str = "lookup",
+) -> tuple[Any, _CountingJev, list[str]]:
+    chat, assistant_message_id = await _seed_chat(db, user_a)
+    params = await _params(db, chat, user_a, assistant_message_id)
+    params = dc_replace(params, question=question)
+    jev = _CountingJev(intent)
+    sent_to_generator: list[str] = []
+
+    async def fake_chitchat(
+        *,
+        litellm_model: str,
+        message: str,
+        history: list[tuple[str, str]],
+        metadata: dict[str, str],
+    ) -> AsyncIterator[str]:
+        sent_to_generator.append(message)
+        yield "Hello!"
+
+    monkeypatch.setattr(auto_module, "stream_chitchat_reply", fake_chitchat)
+    run = await prepare_auto_run(
+        get_session_factory(), params, DecisionEngine(jev=jev, mode="jev_only")
+    )
+    return run, jev, sent_to_generator
+
+
+async def test_greeting_fast_path_makes_zero_jev_calls_and_sends_canonical(
     db: AsyncSession,
     user_a: User,
     no_llm: dict[str, list[str]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    class _UncertainJev(_IngressJev):
+    run, jev, sent_to_generator = await _greeting_run(db, user_a, monkeypatch, "Hi!")
+
+    assert jev.calls == 0
+    assert run.chitchat is True
+    assert run.ingress.intent == "chitchat"
+    assert "Greeting fast path: skipped ingress" in run.latency_ms
+    assert no_llm["retrieval"] == []
+    assert run.decision_events == []
+    tokens = [token async for token in run.stream_answer()]
+    assert tokens == ["Hello!"]
+    assert sent_to_generator == ["hi"]
+
+
+async def test_greeting_with_invisible_tag_characters_sends_exactly_hi(
+    db: AsyncSession,
+    user_a: User,
+    no_llm: dict[str, list[str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run, jev, sent_to_generator = await _greeting_run(
+        db, user_a, monkeypatch, "hi\U000e0041\U000e0042\U000e0000"
+    )
+
+    assert jev.calls == 0
+    tokens = [token async for token in run.stream_answer()]
+    assert tokens == ["Hello!"]
+    assert sent_to_generator == ["hi"]
+
+
+async def test_41_char_greeting_like_message_runs_ingress(
+    db: AsyncSession,
+    user_a: User,
+    no_llm: dict[str, list[str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    long_greeting = "hello there, I hope you are having a wonderful day today"
+    assert len(long_greeting) > 40
+
+    run, jev, sent_to_generator = await _greeting_run(
+        db, user_a, monkeypatch, long_greeting, intent="lookup"
+    )
+
+    assert jev.calls > 0
+    assert run.chitchat is False
+    assert sent_to_generator == []
+
+
+async def test_greeting_plus_question_runs_ingress(
+    db: AsyncSession,
+    user_a: User,
+    no_llm: dict[str, list[str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run, jev, sent_to_generator = await _greeting_run(
+        db, user_a, monkeypatch, "hi who is darcy", intent="lookup"
+    )
+
+    assert jev.calls > 0
+    assert run.chitchat is False
+    assert sent_to_generator == []
+
+
+async def test_mid_sufficiency_generates_without_retry(
+    db: AsyncSession,
+    user_a: User,
+    no_llm: dict[str, list[str]],
+) -> None:
+    """Answer-first (batch A): 0.3 sits above the 0.05 sufficient_abstain
+    floor, so the first retrieve generates — no rewrite, no second pass."""
+
+    class _MidJev(_IngressJev):
         async def decide(
             self, *, state: dict[str, Any] | str, questions: dict[str, Question]
         ) -> dict[str, Answer]:
             answers = await super().decide(state=state, questions=questions)
             if "sufficient" in answers:
                 answers["sufficient"] = Answer(
-                    engine="jev", latency_ms=1, value=0.46, probability=0.46
+                    engine="jev", latency_ms=1, value=0.3, probability=0.3
                 )
             return answers
 
-    monkeypatch.setattr(
-        auto_module,
-        "runtime_value",
-        lambda name, default: 0 if name == "retrieval.retry_limit" else default,
-    )
     chat, assistant_message_id = await _seed_chat(db, user_a)
 
     run = await prepare_auto_run(
         get_session_factory(),
         await _params(db, chat, user_a, assistant_message_id),
-        DecisionEngine(jev=_UncertainJev("lookup"), mode="jev_only"),
+        DecisionEngine(jev=_MidJev("lookup"), mode="jev_only"),
     )
 
-    assert run.sufficiency_p == 0.46
+    assert run.sufficiency_p == 0.3
+    assert run.abstain_event is None
+    # the fake rewriter returns one variant per retrieve pass
+    assert len(no_llm["retrieval"]) == 1
+
+
+async def test_below_floor_retries_once_then_abstains(
+    db: AsyncSession,
+    user_a: User,
+    no_llm: dict[str, list[str]],
+) -> None:
+    """Below the floor: one rewrite + retry (a second batch of variant
+    searches), then abstention when the second pass is still below."""
+
+    class _EmptyJev(_IngressJev):
+        async def decide(
+            self, *, state: dict[str, Any] | str, questions: dict[str, Question]
+        ) -> dict[str, Answer]:
+            answers = await super().decide(state=state, questions=questions)
+            if "sufficient" in answers:
+                answers["sufficient"] = Answer(
+                    engine="jev", latency_ms=1, value=0.03, probability=0.03
+                )
+            return answers
+
+    chat, assistant_message_id = await _seed_chat(db, user_a)
+
+    run = await prepare_auto_run(
+        get_session_factory(),
+        await _params(db, chat, user_a, assistant_message_id),
+        DecisionEngine(jev=_EmptyJev("lookup"), mode="jev_only"),
+    )
+
+    assert run.sufficiency_p == 0.03
     assert run.abstain_event is not None
+    # initial retrieve + the single rewrite-retry, one variant each
+    assert len(no_llm["retrieval"]) == 2
+
+
+async def test_retry_count_never_exceeds_one(
+    db: AsyncSession,
+    user_a: User,
+    no_llm: dict[str, list[str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        auto_module,
+        "runtime_value",
+        lambda name, default: 5 if name == "retrieval.retry_limit" else default,
+    )
+
+    class _AlwaysBelowJev(_IngressJev):
+        async def decide(
+            self, *, state: dict[str, Any] | str, questions: dict[str, Question]
+        ) -> dict[str, Answer]:
+            answers = await super().decide(state=state, questions=questions)
+            if "sufficient" in answers:
+                answers["sufficient"] = Answer(
+                    engine="jev", latency_ms=1, value=0.02, probability=0.02
+                )
+            return answers
+
+    chat, assistant_message_id = await _seed_chat(db, user_a)
+
+    run = await prepare_auto_run(
+        get_session_factory(),
+        await _params(db, chat, user_a, assistant_message_id),
+        DecisionEngine(jev=_AlwaysBelowJev("lookup"), mode="jev_only"),
+    )
+
+    assert run.abstain_event is not None
+    # the clamp holds: one retrieve + one retry despite retry_limit=5
+    assert len(no_llm["retrieval"]) == 2
 
 
 async def test_abstention_follows_the_configured_sufficient_abstain_threshold(
@@ -408,9 +682,9 @@ async def test_abstention_follows_the_configured_sufficient_abstain_threshold(
     no_llm: dict[str, list[str]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """AD-4: 0.7 clears the 0.6 retry gate but is below a raised
-    `sufficient_abstain`, so the run abstains on the configured value and
-    not on the retry gate's."""
+    """AD-4: 0.7 clears the default 0.05 floor and generates, but is below
+    a raised `sufficient_abstain`, so the run abstains on the configured
+    value after its one retry."""
 
     class _SufficientJev(_IngressJev):
         async def decide(

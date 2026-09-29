@@ -87,6 +87,54 @@ async def test_non_transient_errors_do_not_fail_over(monkeypatch: pytest.MonkeyP
     assert calls == 1
 
 
+async def test_reasoning_mandatory_400_retries_without_the_disable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """openrouter/free -> nemotron-3.5-lightning:free rejects
+    reasoning-disabled calls with 400 "Reasoning is mandatory"; the call
+    retries once without extra_body instead of failing the run."""
+
+    def _mandatory(model: str) -> BadRequestError:
+        return BadRequestError(
+            message='{"error":{"message":"Reasoning is mandatory for this endpoint and '
+            'cannot be disabled."}}',
+            llm_provider="openrouter",
+            model=model,
+        )
+
+    seen: list[dict[str, Any]] = []
+
+    async def fake(**kwargs: Any) -> dict[str, Any]:
+        seen.append(kwargs)
+        if "extra_body" in kwargs:
+            raise _mandatory(kwargs["model"])
+        return OK
+
+    monkeypatch.setattr("providers.llm.litellm.acompletion", fake)
+    assert await complete(litellm_model=FREE, messages=[], metadata={"role": "titler"}) == "ok"
+    assert len(seen) == 2
+    assert seen[0]["extra_body"] == {"reasoning": {"enabled": False}}
+    assert "extra_body" not in seen[1]
+
+
+async def test_unrelated_bad_request_still_raises_after_the_reasoning_check(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+
+    async def fake(**kwargs: Any) -> dict[str, Any]:
+        nonlocal calls
+        calls += 1
+        raise BadRequestError(
+            message="context length exceeded", llm_provider="openrouter", model=FREE
+        )
+
+    monkeypatch.setattr("providers.llm.litellm.acompletion", fake)
+    with pytest.raises(BadRequestError):
+        await complete(litellm_model=FREE, messages=[], metadata={"role": "titler"})
+    assert calls == 1
+
+
 async def test_stream_fails_over_before_the_first_token(monkeypatch: pytest.MonkeyPatch) -> None:
     class Stream:
         async def __aiter__(self) -> AsyncIterator[dict[str, Any]]:

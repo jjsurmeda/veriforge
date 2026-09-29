@@ -13,6 +13,7 @@ import asyncio
 import logging
 import math
 import re
+import unicodedata
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from functools import partial
@@ -64,9 +65,55 @@ MULTI_PARTS = (
     "the question, each restated as a standalone search query that keeps that "
     "part's own subject. Do not answer them and do not merge them. No commentary."
 )
-MAX_SUFFICIENT_RETRIES = 2
+# Answer-first (batch A, owner-approved): one retrieve, and below the
+# sufficient_abstain floor exactly one rewrite + retry before abstaining.
+# The retry loop in prepare_auto_run clamps any admin override to this.
+MAX_SUFFICIENT_RETRIES = 1
 TOP_CHUNKS_FOR_SUFFICIENT = 5
 SUFFICIENT_EVIDENCE_CHARS = 4_000
+
+# Greeting fast path (batch A, owner-approved carve-out from "all
+# classification through DecisionEngine"): a raw message of at most 40
+# chars whose normalised form is one of these phrases skips ingress and
+# retrieval entirely. The generator only ever sees the CANONICAL phrase
+# from this set, never the raw text, so invisible-character smuggling
+# (zero-width, Unicode tag characters) cannot reach the model.
+GREETING_ALLOWLIST = frozenset(
+    {
+        "hi",
+        "hello",
+        "hey",
+        "thanks",
+        "thank you",
+        "thanks a lot",
+        "bye",
+        "goodbye",
+        "good morning",
+        "good afternoon",
+        "good evening",
+        "ok",
+        "okay",
+        "cool",
+        "great",
+    }
+)
+MAX_GREETING_CHARS = 40
+MAX_GREETING_WORDS = 4
+
+
+def greeting_canonical(raw: str) -> str | None:
+    """The canonical allowlist phrase the raw message normalises to, or
+    None. Non-letters become spaces (not deleted) before collapsing, so
+    "g-o-o-d" stays four words and can never reassemble into a greeting."""
+    if len(raw) > MAX_GREETING_CHARS:
+        return None
+    normalized = unicodedata.normalize("NFKC", raw).lower()
+    letters = "".join(c if c.isalpha() or c.isspace() else " " for c in normalized)
+    words = letters.split()
+    if len(words) > MAX_GREETING_WORDS:
+        return None
+    candidate = " ".join(words)
+    return candidate if candidate in GREETING_ALLOWLIST else None
 # 250 measured, not guessed (KI-6, batch 5). 3x fast20 at each value, 20/20
 # items scored in all six runs. p50 medians 24088 ms (500) vs 22822 ms (250) —
 # a 5.3% difference smaller than the within-variant spread, so the budget
@@ -372,6 +419,36 @@ async def prepare_auto_run(
         async def _skip_retrieval() -> None:
             return None
 
+        canonical_greeting = greeting_canonical(params.question)
+        if canonical_greeting is not None:
+            await _step("Greeting fast path: skipped ingress", _skip_retrieval)
+            return AutoRun(
+                params=params,
+                history=history,
+                contexts=[],
+                kept_chunks=[],
+                dropped_chunks=[],
+                rewritten=canonical_greeting,
+                retrieval_events=[],
+                decision_events=[],
+                conflict_event=None,
+                abstain_event=None,
+                latency_ms=latency_ms,
+                context_used=0,
+                ingress=IngressOutcome(
+                    intent="chitchat",
+                    source="upload",
+                    complexity="single",
+                    risk="low",
+                    lexical_weight=0.5,
+                    guard_injection="pass",
+                    guard_jailbreak="pass",
+                    guard_pii="pass",
+                    off_topic="pass",
+                ),
+                chitchat=True,
+            )
+
         async def ingress_and_rewrite() -> tuple[IngressOutcome, str]:
             ingress_result, rewritten_result = await asyncio.gather(ingress_work(), rewrite_work())
             return ingress_result, rewritten_result
@@ -512,7 +589,10 @@ async def prepare_auto_run(
         )
         attempt_events = retrieval_events
 
-        retry_limit = int(runtime_value("retrieval.retry_limit", MAX_SUFFICIENT_RETRIES))
+        # Never more than one retry regardless of the runtime override —
+        # answer-first (batch A) made a second retry a latency bug, not a
+        # quality control.
+        retry_limit = min(int(runtime_value("retrieval.retry_limit", MAX_SUFFICIENT_RETRIES)), 1)
         retries_left = retry_limit
         current_query = rewritten
         dropped: list[ScoredChunk] = []
@@ -582,8 +662,7 @@ async def prepare_auto_run(
             )
             p_sufficient = float(sufficient.value)
             abstain_threshold = threshold("sufficient_abstain", sufficient.engine)
-            retry_threshold = threshold("sufficient_retry", sufficient.engine)
-            if p_sufficient >= retry_threshold:
+            if p_sufficient >= abstain_threshold:
                 break
             if retries_left > 0:
                 retries_left -= 1
