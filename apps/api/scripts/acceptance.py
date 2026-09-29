@@ -91,9 +91,15 @@ def passes(item: dict[str, Any], result: dict[str, Any]) -> bool:
     return False
 
 
-async def run() -> None:
+async def run(only: list[str] | None = None) -> None:
     dataset = json.loads(SET_FILE.read_text())
     items = dataset["items"]
+    if only:
+        items = [i for i in items if i["id"] in only]
+        missing = set(only) - {i["id"] for i in items}
+        if missing:
+            raise SystemExit(f"unknown item id(s): {sorted(missing)}")
+        print(f"filtered to {len(items)} item(s): {[i['id'] for i in items]}\n")
     timeout = httpx.Timeout(
         connect=30.0, read=smoke_chat.RUN_TIMEOUT_SECONDS, write=60.0, pool=60.0
     )
@@ -137,6 +143,7 @@ async def run() -> None:
                     "answer": result.get("answer"),
                     "citations": result.get("citations"),
                     "steps": result.get("steps"),
+                    "retrievals": result.get("retrievals"),
                     "turns": item["turns"],
                 }
             )
@@ -170,4 +177,7 @@ async def run() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(run())
+    only = None
+    if len(sys.argv) > 1:
+        only = sys.argv[1].split(",")
+    asyncio.run(run(only=only))

@@ -519,6 +519,35 @@ working:
   numbers to explain are 8 → 5. Everything upstream of that boundary reads
   correct.
 
+- **Note (2026-09-29, Darcy deep-dive, 30-min checkpoint):** on current
+  `main` (`fae47a5`, fresh api restart), `quote-darcy` 3 runs via the new
+  `acceptance.py --only` filter: **2 pass / 1 fail**, sufficient
+  0.10 / 0.06 / 0.12 — all near the `sufficient_abstain` floor of 0.05, i.e.
+  fragile passes that answer without evidence of the proposal.
+  `compare-inventors` passed 3/3. No run **quotes** the proposal; the
+  failing run answered about Mr. Collins's proposal instead. So the
+  batch-A "pass" was the weak class check (completed + cites P&P +
+  mentions the book), not the quoted answer the spec expects.
+
+  The retrieval events (now captured by the runner) prove a **new,
+  downstream-of-rerank truth**: chunk `01a0daa6-ea5d…` (ord 4, the
+  proposal) is in the fused candidates of **all 5 queries at ranks 2–5**
+  in all 3 runs, but is **never among the rerank-scored winners** (the
+  9 union winners score −2.77…−3.73). The generator therefore never sees
+  the proposal text — hence "the sources do not directly provide the
+  text of Mr. Darcy's first proposal".
+
+  Two observed contributing mechanisms: (a) all 5 retrieval queries are
+  **compound** — the MULTI_PARTS call returned more compound rephrasings,
+  not per-part standalone queries, so `_rerank_candidates` reranks the
+  chunk against a compound query inside one provenance group of
+  share ⌈8/3⌉ = 3; (b) the quote sits at chars 1094–1236 of the
+  1236-char chunk — the tail of a chunk whose head is pre-proposal
+  narrative, which is what a passage-level reranker mostly reads. The
+  batch-6 "8 → 5 evidence entries" thread was not re-tested: winners
+  never contained the chunk at all. Next: direct NVIDIA reranker call on
+  the exact group inputs to confirm (a)/(b), then fix at the root.
+
 ## Reference: provider findings, 2026-09-26
 
 These aren't defects, but check them before changing models or providers.
