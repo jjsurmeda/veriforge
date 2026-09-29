@@ -6,35 +6,26 @@ fix is. When you fix one, delete it and put its ID in the commit body.
 
 Logged 2026-09-26, after the UX pass and Gutenberg demo (`ea16d2b..725bbc5`).
 
-**Order:** KI-12 unblocks KI-5, and KI-5 unblocks KI-6. KI-1, KI-2 and KI-7
-were fixed in `b600bed`, and KI-3 in the sources-panel merge. KI-8 is independent. Do it
+**Order:** KI-5 and KI-12 are done (2026-09-30), so KI-6's eval gate is
+the next unblocked piece of process debt. KI-1, KI-2 and KI-7 were fixed
+in `b600bed`, and KI-3 in the sources-panel merge. KI-8 is independent. Do it
 before the next Playwright run.
 
 **Batch A** (`6d9a2ab`, 2026-09-28) shipped answer-first + the greeting
 fast path. **Wave 1** (2026-09-29) fixed KI-16, KI-17, KI-18 and removed
-the stale KI-4. Next: KI-5/KI-12 (Darcy, strongest model), then KI-8.
+the stale KI-4. **C1** (2026-09-30) removed KI-5 and KI-12: `quote-darcy`
+passes 3/3 and `make smoke` meets its spec, both because the
+proposal-led re-chunking put the Darcy child inside the reranked top 8
+(NVIDIA ranks it 3rd on the compound query, 8th/5th on the decomposed
+parts) — **so window-level rerank is not needed.** Next: KI-19 (CJK
+BM25) with the reranker comparison, then KI-8. KI-6's gate is still
+unrun.
+**Pending (2026-09-30):** KI-21 (Langfuse host/coverage) and KI-22 (trace
+tab + metrics redesign) — independent; KI-21's stage spans build on
+KI-22 batch 1. New this round: KI-23 (misleading key/quota failure copy),
+KI-24 (eval corpus in the Shared library), KI-25 (abstain still cites).
 
 ---
-
-## KI-5: The smoke conversation has never passed end to end
-
-- **What:** `apps/api/scripts/smoke_chat.py` (`make smoke`). Turn 1 (small
-  talk) passes. Turns 2–5 are blocked by KI-2.
-- **Done when:** all five turns behave as specified:
-  1. small talk, no citations
-  2. a cited *Pride and Prejudice* answer
-  3. a correct abstain or a Sherlock citation
-  4. citations from both Frankenstein and The Time Machine
-  5. small talk
-
-  The final chat title is a topic, not the question. Paste the output
-  into the commit body.
-- **Depends on:** KI-1 and KI-2. KI-3 and KI-4 are done.
-- **Status (2026-09-27, batch 4):** turns 1, 3, 4 and 5 pass; turn 2
-  (Darcy) still abstains. Turn 4 is new — the balanced per-entity rerank
-  share fixed it. Turn 2's cause is traced under KI-12: NVIDIA's reranker
-  drops the one chunk holding the proposal out of the top-8. Blocked on
-  that, not on anything in this item.
 
 ## KI-6: Graph change merged without the eval gate (process debt)
 
@@ -51,6 +42,10 @@ the stale KI-4. Next: KI-5/KI-12 (Darcy, strongest model), then KI-8.
   for faithfulness, abstention accuracy and p50 latency. If faithfulness
   or abstention regress beyond the gate, revert or fix before any further
   graph work.
+- **Unblocked (2026-09-30):** KI-5 and KI-12 are both closed, so the
+  remaining work here is only the unrecorded baseline plus whatever the
+  p50 row below says. `make acceptance` is not the gate, but it now runs
+  end to end (23/31) if a cheaper sanity pass is wanted first.
 - **Note (2026-09-27, batch 4):** the gate **ran** — `python -m evals.gate`
   exited 0, "eval gate passed" — but **no new baseline was written**, for
   two reasons. Both are in the numbers.
@@ -307,335 +302,6 @@ the stale KI-4. Next: KI-5/KI-12 (Darcy, strongest model), then KI-8.
   one raw SSE fixture per UI scenario, then assert an unchanged
   `usage_ledger` around the default suite.
 
-## KI-12: Grounded answers are wrong even when the right book is retrieved
-
-Seen in `make smoke` on `fix/model-runtime`, with the LLM path now
-working:
-- **Darcy's proposal:** it abstains ("not enough evidence") while listing
-  *Pride and Prejudice* chunks. The proposal text exists in the corpus. A
-  direct call with those chunks answers correctly in 2 s, so it's either
-  retrieval (lexical_weight came back 0.01, so near-pure vector search,
-  with no rerank because of KI-10) or the `sufficient` decision threshold
-  (0.6).
-- **Sherlock/Afghanistan:** the scene isn't in the corpus (*A Study in
-  Scarlet*), so the answer should abstain. Instead `sufficient` scored
-  exactly 0.6 = threshold, generation ran on unrelated chunks, and the
-  answer was the literal text `[1], [7], [2]`. The reviewer then marked
-  it **supported** (claim "The answer references sources [1], [7], and
-  [2]"). The reviewer should treat an answer with no factual content as a
-  failure.
-- **Frankenstein vs Time Machine:** it abstains while retrieving both
-  books.
-- **Also:** Jev's ingress chose `source: web` for a book question (the
-  toggles on `feat/sources-panel` remove that choice from Auto). The
-  abstain message still tells users to "click the source picker", which
-  is outdated once the toggles land.
-- **Fix:** trace one run per case end to end (retrieved chunk ids, then
-  rerank, then sufficiency inputs), fix the root cause, then re-run
-  `make smoke`. A threshold change needs the eval gate.
-- **Note (2026-09-27):** time-box stopped after verified partial fixes.
-  The API container was stale despite the current `.env`: it had
-  `COHERE_API_KEY` and no `NVIDIA_API_KEY`, so the first trace used
-  fused-order scores. Recreating `api` corrected its environment; the
-  final retrieval event had NVIDIA logits (`-2.104` to `-2.424`), not
-  `1/(1+i)` fallback scores. The trace also found two deterministic
-  pipeline defects now fixed: dedupe treated `ord` as document-scoped
-  even though it is `(document_id, section_id, ord)`, dropping reranked
-  chunks from different sections; and a final `sufficient` score in the
-  0.35–0.60 retry gray zone generated instead of abstaining. Sherlock
-  scored 0.42/0.46/0.46 and hallucinated before the latter fix; it now
-  abstains. The reviewer now marks citation-only answers unsupported
-  without provider calls; abstain copy names the Web/Deep search toggles;
-  and null pages use the section heading (or `section`), never `p.?`.
-
-  Final `make smoke` output (all five runs `completed`, final title
-  `Mr Darcy's Proposal and Elizabeth's Answer`):
-  ```text
-  [small talk] completed; no citations
-  [grounded] completed; abstained with 8 Pride and Prejudice citations
-  [abstain] completed; abstained (no Afghanistan hallucination) with 8 web citations
-  [cross-document] completed; abstained with The Time Machine citations only
-  [small talk] completed; no citations
-  ```
-  Darcy and cross-document still abstain. The final NVIDIA traces show
-  Darcy gets eight Pride-and-Prejudice chunks but only 0.09/0.10/0.09
-  sufficient scores; cross-document gets only Time Machine chunks and
-  0.05/0.06/0.05. This is now a retrieval/model-quality decision, not a
-  deterministic pipeline loss. No threshold or prompt change was made;
-  any such tuning must go through the batch-3 eval gate.
-
-- **Note (2026-09-27, batch 3):** the prior note was wrong: `894d7dd`
-  changed the post-retry abstention cutoff from 0.35 to 0.60. TRD §8 and
-  the runtime/admin configuration now agree: retry below 0.60, then abstain
-  below 0.60 after retries. `sufficient_abstain` was removed. A live Darcy
-  trace proved the earlier sufficiency prompt truncated the expanded parent
-  section before the matched passage; it did **not** contain “ardently
-  admire and love you”. Sufficiency now leads with each reranked child
-  passage, then includes parent context within a 2,000-character total.
-  The new Darcy scores were 0.05 then **0.66**, so it completed rather than
-  abstaining. Compare retrieval now sends one existing multi-query search
-  per named entity before the same fusion/rerank path; its regression test
-  returns chunks from both seeded documents. **Xfail:** the final live smoke
-  still abstains with only *The Time Machine*. Its recorded retrieval events
-  prove every query returns both books, so the remaining loss is global
-  rerank selection after fusion. Preserve a representative per entity through
-  rerank before closing KI-12.
-
-- **Note (2026-09-27, batch 4):** the cross-document half is **fixed** and
-  verified live — a compare run now keeps a balanced top-k share per named
-  entity, and smoke turn 4 cites Frankenstein *and* The Time Machine
-  (previously The Time Machine only). The Darcy half is **not** fixed, and
-  the batch-3 diagnosis above was wrong about the cause. A live trace of
-  the retry's last retrieval event:
-
-  ```text
-  chunk 01a0daa6-ea5d…  section 44, ord 4   rerank_score NULL
-    "In vain have I struggled. It will not do. My feelings will not be
-     repressed. You must allow me to tell you how ardently I admire and
-     love you."                    <- the actual first proposal
-  6 other Pride and Prejudice chunks   rerank_score -1.68 … -2.38
-  ```
-
-  So the chunk was in the fused candidate set (`retrieval` events, 9 of
-  them, `dropped=false`) and NVIDIA's reranker simply did not select it
-  into the top-8. It never reached the sufficiency input, which is why
-  the per-source evidence budget cannot fix this: the batch-3 note blamed
-  the 2,000-character truncation for a missing "ardently admire and love
-  you", but that string is absent because the whole chunk is. Sufficiency
-  came back 0.04/0.06/0.04.
-
-  The rerank logits are uniformly negative, i.e. NVIDIA matches *no* chunk
-  well against "What does Mr. Darcy say in his first proposal to
-  Elizabeth, **and how does she answer**?" — a compound question that no
-  single chunk answers. The losers were the Netherfield-ball proposal and
-  the *second* refusal. This is reranker relevance on a compound
-  multi-part question, not a pipeline loss, and it is not the
-  cross-document case the balanced share addresses (that needs ≥2
-  entity groups; Darcy names one book).
-
-  **Next step:** either split compound questions into per-part sub-queries
-  before fusion, or raise `retrieval.top_k` above 8 for multi-part
-  questions. Both are tuning decisions that change what the gate measures,
-  so they need the eval gate (KI-6) before landing.
-
-- **Note (2026-09-27, batch 4, KI-5):** `make smoke` after the batch-4
-  fixes — all five runs `completed`, final title
-  `'Darcy Proposal Elizabeth Rejection'`:
-
-  ```text
-  [small talk]       completed; no citations
-  [grounded]         completed; ABSTAINED, 7 Pride and Prejudice citations
-  [abstain]          completed; abstained correctly, Sherlock Holmes chunks
-  [cross-document]   completed; cited BOTH Frankenstein and The Time Machine
-  [small talk]       completed; no citations
-  ```
-
-  Turn 4 passes for the first time. Turn 2 still fails, for the reason
-  traced above, so **KI-5 stays open** and neither KI-5 nor KI-12 is
-  deleted.
-- **Note (2026-09-27, batch 5):** the multi-part case is fixed mechanically
-  and the Darcy turn is still open. `rewrite_query` returns the question
-  unchanged on a first turn, so it cannot supply the parts for free; one extra
-  small-role call now lists them, and each part becomes its own retrieval and
-  its own equal share of the top-k through the `provenance` groups
-  `_rerank_candidates` already builds for compare. The smoke trace confirms
-  the decomposition is right — the turn's `retrieval` events are
-
-  ```text
-  What does Mr. Darcy say in his first proposal to Elizabeth Bennet?
-  How does Elizabeth Bennet respond to Mr. Darcy's first proposal?
-  ```
-
-  as separate queries, alongside the multi-query variants.
-
-  **The turn still abstains, and now we know why: the evidence is not
-  reaching the sufficiency Noul.** The `sufficient` score is 0.10 / 0.09 /
-  0.07 over three retries — not a threshold edge. It is *not* the evidence
-  budget: an A/B on the same question with
-  `SUFFICIENT_EVIDENCE_CHARS_PER_SOURCE` at 500 instead of 250 scored 0.10 /
-  0.08 / 0.08, i.e. identical, so `bd34057` neither caused nor can fix it.
-  The next thing to read is the `sufficient` prompt's own evidence block for
-  this question — `top_for_check` is capped at `TOP_CHUNKS_FOR_SUFFICIENT`
-  (5) and the Darcy proposal may simply not be in those 5 chunks, in which
-  case the judge is being asked about the wrong passages and every budget is
-  irrelevant.
-
-  Batch-5 `make smoke` (at the committed 250, all five runs `completed`, final
-  title `'Mr Darcys Proposal to Elizabeth'`):
-
-  ```text
-  [small talk]       completed; no citations
-  [grounded]         completed; intent multi-part; ABSTAINED, 3+ P&P citations
-  [abstain]          completed; abstained correctly (Sherlock/Afghanistan)
-  [cross-document]   completed; intent compare; ABSTAINED, cites BOTH
-                     Frankenstein (x4) and The Time Machine (x4)
-  [small talk]       completed; no citations
-  ```
-
-  Turn 4's spec is "citations from both", which it meets. Turn 2's spec is "a
-  cited *Pride and Prejudice* answer", which it does not, so **KI-5 stays
-  open.** Note that turn 4 also abstains now where batch 4 reported it
-  answering; the same `sufficient` collapse is the likely cause and should be
-  checked in the same pass.
-- **Note (2026-09-28, batch 6):** `make smoke` at `9840f95` — all five runs
-  `completed`, final title `Searching For Darcy's Proposal`:
-
-  ```text
-  [small talk]       completed; answered, no citations
-  [grounded]         completed; intent multi-part; ABSTAINED
-  [abstain]          completed; intent lookup; abstained (Sherlock/Afghanistan)
-  [cross-document]   completed; intent compare; ABSTAINED, cites Frankenstein
-                     (x4) and The Time Machine (x4)
-  [small talk]       completed; answered, no citations
-  ```
-
-  Unchanged from batch 5: turn 2 still abstains, so **KI-5 stays open** and
-  neither KI-5 nor KI-12 is deleted. Turn 4's spec is "citations from both"
-  and it cites both, but it abstains where batch 4 reported it answering.
-
-  **The `top_for_check` cap in the batch-5 note is not the cause.** The slice
-  is `expanded_contexts[: runtime_value("retrieval.top_k", ...)]` and
-  `retrieval.top_k` is 8 in `runtime.DEFAULT_DATA` and in live settings
-  version 135, so the `TOP_CHUNKS_FOR_SUFFICIENT = 5` fallback is
-  unreachable — `376efba` switches that fallback to `RERANK_TOP_N` to match,
-  which is behaviour-neutral. `expand_context` is 1:1 and order-preserving,
-  `sanitize_chunks` returns every input, and `winners` is capped at the same
-  `retrieval.top_k`, so by reading the judge cannot be looking at fewer
-  chunks than the reranker selected.
-
-  **But 5 of 8 is still what the judge sees, and that is unexplained.**
-  Instrumented with one chunk per section (so `dedupe_adjacent` does not
-  collapse them) and `top_k` confirmed 8 at the call site: 8 chunks kept, 5
-  entries in the sufficiency evidence block, one `sufficient` call, no
-  retry, and the evidence budget nowhere near exhausted (4,000 total / 250
-  per source against ~80-char entries). Not the slice constant, not the
-  budget, not `expand_context`. The `376efba` test that asserted 8 was
-  removed rather than weakened (`cf0956f`).
-
-  **Next step for whoever picks this up:** instrument the boundary between
-  `expand_context` and `_sufficient_question` directly — assert
-  `len(expanded_contexts)` at `graph/auto.py:557` and
-  `len(top_contexts)` inside `_sufficient_question` in the same run. The
-  numbers to explain are 8 → 5. Everything upstream of that boundary reads
-  correct.
-
-- **Note (2026-09-29, Darcy deep-dive, 30-min checkpoint):** on current
-  `main` (`fae47a5`, fresh api restart), `quote-darcy` 3 runs via the new
-  `acceptance.py --only` filter: **2 pass / 1 fail**, sufficient
-  0.10 / 0.06 / 0.12 — all near the `sufficient_abstain` floor of 0.05, i.e.
-  fragile passes that answer without evidence of the proposal.
-  `compare-inventors` passed 3/3. No run **quotes** the proposal; the
-  failing run answered about Mr. Collins's proposal instead. So the
-  batch-A "pass" was the weak class check (completed + cites P&P +
-  mentions the book), not the quoted answer the spec expects.
-
-  The retrieval events (now captured by the runner) prove a **new,
-  downstream-of-rerank truth**: chunk `01a0daa6-ea5d…` (ord 4, the
-  proposal) is in the fused candidates of **all 5 queries at ranks 2–5**
-  in all 3 runs, but is **never among the rerank-scored winners** (the
-  9 union winners score −2.77…−3.73). The generator therefore never sees
-  the proposal text — hence "the sources do not directly provide the
-  text of Mr. Darcy's first proposal".
-
-  Two observed contributing mechanisms: (a) all 5 retrieval queries are
-  **compound** — the MULTI_PARTS call returned more compound rephrasings,
-  not per-part standalone queries, so `_rerank_candidates` reranks the
-  chunk against a compound query inside one provenance group of
-  share ⌈8/3⌉ = 3; (b) the quote sits at chars 1094–1236 of the
-  1236-char chunk — the tail of a chunk whose head is pre-proposal
-  narrative, which is what a passage-level reranker mostly reads. The
-  batch-6 "8 → 5 evidence entries" thread was not re-tested: winners
-  never contained the chunk at all. Next: direct NVIDIA reranker call on
-  the exact group inputs to confirm (a)/(b), then fix at the root.
-
-- **Note (2026-09-29, Darcy deep-dive, final):** 60-minute box expired
-  with the mechanism **proved** and no code fix landed (a ranking change
-  needs the KI-6 gate, which doesn't fit the box). KI-5 and KI-12 stay
-  open. What was proved this run, all by direct observation:
-
-  1. **The reranker is the loss stage, and query shape cannot fix it.**
-     Direct NVIDIA calls on the exact as-run group inputs (40 passages):
-     the proposal chunk ranks **14th** (logit −3.9) under the compound
-     query as run; **15th** (−3.72) under a correctly decomposed
-     standalone part query ("What does Mr. Darcy say in his first
-     proposal to Elizabeth?"); and **1st** (+2.91) only when the query
-     is the proposal text itself. So the batch-4/batch-5 "per-part
-     rerank" plan is disproven — decomposition alone cannot surface it.
-  2. **Why: the quote is tail-buried.** The chunk is 1,236 chars and
-     "In vain have I struggled…" occupies only the last ~140
-     (offset 1094). The chunk's head is pre-proposal narrative, so a
-     passage-level reranker reading it against any "what does he say"
-     query sees mostly off-topic text. The same head-bias exists in
-     `_sufficient_question` (`graph/auto.py`): the judge reads
-     `chunk.text[:250]` per source, so even a winning chunk's
-     tail-buried quote is invisible to the sufficiency score — the
-     0.06–0.12 floor-level scores are explained by this, not by the
-     evidence being absent from the winners' *parents*.
-  3. **A 1:1 RRF blend of rerank rank and fused rank does not fix it.**
-     Replayed offline against the real cross-variant fusion, provenance
-     groups and fresh NVIDIA logits: the chunk stays outside the
-  winners (its within-group rerank rank ~14 is too weak for the fused
-     component to rescue). Ruled out without touching code.
-  4. **Wave 1 broke the MULTI_PARTS decomposition** (separately): the
-     recorded queries show all 5 retrieval queries compound; the
-     batch-5 trace had genuine per-part queries. The small role moved
-     to `gpt-4o-mini` in wave 1 and merges the parts despite the "do
-     not merge them" instruction. Real defect, but per (1) fixing it
-     does not fix Darcy.
-
-  **Ruled out this run:** per-part rerank merge (by direct call, (1));
-  RRF rank blending at 1:1 (by offline replay, (3)); retrieval top_k ≤
-  12 (rank is 14+); the fused pipeline (chunk at ranks 2–5 in all
-  result sets, all runs).
-
-  **Next decisive check, in order of promise:** (i) guarantee winner
-  slots for chunks that rank fused-top in ≥3 of the ≥5 per-variant
-  result sets (a consensus signal the pipeline already computes; the
-  Darcy chunk qualifies in every run) — behind the KI-6 eval gate;
-  ~~(ii) align chunk boundaries at dialogue turns at ingest~~ **done in
-  round 2** (sentence-aware chunking, `6a25d8d`);
-  ~~(iii) surface `_sufficient_question`'s 250-char head window~~ **done
-  in round 2** (whole child, `9513836`). Tooling left in place for the
-  next run: `acceptance.py --only
-  id[,id…]` and retrieval-event capture (chunk ids + rerank scores) in
-  both acceptance and smoke results. Spend this run: $0.11 of OpenRouter
-  credits.
-
-- **Note (2026-09-29, round 2 — chunking/embedding overhaul):** the two
-  ingest-side fixes landed and are verified by test and by inspection of
-  the re-indexed corpus, but the live acceptance measurement is
-  **blocked on the OpenRouter key cap** (see KI-19):
-
-  - **The proposal now leads a child.** With sentence-aware ~300-token
-    children (`6a25d8d`), "In vain have I struggled… love you." starts
-    at char 1 of `Pride and Prejudice.txt` section `CHAPTER XXXIV.`,
-    child ord 2 (781 chars), and the previous child's tail carries it as
-    overlap. Round 1's mechanism — a 1,236-char chunk with the quote
-    buried at offset 1094 — is gone.
-  - **The sufficiency judge sees the whole child** (`9513836`): no more
-    250-char head window; whole child per source, ~9,000-char total.
-  - **Embeddings are `text-embedding-3-large` at `dimensions=1536`**
-    (`4e585fd`), verified live (1536-length vectors, en/ja/es); the
-    query cache is keyed by embedding model. All 11 Shared books, all
-    re-indexable user documents and the eval seed corpus were re-chunked
-    and re-embedded: 24,390 → 43,965 chunks total (5 English books:
-    1,244 → 2,062; 6 new multilingual books: 8,642).
-  - **Ranks (BM25 leg only — vector leg unmeasurable without a query
-    embedding):** the proposal child ranks 969 of 12,853 matched under
-    the compound question, 1,825 under part 1 ("What does Mr. Darcy
-    say…?"), 2,137 under part 2 ("How does Elizabeth Bennet respond…?").
-    BM25 alone never surfaced this chunk; that was true before. The
-    fused/rerank rank — the number that decides whether window-level
-    rerank is needed — still needs one live `quote-darcy` run once the
-    key cap is lifted. **Not yet established:** whether `quote-darcy`
-    passes 3/3 with the proposal quoted and cited and the proposal child
-    in the top 8; the "window-level rerank likely unnecessary" call
-    waits on that.
-  - **Rerank was never re-measured against the new children.** The
-    round-1 finding (NVIDIA ranks the old tail-buried chunk 14th) does
-    not transfer automatically: the new proposal-led child is a
-    different, much more on-topic passage.
-
 ## KI-19: CJK BM25 leg is dead for natural-language questions
 
 Found 2026-09-29, round 2 (measured, not assumed). With the default
@@ -656,36 +322,190 @@ with the reranker comparison): needs a CJK-capable tokenizer or a
 pre-parse segmentation step. Evidence above is reproducible with one
 `psql` query per term.
 
-## KI-20: OpenRouter key total-limit blocks all live runs
+## KI-20: OpenRouter account credit is nearly spent (key cap lifted)
 
-The OpenRouter key (`…2dcf2`) has a hard **total** usage limit of $100,
-hit 2026-09-29 during the round-2 re-index (`usage: 100.031`,
-`credits: 105` — the account balance is irrelevant; the key cap binds).
-Every live call 403s: Jev, the LLM fallback, and embeddings
-(`litellm.APIError: Key limit exceeded (total limit)`).
+**Status: live calls work again; the account balance is now the binding
+constraint.** Raised 2026-09-30.
 
-Consequences:
-- 34 pre-existing user documents (old test uploads: `field-manual.md`,
-  the AI-Engineering PDFs, Jekyll, Faust, …) failed re-indexing at the
-  embedding step and sit at `status='failed'`. Their old chunks remain
-  in place and searchable — but they are old-model vectors in a
-  new-model index, so their retrieval quality is silently degraded until
-  re-indexed. Requeue with
-  `UPDATE documents SET status='queued' WHERE status='failed'` plus a
-  `defer_ingest_document` per row once the key works.
-- `acceptance.py` and `make smoke` cannot run: quote-darcy failed 3×
-  with `run_error` (the 403), so the round-2 acceptance measurement is
-  pending, not failing.
-- **The cap exposed live-provider leaks in the test suite** (the
-  agents.md "a key leaked in" case): with the key dead, four tests fail
-  on real 403s — `test_run_streams_to_completion_and_saves_message`,
-  `test_first_run_sets_instant_title_then_refines`,
-  `test_title_usage_lands_before_metrics_and_settle` (all
-  `tests/chats/test_chats_runs.py`, an unfaked completion seam) and
-  `test_pin_copies_web_rows_into_owned_collection`
-  (`tests/retrieval/test_cache_and_web.py`, real `embed_batch` from the
-  pin path). They passed while the key had budget. Fix: fake the seams;
-  the failures are reproducible offline only while the key is capped.
+- The key cap was raised to **$120/monthly** (`GET /api/v1/key` →
+  `limit: 120`, `limit_remaining: 102.66`, `usage_monthly: 17.34`), so
+  the 403s (`Key limit exceeded (total limit)`) are gone and Jev, the
+  fallback LLM and embeddings all answer 200 again.
+- **What binds now is the account balance:** `GET /api/v1/credits` →
+  `total_credits: 105`, `total_usage: 100.03` on 2026-09-29, i.e. **~$4.97
+  left**, and ~$4.42 after this round's measurement. Check it before each
+  live run; stop below $3.
+- The 34 `status='failed'` documents from the 403 window are **gone** —
+  they were all in the duplicate-test-upload categories, deleted by
+  `scripts/cleanup_test_data.py` (documents 192 → 21). Nothing to
+  re-queue.
+- The four live-provider leaks the cap exposed are **fixed** (`060845e`):
+  the post-delivery review/suggestions/output guard in
+  `tests/chats/test_chats_runs.py` are faked at the `graph.runner`
+  boundary, the pin test now takes the existing `embed_calls` fixture, and
+  `tests/conftest.py` blanks `OPENROUTER_API_KEY` alongside the Cohere,
+  NVIDIA, Tavily and Brave keys. Full pytest (311) passes with every
+  provider key blank, so a future unfaked seam fails offline instead of
+  spending money.
+- **Unrelated but found while measuring:** a 31-item `make acceptance` run
+  costs ~310k quota credits and the free plan's 5h window is 200k, so a
+  full run 429s (`quota_exceeded`) at ~item 19. The local plan limit was
+  raised for the measurement run and restored after; the harness should
+  either use a per-user override or split the set. Logged as part of
+  KI-23's fix.
+
+## KI-21: Langfuse likely receives nothing; Jev and stages untraced
+
+**Status: pending** (logged 2026-09-30, not yet verified against the
+Langfuse dashboard; if the JP project is empty, this is the cause).
+
+- **Host never reaches the SDK.** `.env` sets
+  `LANGFUSE_BASE_URL="https://jp.cloud.langfuse.com"`, but `config.py`
+  reads only the two keys, `compose.yaml` forwards only the two keys
+  (api/worker services, lines ~45/78/106), and the pinned SDK
+  (`langfuse<3`) reads `LANGFUSE_HOST`, not `LANGFUSE_BASE_URL`. The SDK
+  falls back to the EU default, where the JP keys don't authenticate.
+  Push failures are log-only (`graph/async_scoring.py:74`), so it fails
+  silently. Fix: `langfuse_host` in `config.py`, export as
+  `LANGFUSE_HOST` in `_configure_langfuse` (`providers/llm.py:174`) and
+  in `async_scoring.py`, forward it in `compose.yaml`, add to
+  `.env.example`.
+- **Jev calls aren't traced.** `decisions/jev.py` uses raw `httpx`, not
+  LiteLLM, so only fallback decisions appear. Fix: `DecisionEngine`
+  records each call as a Langfuse span/generation under the run trace.
+- **No stage spans.** TRD §15 promises node-level spans; today only
+  LLM generations (LiteLLM callback, grouped by `trace_id=run_id`) and
+  post-hoc scores land. Fix: `make_step_timer` (`graph/timing.py`)
+  opens a span per stage — every mode's stages already pass through it
+  (after KI-22 adds the missing ones).
+- UI keeps reading Postgres only (TRD §3: "UI never reads Langfuse").
+
+## KI-22: Trace tab shows mostly Jev calls; Metrics missing quality detail
+
+**Status: pending** (design agreed 2026-09-30, not dispatched).
+
+**Problem.** The Trace tab renders `step.*` events as a small flat list
+and Jev decisions as a separate, much longer timeline
+(`apps/web/src/features/trace/components/TracePanel.tsx:166-176`), so it
+reads as "just Jev calls". Step coverage also has holes:
+- Fast mode emits no `step.*` events — it writes `rewrite`/`retrieve`/
+  `generate` straight into `latency_ms` (`graph/fast.py:195`, `:225`).
+- `generate` and `review` appear in Metrics' latency but never as steps,
+  in any mode.
+
+**Batch 1 — backend step coverage.** Route Fast's rewrite/retrieve/
+generate and every mode's generate/review through `_step`
+(`make_step_timer`). Ensure every `Decision` carries `stage`. Test: every
+mode emits started/completed per stage and `latency_ms` keys match step
+labels. Graph change → eval gate before merge.
+
+**Batch 2 — stage timeline (Trace tab).** New `StageTimeline` replaces
+`StepRow` + standalone `DecisionTimeline` in the Trace tab: one row per
+stage (status dot, duration, bar scaled to run total, live while
+streaming); Jev decisions nest under their stage by `stage`, collapsed
+(unmatched → "other"); retries shown as `retrieve ×2`, summed like
+`latency_ms`. Verify replayed past runs (`ChatView.tsx:82`) show steps.
+No new SSE event types.
+
+**Batch 3 — Metrics additions.** Keep "Latency by stage" (not
+redundant: trace = order/why, metrics = where time went; zero cost),
+sorted by duration desc. Add:
+- **Citation precision** — computed in `ReviewScores`
+  (`graph/review.py:55`) but dropped at `graph/runner.py:536`; add field
+  to `Metrics` (`schemas/events.py:64`), regenerate TS.
+- **Review breakdown** — supported/partial/unsupported claim counts from
+  `run.claims` (frontend only).
+- **Retrieval/rerank funnel** — retrieved → reranked → kept (sanitizer
+  dropped) → cited; rerank top/median; frontend only from chunk scores.
+- **Context use** (cited ÷ kept) as a labelled *proxy* — true context
+  precision needs ground truth or a judge call, eval-only.
+- Fast mode: show "not run in Fast" for rerank/review, not blanks.
+  Greeting/abstain: "no factual claims", not faithfulness 1.0
+  (`review.py:92`).
+
+No extra model calls; only citation precision touches the schema.
+
+## KI-23: A key or quota failure tells the user to "try again"
+
+Logged 2026-09-30, measured twice this round (the KI-20 key cap, and the
+5h-quota 429 that killed the acceptance run at item 19).
+
+- **What:** every terminal failure the run can't fix lands on the same
+  string, "The run could not finish. Try again."
+  (`apps/web/src/features/chat/pages/ChatView.tsx:20`,
+  `runFailureMessage`), which only special-cases the two web-search codes.
+  A provider key limit (403), an account-balance exhaustion and the
+  app's own `quota_exceeded` 429 all say the same thing — and for all
+  three, retrying cannot help.
+- **Why it matters:** it sends the user into a retry loop that spends
+  nothing and succeeds never, and it hides a self-inflicted outage
+  (an exhausted key is an operator problem, not a user problem).
+- **Fix:** carry a real error code end to end and give each one its own
+  copy — at minimum `provider_quota_exhausted` ("Our model provider is
+  out of credit. Nothing will run until it's topped up; your chats and
+  documents are fine.") and `provider_auth_failed`. The API side is
+  `graph/runner.py:961`, where a provider exception collapses to
+  `error_code="run_error"`; catch the provider exceptions there and
+  publish the specific code.
+- **Also in scope:** the admin page should show the key's **remaining
+  limit**, not just configured plans. Today the only way to learn the
+  OpenRouter key was capped is to see every run fail (`GET
+  /api/v1/key` → `limit_remaining`). Show that number in admin and treat
+  it as the leading indicator for this whole class of failure.
+- **Harness note:** `make acceptance` (31 items, ~310k quota credits)
+  exceeds the free plan's 200k/5h window, so the measurement run needs a
+  per-user quota override (`credits_5h` override on the acceptance user)
+  or the set must be split. Done by hand on 2026-09-30: plan limit
+  raised for the run, then restored.
+
+## KI-24: The eval corpus sits in the Shared library, so every user searches it
+
+Logged 2026-09-30, from the item-2 cleanup (the accounts that must never
+be deleted are exactly the ones holding this corpus).
+
+- **What:** the 7 eval-corpus documents owned by `evals@veriforge.local`
+  — `faq.md`, `field_service_note.md`, `manual.md`, `returns.md`,
+  `spec_sheet.md`, `warranty_2025.md`, `warranty_legacy.md` — live in a
+  `visibility='shared'` collection, so `build_scope`'s
+  `col.visibility = 'shared'` clause puts them in every user's
+  retrieval scope for every question, in every mode. The acceptance
+  items `library-list`/`library-count` answer from them, and
+  `outside-whitman`/`outside-general` abstain *because* they're in scope.
+- **Why it matters:** fine locally, wrong for production. Two problems:
+  the benchmark fixture is user-visible product content (a user could be
+  cited a warranty spec that isn't theirs), and the eval numbers are
+  measuring retrieval over a corpus the real corpus doesn't contain, so
+  `not_in_sources` items only pass because the out-of-scope answer is
+  sitting right there.
+- **Fix:** before any AWS slice, decide the eval corpus's home. Cheapest
+  honest option: keep it owned by `evals@veriforge.local` but make its
+  collection `visibility='private'`, and have the eval runner create its
+  own signed-in user that includes it explicitly (the eval set already
+  signs up a throwaway user per run). Then re-baseline — the
+  `not_in_sources` items will legitimately change.
+
+## KI-25: Abstaining runs still attach citations, so the whole `not_in_sources` class fails
+
+Logged 2026-09-30, from the round-2 full acceptance run (23/31).
+
+- **What:** all 4 `not_in_sources` items abstain correctly —
+  `message_status='abstained'`, `sufficient` 0.02–0.14 — and still FAIL,
+  because `passes()` in `scripts/acceptance.py` also requires
+  `not result["citations"]` and the abstain path leaves the retrieved
+  P&P chunks attached as citations (`outside-whitman` 19.8s/0.03,
+  `outside-general` 15.5s/0.02, `ml-es-outside` 14.1s/0.02;
+  `outside-study-in-scarlet` is the fourth and additionally answers
+  instead of abstaining).
+- **Why it matters:** an answer that says "the sources don't cover this"
+  and then shows nine citations is self-contradictory to a user, and it
+  makes abstention accuracy look 0/4 in the gate when the model's
+  judgement is actually 3/4 right.
+- **Fix:** decide which is true — either the abstain path drops its
+  citations (cleanest: nothing to support, nothing to cite), or the
+  scorer counts `abstained` as a pass. The first is the product fix; the
+  second hides a real inconsistency. Also worth a look: why
+  `outside-study-in-scarlet` answers at all (0.14 sufficient) when its
+  scene is not in the corpus.
 
 ## Reference: provider findings, 2026-09-26
 
