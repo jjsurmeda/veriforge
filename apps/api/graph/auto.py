@@ -75,7 +75,7 @@ MULTI_PARTS = (
 # The retry loop in prepare_auto_run clamps any admin override to this.
 MAX_SUFFICIENT_RETRIES = 1
 TOP_CHUNKS_FOR_SUFFICIENT = 5
-SUFFICIENT_EVIDENCE_CHARS = 4_000
+SUFFICIENT_EVIDENCE_CHARS = 9_000
 
 # Greeting fast path (batch A, owner-approved carve-out from "all
 # classification through DecisionEngine"): a raw message of at most 40
@@ -119,14 +119,12 @@ def greeting_canonical(raw: str) -> str | None:
         return None
     candidate = " ".join(words)
     return candidate if candidate in GREETING_ALLOWLIST else None
-# 250 measured, not guessed (KI-6, batch 5). 3x fast20 at each value, 20/20
-# items scored in all six runs. p50 medians 24088 ms (500) vs 22822 ms (250) —
-# a 5.3% difference smaller than the within-variant spread, so the budget
-# does not drive latency. But 250 is equal or better on quality: faithfulness
-# 0.9958 vs 0.9917, and abstention accuracy 1.00 (3/3 runs) vs 0.58 (1/3).
-# More evidence per source makes the sufficiency Noul over-confident, so it
-# generates when it should have abstained.
-SUFFICIENT_EVIDENCE_CHARS_PER_SOURCE = 250
+# Round 2 (KI-12): the per-source head window is gone. It measured better
+# on faithfulness (2026-09-28, batch 5/6) only because the judge saw the
+# first 250 chars of a 500-token child and the Darcy proposal lives in a
+# child's last sentence — the head window hid the evidence. Children are
+# now ~300 tokens, so each source contributes its whole child; parent
+# context follows only if the ~9,000-character total has room.
 
 
 @dataclass(frozen=True)
@@ -333,13 +331,10 @@ def _sufficient_question(question: str, top_contexts: list[ExpandedContext]) -> 
     for i, context in enumerate(top_contexts):
         if remaining <= 0:
             break
-        # Per source, not per run: a shared pool lets one long child eat the
-        # whole budget, so the judge sees a lone [1] and calls the evidence thin.
-        allowance = min(SUFFICIENT_EVIDENCE_CHARS_PER_SOURCE, remaining)
-        matched = context.chunk.text[:allowance]
+        matched = context.chunk.text[:remaining]
         parent = context.context_text
-        if parent != context.chunk.text:
-            matched += f"\n[parent context]\n{parent[: allowance - len(matched)]}"
+        if parent != context.chunk.text and remaining - len(matched) > 0:
+            matched += f"\n[parent context]\n{parent[: remaining - len(matched)]}"
         remaining -= len(matched)
         entries.append(f"[{i + 1}] [matched passage]\n{matched}")
     evidence = "\n\n".join(entries) or "(no evidence retrieved)"
@@ -354,10 +349,15 @@ def _sufficient_question(question: str, top_contexts: list[ExpandedContext]) -> 
 
 
 def _conflict_question(top_chunks: list[ScoredChunk]) -> Noul:
-    evidence = "\n\n".join(
-        f"[{i + 1}] (doc: {chunk.document_name or chunk.source_type}) {chunk.text[:400]}"
-        for i, chunk in enumerate(top_chunks)
-    )
+    remaining = SUFFICIENT_EVIDENCE_CHARS
+    entries: list[str] = []
+    for i, chunk in enumerate(top_chunks):
+        if remaining <= 0:
+            break
+        text = chunk.text[:remaining]
+        remaining -= len(text)
+        entries.append(f"[{i + 1}] (doc: {chunk.document_name or chunk.source_type}) {text}")
+    evidence = "\n\n".join(entries)
     return Noul(
         prompt=(
             "Do any two of the following chunks disagree about a fact the "

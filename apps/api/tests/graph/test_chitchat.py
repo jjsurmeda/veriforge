@@ -173,7 +173,7 @@ def test_sufficient_question_leads_with_the_matched_passage() -> None:
     assert "short retrieved chunk" in prompt
 
 
-def test_sufficient_question_spends_the_budget_per_source() -> None:
+def test_sufficient_question_spends_the_budget_across_sources() -> None:
     def context(i: int) -> ExpandedContext:
         chunk = ScoredChunk(
             chunk_id=UUID(int=i + 1),
@@ -193,10 +193,36 @@ def test_sufficient_question_spends_the_budget_per_source() -> None:
 
     prompt = _sufficient_question("What happened?", [context(i) for i in range(8)]).prompt
 
-    for i in range(8):
-        assert f"[{i + 1}]" in prompt
-        assert f"[source {i} matched]" in prompt
-    assert len(prompt) < 5_000
+    # the first source keeps its whole child and parent; the ~9,000-char
+    # total cap truncates the tail sources rather than every source's head
+    assert "[source 0 matched] " + "m" * 2_000 in prompt
+    assert "[source 0 parent] " + "p" * 2_000 in prompt
+    assert "[source 7 matched]" not in prompt
+    assert len(prompt) < 10_000
+
+
+def test_sufficient_question_shows_the_whole_child() -> None:
+    answer = "the answer is 42."
+    chunk = ScoredChunk(
+        chunk_id=UUID(int=1),
+        document_id=None,
+        document_name="book.txt",
+        section_id=None,
+        ord=0,
+        page=None,
+        text="filler " * 200 + answer,
+        heading_path=None,
+        source_type="document",
+        vector_score=None,
+        bm25_score=None,
+        fused_score=0.0,
+    )
+
+    prompt = _sufficient_question(
+        "What is the answer?", [ExpandedContext(chunk, chunk.text)]
+    ).prompt
+
+    assert answer in prompt
 
 
 def test_compare_queries_each_named_entity() -> None:
