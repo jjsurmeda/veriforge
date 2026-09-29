@@ -58,12 +58,17 @@ MULTI_QUERY_VARIANTS = 3
 # the Darcy turn in `make smoke` abstained (KI-12). One extra small-role call
 # lists the parts; each becomes its own retrieval and, through `provenance`,
 # its own equal share of the top-k in `_rerank_candidates`.
+# Parts-only instruction: the phrasings call above already produced the
+# compound rephrasings, so asking for them again here made compliant models
+# (gpt-4o-mini and the free Nemotron both do) emit phrasings first and parts
+# last — and the old parser stopped at the phrasings, so every "part" came
+# back compound (KI-12 item 1, proved by capture 2026-09-29).
 MULTI_PART_VARIANTS = 3
 MULTI_PARTS = (
-    "The question above has more than one part. Then, after the "
-    f"{MULTI_QUERY_VARIANTS} alternative phrasings, add one line per part of "
-    "the question, each restated as a standalone search query that keeps that "
-    "part's own subject. Do not answer them and do not merge them. No commentary."
+    "The question above has more than one part. List each part of the "
+    "question restated as a standalone search query that keeps that part's "
+    "own subject, one per line. Do not answer them and do not merge them. "
+    "No commentary."
 )
 # Answer-first (batch A, owner-approved): one retrieve, and below the
 # sufficient_abstain floor exactly one rewrite + retry before abstaining.
@@ -214,7 +219,8 @@ async def _generate_query_variants(
 ) -> list[str]:
     """Multi-query rewrite (TRD §7 mode table, Auto only). n variants in
     one LLM call; first variant is the rewritten query itself. With
-    `instruction` the call asks for that shape instead (see MULTI_PARTS)."""
+    `instruction` the call asks for that shape instead (see MULTI_PARTS),
+    so the parsed lines are returned as-is, without the question seeded."""
     if n <= 1 and instruction is None:
         return [question]
     from prompts.load import load_prompt
@@ -225,19 +231,20 @@ async def _generate_query_variants(
         history="(none)",
         question=question,
     )
-    prompt += (
-        f"\n\nProduce {n} alternative phrasings of the rewritten question, "
-        f"one per line. Each should target a different retrieval angle "
-        f"(synonyms, narrower scope, broader scope). No commentary."
-    )
-    if instruction is not None:
+    if instruction is None:
+        prompt += (
+            f"\n\nProduce {n} alternative phrasings of the rewritten question, "
+            f"one per line. Each should target a different retrieval angle "
+            f"(synonyms, narrower scope, broader scope). No commentary."
+        )
+    else:
         prompt += f"\n\n{instruction}"
     response = await complete_fn(
         litellm_model=small_model,
         messages=[{"role": "system", "content": prompt}, {"role": "user", "content": question}],
         metadata={"role": "rewriter"},
     )
-    variants = [question]
+    variants = [question] if instruction is None else []
     for line in response.strip().splitlines():
         line = line.strip().lstrip("0123456789.-) ")
         if line and line not in variants:

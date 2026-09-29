@@ -954,7 +954,7 @@ async def test_multi_part_retrieves_one_query_per_part(
 
     async def fake_complete(**kwargs: Any) -> str:
         system = kwargs["messages"][0]["content"]
-        if "one line per part" in system:
+        if "more than one part" in system:
             return "\n".join(parts)
         return str(kwargs["messages"][-1]["content"])
 
