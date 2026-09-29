@@ -153,6 +153,7 @@ and tests. All are v1 unless marked.
 | SR-4 | Pages that look scanned or table-heavy are flagged with a warning icon. |
 | SR-5 | Web results used in a chat are listed as temporary sources; users can pin one into the chat's sources. |
 | SR-6 | Metadata filters (source type, document, tag, date range, file type) are available in the composer. |
+| SR-7 | Multilingual documents and questions are supported *(added 2026-09-29, round 2)*: chunking, embeddings and answers work beyond English; the answer follows the language of the user's question. |
 
 ### 4.4 Transparency and metrics
 

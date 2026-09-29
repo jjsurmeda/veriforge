@@ -42,7 +42,7 @@ handles ingestion, evals, async scoring and starter questions.
 | Jobs | Procrastinate (Postgres queue) | No Redis |
 | Database | Postgres 17, ParadeDB image: pgvector + pg_search | pg_search is AGPL; used unmodified as a service |
 | Parsing | markitdown, pdfplumber fallback; OCR adapter slot | |
-| Embeddings | OpenAI text-embedding-3-small (1536 dims), pinned per deployment | Re-embed job on change |
+| Embeddings | OpenAI text-embedding-3-large with `dimensions=1536`, pinned per deployment *(amended 2026-09-29, round 2: multilingual corpus)* | Re-embed job on change |
 | Rerank | Cohere Rerank | Jev-score reranker is a v1.1 A/B |
 | Web search | Tavily; Brave + fetch-and-clean fallback | Behind `WebSearchProvider` |
 | Observability | Langfuse Cloud; app metrics in Postgres | UI never reads Langfuse |
@@ -492,7 +492,7 @@ every table has `created_at`.
 | `documents` | collection_id, name, mime, sha256, s3_key, status, page_flags jsonb, error | status: queued → ready or failed |
 | `sections` | document_id, heading_path, text, tokens | Parents for small-to-big |
 | `chunks` | document_id, section_id, ord, page, text, embedding vector(1536), metadata jsonb, source_type, chat_id, expires_at | HNSW index on embedding; pg_search BM25 index on text; GIN on metadata |
-| `query_cache` | query_hash, embedding, created_at | 30-day TTL |
+| `query_cache` | query_hash, embedding, created_at | 30-day TTL; the hash is namespaced by embedding model *(amended 2026-09-29, round 2)* — a model switch invalidates the cache without a wipe |
 | `web_cache` | query_hash, results jsonb | 24 h TTL |
 | `chats` | user_id, title, pinned, model_id, include_library, summary | include_library: always true, no UI (ADR-002 addendum) |
 | `messages` | chat_id, role, content, status, revised_from | status: complete, cancelled, abstained, failed |
