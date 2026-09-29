@@ -572,6 +572,21 @@ faithfulness drops by more than 0.03, abstention accuracy or answer rate
 by more than 5 points, or p50 latency rises by more than 20% against the
 stored baseline.
 
+**Which latency is gated (owner decision, 2026-09-29, KI-18).** The strictly
+gated figure is `p50_our_overhead_ms`: the measured wall clock minus the
+generation time OpenRouter reports for the same calls
+(`GET /api/v1/generation?id=…` → `generation_time`). A slow provider is not a
+regression in this repo, and gating on it produced failures this codebase
+could not fix. Total wall-clock `p50_latency_ms` is still recorded in the run
+summary and still displayed — latency demonstrably matters, and the total is
+what the PRD's CH-5/TX-6 budgets are written against — but it does not by
+itself fail the gate. It is compared instead only when a run attributed no
+calls at all, which restores the pre-KI-18 behaviour rather than silently
+disabling the check. An item whose calls cannot be attributed records no
+overhead figure: the summary reports `null`, never a fabricated zero. Because
+`evals/seed/baseline_fast20.json` predates this change, the gate keeps
+comparing totals until the next `--baseline` run; the two are not comparable.
+
 **Answer rate.** The share of items *not* labelled should-abstain that
 produced an answer rather than an abstention. It is a separate gate
 because an abstention scores faithfulness 1.0 — it asserts nothing to be

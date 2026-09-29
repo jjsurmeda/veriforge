@@ -1,6 +1,7 @@
 """The model seed must be safe to rerun and must leave every non-Jev role on a
 free model. No network: the catalogue is passed in (testing.md)."""
 
+import pytest
 from sqlalchemy import select
 
 from db.models import LlmProvider, Model, ModelRole
@@ -8,6 +9,7 @@ from db.session import get_session_factory
 from scripts.seed_models import ROLES, FreeModel, pick, seed
 
 JEV = "typesafe/jev-1.13"
+OVERRIDE = "openai/gpt-4o-mini"
 
 CATALOGUE: dict[str, FreeModel] = {
     "nvidia/nemotron-3-super-120b-a12b:free": {
@@ -108,3 +110,40 @@ def test_pick_falls_back_when_the_preferred_id_is_gone() -> None:
     retired = {k: v for k, v in CATALOGUE.items() if "nemotron-3-super" not in k}
     assert pick(retired, [preferred], 8_000) == "nvidia/nemotron-3-ultra-550b-a55b:free"
     assert pick(retired, ["nope:free"], 8_000) == "nvidia/nemotron-3-ultra-550b-a55b:free"
+
+
+async def _roles() -> dict[str, str]:
+    async with get_session_factory()() as session:
+        rows = (await session.execute(select(ModelRole.role, ModelRole.model_id))).all()
+    return {role: model_id for role, model_id in rows}
+
+
+async def _model_ids() -> set[str]:
+    async with get_session_factory()() as session:
+        return set((await session.execute(select(Model.model_id))).scalars().all())
+
+
+async def test_override_binds_every_non_jev_role_and_leaves_jev_alone() -> None:
+    await seed(CATALOGUE)
+    before_models = set(await _model_ids())
+
+    await seed(override=OVERRIDE)
+
+    roles = await _roles()
+    for role, _tier, _candidates, _floor in ROLES:
+        assert roles[role] == OVERRIDE, role
+    assert roles["decision_engine"] == JEV
+    assert set(await _model_ids()) == before_models
+
+
+async def test_override_rejects_a_model_that_is_not_seeded() -> None:
+    with pytest.raises(SystemExit):
+        await seed(override="vendor/not-seeded")
+
+
+async def test_no_override_restores_the_free_pool() -> None:
+    await seed(override=OVERRIDE)
+    await seed(CATALOGUE)
+    roles = await _roles()
+    assert roles["generator"].endswith(":free")
+    assert roles["decision_engine"] == JEV

@@ -41,6 +41,7 @@ from config import get_settings
 from db.ids import uuid7
 from db.models import Chat, EvalDataset, EvalItem, EvalResult, EvalRun, Message, User
 from decisions import DecisionEngine
+from evals.attribution import attribute, record_generation_ids
 from evals.judge import judge_answer
 from evals.loader import EVAL_USER_EMAIL, STATE_FILE
 from graph.auto import AutoRunInput, finalize_auto_run, prepare_auto_run
@@ -135,82 +136,101 @@ async def _run_item(
         await session.flush()
         message_id = assistant_message.id
     started = time.monotonic()
-    engine = DecisionEngine()
-    pipeline_run_id = uuid7()
-    if mode == "deep":
-        deep_run = await prepare_deep_run(
-            factory,
-            DeepRunInput(
-                run_id=pipeline_run_id,
-                message_id=message_id,
-                chat_id=chat_id,
-                user_id=user.id,
-                question=item.question,
-                litellm_model=GENERATOR_MODEL,
-                small_model=SMALL_MODEL,
-                context_window=CONTEXT_WINDOW,
-                source="auto",
-                client_filters=ClientFilters(),
-                collection_ids=scope,
-            ),
-            engine,
-        )
-        generate_started = time.monotonic()
-        answer = "".join(
-            [
-                token
-                async for kind, token in deep_run.stream_answer_with_thinking()
-                if kind == "content"
-            ]
-        )
-        generate_ms = int((time.monotonic() - generate_started) * 1000)
-        tokens_in = sum(
-            count_tokens(m["content"])
-            for m in build_grounded_messages(
-                deep_run.rewritten, deep_run.contexts, deep_run.history
+    async with record_generation_ids() as generation_ids:
+        engine = DecisionEngine()
+        pipeline_run_id = uuid7()
+        if mode == "deep":
+            deep_run = await prepare_deep_run(
+                factory,
+                DeepRunInput(
+                    run_id=pipeline_run_id,
+                    message_id=message_id,
+                    chat_id=chat_id,
+                    user_id=user.id,
+                    question=item.question,
+                    litellm_model=GENERATOR_MODEL,
+                    small_model=SMALL_MODEL,
+                    context_window=CONTEXT_WINDOW,
+                    source="auto",
+                    client_filters=ClientFilters(),
+                    collection_ids=scope,
+                ),
+                engine,
             )
-        )
-        tokens_out = count_tokens(answer)
-        latency_ms = int((time.monotonic() - started) * 1000)
-        stage_ms = {**deep_run.latency_ms, "generate": generate_ms}
-        await finalize_deep_run(
-            factory, deep_run, generate_ms=generate_ms, tokens_in=tokens_in, tokens_out=tokens_out
-        )
-        abstained = deep_run.abstain_event is not None
-        contexts = deep_run.contexts
-    else:
-        run = await prepare_auto_run(
-            factory,
-            AutoRunInput(
-                run_id=pipeline_run_id,
-                message_id=message_id,
-                chat_id=chat_id,
-                user_id=user.id,
-                question=item.question,
-                litellm_model=GENERATOR_MODEL,
-                small_model=SMALL_MODEL,
-                context_window=CONTEXT_WINDOW,
-                source="auto",
-                client_filters=ClientFilters(),
-                collection_ids=scope,
-            ),
-            engine,
-        )
-        generate_started = time.monotonic()
-        answer = "".join([token async for token in run.stream_answer()])
-        generate_ms = int((time.monotonic() - generate_started) * 1000)
-        tokens_in = sum(
-            count_tokens(m["content"])
-            for m in build_grounded_messages(run.rewritten, run.contexts, run.history)
-        )
-        tokens_out = count_tokens(answer)
-        latency_ms = int((time.monotonic() - started) * 1000)
-        stage_ms = {**run.latency_ms, "generate": generate_ms}
-        await finalize_auto_run(
-            factory, run, generate_ms=generate_ms, tokens_in=tokens_in, tokens_out=tokens_out
-        )
-        abstained = run.abstain_event is not None
-        contexts = run.contexts
+            generate_started = time.monotonic()
+            answer = "".join(
+                [
+                    token
+                    async for kind, token in deep_run.stream_answer_with_thinking()
+                    if kind == "content"
+                ]
+            )
+            generate_ms = int((time.monotonic() - generate_started) * 1000)
+            tokens_in = sum(
+                count_tokens(m["content"])
+                for m in build_grounded_messages(
+                    deep_run.rewritten, deep_run.contexts, deep_run.history
+                )
+            )
+            tokens_out = count_tokens(answer)
+            latency_ms = int((time.monotonic() - started) * 1000)
+            stage_ms = {**deep_run.latency_ms, "generate": generate_ms}
+            await finalize_deep_run(
+                factory,
+                deep_run,
+                generate_ms=generate_ms,
+                tokens_in=tokens_in,
+                tokens_out=tokens_out,
+            )
+            abstained = deep_run.abstain_event is not None
+            contexts = deep_run.contexts
+        else:
+            run = await prepare_auto_run(
+                factory,
+                AutoRunInput(
+                    run_id=pipeline_run_id,
+                    message_id=message_id,
+                    chat_id=chat_id,
+                    user_id=user.id,
+                    question=item.question,
+                    litellm_model=GENERATOR_MODEL,
+                    small_model=SMALL_MODEL,
+                    context_window=CONTEXT_WINDOW,
+                    source="auto",
+                    client_filters=ClientFilters(),
+                    collection_ids=scope,
+                ),
+                engine,
+            )
+            generate_started = time.monotonic()
+            answer = "".join([token async for token in run.stream_answer()])
+            generate_ms = int((time.monotonic() - generate_started) * 1000)
+            tokens_in = sum(
+                count_tokens(m["content"])
+                for m in build_grounded_messages(run.rewritten, run.contexts, run.history)
+            )
+            tokens_out = count_tokens(answer)
+            latency_ms = int((time.monotonic() - started) * 1000)
+            stage_ms = {**run.latency_ms, "generate": generate_ms}
+            await finalize_auto_run(
+                factory, run, generate_ms=generate_ms, tokens_in=tokens_in, tokens_out=tokens_out
+            )
+            abstained = run.abstain_event is not None
+            contexts = run.contexts
+
+    # KI-18: split the measured wall clock into the part OpenRouter spent
+    # generating and the part that is ours. Only the LLM calls made inside the
+    # timed window count, so the reviewer and judge below are left out. An item
+    # with nothing attributed records no overhead at all rather than claiming
+    # the whole wall clock as ours.
+    attribution = await attribute(latency_ms, list(generation_ids))
+    stage_ms = {
+        **stage_ms,
+        "provider_ms": attribution.provider_ms,
+        "generations_attributed": attribution.attributed,
+    }
+    if attribution.complete:
+        stage_ms["our_overhead_ms"] = attribution.overhead_ms
 
     # Slice 6: faithfulness and citation precision come from the real
     # Reviewer (TR-2/TR-3) — this is the rebaseline that matters. The
@@ -377,12 +397,23 @@ def aggregate(results: list[tuple[EvalItem, EvalResult]]) -> dict[str, float | N
     answer_rate = mean([0.0 if r.abstained else 1.0 for _, r in answerable]) if answerable else None
     latencies = sorted(r.latency_ms for _, r in scored)
     p50 = float(statistics.median(latencies)) if latencies else None
+    # p50_our_overhead_ms is the strictly gated number (KI-18): wall clock
+    # minus the provider time we could attribute. Null, never zero, when no
+    # item could be attributed — the gate then falls back to the total.
+    overheads = [
+        float(r.stage_ms["our_overhead_ms"])
+        for _, r in scored
+        if r.stage_ms and r.stage_ms.get("our_overhead_ms") is not None
+    ]
     return {
         "faithfulness": faithfulness,
         "context_recall": context_recall,
         "abstention_accuracy": abstention_accuracy,
         "answer_rate": answer_rate,
         "p50_latency_ms": p50,
+        "p50_our_overhead_ms": (
+            float(statistics.median(overheads)) if len(overheads) == len(scored) else None
+        ),
         "items": float(len(results)),
         "scored": float(len(scored)),
         "failed": float(len(results) - len(scored)),

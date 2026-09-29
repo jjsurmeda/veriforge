@@ -7,6 +7,7 @@ every completion is forwarded as a Langfuse generation (TRD §15).
 import asyncio
 import logging
 import os
+import re
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
 
@@ -39,6 +40,8 @@ _FAILOVER_ERRORS = (
 # ponytail: per-process cap keyed by (event loop, model); move to a
 # Postgres-backed limiter if several workers together exceed provider limits.
 _slots: dict[tuple[int, str], asyncio.Semaphore] = {}
+
+_SENTENCE_END = re.compile(r"[.!?\n]")
 
 
 def _slot(model: str) -> asyncio.Semaphore:
@@ -183,24 +186,17 @@ def _configure_langfuse() -> None:
     _callbacks_configured = True
 
 
-async def stream_completion(
-    *,
-    litellm_model: str,
+async def _stream_once(
+    model: str,
     messages: list[dict[str, str]],
     metadata: dict[str, str],
-    on_reasoning: Callable[[str], Awaitable[None]] | None = None,
-) -> AsyncIterator[str]:
-    """Yield content deltas from one streamed chat completion.
-
-    litellm_model is the fully-qualified id ("openrouter/<model_id>").
-    `on_reasoning`, when given, is called with each native reasoning delta
-    (litellm normalises provider-specific chain-of-thought fields to
-    `delta.reasoning_content`) — existing callers that don't pass it see
-    no behaviour change.
-    """
-    _configure_langfuse()
-    model = await _resolved_model(litellm_model, metadata)
-    model, response = await _open(
+    *,
+    on_reasoning: Callable[[str], Awaitable[None]] | None,
+) -> AsyncIterator[tuple[str, str]]:
+    """One streamed attempt. Yields (model that answered, content delta). A
+    provider error raised while iterating surfaces to the caller, which is what
+    lets `stream_completion` restart the request (KI-17)."""
+    answered, response = await _open(
         model,
         messages,
         metadata,
@@ -224,9 +220,67 @@ async def stream_completion(
                 await on_reasoning(str(reasoning))
         content = delta.get("content")
         if content:
-            yield str(content)
+            yield answered, str(content)
     if usage is not None:
-        await _record_usage(model, metadata, *usage)
+        await _record_usage(answered, metadata, *usage)
+
+
+async def stream_completion(
+    *,
+    litellm_model: str,
+    messages: list[dict[str, str]],
+    metadata: dict[str, str],
+    on_reasoning: Callable[[str], Awaitable[None]] | None = None,
+) -> AsyncIterator[str]:
+    """Yield content deltas from one streamed chat completion.
+
+    litellm_model is the fully-qualified id ("openrouter/<model_id>").
+    `on_reasoning`, when given, is called with each native reasoning delta
+    (litellm normalises provider-specific chain-of-thought fields to
+    `delta.reasoning_content`) — existing callers that don't pass it see
+    no behaviour change.
+
+    A provider that dies after its first chunk restarts the whole request on
+    llm_fallback_model rather than killing the run (KI-17). Partial output is
+    never spliced: the first sentence is withheld until it completes so the
+    common early-death case costs the user nothing, and a death after that
+    restarts silently and accepts a visible hiccup. Reasoning deltas are sent
+    as they arrive and so can repeat across a restart.
+    """
+    _configure_langfuse()
+    model = await _resolved_model(litellm_model, metadata)
+    # None once the first sentence has been released; otherwise the deltas held
+    # back so far, so an early restart has nothing user-visible to retract.
+    held: list[str] | None = []
+    while True:
+        current = model
+        try:
+            async for answered, delta in _stream_once(
+                current, messages, metadata, on_reasoning=on_reasoning
+            ):
+                current = answered
+                if held is None:
+                    yield delta
+                    continue
+                held.append(delta)
+                if _SENTENCE_END.search(delta):
+                    for part in held:
+                        yield part
+                    held = None
+            for part in held or ():
+                yield part
+            return
+        except _FAILOVER_ERRORS as exc:
+            fallback = get_settings().llm_fallback_model
+            if not fallback or fallback == current:
+                raise
+            logger.warning(
+                "llm %s died mid-stream (%s); restarting the request on %s",
+                current,
+                type(exc).__name__,
+                fallback,
+            )
+            model, held = fallback, []
 
 
 async def complete(

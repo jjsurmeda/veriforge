@@ -97,6 +97,7 @@ async def test_live_delivery_then_terminal(db: AsyncSession, bus: PostgresRunBus
 async def test_cancel_notifies_handlers(db: AsyncSession, bus: PostgresRunBus) -> None:
     run_id, _ = await make_run_row(db)
     seen = asyncio.Event()
+
     def handler(rid: UUID) -> None:
         if rid == run_id:
             seen.set()
@@ -113,3 +114,22 @@ async def test_publish_assigns_monotonic_seq(db: AsyncSession, bus: PostgresRunB
     first = await bus.publish(run_id, RunStarted())
     second = await bus.publish(run_id, AnswerDelta(run_id=str(run_id), text="x"))
     assert (first.seq, second.seq) == (1, 2)
+
+
+async def test_two_concurrent_subscribes_do_not_collide(
+    db: AsyncSession, bus: PostgresRunBus
+) -> None:
+    """KI-16: every subscribe shares one LISTEN connection, so two overlapping
+    streams used to run add_listener concurrently and raise InterfaceError."""
+    first, _ = await make_run_row(db)
+    second, _ = await make_run_row(db)
+    await bus.publish(first, RunStarted())
+    await bus.publish(second, RunCompleted(message_id="m2"))
+
+    left, right = await asyncio.gather(
+        _collect(bus.subscribe(first, 0), count=1),
+        _collect(bus.subscribe(second, 0), count=1),
+    )
+    assert [e.type for e in left] == ["run.started"]
+    assert [e.type for e in right] == ["run.completed"]
+    assert not bus._subscriber_queues

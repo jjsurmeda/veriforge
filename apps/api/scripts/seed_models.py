@@ -9,11 +9,19 @@ Free ids churn. Nothing outside config defaults and this script hardcodes one:
 the picks live in PREFERRED below and are re-resolved against the catalogue on
 every run, so a retired id falls back to the next best free model.
 
+`--override-model` (or `SEED_MODELS_OVERRIDE`) points every non-Jev role at one
+explicit, already-`models`-enabled id instead, skipping the free catalogue
+entirely. **TEMPORARY, added 2026-09-29 (wave 1, KI-17/KI-2):** the free tier
+was unreliable (models 429ing or dying mid-stream), and reliability outranks
+cost while that holds. `openai/gpt-4o-mini` is not free, so this spends credit.
+Revert by rerunning with no override: `make seed-models` restores the free pool.
+
 Usage: `uv run python scripts/seed_models.py` (or `make seed-models`).
 """
 
 import asyncio
 import json
+import os
 import sys
 import urllib.request
 from pathlib import Path
@@ -107,7 +115,33 @@ def pick(
     return usable[0][1] if usable else None
 
 
-async def seed(catalogue: dict[str, FreeModel] | None = None) -> None:
+async def seed(catalogue: dict[str, FreeModel] | None = None, override: str | None = None) -> None:
+    factory = get_session_factory()
+
+    if override is not None:
+        async with factory() as session:
+            row = (
+                await session.execute(
+                    select(Model.id).where(Model.model_id == override, Model.enabled.is_(True))
+                )
+            ).scalar_one_or_none()
+        if row is None:
+            raise SystemExit(
+                f"{override} is not an enabled row in `models`; seed it before overriding roles"
+            )
+        print(f"override: every non-Jev role -> {override} (free catalogue skipped)")
+        async with factory() as session, session.begin():
+            for role, _tier, _candidates, _floor in ROLES:
+                await session.execute(
+                    pg_insert(ModelRole)
+                    .values(role=role, model_id=override)
+                    .on_conflict_do_update(
+                        index_elements=[ModelRole.role], set_={"model_id": override}
+                    )
+                )
+        print(f"rebound {len(ROLES)} roles; decision_engine untouched")
+        return
+
     catalogue = fetch_catalogue() if catalogue is None else catalogue
     print(f"catalogue: {len(catalogue)} free models on OpenRouter")
 
@@ -122,7 +156,6 @@ async def seed(catalogue: dict[str, FreeModel] | None = None) -> None:
         if model_id in catalogue and model_id not in wanted:
             wanted[model_id] = catalogue[model_id]
 
-    factory = get_session_factory()
     async with factory() as session, session.begin():
         provider = (
             await session.execute(select(LlmProvider).where(LlmProvider.name == PROVIDER_NAME))
@@ -170,4 +203,12 @@ async def seed(catalogue: dict[str, FreeModel] | None = None) -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(seed())
+    import argparse
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--override-model",
+        default=os.environ.get("SEED_MODELS_OVERRIDE") or None,
+        help="TEMPORARY: bind every non-Jev role to this already-seeded model id",
+    )
+    asyncio.run(seed(override=parser.parse_args().override_model))

@@ -1,7 +1,12 @@
 """Eval gate (TRD §15): run the 20-item fast subset and compare with the
 stored baseline. Fails (exit 1) when faithfulness drops by more than 0.03,
 abstention accuracy or answer rate drops by more than 5 points, or p50
-latency rises by more than 20%.
+*our* latency rises by more than 20%.
+
+Since KI-18 the gated latency is `p50_our_overhead_ms` — wall clock minus the
+generation time OpenRouter reports for the same calls — because a slow
+provider is not a regression in this repo. The total is still reported; see
+TRD §15 for the full rule and the fallback when nothing could be attributed.
 
 Slice 6: the comparison is like-for-like — `baseline_fast20.json`
 (written by `evals.runner --baseline` alongside the full-50
@@ -58,8 +63,20 @@ def compare(baseline: dict[str, float | None], current: dict[str, float | None])
             f"answer rate {base_r:.2%} → {curr_r:.2%} (drop > {ANSWER_RATE_DROP_POINTS} pts)"
         )
     base_p50, curr_p50 = baseline.get("p50_latency_ms"), current.get("p50_latency_ms")
+    # KI-18: gate on latency we introduced, not the provider's. OpenRouter's
+    # share varies by seconds between runs and is not something this repo can
+    # regress, so only the attributed remainder is strictly gated. The total is
+    # still reported above; it only fails the gate when no run could be
+    # attributed at all, which is the pre-KI-18 behaviour.
+    gate_key = (
+        "p50_our_overhead_ms"
+        if baseline.get("p50_our_overhead_ms") is not None
+        and current.get("p50_our_overhead_ms") is not None
+        else "p50_latency_ms"
+    )
+    base_p50, curr_p50 = baseline.get(gate_key), current.get(gate_key)
     if base_p50 and curr_p50 and curr_p50 > base_p50 * LATENCY_RISE_FACTOR:
-        failures.append(f"p50 latency {base_p50:.0f} → {curr_p50:.0f} ms (rise > 20%)")
+        failures.append(f"{gate_key} {base_p50:.0f} → {curr_p50:.0f} ms (rise > 20%)")
     return failures
 
 

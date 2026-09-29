@@ -26,6 +26,8 @@ REPLAY_BATCH = 500
 POLL_FALLBACK_SECONDS = 15.0
 SEQ_RACE_RETRIES = 3
 
+_Listener = Callable[[asyncpg.Connection, int, str, str], None]
+
 
 def parse_event(payload: dict[str, object]) -> RunStreamEvent:
     return _event_adapter.validate_python(payload)
@@ -67,8 +69,21 @@ class PostgresRunBus:
         self._session_factory = session_factory
         self._dsn = dsn.replace("postgresql+asyncpg://", "postgresql://")
         self._listener: asyncpg.Connection | None = None
+        # One connection serves every channel, and asyncpg refuses concurrent
+        # use of one connection, so (LISTEN|UNLISTEN) is serialised (KI-16).
+        self._listener_lock = asyncio.Lock()
         self._subscriber_queues: dict[UUID, set[asyncio.Queue[int]]] = {}
         self._cancel_handlers: list[Callable[[UUID], None]] = []
+
+    async def _add_listener(self, channel: str, callback: _Listener) -> None:
+        async with self._listener_lock:
+            if self._listener is not None:
+                await self._listener.add_listener(channel, callback)
+
+    async def _remove_listener(self, channel: str, callback: _Listener) -> None:
+        async with self._listener_lock:
+            if self._listener is not None:
+                await self._listener.remove_listener(channel, callback)
 
     async def start(self) -> None:
         self._listener = await asyncpg.connect(self._dsn)
@@ -159,7 +174,7 @@ class PostgresRunBus:
         first = not existing
         existing.add(queue)
         if first and self._listener is not None:
-            await self._listener.add_listener(_run_channel(run_id), self._on_run_notification)
+            await self._add_listener(_run_channel(run_id), self._on_run_notification)
         last_seq = after_seq
         try:
             while True:
@@ -185,10 +200,7 @@ class PostgresRunBus:
                 queues.discard(queue)
                 if not queues:
                     self._subscriber_queues.pop(run_id, None)
-                    if self._listener is not None:
-                        await self._listener.remove_listener(
-                            _run_channel(run_id), self._on_run_notification
-                        )
+                    await self._remove_listener(_run_channel(run_id), self._on_run_notification)
 
     async def cancel(self, run_id: UUID) -> None:
         # NOTIFY only ships on COMMIT; a bare session.execute() rolls back.

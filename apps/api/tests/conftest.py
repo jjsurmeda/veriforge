@@ -99,9 +99,7 @@ async def seed_base_rows(session: AsyncSession) -> None:
                 price_out=price_out,
                 context_window=ctx,
                 capabilities=(
-                    {"decision": True}
-                    if model_id == "typesafe/jev-1.13"
-                    else {"streaming": True}
+                    {"decision": True} if model_id == "typesafe/jev-1.13" else {"streaming": True}
                 ),
                 enabled=True,
             )
@@ -187,7 +185,7 @@ async def make_run_row(session: AsyncSession, *, stale: bool = False) -> tuple[U
     from db.ids import uuid7
 
     plan_id = (await session.execute(text("SELECT id FROM plans WHERE name = 'free'"))).scalar_one()
-    user = User(id=uuid7(), email=f"u{uuid7().hex[:8]}@test.dev", role="user", plan_id=plan_id)
+    user = User(id=uuid7(), email=f"u{uuid7().hex}@test.dev", role="user", plan_id=plan_id)
     chat = Chat(id=uuid7(), user_id=user.id, title="t")
     user_msg = Message(id=uuid7(), chat_id=chat.id, role="user", content="hi", status="complete")
     assistant_msg = Message(id=uuid7(), chat_id=chat.id, role="assistant", content="", status=None)

@@ -1,12 +1,12 @@
 """Output caps, reasoning toggle, failover and concurrency cap on every LLM
-call (known-issues KI-1, KI-2, KI-7). LiteLLM is faked at its boundary."""
+call (known-issues KI-1, KI-2, KI-7, KI-17). LiteLLM is faked at its boundary."""
 
 import asyncio
 from collections.abc import AsyncIterator
 from typing import Any
 
 import pytest
-from litellm.exceptions import BadRequestError, RateLimitError
+from litellm.exceptions import BadRequestError, RateLimitError, ServiceUnavailableError
 
 from config import get_settings
 from providers.llm import complete, stream_completion
@@ -17,6 +17,16 @@ OK = {"choices": [{"message": {"content": "ok"}}]}
 
 def _rate_limited(model: str) -> RateLimitError:
     return RateLimitError(message="429", llm_provider="openrouter", model=model)
+
+
+def _overloaded(model: str) -> ServiceUnavailableError:
+    return ServiceUnavailableError(
+        message="provider_overloaded", llm_provider="openrouter", model=model
+    )
+
+
+def _chunks(*contents: str) -> list[dict[str, Any]]:
+    return [{"choices": [{"delta": {"content": c}}]} for c in contents]
 
 
 async def test_every_call_is_capped_per_role(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -201,3 +211,126 @@ async def test_a_thinking_stream_keeps_reasoning_on(monkeypatch: pytest.MonkeyPa
     ]
     assert out == ["hi"]
     assert "extra_body" not in seen
+
+
+async def _stream_out() -> list[str]:
+    return [
+        d
+        async for d in stream_completion(
+            litellm_model=FREE, messages=[], metadata={"role": "generator"}
+        )
+    ]
+
+
+def _stream(*contents: str, dies: str | None = None) -> Any:
+    """A litellm streaming response that yields these deltas, then (optionally)
+    raises the provider error litellm surfaces when an upstream dies mid-flight."""
+
+    class Stream:
+        async def __aiter__(self) -> AsyncIterator[dict[str, Any]]:
+            for content in contents:
+                yield {"choices": [{"delta": {"content": content}}]}
+            if dies is not None:
+                raise _overloaded(dies)
+
+    return Stream()
+
+
+def _first_dies_rest_survives(monkeypatch: pytest.MonkeyPatch, opened: list[str]) -> None:
+    async def fake(**kwargs: Any) -> Any:
+        model = kwargs["model"]
+        opened.append(model)
+        if model == FREE:
+            return _stream(*FIRST_DYING, dies=model)
+        return _stream(*FIRST_SURVIVOR)
+
+    monkeypatch.setattr("providers.llm.litellm.acompletion", fake)
+
+
+FIRST_DYING = ("Hello", " there")
+FIRST_SURVIVOR = ("Hello", " there", ",", " friend", ".")
+
+
+async def test_mid_stream_death_restarts_on_the_fallback_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """KI-17: a provider that dies after 2 chunks restarts the whole request on
+    llm_fallback_model. The caller sees one clean answer and no error."""
+    opened: list[str] = []
+    _first_dies_rest_survives(monkeypatch, opened)
+    assert await _stream_out() == list(FIRST_SURVIVOR)
+    assert opened == [FREE, get_settings().llm_fallback_model]
+
+
+async def test_a_death_inside_the_first_sentence_renders_nothing_partial(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The first sentence is withheld, so a death inside it costs the user
+    nothing: the partial deltas never reach the caller."""
+    opened: list[str] = []
+
+    async def fake(**kwargs: Any) -> Any:
+        opened.append(kwargs["model"])
+        if kwargs["model"] == FREE:
+            return _stream("Hi", " ther", dies=kwargs["model"])
+        return _stream("Hi", " there", ".")
+
+    monkeypatch.setattr("providers.llm.litellm.acompletion", fake)
+    assert await _stream_out() == ["Hi", " there", "."]
+
+
+async def test_a_death_after_the_first_sentence_still_recovers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Restarting mid-answer beats failing the run. The accepted hiccup is
+    that the sentence already released is not retracted."""
+
+    async def fake(**kwargs: Any) -> Any:
+        if kwargs["model"] == FREE:
+            return _stream("Hello there", ".", dies=kwargs["model"])
+        return _stream("Hello again")
+
+    monkeypatch.setattr("providers.llm.litellm.acompletion", fake)
+    assert await _stream_out() == ["Hello there", ".", "Hello again"]
+
+
+async def test_an_unpunctuated_answer_is_not_swallowed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Buffering also flushes at end of stream, so a reply with no sentence end
+    still reaches the caller in full."""
+
+    async def fake(**kwargs: Any) -> Any:
+        return _stream("42", " apples")
+
+    monkeypatch.setattr("providers.llm.litellm.acompletion", fake)
+    assert await _stream_out() == ["42", " apples"]
+
+
+async def test_a_dead_stream_with_no_fallback_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(get_settings(), "llm_fallback_model", "")
+
+    async def fake(**kwargs: Any) -> Any:
+        return _stream("hi", " there.", dies=kwargs["model"])
+
+    monkeypatch.setattr("providers.llm.litellm.acompletion", fake)
+    with pytest.raises(ServiceUnavailableError):
+        await _stream_out()
+
+
+async def test_a_dead_fallback_does_not_loop_forever(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One hop only: if the fallback dies too, the error reaches the caller."""
+    calls: list[str] = []
+
+    async def fake(**kwargs: Any) -> Any:
+        calls.append(kwargs["model"])
+        return _stream("hi", " there.", dies=kwargs["model"])
+
+    monkeypatch.setattr("providers.llm.litellm.acompletion", fake)
+    with pytest.raises(ServiceUnavailableError):
+        await _stream_out()
+    assert calls == [FREE, get_settings().llm_fallback_model]
