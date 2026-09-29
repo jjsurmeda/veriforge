@@ -240,9 +240,23 @@ their surrounding context.
    `low_text` flag (likely scanned); table cells or pipe density above a
    threshold → `table_heavy` flag. Flags surface in the Sources UI (SR-4)
    and route to OCR in v1.1.
-4. **Chunk.** Split by heading hierarchy into sections (parents, ≤ 2,000
-   tokens), then into children of about 500 tokens with 15% overlap. Each
-   child stores `parent_id`, `ord`, `page`, `heading_path`.
+4. **Chunk** *(amended 2026-09-29, round 2: language-neutral,
+   sentence-aware)*. Split by heading hierarchy into sections (parents, ≤
+   2,000 tokens). Plain text and PDF-derived markdown carry no markup
+   headings, so chapter markers in several languages (`CHAPTER`,
+   `Capítulo`, `CHAPITRE`, `Kapitel`, `KABANATA`, `第…回`, `第…章`,
+   each followed by a number or numeral), standalone roman-numeral lines
+   and conservative short blank-surrounded title lines are promoted to
+   headings first. Children are cut recursively — paragraph boundaries
+   first, then sentence boundaries, never mid-sentence — at about 250–300
+   tokens with about 15% overlap on whole sentences. The sentence
+   splitter is language-neutral: `. ! ?` need following whitespace,
+   `。 ！ ？` do not, and closing quotes/brackets attach to their
+   sentence; a small abbreviation list is a refinement only. A single
+   oversized sentence falls back to word boundaries, then characters.
+   Overlap crosses section boundaries: a section's first child starts
+   with the previous section's tail sentences. Each child stores
+   `parent_id`, `ord`, `page`, `heading_path`.
 5. **Embed.** Children embedded as `heading_path + text` in batches of
    100.
 6. **Index.** Rows written in one transaction; document status set to
