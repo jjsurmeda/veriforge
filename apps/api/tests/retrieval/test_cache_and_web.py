@@ -125,7 +125,11 @@ async def test_ensure_web_chunks_creates_chat_scoped_temp_rows(
 
 
 async def test_pin_copies_web_rows_into_owned_collection(
-    db: AsyncSession, user_a: User, user_b: User, fake_search: list[str]
+    db: AsyncSession,
+    user_a: User,
+    user_b: User,
+    embed_calls: list[list[str]],
+    fake_search: list[str],
 ) -> None:
     chat = await make_chat(db, user_a)
     await ensure_web_chunks(db, query="gadget warranty", chat_id=chat.id)
