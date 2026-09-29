@@ -548,6 +548,59 @@ working:
   never contained the chunk at all. Next: direct NVIDIA reranker call on
   the exact group inputs to confirm (a)/(b), then fix at the root.
 
+- **Note (2026-09-29, Darcy deep-dive, final):** 60-minute box expired
+  with the mechanism **proved** and no code fix landed (a ranking change
+  needs the KI-6 gate, which doesn't fit the box). KI-5 and KI-12 stay
+  open. What was proved this run, all by direct observation:
+
+  1. **The reranker is the loss stage, and query shape cannot fix it.**
+     Direct NVIDIA calls on the exact as-run group inputs (40 passages):
+     the proposal chunk ranks **14th** (logit −3.9) under the compound
+     query as run; **15th** (−3.72) under a correctly decomposed
+     standalone part query ("What does Mr. Darcy say in his first
+     proposal to Elizabeth?"); and **1st** (+2.91) only when the query
+     is the proposal text itself. So the batch-4/batch-5 "per-part
+     rerank" plan is disproven — decomposition alone cannot surface it.
+  2. **Why: the quote is tail-buried.** The chunk is 1,236 chars and
+     "In vain have I struggled…" occupies only the last ~140
+     (offset 1094). The chunk's head is pre-proposal narrative, so a
+     passage-level reranker reading it against any "what does he say"
+     query sees mostly off-topic text. The same head-bias exists in
+     `_sufficient_question` (`graph/auto.py`): the judge reads
+     `chunk.text[:250]` per source, so even a winning chunk's
+     tail-buried quote is invisible to the sufficiency score — the
+     0.06–0.12 floor-level scores are explained by this, not by the
+     evidence being absent from the winners' *parents*.
+  3. **A 1:1 RRF blend of rerank rank and fused rank does not fix it.**
+     Replayed offline against the real cross-variant fusion, provenance
+     groups and fresh NVIDIA logits: the chunk stays outside the
+  winners (its within-group rerank rank ~14 is too weak for the fused
+     component to rescue). Ruled out without touching code.
+  4. **Wave 1 broke the MULTI_PARTS decomposition** (separately): the
+     recorded queries show all 5 retrieval queries compound; the
+     batch-5 trace had genuine per-part queries. The small role moved
+     to `gpt-4o-mini` in wave 1 and merges the parts despite the "do
+     not merge them" instruction. Real defect, but per (1) fixing it
+     does not fix Darcy.
+
+  **Ruled out this run:** per-part rerank merge (by direct call, (1));
+  RRF rank blending at 1:1 (by offline replay, (3)); retrieval top_k ≤
+  12 (rank is 14+); the fused pipeline (chunk at ranks 2–5 in all
+  result sets, all runs).
+
+  **Next decisive check, in order of promise:** (i) guarantee winner
+  slots for chunks that rank fused-top in ≥3 of the ≥5 per-variant
+  result sets (a consensus signal the pipeline already computes; the
+  Darcy chunk qualifies in every run) — behind the KI-6 eval gate;
+  (ii) align chunk boundaries at dialogue turns at ingest so a famous
+  quote can lead a chunk (fixes the family at the source, v1.1-sized);
+  (iii) surface `_sufficient_question`'s 250-char head window to a
+  question-term-overlap window so the judge scores what the generator
+  sees. Tooling left in place for the next run: `acceptance.py --only
+  id[,id…]` and retrieval-event capture (chunk ids + rerank scores) in
+  both acceptance and smoke results. Spend this run: $0.11 of OpenRouter
+  credits.
+
 ## Reference: provider findings, 2026-09-26
 
 These aren't defects, but check them before changing models or providers.
