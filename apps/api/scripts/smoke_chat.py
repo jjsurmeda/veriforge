@@ -110,7 +110,9 @@ async def run_turn(
                         {
                             "hop": event.get("hop"),
                             "query": str(event.get("query", ""))[:120],
-                            "chunk_ids": [str(c.get("chunk_id")) for c in event.get("chunks") or []],
+                            "chunk_ids": [
+                                str(c.get("chunk_id")) for c in event.get("chunks") or []
+                            ],
                             "rerank_scores": [
                                 c.get("rerank_score") for c in event.get("chunks") or []
                             ],
