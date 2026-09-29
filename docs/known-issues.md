@@ -10,6 +10,13 @@ Logged 2026-09-26, after the UX pass and Gutenberg demo (`ea16d2b..725bbc5`).
 were fixed in `b600bed`, and KI-3 in the sources-panel merge. KI-8 is independent. Do it
 before the next Playwright run.
 
+**Batch A** (`6d9a2ab`, 2026-09-28) shipped answer-first + the greeting
+fast path; see its squash commit for the acceptance-set before/after.
+**KI-17 (mid-stream failover) should be the first item of the next
+batch** — it's an active gap, reproduced live, that kills in-progress
+answers with no recovery. KI-16 and KI-18 were also found live that
+session and are new.
+
 ---
 
 ## KI-4: The sweep window was widened instead of fixing the heartbeat
@@ -530,6 +537,80 @@ working:
   `len(top_contexts)` inside `_sufficient_question` in the same run. The
   numbers to explain are 8 → 5. Everything upstream of that boundary reads
   correct.
+
+## KI-16: `PostgresRunBus` reuses one `LISTEN` connection across concurrent subscribes
+
+- **What:** found manually, 2026-09-28, testing the merged batch-A build
+  against `main`. Two overlapping `GET /runs/{id}/stream` requests (the
+  browser retrying a stream after "The run could not finish" while an
+  older stream to the same or another run was still open) crashed with:
+  `asyncpg.exceptions._base.InterfaceError: cannot perform operation:
+  another operation is in progress`, raised from
+  `runbus/postgres.py:162` `_subscribe` →
+  `self._listener.add_listener(...)` → `asyncpg`'s
+  `_stmt_exclusive_section`.
+- **Where:** `runbus/postgres.py`. `self._listener` looks like one shared
+  `asyncpg` connection (or a pool wrapper that hands out the same
+  connection) used for every `LISTEN`, but `asyncpg` connections aren't
+  safe for concurrent use from two coroutines at once.
+- **Impact:** any client-side reconnect while a prior stream to the bus is
+  still active can 500. The immediate trigger this time was a *different*
+  bug — a run failing outright (see KI-17) — but the reconnect race is
+  real on its own and needs a fix regardless of what causes reconnects.
+- **Fix:** give each `_subscribe` call its own connection (or a proper
+  pool checkout, not a shared handle), or serialize `add_listener` calls
+  behind a lock if a single dedicated LISTEN connection is intentional.
+- **Test:** two concurrent `_subscribe` calls to the same bus instance
+  don't raise.
+
+## KI-17: An OpenRouter free-tier model can die mid-stream with no failover
+
+- **What:** `providers/llm.py`'s failover in `_open()` only catches an
+  error *opening* the call. Once the first chunk has streamed, a later
+  provider error (seen live: `nvidia/nemotron-3-super-120b-a12b:free`
+  returning `ServiceUnavailableError: provider_overloaded` mid-stream,
+  surfaced by `litellm` as `MidStreamFallbackError`) propagates straight
+  out of `stream_completion`, and the run ends as `run_error` with no
+  retry — the same failure batch A's report flagged on `fact-irene-adler`
+  ("streams never fail over after the first token, by design"),
+  reproduced live here on a plain "hi".
+- **Impact:** any free-tier model outage kills an in-progress answer with
+  no recovery, user-visible as "The run could not finish."
+- **Fix:** on a mid-stream provider error, stop the dead stream and
+  restart the same request from scratch on `llm_fallback_model` (don't
+  try to resume a partial answer). Decide the UX for tokens already sent
+  to the client: default to buffering nothing until the first full
+  sentence, or discarding and restarting silently if nothing user-visible
+  has rendered yet.
+- **Test:** a fake stream that raises after 2 chunks completes
+  successfully via the fallback model, with no error reaching the caller.
+
+## KI-18: `openai/gpt-4o-mini`'s generate stage took 6–7s for a two-sentence reply, unexplained
+
+- **What:** while manually verifying batch A with model roles temporarily
+  switched to `openai/gpt-4o-mini` (2026-09-28), two live "hi" runs
+  recorded `latency_ms.generate` of **6184ms and 7196ms** for a
+  13–21-token chitchat reply (`run_id`s `01a0e448-f45c-799e-89d9-a65a6cd5481e`,
+  `01a0e449-b4e0-7b1f-8cf3-5870e822e181`) — this is the greeting fast
+  path, so nothing precedes it but auth and quota reserve.
+- **Not the cause:** a direct `curl` to
+  `https://openrouter.ai/api/v1/chat/completions` for the same model
+  (non-streaming, `max_tokens=20`) returned in **1.3s**. The duplicate
+  `LiteLLM completion() model=...` log lines seen in the API log are
+  litellm logging the same call twice through two handlers, not two
+  actual attempts — ruled out as a retry theory. A concurrent, unrelated
+  `asyncpg` error (KI-16) was in the logs at the same time but belongs to
+  a different request.
+- **Not yet checked:** whether this is OpenRouter's provider-routing
+  overhead specific to `openai/gpt-4o-mini` (it can route through several
+  upstream options, unlike a pinned free id), something in
+  `providers/llm.py`'s wrapping (the per-model semaphore, Langfuse
+  callback setup, or the `extra_body` reasoning flag interacting oddly
+  with a non-reasoning-capable model), or a smaller sample-size fluke.
+- **Fix:** reproduce with 5–10 more live calls to isolate whether it's
+  per-call or per-model-switch; time the raw `litellm.acompletion` call in
+  isolation (no DB, no our wrapper) against the same model to localise
+  the extra ~5s to our code or to OpenRouter.
 
 ## Reference: provider findings, 2026-09-26
 
