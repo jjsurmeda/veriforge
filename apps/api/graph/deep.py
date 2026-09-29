@@ -76,7 +76,15 @@ class DeepRun:
         ThinkingDelta event; this keeps DeepRun the only place that needs
         an interleaving queue (fast/auto stream plain content)."""
         if self.abstain_event is not None:
-            async for token in stream_abstention(self.abstain_event):
+            async for token in stream_abstention(
+                self.abstain_event,
+                litellm_model=self.params.litellm_model,
+                question=self.rewritten,
+                metadata={
+                    "run_id": str(self.params.run_id),
+                    "user_id": str(self.params.user_id),
+                },
+            ):
                 yield ("content", token)
             return
 

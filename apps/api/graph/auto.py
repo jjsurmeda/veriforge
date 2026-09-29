@@ -778,7 +778,12 @@ async def prepare_auto_run(
 async def _stream_abstention(run: AutoRun) -> AsyncIterator[str]:
     if run.abstain_event is None:
         return
-    async for token in stream_abstention(run.abstain_event):
+    async for token in stream_abstention(
+        run.abstain_event,
+        litellm_model=run.params.litellm_model,
+        question=run.rewritten,
+        metadata={"run_id": str(run.params.run_id), "user_id": str(run.params.user_id)},
+    ):
         yield token
 
 

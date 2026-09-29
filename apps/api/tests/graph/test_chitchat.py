@@ -148,6 +148,16 @@ def _engine(intent: str, off_topic: float = 0.01) -> DecisionEngine:
     return DecisionEngine(jev=_IngressJev(intent, off_topic), mode="jev_only")
 
 
+def test_answer_prompts_carry_the_language_rule() -> None:
+    from graph.generate import build_chitchat_messages, build_grounded_messages
+
+    grounded = build_grounded_messages("¿Qué dice Darcy?", [], [])[0]["content"]
+    chitchat = build_chitchat_messages("¿qué tal?", [])[0]["content"]
+
+    assert "same language" in grounded
+    assert "same language" in chitchat
+
+
 def test_sufficient_question_leads_with_the_matched_passage() -> None:
     chunk = ScoredChunk(
         chunk_id=UUID(int=1),

@@ -5,6 +5,8 @@ multi-hop path via the controller's E/H exit per TRD §7's flowchart)."""
 
 from collections.abc import AsyncIterator
 
+from prompts.load import load_prompt
+from providers.llm import stream_completion
 from retrieval.hybrid import ScoredChunk
 from schemas.events import Abstain
 
@@ -31,18 +33,30 @@ def build_abstain_event(
     )
 
 
-async def stream_abstention(abstain: Abstain) -> AsyncIterator[str]:
-    """TR-4 fixed template: what was found (cited), what's missing, offer
-    follow-up actions. The generator only renders the template — no LLM
-    call is made for an abstention."""
-    text = (
+async def stream_abstention(
+    abstain: Abstain,
+    *,
+    litellm_model: str,
+    question: str,
+    metadata: dict[str, str],
+) -> AsyncIterator[str]:
+    """TR-4: the fixed template is generated here; the generator only
+    renders it, in the language of the user's question (round 2, owner
+    decision) — it does not write free-form text."""
+    template = (
         "I could not find enough evidence to answer that question.\n\n"
         f"What I found:\n{abstain.found_summary}\n\n"
         f"What is missing:\n{abstain.missing_summary}\n\n"
         "You can try:\n"
     )
     if "web" in abstain.offered_actions:
-        text += "- Turn on the Web search toggle\n"
+        template += "- Turn on the Web search toggle\n"
     if "deep" in abstain.offered_actions:
-        text += "- Turn on the Deep search toggle for multi-step reasoning across documents\n"
-    yield text
+        template += "- Turn on the Deep search toggle for multi-step reasoning across documents\n"
+    prompt = load_prompt("abstain.md").format(question=question, message=template)
+    async for token in stream_completion(
+        litellm_model=litellm_model,
+        messages=[{"role": "system", "content": prompt}],
+        metadata={**metadata, "role": "generator"},
+    ):
+        yield token
