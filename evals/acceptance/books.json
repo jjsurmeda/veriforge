@@ -1,55 +1,426 @@
 {
-  "about": "Usability acceptance set: questions a real user asks about the five Gutenberg books in the Shared library. Each item states the behaviour the user should get. expect: answer | library | not_in_sources | smalltalk. cite: at least one citation must come from a document whose name contains one of these. mention: the answer must contain at least one of these (case-insensitive). Multi-turn items send turns in order in one chat; checks apply to the last turn.",
+  "about": "Usability acceptance set: questions a real user asks about the five Gutenberg books in the Shared library. Each item states the behaviour the user should get. expect: answer | library | not_in_sources | smalltalk. cite: at least one citation must come from a document whose name contains one of these. mention: the answer must contain at least one of these (case-insensitive). Multi-turn items send turns in order in one chat; checks apply to the last turn. Multilingual items (added 2026-09-29) ask in the book's own language; cross-language items ask in English about a non-English book. mention lists include the term in both languages where the answer may come back in either.",
   "corpus": [
     "Pride and Prejudice",
     "The Adventures of Sherlock Holmes",
     "Frankenstein",
     "Alice's Adventures in Wonderland",
-    "The Time Machine"
+    "The Time Machine",
+    "Don Quijote",
+    "Madame Bovary",
+    "Die Verwandlung",
+    "Noli Me Tangere",
+    "西遊記",
+    "羅生門"
   ],
   "items": [
-    {"id": "smalltalk-hi", "turns": ["hi"], "expect": "smalltalk"},
-    {"id": "smalltalk-thanks", "turns": ["thanks, that's helpful!"], "expect": "smalltalk"},
-
-    {"id": "library-list", "turns": ["what books do we have?"], "expect": "library",
-     "mention": ["Pride and Prejudice", "Sherlock", "Frankenstein", "Alice", "Time Machine"]},
-    {"id": "library-count", "turns": ["how many documents are in my sources?"], "expect": "library",
-     "mention": ["5", "five"]},
-
-    {"id": "broad-sherlock", "turns": ["tell me something about the adventures of sherlock holmes"], "expect": "answer",
-     "cite": ["Sherlock"], "mention": ["Holmes", "Watson"]},
-    {"id": "broad-frankenstein", "turns": ["summarize Frankenstein in a few sentences"], "expect": "answer",
-     "cite": ["Frankenstein"], "mention": ["Victor", "creature", "monster"]},
-
-    {"id": "quote-darcy", "turns": ["What does Mr. Darcy say in his first proposal to Elizabeth, and how does she answer?"], "expect": "answer",
-     "cite": ["Pride and Prejudice"], "mention": ["ardently", "admire", "love"]},
-    {"id": "character-collins", "turns": ["Who is Mr. Collins?"], "expect": "answer",
-     "cite": ["Pride and Prejudice"], "mention": ["clergyman", "cousin", "Longbourn", "entail"]},
-    {"id": "fact-bennet-sisters", "turns": ["How many Bennet sisters are there?"], "expect": "answer",
-     "cite": ["Pride and Prejudice"], "mention": ["five", "5"]},
-    {"id": "fact-irene-adler", "turns": ["Who is Irene Adler?"], "expect": "answer",
-     "cite": ["Sherlock"], "mention": ["the woman", "Bohemia", "photograph"]},
-    {"id": "plot-red-headed-league", "turns": ["What was the real purpose of the Red-Headed League?"], "expect": "answer",
-     "cite": ["Sherlock"], "mention": ["tunnel", "bank", "vault"]},
-    {"id": "plot-speckled-band", "turns": ["In The Speckled Band, what killed Julia Stoner?"], "expect": "answer",
-     "cite": ["Sherlock"], "mention": ["snake", "adder", "swamp"]},
-    {"id": "fact-morlocks", "turns": ["Who are the Morlocks and how do they relate to the Eloi?"], "expect": "answer",
-     "cite": ["Time Machine"], "mention": ["underground", "Eloi", "feed", "prey"]},
-    {"id": "fact-weena", "turns": ["Who is Weena?"], "expect": "answer",
-     "cite": ["Time Machine"], "mention": ["Eloi"]},
-    {"id": "scene-tea-party", "turns": ["Who is at the Mad Tea-Party in Alice?"], "expect": "answer",
-     "cite": ["Alice"], "mention": ["Hatter", "March Hare", "Dormouse"]},
-    {"id": "frame-walton", "turns": ["Who narrates the opening of Frankenstein, and to whom?"], "expect": "answer",
-     "cite": ["Frankenstein"], "mention": ["Walton", "sister", "Saville", "letters"]},
-
-    {"id": "compare-inventors", "turns": ["Compare how Victor Frankenstein and the Time Traveller deal with the consequences of their inventions."], "expect": "answer",
-     "cite": ["Frankenstein", "Time Machine"]},
-
-    {"id": "followup-adler", "turns": ["Who is Irene Adler?", "How does she outwit Holmes?"], "expect": "answer",
-     "cite": ["Sherlock"], "mention": ["disguise", "photograph", "escape", "married", "left"]},
-
-    {"id": "outside-whitman", "turns": ["What does Walt Whitman find distinct between loving by allowance and loving with personal love?"], "expect": "not_in_sources"},
-    {"id": "outside-study-in-scarlet", "turns": ["How does Sherlock Holmes figure out Watson had been in Afghanistan?"], "expect": "not_in_sources"},
-    {"id": "outside-general", "turns": ["What is the capital of Australia?"], "expect": "not_in_sources"}
+    {
+      "id": "smalltalk-hi",
+      "turns": [
+        "hi"
+      ],
+      "expect": "smalltalk"
+    },
+    {
+      "id": "smalltalk-thanks",
+      "turns": [
+        "thanks, that's helpful!"
+      ],
+      "expect": "smalltalk"
+    },
+    {
+      "id": "library-list",
+      "turns": [
+        "what books do we have?"
+      ],
+      "expect": "library",
+      "mention": [
+        "Pride and Prejudice",
+        "Sherlock",
+        "Frankenstein",
+        "Alice",
+        "Time Machine"
+      ]
+    },
+    {
+      "id": "library-count",
+      "turns": [
+        "how many documents are in my sources?"
+      ],
+      "expect": "library",
+      "mention": [
+        "5",
+        "five"
+      ]
+    },
+    {
+      "id": "broad-sherlock",
+      "turns": [
+        "tell me something about the adventures of sherlock holmes"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Sherlock"
+      ],
+      "mention": [
+        "Holmes",
+        "Watson"
+      ]
+    },
+    {
+      "id": "broad-frankenstein",
+      "turns": [
+        "summarize Frankenstein in a few sentences"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Frankenstein"
+      ],
+      "mention": [
+        "Victor",
+        "creature",
+        "monster"
+      ]
+    },
+    {
+      "id": "quote-darcy",
+      "turns": [
+        "What does Mr. Darcy say in his first proposal to Elizabeth, and how does she answer?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Pride and Prejudice"
+      ],
+      "mention": [
+        "ardently",
+        "admire",
+        "love"
+      ]
+    },
+    {
+      "id": "character-collins",
+      "turns": [
+        "Who is Mr. Collins?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Pride and Prejudice"
+      ],
+      "mention": [
+        "clergyman",
+        "cousin",
+        "Longbourn",
+        "entail"
+      ]
+    },
+    {
+      "id": "fact-bennet-sisters",
+      "turns": [
+        "How many Bennet sisters are there?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Pride and Prejudice"
+      ],
+      "mention": [
+        "five",
+        "5"
+      ]
+    },
+    {
+      "id": "fact-irene-adler",
+      "turns": [
+        "Who is Irene Adler?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Sherlock"
+      ],
+      "mention": [
+        "the woman",
+        "Bohemia",
+        "photograph"
+      ]
+    },
+    {
+      "id": "plot-red-headed-league",
+      "turns": [
+        "What was the real purpose of the Red-Headed League?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Sherlock"
+      ],
+      "mention": [
+        "tunnel",
+        "bank",
+        "vault"
+      ]
+    },
+    {
+      "id": "plot-speckled-band",
+      "turns": [
+        "In The Speckled Band, what killed Julia Stoner?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Sherlock"
+      ],
+      "mention": [
+        "snake",
+        "adder",
+        "swamp"
+      ]
+    },
+    {
+      "id": "fact-morlocks",
+      "turns": [
+        "Who are the Morlocks and how do they relate to the Eloi?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Time Machine"
+      ],
+      "mention": [
+        "underground",
+        "Eloi",
+        "feed",
+        "prey"
+      ]
+    },
+    {
+      "id": "fact-weena",
+      "turns": [
+        "Who is Weena?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Time Machine"
+      ],
+      "mention": [
+        "Eloi"
+      ]
+    },
+    {
+      "id": "scene-tea-party",
+      "turns": [
+        "Who is at the Mad Tea-Party in Alice?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Alice"
+      ],
+      "mention": [
+        "Hatter",
+        "March Hare",
+        "Dormouse"
+      ]
+    },
+    {
+      "id": "frame-walton",
+      "turns": [
+        "Who narrates the opening of Frankenstein, and to whom?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Frankenstein"
+      ],
+      "mention": [
+        "Walton",
+        "sister",
+        "Saville",
+        "letters"
+      ]
+    },
+    {
+      "id": "compare-inventors",
+      "turns": [
+        "Compare how Victor Frankenstein and the Time Traveller deal with the consequences of their inventions."
+      ],
+      "expect": "answer",
+      "cite": [
+        "Frankenstein",
+        "Time Machine"
+      ]
+    },
+    {
+      "id": "followup-adler",
+      "turns": [
+        "Who is Irene Adler?",
+        "How does she outwit Holmes?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Sherlock"
+      ],
+      "mention": [
+        "disguise",
+        "photograph",
+        "escape",
+        "married",
+        "left"
+      ]
+    },
+    {
+      "id": "outside-whitman",
+      "turns": [
+        "What does Walt Whitman find distinct between loving by allowance and loving with personal love?"
+      ],
+      "expect": "not_in_sources"
+    },
+    {
+      "id": "outside-study-in-scarlet",
+      "turns": [
+        "How does Sherlock Holmes figure out Watson had been in Afghanistan?"
+      ],
+      "expect": "not_in_sources"
+    },
+    {
+      "id": "outside-general",
+      "turns": [
+        "What is the capital of Australia?"
+      ],
+      "expect": "not_in_sources"
+    },
+    {
+      "id": "ml-es-rocinante",
+      "turns": [
+        "¿Cómo se llama el caballo de Don Quijote?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Quijote"
+      ],
+      "mention": [
+        "Rocinante"
+      ]
+    },
+    {
+      "id": "ml-fr-bovary-death",
+      "turns": [
+        "Comment meurt Emma Bovary ?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Bovary"
+      ],
+      "mention": [
+        "arsenic",
+        "poison"
+      ]
+    },
+    {
+      "id": "ml-de-samsa",
+      "turns": [
+        "In was verwandelt sich Gregor Samsa?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Verwandlung"
+      ],
+      "mention": [
+        "Ungeziefer",
+        "Käfer",
+        "Insekt"
+      ]
+    },
+    {
+      "id": "ml-tl-maria-clara",
+      "turns": [
+        "Sino si Maria Clara?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Noli"
+      ],
+      "mention": [
+        "Ibarra",
+        "Tiago"
+      ]
+    },
+    {
+      "id": "ml-zh-wukong-weapon",
+      "turns": [
+        "孫悟空的兵器是什麼？"
+      ],
+      "expect": "answer",
+      "cite": [
+        "西遊記"
+      ],
+      "mention": [
+        "金箍棒",
+        "如意"
+      ]
+    },
+    {
+      "id": "ml-ja-rashomon-oldwoman",
+      "turns": [
+        "羅生門で老婆は何をしていましたか？"
+      ],
+      "expect": "answer",
+      "cite": [
+        "羅生門"
+      ],
+      "mention": [
+        "髪",
+        "毛"
+      ]
+    },
+    {
+      "id": "xl-en-bovary-death",
+      "turns": [
+        "How does Emma Bovary die?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Bovary"
+      ],
+      "mention": [
+        "arsenic",
+        "poison"
+      ]
+    },
+    {
+      "id": "xl-en-samsa",
+      "turns": [
+        "What does Gregor Samsa turn into?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Verwandlung"
+      ],
+      "mention": [
+        "insect",
+        "vermin",
+        "bug",
+        "beetle",
+        "Ungeziefer",
+        "Käfer"
+      ]
+    },
+    {
+      "id": "xl-en-wukong-master",
+      "turns": [
+        "Who is Sun Wukong's master in Journey to the West?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "西遊記"
+      ],
+      "mention": [
+        "Tang",
+        "唐僧",
+        "三藏",
+        "Tripitaka",
+        "Xuanzang"
+      ]
+    },
+    {
+      "id": "ml-es-outside",
+      "turns": [
+        "¿Quién escribió Cien años de soledad?"
+      ],
+      "expect": "not_in_sources"
+    }
   ]
 }
