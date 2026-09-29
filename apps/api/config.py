@@ -37,7 +37,10 @@ class Settings(BaseSettings):
     # slice 9 points the same ObjectStore interface at S3.
     object_storage_dir: str = ".data/objects"
     max_upload_bytes: int = 20 * 1024 * 1024
-    embedding_model: str = "openrouter/openai/text-embedding-3-small"
+    embedding_model: str = "openrouter/openai/text-embedding-3-large"
+    # text-embedding-3-large defaults to 3072 dims; pin 1536 so the vector
+    # fits `chunks.embedding vector(1536)` unchanged (TRD §9.2, round 2).
+    embedding_dimensions: int = 1536
     embedding_batch_size: int = 100
     # New ingestion jobs pause (self-retry) while more chat runs are active.
     ingest_pause_active_runs: int = 3

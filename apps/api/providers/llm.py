@@ -309,5 +309,10 @@ async def complete(
 async def embed_batch(*, texts: list[str]) -> list[list[float]]:
     """Embed a batch of texts with the configured embedding model (TRD §9.1)."""
     _configure_langfuse()
-    response = await litellm.aembedding(model=get_settings().embedding_model, input=texts)
+    settings = get_settings()
+    response = await litellm.aembedding(
+        model=settings.embedding_model,
+        input=texts,
+        dimensions=settings.embedding_dimensions,
+    )
     return [list(map(float, item["embedding"])) for item in response.data]
