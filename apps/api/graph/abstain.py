@@ -18,9 +18,16 @@ def _location(chunk: ScoredChunk) -> str:
 def build_abstain_event(
     run_id: str, kept: list[ScoredChunk], *, offered_actions: list[str]
 ) -> Abstain:
-    found = "\n".join(
+    covers: list[str] = []
+    for chunk in kept:
+        name = chunk.document_name or chunk.source_type
+        if name not in covers:
+            covers.append(name)
+    coverage = f"Your sources cover {', '.join(covers[:4])}." if covers else ""
+    locations = "\n".join(
         f"- {c.document_name or c.source_type} {_location(c)}" for c in kept[:3]
     ) or "(no sources found)"
+    found = "\n".join(part for part in (coverage, locations) if part)
     missing = (
         "The retrieved sources do not contain enough evidence to "
         "answer this question."

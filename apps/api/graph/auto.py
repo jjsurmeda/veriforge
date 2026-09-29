@@ -703,13 +703,16 @@ async def prepare_auto_run(
         )
         abstain_event: Abstain | None = None
         conflict_event: Conflict | None = None
-        contexts = expanded_contexts
+        # KI-25: an abstention carries no contexts and persists no citations;
+        # what was found reaches the user as plain text in the abstain message.
+        contexts: list[ExpandedContext] = []
 
         if p_sufficient_final < abstain_threshold:
             abstain_event = build_abstain_event(
                 str(params.run_id), kept, offered_actions=["web", "deep"]
             )
         else:
+            contexts = expanded_contexts
             conflict_answer_map = await engine.decide(
                 state={"run_id": str(params.run_id), "kind": "conflict"},
                 questions={"conflict": _conflict_question(winners[:TOP_CHUNKS_FOR_SUFFICIENT])},

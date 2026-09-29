@@ -11,7 +11,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.models import Chat, Chunk, Collection, Document, Message, Section, User
+from db.models import Chat, Chunk, Citation, Collection, Document, Message, Section, User
 from db.session import get_session_factory
 from decisions.engine import DecisionEngine
 from graph import auto as auto_module
@@ -756,6 +756,83 @@ async def test_abstention_follows_the_configured_sufficient_abstain_threshold(
 
     assert abstained.sufficiency_p == 0.7
     assert abstained.abstain_event is not None
+
+
+async def test_abstention_persists_no_citations(
+    db: AsyncSession,
+    user_a: User,
+    no_llm: dict[str, list[str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """KI-25: an abstention has nothing to support, so it must not attach
+    the chunks it failed to answer from. The old abstain tests all stubbed
+    retrieval to return zero candidates, so the rows the run *did* persist
+    went unasserted."""
+
+    class _PassThroughRerank:
+        async def rerank(
+            self, *, query: str, documents: list[str], top_n: int
+        ) -> list[tuple[int, float]]:
+            return [(i, 1.0 - i / 100) for i in range(min(top_n, len(documents)))]
+
+    class _BelowFloorJev(_IngressJev):
+        async def decide(
+            self, *, state: dict[str, Any] | str, questions: dict[str, Question]
+        ) -> dict[str, Answer]:
+            answers = await super().decide(state=state, questions=questions)
+            if "sufficient" in answers:
+                answers["sufficient"] = Answer(
+                    engine="jev", latency_ms=1, value=0.02, probability=0.02
+                )
+            return answers
+
+    chat, assistant_message_id = await _seed_chat(db, user_a)
+    collection = (
+        await db.execute(select(Collection).where(Collection.owner_id == user_a.id))
+    ).scalar_one()
+    document = await make_document(db, collection, name="Pride and Prejudice")
+    section = await make_section(db, document)
+    rows = [
+        await add_chunk(
+            db,
+            document=document,
+            section=section,
+            ord=i,
+            text_=f"passage {i}.",
+            embedding=vec(i + 1),
+        )
+        for i in range(4)
+    ]
+    await db.commit()
+    candidates = [
+        ScoredChunk(
+            row.id, document.id, document.name, section.id, row.ord,
+            None, row.text, section.heading_path, "document", 1.0, None, 1.0,
+        )
+        for row in rows
+    ]
+
+    async def fake_search(*args: Any, **kwargs: Any) -> list[ScoredChunk]:
+        return list(candidates)
+
+    monkeypatch.setattr(auto_module, "hybrid_search", fake_search)
+    monkeypatch.setattr(auto_module, "get_reranker", _PassThroughRerank)
+
+    run = await prepare_auto_run(
+        get_session_factory(),
+        await _params(db, chat, user_a, assistant_message_id),
+        DecisionEngine(jev=_BelowFloorJev("lookup"), mode="jev_only"),
+    )
+
+    assert run.abstain_event is not None
+    assert run.contexts == []
+    assert run.abstain_event.found_summary != ""
+    persisted = (
+        await db.execute(
+            select(Citation).where(Citation.message_id == assistant_message_id)
+        )
+    ).scalars().all()
+    assert persisted == []
 
 
 async def test_compare_retrieves_chunks_for_each_named_entity(

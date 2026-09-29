@@ -23,7 +23,9 @@ unrun.
 **Pending (2026-09-30):** KI-21 (Langfuse host/coverage) and KI-22 (trace
 tab + metrics redesign) — independent; KI-21's stage spans build on
 KI-22 batch 1. New this round: KI-23 (misleading key/quota failure copy),
-KI-24 (eval corpus in the Shared library), KI-25 (abstain still cites).
+KI-24 (eval corpus in the Shared library). **C2** (2026-09-30) closed
+KI-25 (abstain no longer cites; `not_in_sources` 0/4 → 3/4) and split its
+leftover into KI-26.
 
 ---
 
@@ -506,6 +508,26 @@ Logged 2026-09-30, from the round-2 full acceptance run (23/31).
   second hides a real inconsistency. Also worth a look: why
   `outside-study-in-scarlet` answers at all (0.14 sufficient) when its
   scene is not in the corpus.
+
+## KI-26: `outside-study-in-scarlet` answers at 0.12 sufficient, above the 0.05 floor
+
+Logged 2026-09-30, from the KI-25 fix (the citation half of that issue is
+closed; this is the leftover failure).
+
+- **What:** with citations fixed, 3 of the 4 `not_in_sources` items pass.
+  `outside-study-in-scarlet` still `message_status='complete'` — its
+  sufficiency lands at 0.12, well above the default `sufficient_abstain`
+  floor of 0.05, so it generates an answer and cites 7 chunks. Its scene
+  (Watson's limp after the Reichenbach fall) is not in the corpus.
+- **Why it matters:** abstention accuracy is 3/4 in the gate because the
+  scorer is right and the pipeline is wrong, not because the reviewer
+  misjudges this one item.
+- **Fix:** the sufficiency question is asked over the reranked top-k, so
+  the likely cause is that the top-k it was shown contained a Holmes/Watson
+  passage close enough to the query to read as "sufficient". Check what it
+  was shown before touching the threshold — raising `sufficient_abstain`
+  above 0.12 would also push `outside-whitman` (0.03) and `ml-es-outside`
+  (0.02) further from the floor without addressing the cause.
 
 ## Reference: provider findings, 2026-09-26
 

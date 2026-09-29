@@ -56,6 +56,19 @@ async def test_abstention_uses_section_headings_and_toggle_names(
     assert "source picker" not in text
 
 
+async def test_abstention_names_the_documents_the_sources_cover() -> None:
+    event = build_abstain_event(
+        "run",
+        [
+            _chunk(page=1, heading_path=None),
+            _chunk(page=2, heading_path=None),
+        ],
+        offered_actions=[],
+    )
+
+    assert "Your sources cover Book.txt." in event.found_summary
+
+
 async def test_abstention_prompt_carries_the_language_rule(monkeypatch: MonkeyPatch) -> None:
     monkeypatch.setattr("graph.abstain.stream_completion", _echo_prompt)
     event = build_abstain_event("run", [], offered_actions=[])
