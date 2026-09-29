@@ -149,7 +149,8 @@ def _promoted_heading(
         and len(stripped) <= 60
         and len(stripped.split()) <= 12
         and not line[:1].isspace()
-        and stripped[0] not in "-*>|~`"
+        and stripped[0] not in "-*>|~`[\"'“”「『(〔"
+        and stripped[-1] not in "\"'”’」』)】〔"
         and "|" not in stripped
         and not re.match(r"\d+[.)]\s", stripped)
         and stripped[-1] not in ".!?…:;,。！？；："
