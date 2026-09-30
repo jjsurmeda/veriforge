@@ -533,6 +533,45 @@ already failed it with the same answer.
   "fix" it by adding 菩提祖师 to the item's `mention` list — that would
   make the check pass while the product is still wrong.
 
+## KI-28: The winning reranker is not licensed for production
+
+Logged 2026-09-30, from the C2 reranker comparison. **Decided, not
+overlooked** — read this before the next reranker change.
+
+`retrieval.reranker` is set to `jev` (settings version 136) on the
+strength of an offline replay over all 23 `answer`-class acceptance items
+(`apps/api/.data/rerank-comparison.json`, produced by
+`scripts/compare_rerankers.py`):
+
+| reranker | recall@8 | mean rank of expected | mention@8 | p50 ms | $/query | fell back |
+| --- | --- | --- | --- | --- | --- | --- |
+| jev | 1.000 | 1.0 | 1.000 | 431 | 0.000607 | 0/23 |
+| nvidia | 1.000 | 1.0 | 0.818 | 839 | 0.0 | 0/23 |
+
+Both arms saw byte-identical fused candidates (top 40) and no generation
+happened, so the only variable is the reranker. The prompt's tiebreak is
+recall → latency → cost: recall ties at 1.000, so latency decides, and
+Jev is 1.9× faster. It also finds the `mention` term in the top 8 on four
+items NVIDIA misses (`plot-red-headed-league`, `fact-weena`,
+`ml-fr-bovary-death`, `xl-en-bovary-death`).
+
+- **The catch:** the $0 NVIDIA column is the *free, evaluation-only* tier
+  (see the provider reference). It is not licensed for production, so
+  $0/query is not a real option to ship. Jev's $0.000607/query is real
+  money — about $0.55 per 1,000 queries, before the run's other calls.
+- **Why it matters:** choosing Jev trades a licensing problem for a
+  per-query cost on the hot path of every answer. At the current eval
+  volume that is noise; it is not noise at volume.
+- **Next step (not this slice):** stand up Cohere Rerank through Bedrock
+  per the earlier provider analysis and replay this same script against
+  all three. `CohereRerank` is already implemented and already takes
+  precedence when `COHERE_API_KEY` is set, so the third arm is a config
+  change plus one more replay, not new code.
+- **Also worth knowing:** Fast mode cannot use Jev — it has no
+  DecisionEngine, so it falls back to fused order and logs a warning.
+  If Fast ever ships, thread an engine through or exclude it from the
+  reranker comparison.
+
 ## Reference: provider findings, 2026-09-26
 
 These aren't defects, but check them before changing models or providers.

@@ -770,6 +770,9 @@ async def test_abstention_persists_no_citations(
     went unasserted."""
 
     class _PassThroughRerank:
+        def __init__(self, *_args: object) -> None:
+            pass
+
         async def rerank(
             self, *, query: str, documents: list[str], top_n: int
         ) -> list[tuple[int, float]]:
@@ -935,6 +938,9 @@ async def test_compare_keeps_both_books_when_the_reranker_prefers_one(
     equal share of the top-k instead."""
 
     class _FrankensteinBiasedRerank:
+        def __init__(self, *_args: object) -> None:
+            pass
+
         async def rerank(
             self, *, query: str, documents: list[str], top_n: int
         ) -> list[tuple[int, float]]:

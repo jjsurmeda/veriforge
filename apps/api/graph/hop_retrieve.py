@@ -66,7 +66,11 @@ async def run_hop(
         lexical_weight=lexical_weight,
     )
     reranked = dedupe_adjacent(
-        await apply_rerank(get_reranker(), query=sub_question.question, chunks=fused)
+        await apply_rerank(
+            get_reranker(engine, str(run_id)),
+            query=sub_question.question,
+            chunks=fused,
+        )
     )
     # Sanitize after rerank (TRD §11 layer 4, amended for KI-11): only the
     # chunks that can reach the generator are asked about; a dropped chunk

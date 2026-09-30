@@ -1,6 +1,7 @@
 """Rerank application, dedupe/expansion and context budget (TRD §9.2)."""
 
 import json
+from typing import Any
 from uuid import UUID, uuid4
 
 import httpx
@@ -15,10 +16,12 @@ from retrieval.hybrid import ScoredChunk
 from retrieval.rerank import (
     CohereRerank,
     FusedOrderRerank,
+    JevRerank,
     NvidiaRerank,
     apply_rerank,
     get_reranker,
 )
+from schemas.decisions import Answer
 from tests.retrieval.conftest import make_collection
 
 
@@ -241,3 +244,114 @@ async def test_apply_rerank_falls_back_to_fused_order_when_the_provider_fails() 
     chunks = [_chunk(i) for i in range(5)]
     ranked = await apply_rerank(provider, query="q", chunks=chunks, top_n=3)
     assert [c.chunk_id for c in ranked] == [c.chunk_id for c in chunks[:3]]
+
+
+class _ScoreJev:
+    """Fake DecisionEngine: scores a passage by whether its text contains
+    'good', so the expected order is obvious by inspection."""
+
+    def __init__(self) -> None:
+        self.calls: list[int] = []
+
+    async def decide(self, *, state: Any, questions: dict[str, Any]) -> dict[str, Any]:
+        self.calls.append(len(questions))
+        return {
+            name: Answer(
+                engine="jev",
+                latency_ms=1,
+                value=0.9 if "good" in q.prompt else 0.1,
+                probability=None,
+            )
+            for name, q in questions.items()
+        }
+
+
+async def test_jev_rerank_orders_by_score_and_caps_top_n() -> None:
+    jev = _ScoreJev()
+    provider = JevRerank(jev, "run")  # type: ignore[arg-type]
+    documents = ["bad one", "good two", "bad three", "good four"]
+
+    ranked = await provider.rerank(query="q", documents=documents, top_n=2)
+
+    assert [i for i, _ in ranked] == [1, 3]
+    assert {s for _, s in ranked} == {0.9}
+    assert len(ranked) == 2
+    # one batched call, not one call per passage
+    assert jev.calls == [4]
+
+
+async def test_jev_rerank_scores_an_unanswered_passage_zero() -> None:
+    class _Silent(_ScoreJev):
+        async def decide(self, *, state: Any, questions: dict[str, Any]) -> dict[str, Any]:
+            return {}
+
+    provider = JevRerank(_Silent(), "run")  # type: ignore[arg-type]
+
+    ranked = await provider.rerank(query="q", documents=["good", "bad"], top_n=2)
+
+    assert [s for _, s in ranked] == [0.0, 0.0]
+
+
+async def test_jev_rerank_clamps_and_survives_a_non_numeric_answer() -> None:
+    class _Weird(_ScoreJev):
+        async def decide(self, *, state: Any, questions: dict[str, Any]) -> dict[str, Any]:
+            return {
+                name: Answer(engine="jev", latency_ms=1, value=v, probability=None)
+                for name, v in (("passage_0", 42.0), ("passage_1", "not a number"))
+            }
+
+    ranked = await JevRerank(_Weird(), "run").rerank(  # type: ignore[arg-type]
+        query="q", documents=["a", "b"], top_n=2
+    )
+
+    assert dict(ranked) == {0: 1.0, 1: 0.0}
+
+
+async def test_a_breaker_open_jev_falls_back_to_fused_order() -> None:
+    """Jev is unreachable: reranking must degrade to the fused order, never
+    fail the run (same contract apply_rerank gives the HTTP providers)."""
+
+    class _Down(_ScoreJev):
+        async def decide(self, *, state: Any, questions: dict[str, Any]) -> dict[str, Any]:
+            raise httpx.ConnectError("jev down")
+
+    chunks = [_chunk(0, text="good"), _chunk(1, text="bad")]
+
+    ranked = await apply_rerank(
+        JevRerank(_Down(), "run"),  # type: ignore[arg-type]
+        query="q",
+        chunks=chunks,
+        top_n=2,
+    )
+
+    assert [c.text for c in ranked] == ["good", "bad"]
+
+
+def test_the_setting_selects_the_reranker(monkeypatch: pytest.MonkeyPatch) -> None:
+    engine = object()
+
+    monkeypatch.setattr(
+        "retrieval.rerank.runtime_value",
+        lambda name, default: "jev" if name == "retrieval.reranker" else default,
+    )
+    assert isinstance(get_reranker(engine, "run"), JevRerank)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(
+        "retrieval.rerank.runtime_value",
+        lambda name, default: "nvidia" if name == "retrieval.reranker" else default,
+    )
+    monkeypatch.setattr(
+        "retrieval.rerank.get_settings", lambda: Settings(cohere_api_key="", nvidia_api_key="k")
+    )
+    assert isinstance(get_reranker(engine, "run"), NvidiaRerank)  # type: ignore[arg-type]
+
+
+def test_jev_selected_without_an_engine_falls_back_to_fused_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "retrieval.rerank.runtime_value",
+        lambda name, default: "jev" if name == "retrieval.reranker" else default,
+    )
+
+    assert isinstance(get_reranker(), FusedOrderRerank)

@@ -654,7 +654,7 @@ async def prepare_auto_run(
                 "rerank",
                 partial(
                     _rerank_candidates,
-                    get_reranker(),
+                    get_reranker(engine, str(params.run_id)),
                     query=current_query,
                     chunks=fused,
                     provenance=provenance,

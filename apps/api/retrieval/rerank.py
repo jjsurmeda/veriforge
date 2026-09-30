@@ -13,8 +13,11 @@ from typing import Protocol
 import httpx
 
 from config import get_settings
+from decisions.engine import DecisionEngine
+from retrieval.context import count_tokens
 from retrieval.hybrid import ScoredChunk
 from runtime import runtime_value
+from schemas.decisions import Question, Score
 
 logger = logging.getLogger(__name__)
 
@@ -124,9 +127,87 @@ class FusedOrderRerank:
         return [(i, 1.0 / (1 + i)) for i in range(min(top_n, len(documents)))]
 
 
-def get_reranker() -> RerankProvider:
+# Jev's state limit, the same budget the Reviewer's batches use (TRD §10).
+JEV_BATCH_TOKEN_BUDGET = 28_000
+# Per-passage cap, mirroring review.py's _CHUNK_CAP: a pathological chunk
+# must not eat a whole batch.
+_PASSAGE_CHARS = 2_000
+
+
+def _relevance_question(query: str, passage: str) -> Score:
+    return Score(
+        prompt=(
+            "How relevant is this passage to the question? Answer 0 for "
+            "irrelevant and 1 for directly on point.\n\n"
+            f"[Question]\n{query}\n\n[Passage]\n{passage}"
+        ),
+        min=0.0,
+        max=1.0,
+    )
+
+
+def batch_passages(query: str, documents: list[str]) -> list[list[int]]:
+    """Split passages into batches whose question text fits one Jev call
+    (<28K tokens). Returns the document indices per batch."""
+    batches: list[list[int]] = []
+    current: list[int] = []
+    current_tokens = 0
+    for i, document in enumerate(documents):
+        tokens = count_tokens(_relevance_question(query, document[:_PASSAGE_CHARS]).prompt)
+        if current and current_tokens + tokens > JEV_BATCH_TOKEN_BUDGET:
+            batches.append(current)
+            current, current_tokens = [], 0
+        current.append(i)
+        current_tokens += tokens
+    if current:
+        batches.append(current)
+    return batches
+
+
+class JevRerank:
+    """Rerank by asking Jev one batched `Score` per candidate passage.
+
+    Goes through DecisionEngine like every other decision (CLAUDE.md), so it
+    inherits the breaker and the LLM fallback. A passage Jev fails to answer
+    scores 0.0 rather than dropping the run, and `apply_rerank` still catches
+    transport errors and falls back to fused order.
+    """
+
+    def __init__(self, engine: DecisionEngine, run_id: str) -> None:
+        self._engine = engine
+        self._run_id = run_id
+
+    async def rerank(self, *, query: str, documents: list[str], top_n: int) -> RerankResult:
+        pairs: list[tuple[int, float]] = []
+        for batch in batch_passages(query, documents):
+            questions: dict[str, Question] = {
+                f"passage_{i}": _relevance_question(query, documents[i][:_PASSAGE_CHARS])
+                for i in batch
+            }
+            answers = await self._engine.decide(
+                state={"run_id": self._run_id, "kind": "rerank"}, questions=questions
+            )
+            for i in batch:
+                answer = answers.get(f"passage_{i}")
+                try:
+                    score = float(answer.value) if answer is not None else 0.0
+                except (TypeError, ValueError):
+                    score = 0.0
+                pairs.append((i, min(max(score, 0.0), 1.0)))
+        pairs.sort(key=lambda pair: pair[1], reverse=True)
+        return pairs[:top_n]
+
+
+def get_reranker(engine: DecisionEngine | None = None, run_id: str = "") -> RerankProvider:
     if not bool(runtime_value("retrieval.rerank", True)):
         return FusedOrderRerank()
+    if str(runtime_value("retrieval.reranker", "nvidia")) == "jev":
+        if engine is None:
+            # Fast mode has no DecisionEngine yet, so it cannot ask Jev. Say so
+            # rather than silently ranking in fused order.
+            logger.warning("retrieval.reranker=jev but no engine; using fused order")
+            return FusedOrderRerank()
+        return JevRerank(engine, run_id)
     settings = get_settings()
     if settings.cohere_api_key:
         return CohereRerank(settings.cohere_api_key, settings.cohere_rerank_model)
