@@ -25,7 +25,9 @@ tab + metrics redesign) — independent; KI-21's stage spans build on
 KI-22 batch 1. New this round: KI-23 (misleading key/quota failure copy),
 KI-24 (eval corpus in the Shared library). **C2** (2026-09-30) closed
 KI-25 (abstain no longer cites; `not_in_sources` 0/4 → 3/4) and split its
-leftover into KI-26.
+leftover into KI-26. C2 also closed KI-19: the BM25 index is re-tokenised
+with `icu` (migration 0013) and both CJK items now retrieve through the
+lexical leg.
 
 ---
 
@@ -304,26 +306,6 @@ leftover into KI-26.
   one raw SSE fixture per UI scenario, then assert an unchanged
   `usage_ledger` around the default suite.
 
-## KI-19: CJK BM25 leg is dead for natural-language questions
-
-Found 2026-09-29, round 2 (measured, not assumed). With the default
-pg_search tokenizer, individual CJK terms are indexed and match fine
-(`孫悟空` → 112 chunks, `兵器` → 122, `羅生門` → 12, `老婆` → 22), but a
-natural Chinese or Japanese *question* is one unsegmented token run and
-matches **nothing**: `paradedb.parse('孫悟空的兵器是什麼？', lenient =>
-true)` → 0 rows; `'羅生門で老婆は何をしていましたか？'` → 0 rows. The same
-terms space-separated match (32 and 1,215 rows).
-
-**Effect:** for CJK questions the BM25 leg of hybrid search contributes
-zero candidates; retrieval is pure vector. Fusion weights the dead leg
-at `lexical_weight`, so CJK retrieval quality is capped below what the
-embedding model could deliver.
-
-**Not fixed in this dispatch** (explicitly deferred to the next one,
-with the reranker comparison): needs a CJK-capable tokenizer or a
-pre-parse segmentation step. Evidence above is reproducible with one
-`psql` query per term.
-
 ## KI-20: OpenRouter account credit is nearly spent (key cap lifted)
 
 **Status: live calls work again; the account balance is now the binding
@@ -528,6 +510,28 @@ closed; this is the leftover failure).
   was shown before touching the threshold — raising `sufficient_abstain`
   above 0.12 would also push `outside-whitman` (0.03) and `ml-es-outside`
   (0.02) further from the floor without addressing the cause.
+
+## KI-27: `xl-en-wukong-master` answers with the wrong person (pre-existing, not retrieval)
+
+Logged 2026-09-30, from the C2 KI-19 live check. **Not caused by the
+CJK tokenizer work** — the C1 23/31 run (`.data/acceptance/20260929-180258.json`)
+already failed it with the same answer.
+
+- **What:** the item asks who Sun Wukong's master is and expects Tang
+  Sanzang / 唐僧 / 三藏 / Tripitaka / Xuanzang. The run answers "the Bodhi
+  Patriarch (菩提祖师) who teaches him various magical skills". Retrieval is
+  fine: all six citations are 西遊記.txt, so the book was found and the
+  `answer` class is correct. Only the `mention` check fails.
+- **Why it matters:** it is a generation-side entity confusion between the
+  two figures a reader of Journey to the West would name first — the
+  teacher of the seventy-two transformations and the master of the
+  pilgrimage — not a retrieval or scope failure.
+- **Fix:** worth one look at whether the retrieved top-k actually contains
+  the passage naming 唐僧 as the pilgrimage master. If it does, this is a
+  generator/grounding problem and belongs with the reviewer; if it does not,
+  the chunking of the 西遊記 corpus is dropping the introduction. Do not
+  "fix" it by adding 菩提祖师 to the item's `mention` list — that would
+  make the check pass while the product is still wrong.
 
 ## Reference: provider findings, 2026-09-26
 

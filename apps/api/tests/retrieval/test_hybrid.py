@@ -228,3 +228,80 @@ async def test_client_filters_only_narrow(
     assert await _search(db, ownership, ClientFilters(date_from=future)) == []
     assert await top_chunk_id(ClientFilters(date_to=future)) == hit.id
     assert await _search(db, ownership, ClientFilters(date_to=past)) == []
+
+
+async def test_cjk_question_retrieves_through_the_bm25_leg(
+    db: AsyncSession,
+    user_a: User,
+    seed_document: Callable[..., Awaitable[tuple[Document, Section]]],
+) -> None:
+    """KI-19: with the default tokenizer a whole CJK question is one
+    unsegmented token and the lexical leg returns nothing, so CJK
+    retrieval was silently pure-vector. Migration 0013 re-tokenises the
+    index with `icu` and hybrid_search names that tokenizer per query."""
+
+    coll = await make_collection(db, user_a, "cjk")
+    doc, section = await seed_document(db, coll)
+    zh = await add_chunk(
+        db, document=doc, section=section, ord=0,
+        text_="西遊記 孫悟空 的 兵器 是 金箍棒", embedding=vec(99), page=1,
+    )
+    ja = await add_chunk(
+        db, document=doc, section=section, ord=1,
+        text_="羅生門 老婆 婆 在 門口 等待", embedding=vec(98), page=2,
+    )
+    ownership = Ownership(user_id=user_a.id, collection_ids=[coll.id])
+
+    async def ask(question: str) -> list[ScoredChunk]:
+        return await hybrid_search(
+            db,
+            query_text=question,
+            query_embedding=vec(1),
+            ownership=ownership,
+            lexical_weight=1.0,
+        )
+
+    zh_hits = {c.chunk_id for c in await ask("孫悟空的兵器是什麼？") if c.bm25_score is not None}
+    ja_hits = {
+        c.chunk_id
+        for c in await ask("羅生門で老婆は何をしていましたか？")
+        if c.bm25_score is not None
+    }
+
+    assert zh_hits == {zh.id}
+    assert ja_hits == {ja.id}
+
+
+async def test_icu_tokenizer_does_not_loosen_english_retrieval(
+    db: AsyncSession,
+    user_a: User,
+    seed_document: Callable[..., Awaitable[tuple[Document, Section]]],
+) -> None:
+    """`chinese_lindera` was rejected for this reason: it emits an empty
+    token between Latin words, and an empty token matches every document.
+    The lexical leg must still hit only its own chunk. (The vector leg
+    legitimately returns the other one — `lexical_weight` reweights fusion,
+    it does not disable the vector side.)"""
+    coll = await make_collection(db, user_a, "en")
+    doc, section = await seed_document(db, coll)
+    hit = await add_chunk(
+        db, document=doc, section=section, ord=0,
+        text_="the AW-2000-XE blade ships with a 12 month warranty",
+        embedding=vec(99), page=1,
+    )
+    await add_chunk(
+        db, document=doc, section=section, ord=1,
+        text_="Alice went to Wonderland and met the Rabbit",
+        embedding=vec(98), page=2,
+    )
+    ownership = Ownership(user_id=user_a.id, collection_ids=[coll.id])
+
+    hits = await hybrid_search(
+        db,
+        query_text="warranty blade",
+        query_embedding=vec(1),
+        ownership=ownership,
+        lexical_weight=1.0,
+    )
+
+    assert {c.chunk_id for c in hits if c.bm25_score is not None} == {hit.id}
