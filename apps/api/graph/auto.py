@@ -733,22 +733,27 @@ async def prepare_auto_run(
                     relevance_max = max(scores)
                     relevance_threshold = threshold("rerank_abstain", relevance_engine)
                     relevance_ok = relevance_max >= relevance_threshold
-                    decision_events.append(
-                        Decision(
-                            run_id=str(params.run_id),
-                            name="relevance",
-                            value=relevance_max,
-                            probability=None,
-                            probabilities=None,
-                            engine=relevance_engine,
-                            latency_ms=0,
-                            threshold=relevance_threshold,
-                            reasoning=(
-                                "max rerank score of the post-sanitize winners "
-                                f"({len(scores)} scored passages)"
-                            ),
-                        )
+                    relevance_decision = Decision(
+                        run_id=str(params.run_id),
+                        name="relevance",
+                        value=relevance_max,
+                        probability=None,
+                        probabilities=None,
+                        engine=relevance_engine,
+                        latency_ms=0,
+                        stage="rerank",
+                        threshold=relevance_threshold,
+                        reasoning=(
+                            "max rerank score of the post-sanitize winners "
+                            f"({len(scores)} scored passages)"
+                        ),
                     )
+                    decision_events.append(relevance_decision)
+                    # No engine.decide call made this decision, so the
+                    # DecisionEngine emitter never fires for it: publish it
+                    # here or the trace can't show why the run abstained.
+                    if publish is not None:
+                        await publish(params.run_id, relevance_decision)
             expanded_contexts = await expand_context(session, winners)
             top_for_check = expanded_contexts[
                 : int(runtime_value("retrieval.top_k", TOP_CHUNKS_FOR_SUFFICIENT))

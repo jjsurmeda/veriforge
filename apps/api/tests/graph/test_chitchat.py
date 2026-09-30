@@ -1140,6 +1140,43 @@ async def test_relevance_threshold_override_is_honoured(
     assert _relevance_decisions(answered)[-1].threshold == pytest.approx(0.2)
 
 
+@pytest.mark.asyncio
+async def test_relevance_decision_is_published_to_the_trace(
+    db: AsyncSession,
+    user_a: User,
+    no_llm: dict[str, list[str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No engine.decide call makes the relevance decision, so the
+    DecisionEngine emitter never fires for it — prepare_auto_run has to
+    publish it, or an abstention's trace can't show the second signal."""
+    published: list[Any] = []
+
+    async def publish(run_id: UUID, event: Any) -> None:
+        published.append(event)
+
+    params = await _gate_params(db, user_a, no_llm, monkeypatch)
+    run = await prepare_auto_run(
+        get_session_factory(),
+        params,
+        DecisionEngine(
+            jev=_RelevanceJev("lookup", 0.2, 0.3), mode="jev_only"
+        ),
+        publish=publish,
+    )
+
+    relevance = [
+        event
+        for event in published
+        if getattr(event, "name", None) == "relevance"
+    ]
+    assert run.abstain_event is not None
+    # one per attempt: the initial retrieve and the single retry
+    assert len(relevance) == 2
+    assert all(event.value == pytest.approx(0.3) for event in relevance)
+    assert all(event.threshold == pytest.approx(0.6) for event in relevance)
+
+
 async def test_retry_count_never_exceeds_one(
     db: AsyncSession,
     user_a: User,

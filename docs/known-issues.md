@@ -452,6 +452,14 @@ constraint.** Raised 2026-09-30.
 **Status: pending** (logged 2026-09-30, not yet verified against the
 Langfuse dashboard; if the JP project is empty, this is the cause).
 
+- **Note (2026-10-01, D2):** the fast20-era LiteLLM callback warnings are
+  confirmed present in the live stack: 1374 `Langfuse trace_id mismatch:
+  set , but langfuse returned <uuid>` warnings in `veriforge-api-1` logs
+  (0 in worker-light) — the "set ," shows litellm passing an *empty*
+  intended trace id. Logged here per the D2 dispatch; **not fixed** —
+  this KI's existing host/keys diagnosis is the first thing to check
+  before touching the callback.
+
 - **Host never reaches the SDK.** `.env` sets
   `LANGFUSE_BASE_URL="https://jp.cloud.langfuse.com"`, but `config.py`
   reads only the two keys, `compose.yaml` forwards only the two keys
@@ -655,6 +663,16 @@ already failed it with the same answer.
   the chunking of the 西遊記 corpus is dropping the introduction. Do not
   "fix" it by adding 菩提祖师 to the item's `mention` list — that would
   make the check pass while the product is still wrong.
+- **Reviewer finding (2026-10-01, D2):** the passage **is** in the top-k —
+  rank 2, rerank 0.94, 「賤號三藏…小徒…第一個名孫悟空」 — but 6 of the 8
+  chunks are Bodhi Patriarch scenes where Wukong calls him 師父, so the
+  generator's top-of-mind master is Bodhi. The question itself is
+  ambiguous: both figures are Wukong's master (菩提祖师 for the skills,
+  唐僧 for the pilgrimage), so the "right" answer is a judgement call the
+  owner has to make. **The owner decides the fix (D3); the item was not
+  edited.** It is the only item the KI-26 replay leaves failing at every
+  threshold, and it fails on content (`mention`), not on the
+  answer/abstain decision.
 
 ## KI-28: Jev reranker — switched to Jev (owner decision); abstention separation still open
 
@@ -869,8 +887,68 @@ Logged and closed 2026-09-30 (C3). Fixed in `68a1b02`; the scorer half in
   does not fail it — a deliberately conservative choice, not a clean bill of
   health.
 
-## Reference: provider findings, 2026-09-26
+## KI-30: The eval harness measured itself, not the product (fast20 D1 runs)
 
+Logged 2026-10-01 (D2 items 2a/2b/2c); all three fixed on `fix/darcy`
+(commits `ac6fed4`, `495047f`, `624ccf9`). Kept as a record because every
+number recorded before D2 — including D1's three fast20 gate runs and the
+KI-6 tables — was produced by this harness.
+
+- **2a — eval runs searched the web.** `evals/runner.py` passed
+  `source="auto"`, which ingress routes to Tavily; the UI never sends
+  `auto` (`ChatComposer.tsx:19` sends `upload`/`both`, acceptance sends
+  `upload`). In D1's three fast20 runs 16 of 20 items cited
+  `source_type='web'` chunks and some in-corpus AW-2000 items cited web
+  only; the should-abstain items (Dracula, War of the Worlds,
+  Looking-Glass, Cosette, Moriarty, 賈寶玉) were answered from web pages,
+  making abstention 0–1 of 8 an artefact (the answers were faithful to
+  the web pages, so faithfulness 1.0 was legitimate; web variance also
+  explains most of the faithfulness dip — HomeKit, web-only:
+  1.00 / 0.50 / 1.00). **Fixed:** `source="upload"` in both runner
+  branches; TRD §15 records the rule.
+- **2b — the judge's output was dropped.** `context_precision` /
+  `context_recall` were null on 17–19 of 20 items in every D1 run, read
+  as "judge noise". Captured raw Haiku 4.5 responses show fenced JSON
+  followed by "**Explanation:**"/"**Justification:**"/"**Reasoning:**"
+  prose, which the whole-string fence match could not parse, and one
+  missing field nulled all three. Not the KI-29 message-shape failure —
+  the model scores, then explains. **Fixed:** `parse_judge_response`
+  raw-decodes the first JSON object wherever it sits and keeps each field
+  that parses; `eval_judge.md` stays at v2.
+- **2c — `p50_our_overhead_ms` was always null, and Jev time was never
+  recorded.** (i) `aggregate()` reported null unless *every* scored item
+  was fully attributed, against TRD §15's rule (an unattributable item
+  records no figure; the summary is null only when no call was
+  attributed). Now the median runs over the attributed items and the
+  summary carries `overhead_items_attributed`. (ii) `decisions/jev.py`
+  uses raw httpx, so all Jev time (rerank batches, sufficient, sanitize,
+  conflict, ingress, review verification) counted as "our overhead";
+  Jev's OpenRouter response **does** carry `x-generation-id` (verified
+  live), and `JevClient` now reports it through an eval-only
+  `generation_id_sink`. Two live probes show the stats record lands but
+  `generation_time` reads **0** for `api_type="decisions"` (the duration
+  sits in `latency`, 241–242 ms): under the TRD-owned method (KI-18) Jev
+  provider time therefore contributes 0 and its wall time counts as
+  ours. Reported, not re-measured — switching fields would change a
+  TRD-owned method. (iii) The per-item stats wait (~20 s per item, the
+  record's landing delay) now runs once, after the whole run, so one
+  wait covers it. (iv) Negative per-item overhead (concurrent calls
+  summed) is logged and reported, never clamped.
+- **External calls on the eval path, attribution after D2:**
+  `litellm.acompletion` (generation, rewrite, fallback decisions) —
+  attributed inside the timed window; reviewer + judge `acompletion` —
+  deliberately outside it; `litellm.aembedding` (query embed on cache
+  miss) — no generation record exists for embeddings, counted as ours;
+  Jev — recorded, `generation_time` 0 (above); NVIDIA/Cohere rerank (only
+  when `retrieval.reranker != "jev"`) — not OpenRouter, counted as ours;
+  fused order — local, no call.
+- **Consequence:** D1's three fast20 runs and their KI-6 table are not
+  valid measurements of the product. The baseline attempt that failed on
+  them (faithfulness 0.9492, null overhead) is explained by 2a and 2b.
+  Re-measure from D3 on the fixed harness; do not backfill comparisons
+  across the fix.
+
+## Reference: provider findings, 2026-09-26
 These aren't defects, but check them before changing models or providers.
 
 - **Nemotron reasoning is on by default on OpenRouter.** It adds 5–10 s
