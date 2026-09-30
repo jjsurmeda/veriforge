@@ -676,6 +676,112 @@ async def test_below_floor_retries_once_then_abstains(
     assert len(no_llm["retrieval"]) == 2
 
 
+@pytest.mark.xfail(
+    reason="KI-26: evidence that is topically adjacent but answerless reads "
+    "as sufficient — live Jev scores the captured scarlet top-k at "
+    "0.08-0.12 (`.data/ki26/capture.json`) against the 0.05 floor, so the "
+    "pipeline answers a question whose scene is not in the corpus. Prompt "
+    "rewording alone did not separate it (v1/v2/v3: scarlet "
+    "0.10/0.10/0.08 vs compare-inventors 0.10/0.08/0.11); the separating "
+    "signal is the Jev rerank score (top-1 0.28 vs 0.97 on-topic).",
+    strict=False,
+)
+async def test_answerless_but_topical_evidence_abstains(
+    db: AsyncSession,
+    user_a: User,
+    no_llm: dict[str, list[str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """KI-26 repro: the captured `outside-study-in-scarlet` top-k never
+    states the answer — no chunk mentions Afghanistan — yet it reads as
+    sufficient, so the run must abstain, not answer."""
+
+    chat, assistant_message_id = await _seed_chat(db, user_a)
+
+    document = await make_document(
+        db,
+        (
+            await db.execute(
+                select(Collection).where(Collection.owner_id == user_a.id)
+            )
+        ).scalar_one(),
+        "The Adventures of Sherlock Holmes.txt",
+    )
+    section = await make_section(db, document)
+    chunk_texts = (
+        "“Wedlock suits you,” he remarked. “I think, Watson, that you have "
+        "put on seven and a half pounds since I saw you. And in practice "
+        "again, I observe.” “Then, how do you know?” “I see it, I deduce "
+        "it. How do I know that you have been getting yourself very wet "
+        "lately, and that you have a most clumsy and careless servant "
+        "girl?”",
+        "“Beyond the obvious facts that he has at some time done manual "
+        "labour, that he takes snuff, that he is a Freemason, that he has "
+        "been in China, and that he has done a considerable amount of "
+        "writing lately, I can deduce nothing else.”",
+    )
+    rows = [
+        await add_chunk(
+            db,
+            document=document,
+            section=section,
+            ord=i,
+            text_=text_,
+            embedding=vec(i + 2),
+        )
+        for i, text_ in enumerate(chunk_texts)
+    ]
+    await db.commit()
+
+    def scored(chunk: Chunk, i: int) -> ScoredChunk:
+        return ScoredChunk(
+            chunk_id=chunk.id,
+            document_id=document.id,
+            document_name=document.name,
+            section_id=section.id,
+            ord=i,
+            page=None,
+            text=chunk.text,
+            heading_path=section.heading_path,
+            source_type="document",
+            vector_score=1.0 - i * 0.01,
+            bm25_score=None,
+            fused_score=1.0 - i * 0.01,
+        )
+
+    chunks = [scored(chunk, i) for i, chunk in enumerate(rows)]
+
+    async def fake_search(*args: Any, **kwargs: Any) -> list[ScoredChunk]:
+        return list(chunks)
+
+    monkeypatch.setattr(auto_module, "hybrid_search", fake_search)
+
+    class _TopicalJev(_IngressJev):
+        """Sufficient at 0.10 — the value live Jev returns for the captured
+        KI-26 evidence (`.data/ki26/capture.json`)."""
+
+        async def decide(
+            self, *, state: dict[str, Any] | str, questions: dict[str, Question]
+        ) -> dict[str, Answer]:
+            answers = await super().decide(state=state, questions=questions)
+            if "sufficient" in answers:
+                answers["sufficient"] = Answer(
+                    engine="jev", latency_ms=1, value=0.1, probability=0.1
+                )
+            return answers
+
+    # The mechanism, pinned: the answer's key fact is in no chunk.
+    assert all("Afghanistan" not in chunk.text for chunk in chunks)
+
+    run = await prepare_auto_run(
+        get_session_factory(),
+        await _params(db, chat, user_a, assistant_message_id),
+        DecisionEngine(jev=_TopicalJev("lookup"), mode="jev_only"),
+    )
+
+    assert run.abstain_event is not None
+
+
 async def test_retry_count_never_exceeds_one(
     db: AsyncSession,
     user_a: User,

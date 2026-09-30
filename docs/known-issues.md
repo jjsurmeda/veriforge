@@ -594,6 +594,33 @@ closed; this is the leftover failure).
   was shown before touching the threshold — raising `sufficient_abstain`
   above 0.12 would also push `outside-whitman` (0.03) and `ml-es-outside`
   (0.02) further from the floor without addressing the cause.
+- **Mechanism proven (2026-10-01, D1): topically-adjacent-but-answerless
+  evidence; the prompt lever does not hold.** Captured exactly what the
+  `sufficient` noul was shown, through the app's own `prepare_auto_run`
+  (settings v142, reranker jev, top_k 8; capture in
+  `.data/ki26/capture.json`): rank 1 (rerank 0.28) is Adventures ch. I's
+  opening — Holmes deducing Watson's recent past, whose parent window
+  literally name-drops "the dark incidents of the Study in Scarlet" —
+  followed by the boot-scoring, "has been in China", limp and hat
+  deductions. The corpus's best match, and **"Afghanistan" appears in
+  none of the chunks**: topically adjacent, answerless. Jev reads that as
+  0.10 (acceptance history 0.12–0.14); its true-negative bucket
+  (0.01–0.04, per `decisions/thresholds.py`) is reserved for zero-overlap
+  evidence, which scarlet's wording overlap never reaches. Not a
+  rerank/fusion artefact. Three `_sufficient_question` prompt variants,
+  each re-measured live: scarlet wobbles 0.08–0.12 under every wording
+  while the floor is 0.05, and each nudge toward scarlet pushed
+  `compare-inventors` toward the floor. The signal that *does* separate
+  the two is the Jev rerank score itself — scarlet top-1 **0.28** vs
+  compare-inventors **0.97** — the second signal `thresholds.py` already
+  reserves for this case. **Next:** calibrate a `sufficient_min_rerank`
+  gate (≈0.5 candidate) at the `p_sufficient >= abstain_threshold` break
+  in `auto.py`, against a full acceptance run — a new threshold cell that
+  needs calibration across the gate set, too big for the D1 box. Repro:
+  `tests/graph/test_chitchat.py::test_answerless_but_topical_evidence_abstains`
+  (xfail, strict=False) seeds the captured-style answerless chunks, stubs
+  sufficient at the measured 0.10, and flips to passing when a real fix
+  lands. `sufficient_abstain` unchanged at 0.05; the item untouched.
 
 ## KI-27: `xl-en-wukong-master` answers with the wrong person (pre-existing, not retrieval)
 
