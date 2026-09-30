@@ -2,6 +2,7 @@
 
 import asyncio
 from contextlib import suppress
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -53,7 +54,21 @@ async def test_heartbeat_loop_keeps_a_waiting_run_from_being_swept(
         _heartbeat_loop(bus, get_session_factory(), run_id, interval=0.01)
     )
     try:
-        await asyncio.sleep(0.02)
+        # Wait for the condition, not a fixed sleep: poll until the
+        # heartbeat row is actually refreshed. A fixed 20 ms sleep races
+        # under suite load (passes alone, fails in the full run).
+        refreshed = False
+        for _ in range(500):
+            heartbeat_at = (
+                await db.execute(
+                    text("SELECT heartbeat_at FROM runs WHERE id = :i"), {"i": run_id}
+                )
+            ).scalar_one()
+            if heartbeat_at > datetime.now(UTC) - timedelta(minutes=1):
+                refreshed = True
+                break
+            await asyncio.sleep(0.005)
+        assert refreshed, "heartbeat loop never refreshed the row"
         assert await sweep_stale_runs(bus, get_session_factory()) == 0
     finally:
         heartbeat.cancel()

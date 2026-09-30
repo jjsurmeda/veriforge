@@ -333,11 +333,24 @@ async def test_sanitize_asks_only_about_the_reranked_top_k(
 
     chunks = [scored(chunk, i) for i, chunk in enumerate(rows)]
 
+    # Pin the reranker: this test is about sanitize, not rerank. Since
+    # 1ba8f3f the default reranker is Jev, whose fake answers Score with
+    # 0.01, which broke the fused-order assertion below (1.0 = 1/(1+0)).
+    class _PassThroughRerank:
+        def __init__(self, *_args: object) -> None:
+            pass
+
+        async def rerank(
+            self, *, query: str, documents: list[str], top_n: int
+        ) -> list[tuple[int, float]]:
+            return [(i, 1.0 - i / 100) for i in range(min(top_n, len(documents)))]
+
     async def fake_search(*args: Any, **kwargs: Any) -> list[ScoredChunk]:
         no_llm["retrieval"].append(str(kwargs.get("query_text", "")))
         return list(chunks)
 
     monkeypatch.setattr(auto_module, "hybrid_search", fake_search)
+    monkeypatch.setattr(auto_module, "get_reranker", _PassThroughRerank)
 
     jev = _CountingJev()
     run = await prepare_auto_run(

@@ -29,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import httpx
 
-from scripts import smoke_chat
+from scripts import smoke_chat as smoke_chat
 from textkit import detect_language
 
 SET_FILE = Path(__file__).resolve().parents[3] / "evals" / "acceptance" / "books.json"

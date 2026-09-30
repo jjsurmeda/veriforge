@@ -9,6 +9,7 @@ a smalltalk item and never after the last item.
 """
 
 import json
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -17,6 +18,8 @@ import httpx
 import pytest
 
 from scripts import acceptance
+
+PacedRun = Callable[..., Awaitable[list[float]]]
 
 
 class Sleeper:
@@ -81,7 +84,7 @@ def _result_for(item: dict[str, Any]) -> dict[str, Any]:
 
 
 @pytest.fixture
-def paced_run(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+def paced_run(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> PacedRun:
     """Wire run() to a three-item local dataset and fakes, return a runner.
 
     Items are [smalltalk, answer, answer]: with pacing on, the smalltalk
@@ -120,23 +123,25 @@ def paced_run(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     return run
 
 
-async def test_the_default_run_performs_no_inter_item_sleep(paced_run) -> None:
+async def test_the_default_run_performs_no_inter_item_sleep(paced_run: PacedRun) -> None:
     """Pacing is opt-in: pace defaults to 0 and the sleeper is never awaited."""
     assert await paced_run() == []
 
 
-async def test_pace_n_sleeps_n_seconds_between_eligible_items(paced_run) -> None:
+async def test_pace_n_sleeps_n_seconds_between_eligible_items(paced_run: PacedRun) -> None:
     """--pace N reaches the sleeper verbatim: the smalltalk item suppresses
     the 1-2 sleep, so only the one after the middle answer runs."""
     assert await paced_run(pace=7) == [7.0]
 
 
-async def test_pace_skips_after_smalltalk_items_and_after_the_last_item(paced_run) -> None:
+async def test_pace_skips_after_smalltalk_items_and_after_the_last_item(
+    paced_run: PacedRun,
+) -> None:
     """The skip rules are unchanged from the always-on version: filtered to
     the two answers, exactly one sleep (never after the last item)."""
     assert await paced_run(pace=65, only=["a1", "a2"]) == [65.0]
 
 
-async def test_a_fractional_pace_is_passed_through(paced_run) -> None:
+async def test_a_fractional_pace_is_passed_through(paced_run: PacedRun) -> None:
     """Seconds may be fractional; the value is not rounded away."""
     assert await paced_run(pace=0.5) == [0.5]
