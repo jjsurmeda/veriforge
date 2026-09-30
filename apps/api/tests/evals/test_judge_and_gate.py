@@ -183,12 +183,22 @@ def test_aggregate_never_fabricates_overhead_when_nothing_was_attributed() -> No
     assert summary["p50_latency_ms"] == 6000.0
 
 
-def test_aggregate_drops_overhead_when_only_some_items_were_attributed() -> None:
-    """A median over a subset would silently compare different populations."""
+def test_aggregate_medians_over_the_attributed_items_with_partial_attribution() -> None:
+    """TRD §15: an unattributable *item* records no figure, and the summary
+    is null only when *no* call was attributed. The median runs over the
+    attributed items; `overhead_items_attributed` reports the coverage."""
     summary = aggregate(
         [
             (_item(), _result(6000, {"our_overhead_ms": 300})),
-            (_item(), _result(7000, {})),
+            (_item(), _result(7000, {"our_overhead_ms": 500})),
+            (_item(), _result(8000, {})),
         ]
     )
+    assert summary["p50_our_overhead_ms"] == 400.0
+    assert summary["overhead_items_attributed"] == 2.0
+
+
+def test_aggregate_reports_zero_coverage_when_nothing_was_attributed() -> None:
+    summary = aggregate([(_item(), _result(6000, {"provider_ms": 0}))])
     assert summary["p50_our_overhead_ms"] is None
+    assert summary["overhead_items_attributed"] == 0.0

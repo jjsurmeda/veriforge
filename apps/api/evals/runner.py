@@ -118,7 +118,7 @@ async def _run_item(
     eval_run_id: UUID,
     item: EvalItem,
     mode: str = "auto",
-) -> EvalResult:
+) -> tuple[EvalResult, list[str]]:
     async with factory() as session, session.begin():
         chat = Chat(
             user_id=user.id,
@@ -222,20 +222,11 @@ async def _run_item(
             abstained = run.abstain_event is not None
             contexts = run.contexts
 
-    # KI-18: split the measured wall clock into the part OpenRouter spent
-    # generating and the part that is ours. Only the LLM calls made inside the
-    # timed window count, so the reviewer and judge below are left out. An item
-    # with nothing attributed records no overhead at all rather than claiming
-    # the whole wall clock as ours.
-    attribution = await attribute(latency_ms, list(generation_ids))
-    stage_ms = {
-        **stage_ms,
-        "provider_ms": attribution.provider_ms,
-        "generations_attributed": attribution.attributed,
-    }
-    if attribution.complete:
-        stage_ms["our_overhead_ms"] = attribution.overhead_ms
-
+    # KI-18 (D2 2c): the generation ids are collected here but the stats
+    # lookups are deferred to run_eval — a generation's record lands ~20 s
+    # after the call, so a per-item wait cost ~20 s per item; one wait at
+    # the end covers the whole run. stage_ms gets provider_ms /
+    # our_overhead_ms filled in there.
     # Slice 6: faithfulness and citation precision come from the real
     # Reviewer (TR-2/TR-3) — this is the rebaseline that matters. The
     # post-hoc judge only scores context precision/recall (TRD §10 keeps
@@ -283,7 +274,7 @@ async def _run_item(
     )
     async with factory() as session, session.begin():
         session.add(result)
-    return result
+    return result, list(generation_ids)
 
 
 async def run_eval(
@@ -326,12 +317,13 @@ async def run_eval(
         eval_run_id = eval_run.id
 
     results: list[tuple[EvalItem, EvalResult]] = []
+    pending_ids: dict[int, list[str]] = {}  # id(result) -> generation ids
     # One item at a time. A concurrent `gather` here would multiply the DB
     # footprint by the item count; if that ever becomes worth it, raise
     # EVAL_POOL_SIZE/EVAL_MAX_OVERFLOW with it.
     for item in items:
         try:
-            result = await _retry_transient(
+            result, generation_ids = await _retry_transient(
                 partial(
                     _run_item,
                     factory,
@@ -342,6 +334,8 @@ async def run_eval(
                 ),
                 what=seed_ids.get(item.question, str(item.id)),
             )
+            if generation_ids:
+                pending_ids[id(result)] = generation_ids
         except Exception as exc:
             # An item that raised was not measured. Persist the failure so the
             # report can count it and the gate can refuse it, instead of
@@ -367,6 +361,38 @@ async def run_eval(
                 "faithfulness": result.faithfulness,
             },
         )
+
+    # KI-18 (D2 2c): split each item's measured wall clock into the part
+    # OpenRouter spent generating and the part that is ours, now that the
+    # whole run has finished — the stats record lands ~20 s after each
+    # call, so one wait here covers every item instead of ~20 s per item.
+    # Only the LLM calls made inside the timed window count, so the
+    # reviewer and judge are left out. An item with nothing attributed
+    # records no overhead at all rather than claiming the whole wall clock
+    # as ours.
+    attributions = await asyncio.gather(
+        *(
+            attribute(result.latency_ms, pending_ids[id(result)])
+            for _, result in results
+            if id(result) in pending_ids
+        )
+    )
+    attributed_results = [
+        result for _, result in results if id(result) in pending_ids
+    ]
+    for result, attribution in zip(attributed_results, attributions, strict=True):
+        stage_ms = {
+            **(result.stage_ms or {}),
+            "provider_ms": attribution.provider_ms,
+            "generations_attributed": attribution.attributed,
+        }
+        if attribution.complete:
+            stage_ms["our_overhead_ms"] = attribution.overhead_ms
+        result.stage_ms = stage_ms
+    if attributed_results:
+        async with factory() as session, session.begin():
+            for result in attributed_results:
+                await session.merge(result)
     return eval_run, results
 
 
@@ -402,8 +428,10 @@ def aggregate(results: list[tuple[EvalItem, EvalResult]]) -> dict[str, float | N
     latencies = sorted(r.latency_ms for _, r in scored)
     p50 = float(statistics.median(latencies)) if latencies else None
     # p50_our_overhead_ms is the strictly gated number (KI-18): wall clock
-    # minus the provider time we could attribute. Null, never zero, when no
-    # item could be attributed — the gate then falls back to the total.
+    # minus the provider time we could attribute. TRD §15: an unattributable
+    # *item* records no figure, and the summary is null only when *no* call
+    # was attributed — so the median runs over the attributed items, and
+    # `overhead_items_attributed` says how much of the run that covers.
     overheads = [
         float(r.stage_ms["our_overhead_ms"])
         for _, r in scored
@@ -416,8 +444,9 @@ def aggregate(results: list[tuple[EvalItem, EvalResult]]) -> dict[str, float | N
         "answer_rate": answer_rate,
         "p50_latency_ms": p50,
         "p50_our_overhead_ms": (
-            float(statistics.median(overheads)) if len(overheads) == len(scored) else None
+            float(statistics.median(overheads)) if overheads else None
         ),
+        "overhead_items_attributed": float(len(overheads)),
         "items": float(len(results)),
         "scored": float(len(scored)),
         "failed": float(len(results) - len(scored)),

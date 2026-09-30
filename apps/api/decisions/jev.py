@@ -25,6 +25,7 @@ Tests use recorded fixtures from `tests/fixtures/jev/` — no live calls.
 import json
 import logging
 import time
+from collections.abc import Callable
 from typing import Any
 
 import httpx
@@ -36,6 +37,13 @@ from retrieval.context import count_tokens
 from schemas.decisions import Answer, Choice, Noul, Question, Score
 
 logger = logging.getLogger(__name__)
+
+# Eval-only seam (KI-18, D2 2c): Jev uses raw httpx, not litellm, so
+# `evals.attribution.record_generation_ids` could never see Jev time and
+# every Jev millisecond was counted as "our overhead". When the sink is
+# set, each call's OpenRouter `x-generation-id` header is reported, the
+# same way litellm calls are recorded. Production never sets the sink.
+generation_id_sink: Callable[[str], None] | None = None
 
 
 class JevError(Exception):
@@ -165,6 +173,10 @@ class JevClient:
         latency_ms = int((time.monotonic() - started) * 1000)
         if response.status_code != 200:
             raise JevError(f"jev status {response.status_code}: {response.text[:200]}")
+        if generation_id_sink is not None:
+            generation_id = response.headers.get("x-generation-id")
+            if generation_id:
+                generation_id_sink(generation_id)
         try:
             data = response.json()
             answers = data["answers"]

@@ -19,6 +19,7 @@ Two things this deliberately does not do:
 
 import asyncio
 import json
+import logging
 import os
 import urllib.error
 import urllib.request
@@ -28,6 +29,8 @@ from dataclasses import dataclass
 from typing import Any
 
 import litellm
+
+logger = logging.getLogger(__name__)
 
 STATS_URL = "https://openrouter.ai/api/v1/generation?id={generation_id}"
 # Measured live 2026-09-29: the record for a generation lands roughly 20 s
@@ -59,11 +62,16 @@ class Attribution:
 
 @asynccontextmanager
 async def record_generation_ids() -> AsyncIterator[list[str]]:
-    """Collect the generation id of every acompletion made in this block.
+    """Collect the generation id of every LLM call made in this block.
 
-    Patching at the litellm boundary is the only place the id is visible:
-    `providers/llm.stream_completion` yields content deltas and nothing else.
+    Two seams: `litellm.acompletion` (patching at the litellm boundary is
+    the only place the id is visible — `providers/llm.stream_completion`
+    yields content deltas and nothing else), and the Jev client's
+    `generation_id_sink` (Jev uses raw httpx; its OpenRouter response
+    carries the same `x-generation-id` header, verified live 2026-10-01).
     """
+    from decisions import jev
+
     ids: list[str] = []
     original = litellm.acompletion
 
@@ -76,10 +84,13 @@ async def record_generation_ids() -> AsyncIterator[list[str]]:
         return response
 
     litellm.acompletion = recording
+    original_sink = jev.generation_id_sink
+    jev.generation_id_sink = ids.append
     try:
         yield ids
     finally:
         litellm.acompletion = original
+        jev.generation_id_sink = original_sink
 
 
 def _get(generation_id: str) -> dict[str, Any] | None:
@@ -124,9 +135,19 @@ async def provider_time_ms(generation_ids: list[str]) -> tuple[int, int]:
 
 async def attribute(total_ms: float, generation_ids: list[str]) -> Attribution:
     provider_ms, attributed = await provider_time_ms(generation_ids)
-    return Attribution(
+    result = Attribution(
         total_ms=total_ms,
         provider_ms=provider_ms,
         attributed=attributed,
         unattributed=len(generation_ids) - attributed,
     )
+    if result.overhead_ms < 0:
+        # Concurrent calls sum to more provider time than the wall clock.
+        # Reported, never clamped (D2 2c).
+        logger.warning(
+            "negative per-item overhead: total_ms=%.0f provider_ms=%d over %d calls",
+            total_ms,
+            provider_ms,
+            attributed,
+        )
+    return result

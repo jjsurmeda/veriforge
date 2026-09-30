@@ -60,7 +60,7 @@ async def test_failed_item_is_persisted_and_excluded_from_p50(
         eval_run_id: UUID,
         item: EvalItem,
         mode: str = "auto",
-    ) -> EvalResult:
+    ) -> tuple[EvalResult, list[str]]:
         if item.question is not None and item.question == "raises":
             raise RuntimeError("boom")
         result = EvalResult(
@@ -73,7 +73,7 @@ async def test_failed_item_is_persisted_and_excluded_from_p50(
         )
         async with factory() as session, session.begin():
             session.add(result)
-        return result
+        return result, []
 
     monkeypatch.setattr(runner, "_run_item", fake_run_item)
 
@@ -158,7 +158,7 @@ async def test_a_run_that_abstains_on_everything_fails_the_gate(
         eval_run_id: UUID,
         item: EvalItem,
         mode: str = "auto",
-    ) -> EvalResult:
+    ) -> tuple[EvalResult, list[str]]:
         result = EvalResult(
             eval_run_id=eval_run_id,
             item_id=item.id,
@@ -169,7 +169,7 @@ async def test_a_run_that_abstains_on_everything_fails_the_gate(
         )
         async with factory() as session, session.begin():
             session.add(result)
-        return result
+        return result, []
 
     monkeypatch.setattr(runner, "_run_item", fake_run_item)
 
