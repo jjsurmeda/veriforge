@@ -283,6 +283,48 @@
       "expect": "not_in_sources"
     },
     {
+      "id": "outside-moriarty",
+      "turns": [
+        "Who is Professor Moriarty, and what happens when Holmes confronts him at the Reichenbach Falls?"
+      ],
+      "expect": "not_in_sources"
+    },
+    {
+      "id": "outside-emma",
+      "turns": [
+        "In Jane Austen's Emma, why does Emma Woodhouse encourage Harriet Smith to refuse Robert Martin?"
+      ],
+      "expect": "not_in_sources"
+    },
+    {
+      "id": "outside-war-of-the-worlds",
+      "turns": [
+        "In The War of the Worlds, what finally destroys the Martian tripods?"
+      ],
+      "expect": "not_in_sources"
+    },
+    {
+      "id": "outside-dracula",
+      "turns": [
+        "In Bram Stoker's Dracula, how does Van Helsing destroy the Count?"
+      ],
+      "expect": "not_in_sources"
+    },
+    {
+      "id": "outside-looking-glass",
+      "turns": [
+        "In Through the Looking-Glass, what chess piece does Alice capture to become a queen?"
+      ],
+      "expect": "not_in_sources"
+    },
+    {
+      "id": "outside-moby-dick",
+      "turns": [
+        "In Moby-Dick, how does Captain Ahab's chase of the white whale end?"
+      ],
+      "expect": "not_in_sources"
+    },
+    {
       "id": "ml-es-rocinante",
       "turns": [
         "¿Cómo se llama el caballo de Don Quijote?"
@@ -419,6 +461,34 @@
       "id": "ml-es-outside",
       "turns": [
         "¿Quién escribió Cien años de soledad?"
+      ],
+      "expect": "not_in_sources"
+    },
+    {
+      "id": "ml-fr-outside",
+      "turns": [
+        "Qui est Cosette dans Les Misérables de Victor Hugo ?"
+      ],
+      "expect": "not_in_sources"
+    },
+    {
+      "id": "ml-de-outside",
+      "turns": [
+        "Wer ist Josef K. in Kafkas Roman Der Process?"
+      ],
+      "expect": "not_in_sources"
+    },
+    {
+      "id": "ml-zh-outside",
+      "turns": [
+        "賈寶玉和林黛玉是什麼關係？"
+      ],
+      "expect": "not_in_sources"
+    },
+    {
+      "id": "ml-ja-outside",
+      "turns": [
+        "蜘蛛の糸では、犍陀多はなぜ極楽から落ちてしまいましたか？"
       ],
       "expect": "not_in_sources"
     }

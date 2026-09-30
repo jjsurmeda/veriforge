@@ -1,11 +1,12 @@
 {
   "dataset": "seed",
   "fast20_ids": [
-    "lookup-01", "lookup-03", "lookup-06", "lookup-08", "lookup-12", "lookup-15",
-    "multihop-02", "multihop-05", "multihop-08", "multihop-10",
+    "lookup-01", "lookup-03", "lookup-06", "lookup-12",
+    "multihop-02", "multihop-05",
     "keyword-01", "keyword-04",
     "conflict-01", "conflict-03",
-    "abstain-02", "abstain-05", "abstain-08", "abstain-10",
+    "abstain-02", "abstain-05", "abstain-11", "abstain-12", "abstain-13",
+    "abstain-14", "abstain-15", "abstain-16",
     "injection-01", "injection-03"
   ],
   "items": [
@@ -321,6 +322,76 @@
       "id": "abstain-10",
       "category": "should_abstain",
       "question": "Can the AW-2000-XE run the enterprise management protocol over 5 GHz Wi-Fi?",
+      "reference_answer": "",
+      "should_abstain": true
+    },
+    {
+      "id": "abstain-11",
+      "category": "should_abstain",
+      "question": "Who is Professor Moriarty, and what happens when Holmes confronts him at the Reichenbach Falls?",
+      "reference_answer": "",
+      "should_abstain": true
+    },
+    {
+      "id": "abstain-12",
+      "category": "should_abstain",
+      "question": "In The War of the Worlds, what finally destroys the Martian tripods?",
+      "reference_answer": "",
+      "should_abstain": true
+    },
+    {
+      "id": "abstain-13",
+      "category": "should_abstain",
+      "question": "In Bram Stoker's Dracula, how does Van Helsing destroy the Count?",
+      "reference_answer": "",
+      "should_abstain": true
+    },
+    {
+      "id": "abstain-14",
+      "category": "should_abstain",
+      "question": "In Through the Looking-Glass, what chess piece does Alice capture to become a queen?",
+      "reference_answer": "",
+      "should_abstain": true
+    },
+    {
+      "id": "abstain-15",
+      "category": "should_abstain",
+      "question": "Qui est Cosette dans Les Misérables de Victor Hugo ?",
+      "reference_answer": "",
+      "should_abstain": true
+    },
+    {
+      "id": "abstain-16",
+      "category": "should_abstain",
+      "question": "賈寶玉和林黛玉是什麼關係？",
+      "reference_answer": "",
+      "should_abstain": true
+    },
+    {
+      "id": "abstain-17",
+      "category": "should_abstain",
+      "question": "Wer ist Josef K. in Kafkas Roman Der Process?",
+      "reference_answer": "",
+      "should_abstain": true
+    },
+    {
+      "id": "abstain-18",
+      "category": "should_abstain",
+      "question": "蜘蛛の糸では、犍陀多はなぜ極楽から落ちてしまいましたか？",
+      "reference_answer": "",
+      "should_abstain": true
+    },
+    {
+      "id": "abstain-19",
+      "category": "should_abstain",
+      "question": "What is the name of the successor model to the AW-2000?",
+      "reference_answer": "",
+      "should_abstain": true
+    },
+    {
+      "id": "abstain-20",
+      "category": "should_abstain",
+      "question": "Does the AW-2000 work with Zigbee smart-home hubs?",
       "reference_answer": "",
       "should_abstain": true
     },
