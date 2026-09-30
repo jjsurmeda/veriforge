@@ -6,14 +6,21 @@ Reuses smoke_chat's sign-up / run_turn / SSE reading (same HTTP surface as
 `make smoke`); one fresh chat per item, turns in order, source "upload",
 mode "auto". Writes raw results to .data/acceptance/<timestamp>.json.
 
-Usage: uv run python scripts/acceptance.py (or `make acceptance`).
+Usage: uv run python scripts/acceptance.py [id1,id2,...] [--pace SECONDS].
+
+Pacing is opt-in: `--pace N` sleeps N seconds between items (skip after
+smalltalk items and after the last one) for free-model rate limits
+(OpenRouter free tier caps free-model requests at 20/min); the default of 0
+runs back-to-back, which paid models can afford.
 """
 
+import argparse
 import asyncio
 import json
 import re
 import statistics
 import sys
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -121,7 +128,12 @@ def failure_reason(item: dict[str, Any], result: dict[str, Any]) -> str | None:
     return "wrong_class_or_content"
 
 
-async def run(only: list[str] | None = None) -> None:
+async def run(
+    only: list[str] | None = None,
+    *,
+    pace: float = 0.0,
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+) -> None:
     dataset = json.loads(SET_FILE.read_text())
     items = dataset["items"]
     if only:
@@ -185,8 +197,10 @@ async def run(only: list[str] | None = None) -> None:
                 f"{'PASS' if ok else 'FAIL' + ' (' + str(rows[-1]['reason']) + ')'}",
                 flush=True,
             )
-            if item is not items[-1] and item["expect"] != "smalltalk":
-                await asyncio.sleep(65)
+            # Opt-in free-model pacing (--pace N; default 0 = no sleep),
+            # skipped after smalltalk items and after the last item.
+            if pace and item is not items[-1] and item["expect"] != "smalltalk":
+                await sleep(pace)
 
     print("\n{| id | expected | got | pass | ttft ms | sufficient |")
     print("|---|---|---|---|---|---|")
@@ -222,7 +236,23 @@ async def run(only: list[str] | None = None) -> None:
 
 
 if __name__ == "__main__":
-    only = None
-    if len(sys.argv) > 1:
-        only = sys.argv[1].split(",")
-    asyncio.run(run(only=only))
+    parser = argparse.ArgumentParser(
+        description="Replay the acceptance set against the live stack."
+    )
+    parser.add_argument(
+        "only",
+        nargs="?",
+        default=None,
+        help="comma-separated item ids to run (default: all)",
+    )
+    parser.add_argument(
+        "--pace",
+        type=float,
+        default=0.0,
+        metavar="SECONDS",
+        help="sleep this many seconds between items, for free-model rate "
+        "limits (default: 0, no sleep)",
+    )
+    args = parser.parse_args()
+    only = args.only.split(",") if args.only else None
+    asyncio.run(run(only=only, pace=args.pace))
