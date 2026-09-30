@@ -11,6 +11,7 @@ as trace scores. They never block delivery and never gate evals.
 import json
 import re
 from dataclasses import dataclass
+from typing import Any
 
 from prompts.load import load_prompt
 from providers.llm import complete
@@ -23,26 +24,42 @@ class JudgeScores:
     answer_relevance: float | None
 
 
-_FENCE_RE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
+def _extract_json_object(text: str) -> dict[str, Any] | None:
+    """The judge (Haiku 4.5) appends prose after the fenced JSON
+    ("**Justification:** ..."), so a whole-string match fails and every
+    field lands null (D2 item 2b, captured raw responses 2026-10-01).
+    Decode the first JSON object wherever it sits in the response."""
+    decoder = json.JSONDecoder()
+    for match in re.finditer(r"\{", text):
+        try:
+            data, _ = decoder.raw_decode(text, match.start())
+        except json.JSONDecodeError:
+            continue
+        if isinstance(data, dict):
+            return data
+    return None
+
+
+def _field(data: dict[str, Any], name: str) -> float | None:
+    """One missing or malformed field must not null the other two."""
+    try:
+        return float(data[name])
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 def parse_judge_response(response: str) -> JudgeScores | None:
-    text = response.strip()
-    match = _FENCE_RE.match(text)
-    if match is not None:
-        text = match.group(1).strip()
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError:
+    data = _extract_json_object(response.strip())
+    if data is None:
         return None
-    try:
-        return JudgeScores(
-            context_precision=float(data["context_precision"]),
-            context_recall=float(data["context_recall"]),
-            answer_relevance=float(data["answer_relevance"]),
-        )
-    except (KeyError, TypeError, ValueError):
+    scores = JudgeScores(
+        context_precision=_field(data, "context_precision"),
+        context_recall=_field(data, "context_recall"),
+        answer_relevance=_field(data, "answer_relevance"),
+    )
+    if all(value is None for value in vars(scores).values()):
         return None
+    return scores
 
 
 async def judge_answer(

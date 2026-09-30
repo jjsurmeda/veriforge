@@ -30,8 +30,33 @@ def test_parse_judge_response_strips_fence() -> None:
 
 def test_parse_judge_response_rejects_garbage() -> None:
     assert parse_judge_response("not json") is None
+    # One malformed field nulls only itself; if nothing parses, None.
     assert parse_judge_response('{"context_precision": "high"}') is None
-    assert parse_judge_response('{"context_precision": 1}') is None
+
+
+def test_parse_judge_response_reads_json_wrapped_in_prose() -> None:
+    """Captured raw Haiku 4.5 responses (2026-10-01, D2 item 2b): the fenced
+    JSON is followed by an explanation, which the whole-string fence match
+    could not parse — this was 17-19 of 20 items null per fast20 run."""
+    captured = (
+        '```json\n{\n  "context_precision": 1.0,\n  "context_recall": 1.0,\n'
+        '  "answer_relevance": 0.0\n}\n```\n\n'
+        "**Explanation:**\n- **context_precision: 1.0** - No passages were "
+        "retrieved, so there are no irrelevant passages."
+    )
+    scores = parse_judge_response(captured)
+    assert scores is not None
+    assert scores.context_precision == pytest.approx(1.0)
+    assert scores.context_recall == pytest.approx(1.0)
+    assert scores.answer_relevance == pytest.approx(0.0)
+
+
+def test_parse_judge_response_keeps_each_field_that_parses() -> None:
+    scores = parse_judge_response('{"context_precision": 1, "answer_relevance": 0.5}')
+    assert scores is not None
+    assert scores.context_precision == pytest.approx(1.0)
+    assert scores.context_recall is None
+    assert scores.answer_relevance == pytest.approx(0.5)
 
 
 def test_gate_passes_within_thresholds() -> None:
