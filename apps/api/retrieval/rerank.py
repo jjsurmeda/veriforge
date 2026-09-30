@@ -201,13 +201,12 @@ class JevRerank:
 def get_reranker(engine: DecisionEngine | None = None, run_id: str = "") -> RerankProvider:
     if not bool(runtime_value("retrieval.rerank", True)):
         return FusedOrderRerank()
-    if str(runtime_value("retrieval.reranker", "nvidia")) == "jev":
-        if engine is None:
-            # Fast mode has no DecisionEngine yet, so it cannot ask Jev. Say so
-            # rather than silently ranking in fused order.
-            logger.warning("retrieval.reranker=jev but no engine; using fused order")
-            return FusedOrderRerank()
-        return JevRerank(engine, run_id)
+    if str(runtime_value("retrieval.reranker", "jev")) == "jev":
+        if engine is not None:
+            return JevRerank(engine, run_id)
+        # Fast mode has no DecisionEngine, so it cannot ask Jev: fall through
+        # to the provider rerankers rather than dropping to fused order.
+        logger.warning("retrieval.reranker=jev but no engine; using provider reranker")
     settings = get_settings()
     if settings.cohere_api_key:
         return CohereRerank(settings.cohere_api_key, settings.cohere_rerank_model)

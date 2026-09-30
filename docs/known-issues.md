@@ -619,6 +619,23 @@ already failed it with the same answer.
 
 ## KI-28: Jev reranks better than NVIDIA but regresses abstention (reverted)
 
+**Decision, 2026-09-30 (owner): switched to Jev — settings version 142,
+`retrieval.reranker = jev`, `sufficient_abstain` unchanged at 0.05; code
+defaults (`runtime.DEFAULT_DATA`, `get_reranker`) now `jev`.** Basis, from
+C3's three full acceptance runs: pass rate is equal within run-to-run
+noise (NVIDIA 27 and 29 on identical code, Jev 28 on one run — C3's rule
+compared Jev's single run with NVIDIA's best of two, which is biased); Jev
+separates the should-answer / should-abstain `sufficient` groups best
+(margin 0.00 vs NVIDIA −0.07 / −0.04), keeps the answer text in the top 8
+on every item (1.00 vs 0.82), reranks ~2x faster (431 vs 839 ms p50) at
+~$0.0006/query, and is production-licensed where the NVIDIA free tier is
+not. The C2 regression that caused the revert was measured before the
+Turkish-decline (KI-29) and abstain-citation (KI-25) fixes. Remaining
+open: a second Jev run was never completed, and neither reranker separates
+the groups until KI-26 (`outside-study-in-scarlet`) is fixed and the
+abstention set is widened (KI-6). Fast mode has no DecisionEngine, so with
+`jev` selected it falls back to the provider reranker, not fused order.
+
 Logged 2026-09-30, from the C2 reranker comparison and the full acceptance
 run that followed it. **Reverted — `retrieval.reranker` is back to the
 `nvidia` default in settings version 137.** Read this before the next

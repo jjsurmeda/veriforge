@@ -21,6 +21,9 @@ DEFAULT_DATA: dict[str, Any] = {
         "lex_limit": 50,
         "rrf_k": 60,
         "rerank": True,
+        # Owner decision 2026-09-30 (KI-28): Jev reranks. "nvidia" is the
+        # free, evaluation-only alternative.
+        "reranker": "jev",
         "hop_limit": 4,
         "retry_limit": 2,
     },

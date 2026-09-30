@@ -43,7 +43,7 @@ handles ingestion, evals, async scoring and starter questions.
 | Database | Postgres 17, ParadeDB image: pgvector + pg_search | pg_search is AGPL; used unmodified as a service |
 | Parsing | markitdown, pdfplumber fallback; OCR adapter slot | |
 | Embeddings | OpenAI text-embedding-3-large with `dimensions=1536`, pinned per deployment *(amended 2026-09-29, round 2: multilingual corpus)* | Re-embed job on change |
-| Rerank | Cohere Rerank | Jev-score reranker is a v1.1 A/B |
+| Rerank | Jev relevance `Score` via DecisionEngine *(amended 2026-09-30, owner decision, KI-28)* | Provider fallback (Cohere, then NVIDIA) when no DecisionEngine is available (Fast mode); fused order on error. Runtime setting `retrieval.reranker` (`jev` \| `nvidia`) |
 | Web search | Tavily; Brave + fetch-and-clean fallback | Behind `WebSearchProvider` |
 | Observability | Langfuse Cloud; app metrics in Postgres | UI never reads Langfuse |
 | IaC and CI | AWS CDK (Python); GitHub Actions; ECR | arm64 images |
@@ -275,7 +275,7 @@ WITH vec AS (top 50 by cosine distance, filtered),
      lex AS (top 50 by pg_search BM25, same filter)
 fused  = Σ weight_i / (60 + rank_i)
          weight: vector = 1 − w, bm25 = w, w = lexical_weight from ingress
-→ top 40 → Cohere Rerank → top 8 → dedupe adjacent → expand
+→ top 40 → rerank (Jev Score; `retrieval.reranker`) → top 8 → dedupe adjacent → expand
 ```
 
 - **Filter.** `owner_id or shared` and `collection_id in (scope)` are

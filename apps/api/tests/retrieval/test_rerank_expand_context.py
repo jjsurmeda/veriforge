@@ -355,3 +355,19 @@ def test_jev_selected_without_an_engine_falls_back_to_fused_order(
     )
 
     assert isinstance(get_reranker(), FusedOrderRerank)
+
+
+
+def test_jev_without_an_engine_falls_back_to_the_provider_reranker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fast mode has no DecisionEngine; with Jev selected it still reranks
+    through the provider chain instead of dropping to fused order."""
+    monkeypatch.setattr(
+        "retrieval.rerank.runtime_value",
+        lambda name, default: "jev" if name == "retrieval.reranker" else default,
+    )
+    monkeypatch.setattr(
+        "retrieval.rerank.get_settings", lambda: Settings(cohere_api_key="", nvidia_api_key="k")
+    )
+    assert isinstance(get_reranker(), NvidiaRerank)
