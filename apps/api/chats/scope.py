@@ -11,7 +11,12 @@ from uuid import UUID
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.models import Chat, Collection
+from db.models import Chat, Collection, Document
+
+# Only a document retrieval can actually return counts as being in the
+# library: claiming a still-parsing or failed upload is "in your sources"
+# would answer with something the user cannot search yet.
+SEARCHABLE_STATUSES = ("ready",)
 
 
 async def resolve_scope(session: AsyncSession, chat: Chat) -> list[UUID]:
@@ -30,6 +35,32 @@ async def resolve_scope(session: AsyncSession, chat: Chat) -> list[UUID]:
         )
     )
     return list(rows.scalars())
+
+
+async def list_scope_documents(
+    session: AsyncSession, collection_ids: list[UUID]
+) -> list[Document]:
+    """The searchable documents in an already-resolved scope.
+
+    Takes collection ids rather than a Chat so it cannot be handed a scope
+    built any other way — these are the same ids retrieval was given.
+    """
+    if not collection_ids:
+        return []
+    return list(
+        (
+            await session.execute(
+                select(Document)
+                .where(
+                    Document.collection_id.in_(collection_ids),
+                    Document.status.in_(SEARCHABLE_STATUSES),
+                )
+                .order_by(Document.name)
+            )
+        )
+        .scalars()
+        .all()
+    )
 
 
 async def library_starter_questions(session: AsyncSession) -> list[str]:

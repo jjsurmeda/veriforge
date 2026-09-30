@@ -21,12 +21,17 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from chats.scope import list_scope_documents
 from db.models import Chat, Citation, Message
 from decisions import DecisionEngine, threshold
 from decisions.sanitize import sanitize_chunks
 from graph import rewrite as rewrite_node
 from graph.abstain import build_abstain_event, stream_abstention
-from graph.generate import stream_chitchat_reply, stream_grounded_answer
+from graph.generate import (
+    stream_chitchat_reply,
+    stream_grounded_answer,
+    stream_library_reply,
+)
 from graph.ingress import IngressOutcome, run_ingress
 from graph.rewrite import CompleteFn
 from graph.timing import EventPublisher, make_step_timer
@@ -159,12 +164,26 @@ class AutoRun:
     ingress: IngressOutcome
     chitchat: bool = False
     sufficiency_p: float = 0.0
+    library_names: list[str] | None = None
 
     async def stream_answer(self) -> AsyncIterator[str]:
         if self.chitchat:
             async for token in stream_chitchat_reply(
                 litellm_model=self.params.litellm_model,
                 message=self.rewritten,
+                history=self.history,
+                metadata={
+                    "run_id": str(self.params.run_id),
+                    "user_id": str(self.params.user_id),
+                },
+            ):
+                yield token
+            return
+        if self.library_names is not None:
+            async for token in stream_library_reply(
+                litellm_model=self.params.litellm_model,
+                question=self.rewritten,
+                names=self.library_names,
                 history=self.history,
                 metadata={
                     "run_id": str(self.params.run_id),
@@ -479,6 +498,31 @@ async def prepare_auto_run(
                 context_used=0,
                 ingress=ingress,
                 chitchat=True,
+            )
+
+        if ingress.intent == "library":
+            await _step("Library: skipped retrieval", _skip_retrieval)
+            names = [
+                document.name
+                for document in await list_scope_documents(
+                    session, list(params.collection_ids)
+                )
+            ]
+            return AutoRun(
+                params=params,
+                history=history,
+                contexts=[],
+                kept_chunks=[],
+                dropped_chunks=[],
+                rewritten=params.question,
+                retrieval_events=[],
+                decision_events=decision_events,
+                conflict_event=None,
+                abstain_event=None,
+                latency_ms=latency_ms,
+                context_used=0,
+                ingress=ingress,
+                library_names=names,
             )
 
         if ingress.blocked:

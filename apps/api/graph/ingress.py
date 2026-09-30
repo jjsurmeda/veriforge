@@ -24,7 +24,15 @@ from schemas.decisions import Answer, Choice, Noul, Score
 
 logger = logging.getLogger(__name__)
 
-INTENT_OPTIONS = ["chitchat", "lookup", "compare", "summarize", "multi-part", "follow-up"]
+INTENT_OPTIONS = [
+    "chitchat",
+    "lookup",
+    "compare",
+    "summarize",
+    "multi-part",
+    "follow-up",
+    "library",
+]
 SOURCE_OPTIONS = ["upload", "web", "both"]
 COMPLEXITY_OPTIONS = ["single", "multi"]
 RISK_OPTIONS = ["low", "high"]
@@ -123,7 +131,13 @@ def ingress_questions(user_message: str, has_collections: bool) -> dict[str, Nou
             )
         ),
         "intent": Choice(
-            prompt=f"Classify the dominant intent of this user message.\n\n{user_message}",
+            prompt=(
+                "Classify the dominant intent of this user message. Use "
+                "'library' when the user is asking what is in their sources "
+                "(which books/documents they have, how many, what they are "
+                "called) rather than asking about their contents.\n\n"
+                f"{user_message}"
+            ),
             options=INTENT_OPTIONS,
             criteria="the action the user is asking the assistant to take",
         ),

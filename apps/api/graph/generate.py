@@ -108,3 +108,43 @@ async def stream_chitchat_reply(
         metadata={**metadata, "role": "generator"},
     ):
         yield token
+
+
+def build_library_messages(
+    question: str, names: list[str], history: list[tuple[str, str]]
+) -> list[dict[str, str]]:
+    listing = "\n".join(f"- {name}" for name in names)
+    messages: list[dict[str, str]] = [
+        {"role": "system", "content": load_prompt("library.md")}
+    ]
+    for role, content in history[-4:]:
+        messages.append({"role": role, "content": content})
+    messages.append(
+        {
+            "role": "user",
+            "content": (
+                f"These {len(names)} document(s) are in the user's sources:\n"
+                f"{listing or '(none)'}\n\n"
+                f"[Question]\n{question}"
+            ),
+        }
+    )
+    return messages
+
+
+async def stream_library_reply(
+    *,
+    litellm_model: str,
+    question: str,
+    names: list[str],
+    history: list[tuple[str, str]],
+    metadata: dict[str, str],
+) -> AsyncIterator[str]:
+    """A library question: answered from the scope's document list, so no
+    retrieval, no citations and no reviewer (TRD §7 ingress row)."""
+    async for token in stream_completion(
+        litellm_model=litellm_model,
+        messages=build_library_messages(question, names, history),
+        metadata={**metadata, "role": "generator"},
+    ):
+        yield token

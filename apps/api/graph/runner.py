@@ -466,17 +466,26 @@ async def _finish_answer(
     chat_id: UUID,
     instant_title: str | None,
     chitchat: bool = False,
+    revert_title: bool = False,
 ) -> None:
     """Shared tail for every mode: review phase (skipped for abstentions —
     the fixed template has no claims to verify), event order per delivery
-    plan, runs.metrics persistence, fire-and-forget async scoring."""
+    plan, runs.metrics persistence, fire-and-forget async scoring.
+
+    `chitchat` means "a direct reply that cites nothing and asserts nothing
+    about the sources", which now covers a library listing as well as small
+    talk. It is deliberately one flag: a second one defaulting to False
+    would let a caller that sets one and not the other silently run the
+    reviewer and reach a live model. The title is reverted for small talk
+    only, so that is its own argument.
+    """
     final_text = text
     review: ReviewResult | None = None
     suggestions: list[str] = []
     guard: OutputGuardResult | None = None
     blocked = False
-    # Small talk skips the reviewer (no claims, no citations) but is NOT an
-    # abstention — its message status is complete (batch A item 3).
+    # A direct reply skips the reviewer (no claims, no citations) but is NOT
+    # an abstention — its message status is complete (batch A item 3).
     if not abstained and not chitchat:
         final_text, review, suggestions, guard = await _compute_review(
             bus=bus,
@@ -507,7 +516,7 @@ async def _finish_answer(
             question=question,
             answer=final_text,
             small_model=small_model,
-            chitchat=chitchat,
+            chitchat=revert_title,
         )
 
     await _with_session(session_factory, refine_title)
@@ -706,7 +715,9 @@ async def execute_run(
                 "stream"
                 # Small talk has no claims to review, so "hold" would park the
                 # reply in a branch that only publishes deltas after review.
-                if auto_run.abstain_event is not None or auto_run.chitchat
+                if auto_run.abstain_event is not None
+                or auto_run.chitchat
+                or auto_run.library_names is not None
                 else plan_delivery(
                     mode="auto",
                     risk=auto_run.ingress.risk,
@@ -764,7 +775,8 @@ async def execute_run(
                 tokens_in=prompt_tokens,
                 generate_ms=generate_ms,
                 abstained=auto_run.abstain_event is not None,
-                chitchat=auto_run.chitchat,
+                chitchat=auto_run.chitchat or auto_run.library_names is not None,
+                revert_title=auto_run.chitchat,
                 plan=plan,
                 chat_id=chat_id,
                 instant_title=instant_title,
