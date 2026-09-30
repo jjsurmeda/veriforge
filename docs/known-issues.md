@@ -123,6 +123,41 @@ checkable once a new baseline is written.
   not re-baseline the 0.00 rows — that would store an abstention
   regression as normal, which is the mistake this entry already records
   once for latency.
+- **(a) done, (c) attempted and blocked again (2026-10-01, D1).** The
+  abstention set is widened: acceptance 31 → 41 items (`not_in_sources`
+  4 → 14, 4 non-English, each proven absent by zero-hit corpus searches
+  before adding) and seed 50 → 60 (`abstain-11..20`), fast20 still 20
+  with **8 should-abstain**. Two full Jev acceptance runs (settings
+  v142): 36/41 both, identical failures, `sufficient` groups overlap
+  (margin −0.06 both runs — see KI-28). Three fast20 gate runs, all
+  20 scored / 0 failed:
+
+  | run | faithfulness | ctx recall | abstention (of 8) | answer rate | p50 ms | p50 overhead ms |
+  | --- | --- | --- | --- | --- | --- | --- |
+  | 1 | 0.9882 | 1.00 | 0.125 (1) | 0.9167 | 18288 | null |
+  | 2 | 0.9492 | 0.67 | 0.000 (0) | 0.9167 | 15001.5 | null |
+  | 3 | 0.9761 | 0.98 | 0.125 (1) | 0.9167 | 15229 | null |
+
+  **Baseline still NOT written** — two of the four dispatch conditions
+  failed:
+  - *Faithfulness:* run 2's 0.9492 is a 0.0383 drop from the stored
+    0.9875, past `FAITHFULNESS_DROP` 0.03. (context_recall also swings
+    1.00 / 0.67 / 0.98 — judge noise worth its own look.)
+  - *Latency/overhead:* `p50_our_overhead_ms` is **null in all three
+    runs** — only 3–4 of 20 items reached complete attribution inside
+    `attribution.py`'s 8×3 s polling budget, and `aggregate()` reports
+    null unless every item is attributed. A written baseline would have
+    carried null, defeating (b). On the total-p50 fallback, run 1's
+    18288 ms exceeds the 17261 ceiling (+6%), partly compositional: the
+    new should-abstain items take 17–26 s when they fail to abstain.
+  - *Passed:* 0 errored items in every run; abstention spread exactly
+    0.125 (counts 1/0/1 of 8), meeting the ≤ 0.125 bar — but that bar
+    being met on 0–1 correct abstentions of 8 says the should-abstain
+    pipeline, not the metric, is the open problem (the acceptance runs
+    show the same: 4 of 14 hallucinate, KI-26's mechanism).
+  **Next:** fix `attribution.py` polling so overhead is attributable
+  (else the fast20 gate can never carry `p50_our_overhead_ms`), then
+  KI-26's `sufficient_min_rerank` gate, then re-attempt the baseline.
 
 - **Note (2026-09-27, batch 4):** the gate **ran** — `python -m evals.gate`
   exited 0, "eval gate passed" — but **no new baseline was written**, for
@@ -552,29 +587,6 @@ be deleted are exactly the ones holding this corpus).
   signs up a throwaway user per run). Then re-baseline — the
   `not_in_sources` items will legitimately change.
 
-## KI-25: Abstaining runs still attach citations, so the whole `not_in_sources` class fails
-
-Logged 2026-09-30, from the round-2 full acceptance run (23/31).
-
-- **What:** all 4 `not_in_sources` items abstain correctly —
-  `message_status='abstained'`, `sufficient` 0.02–0.14 — and still FAIL,
-  because `passes()` in `scripts/acceptance.py` also requires
-  `not result["citations"]` and the abstain path leaves the retrieved
-  P&P chunks attached as citations (`outside-whitman` 19.8s/0.03,
-  `outside-general` 15.5s/0.02, `ml-es-outside` 14.1s/0.02;
-  `outside-study-in-scarlet` is the fourth and additionally answers
-  instead of abstaining).
-- **Why it matters:** an answer that says "the sources don't cover this"
-  and then shows nine citations is self-contradictory to a user, and it
-  makes abstention accuracy look 0/4 in the gate when the model's
-  judgement is actually 3/4 right.
-- **Fix:** decide which is true — either the abstain path drops its
-  citations (cleanest: nothing to support, nothing to cite), or the
-  scorer counts `abstained` as a pass. The first is the product fix; the
-  second hides a real inconsistency. Also worth a look: why
-  `outside-study-in-scarlet` answers at all (0.14 sufficient) when its
-  scene is not in the corpus.
-
 ## KI-26: `outside-study-in-scarlet` answers at 0.12 sufficient, above the 0.05 floor
 
 Logged 2026-09-30, from the KI-25 fix (the citation half of that issue is
@@ -644,7 +656,7 @@ already failed it with the same answer.
   "fix" it by adding 菩提祖师 to the item's `mention` list — that would
   make the check pass while the product is still wrong.
 
-## KI-28: Jev reranks better than NVIDIA but regresses abstention (reverted)
+## KI-28: Jev reranker — switched to Jev (owner decision); abstention separation still open
 
 **Decision, 2026-09-30 (owner): switched to Jev — settings version 142,
 `retrieval.reranker = jev`, `sufficient_abstain` unchanged at 0.05; code
@@ -662,6 +674,30 @@ open: a second Jev run was never completed, and neither reranker separates
 the groups until KI-26 (`outside-study-in-scarlet`) is fixed and the
 abstention set is widened (KI-6). Fast mode has no DecisionEngine, so with
 `jev` selected it falls back to the provider reranker, not fused order.
+
+**Second and third Jev runs done (2026-10-01, D1).** Two full acceptance
+runs on the widened 41-item set (14 `not_in_sources`, KI-6), settings
+v142, back to back: **36/41 both runs, identical failure sets** —
+`outside-study-in-scarlet` (0.11/0.12, KI-26), the new `outside-emma`
+(0.07/0.06), `outside-looking-glass` (0.07/0.07), `ml-fr-outside`
+(0.08/0.08) answering when they should abstain, and `xl-en-wukong-master`
+(0.67/0.69, KI-27, fails on content at every threshold). Per class both
+runs: answer 22/23, not_in_sources 10/14, smalltalk 2/2, library 2/2;
+per language: en 26/30, es 2/2, fr 1/2, de 2/2, ja 2/2, tl 1/1, zh 2/2;
+0 language mismatches. `sufficient` last-score distributions: answer
+0.05/0.73/0.98 and 0.06/0.77/0.96 (min/median/max) vs not_in_sources
+0.01/0.03/0.11 and 0.01/0.025/0.12 — **margin −0.06 in both runs; no
+cut-off separates the groups.** `compare-inventors` (answer) sits at
+0.05/0.06 inside the abstain band while the four hallucinating
+not_in_sources items sit at 0.06–0.12. Threshold replay on the recorded
+scores: 36/41 at the shipped 0.05 in both runs; ceiling **39/41 at
+T ≈ 0.13–0.25 in both runs** (gates all four hallucinations, loses
+`compare-inventors`; a trade, not a separator). Recommendation reported
+to the owner: T ≈ 0.15–0.20 is the best replay zone in both runs — the
+owner decides. `sufficient_abstain` stays **0.05** until then. The four
+outliers are the same items with stable scores across runs — consistent
+with the KI-26 mechanism (topically-adjacent-answerless evidence),
+not threshold noise.
 
 Logged 2026-09-30, from the C2 reranker comparison and the full acceptance
 run that followed it. **Reverted — `retrieval.reranker` is back to the
