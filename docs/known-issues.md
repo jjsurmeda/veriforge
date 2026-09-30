@@ -158,6 +158,18 @@ checkable once a new baseline is written.
   **Next:** fix `attribution.py` polling so overhead is attributable
   (else the fast20 gate can never carry `p50_our_overhead_ms`), then
   KI-26's `sufficient_min_rerank` gate, then re-attempt the baseline.
+- **(2026-10-01, D2: the harness was the blocker; baseline still waits
+  for D3).** All three `Next` items are done on `fix/darcy` — KI-30
+  (2a/2b/2c: documents-only runs, the judge parser, and overhead
+  attribution incl. Jev generation ids) and KI-26's relevance gate
+  (closed above) — and none of D1's three fast20 rows are valid
+  measurements of the product: 16 of 20 items were answered from the web
+  (2a), context precision/recall were unparsed on 17–19 of 20 (2b), and
+  `p50_our_overhead_ms` was null because every item had to be fully
+  attributed (2c). **No baseline was written, deliberately:** the
+  baseline has to come from runs on the fixed harness, which is D3's
+  acceptance + fast20 sequence, after the owner's review. Do not
+  re-baseline against the numbers above.
 
 - **Note (2026-09-27, batch 4):** the gate **ran** — `python -m evals.gate`
   exited 0, "eval gate passed" — but **no new baseline was written**, for
@@ -479,6 +491,17 @@ Langfuse dashboard; if the JP project is empty, this is the cause).
   post-hoc scores land. Fix: `make_step_timer` (`graph/timing.py`)
   opens a span per stage — every mode's stages already pass through it
   (after KI-22 adds the missing ones).
+- **Auto mode publishes no `step.*` events either (2026-10-01, D2
+  finding).** `prepare_auto_run` takes a `publish` argument and
+  `make_step_timer` publishes through it, but `graph/runner.py` calls
+  `prepare_auto_run` **without** `publish`, so the argument is `None` in
+  production and no `step.started`/`step.completed` event reaches
+  `run_events` — the same gap as Fast mode, one layer up, and the cause
+  of it. Latency-by-stage still lands in `runs.metrics` (D2 read it back
+  from the DB), so only the trace is affected. Found while publishing
+  KI-26's `relevance` decision, which had to be published from the
+  runner instead. Not fixed in D2: emitting step events changes the SSE
+  stream for every subscriber, which is KI-22's batch 1 to schedule.
 - UI keeps reading Postgres only (TRD §3: "UI never reads Langfuse").
 
 ## KI-22: Trace tab shows mostly Jev calls; Metrics missing quality detail
@@ -641,6 +664,41 @@ closed; this is the leftover failure).
   (xfail, strict=False) seeds the captured-style answerless chunks, stubs
   sufficient at the measured 0.10, and flips to passing when a real fix
   lands. `sufficient_abstain` unchanged at 0.05; the item untouched.
+- **CLOSED by the gate (2026-10-01, D2 item 4, `953e337` + `97a3da5`).**
+  The rerank score separated the classes where `sufficient` could not, so
+  the second signal `thresholds.py` reserved became `rerank_abstain`
+  `{"jev": 0.60, "fallback": 0.60}` (fallback **unmeasured** — only
+  Jev-answered scores were seen). Offline replay of D1's two acceptance
+  runs (max rerank score of the final retrieval event's scored chunks,
+  gate = `sufficient >= 0.05` AND `max >= T`, keep the run's own content
+  checks):
+
+  | T    | run 183311 | run 184634 | beyond KI-27                    |
+  | 0.50 | 40/41      | 39/41      | ml-fr-outside answers (max 0.52) |
+  | 0.55 | 40/41      | 40/41      | —                                |
+  | 0.60 | 40/41      | 40/41      | —                                |
+  | 0.65 | 40/41      | 40/41      | —                                |
+
+  Margins at 0.60: answer-side min 0.70/0.73, should-abstain max
+  0.49/0.52. In `prepare_auto_run`'s loop evidence is adequate only if
+  **both** signals clear — same single retry, one bar — and a `Decision`
+  named `relevance` (value = that max, `threshold` set, `stage="rerank"`)
+  is published so the trace shows why a run abstained; no schema change,
+  no TS regen, no new SSE event type. The gate reads only scores
+  `JevRerank` answered (`JevRerank.relevance_engine()`); NVIDIA, Cohere
+  and fused order (1/(1+i), top always 1.0) are skipped, and an outage —
+  no passage got a real answer — skips the gate so it can never abstain.
+  `b4ecde7`'s xfail **now passes and the marker is gone**: the repro pins
+  the captured sufficient 0.10 *and* the captured rerank 0.28 through the
+  real `JevRerank`. Live subset (8 items, one pass, `20260930-210218`
+  then re-run after the publish fix): 8/8, the four hallucinating
+  `not_in_sources` items now abstain and the four answer items still
+  answer. Out of scope, unchanged: Deep mode (`controller_sufficient`
+  0.50) and Fast mode (no DecisionEngine).
+- **Caveat on the replay (addendum):** it validates only the **rerank**
+  half. Item 3 (children-first sufficiency evidence, `30f3e98`) changed
+  every item's `sufficient` view, so the live subset — not the replay —
+  is the real check of the combined rule.
 
 ## KI-27: `xl-en-wukong-master` answers with the wrong person (pre-existing, not retrieval)
 
@@ -716,6 +774,24 @@ owner decides. `sufficient_abstain` stays **0.05** until then. The four
 outliers are the same items with stable scores across runs — consistent
 with the KI-26 mechanism (topically-adjacent-answerless evidence),
 not threshold noise.
+**Compare's evidence view was broken too (2026-10-01, D2 item 3,
+`30f3e98`).** Two evidence-shaping defects, both fixed: `_rerank_candidates`
+returned `picked` in group insertion order, so the "" (no-entity) share
+led whatever it scored (compare's citations [1]–[3] were *Noli Me
+Tangere* at rerank 0.01–0.02, ahead of Frankenstein and The Time
+Machine); and `_sufficient_question` interleaved each entry's parent
+before the next entry's child, so with ~4,000-char entries the 9,000-char
+budget held ~2 entries and the judge saw only Noli. Both now follow the
+order the code's own comment described (children first, parent only if
+there's room; shares sorted by rerank score). Live subset (7 items,
+`20260930-205630`): `compare-inventors` sufficient **0.05/0.06 → 0.20**
+(0.23 in the item-4 run), still answering; no answer item dropped below
+0.20 or abstained, so the addendum's `SUFFICIENT_EVIDENCE_CHARS` guard was
+not needed; the `sufficient` step's latency is unchanged (before median
+330 ms, after 321 ms — it holds more evidence at the same cost). Note the
+item-4 run's `compare-inventors` TTFT was 35.9 s against a 9.8 s p50 for
+the set — one slow generation, not a step cost; worth watching in D3's
+runs.
 
 Logged 2026-09-30, from the C2 reranker comparison and the full acceptance
 run that followed it. **Reverted — `retrieval.reranker` is back to the
