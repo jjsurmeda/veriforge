@@ -4,6 +4,7 @@ live model."""
 
 from collections.abc import AsyncIterator
 from dataclasses import replace as dc_replace
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -1148,13 +1149,10 @@ async def test_relevance_decision_is_published_to_the_trace(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """No engine.decide call makes the relevance decision, so the
-    DecisionEngine emitter never fires for it — prepare_auto_run has to
-    publish it, or an abstention's trace can't show the second signal."""
-    published: list[Any] = []
-
-    async def publish(run_id: UUID, event: Any) -> None:
-        published.append(event)
-
+    DecisionEngine emitter never fires for it — graph/runner.py publishes
+    it from `auto_run.decision_events` instead. Pinned here on the run's own
+    decision list, which is what the runner iterates: one per attempt
+    (initial + the single retry)."""
     params = await _gate_params(db, user_a, no_llm, monkeypatch)
     run = await prepare_auto_run(
         get_session_factory(),
@@ -1162,19 +1160,24 @@ async def test_relevance_decision_is_published_to_the_trace(
         DecisionEngine(
             jev=_RelevanceJev("lookup", 0.2, 0.3), mode="jev_only"
         ),
-        publish=publish,
     )
 
-    relevance = [
-        event
-        for event in published
-        if getattr(event, "name", None) == "relevance"
-    ]
+    relevance = _relevance_decisions(run)
     assert run.abstain_event is not None
-    # one per attempt: the initial retrieve and the single retry
     assert len(relevance) == 2
     assert all(event.value == pytest.approx(0.3) for event in relevance)
     assert all(event.threshold == pytest.approx(0.6) for event in relevance)
+    assert all(event.stage == "rerank" for event in relevance)
+
+
+def test_runner_publishes_the_relevance_decision() -> None:
+    """The runner is the only place with the bus; without this the gate's
+    decision never reaches run_events (found live: 8/8 items passed but the
+    trace had no `relevance` event)."""
+    from graph import runner as runner_module
+
+    source = Path(runner_module.__file__).read_text()
+    assert 'if decision.name == "relevance":' in source
 
 
 async def test_retry_count_never_exceeds_one(

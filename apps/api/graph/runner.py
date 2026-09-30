@@ -706,6 +706,13 @@ async def execute_run(
             )
             for event in auto_run.retrieval_events:
                 await bus.publish(run_id, event)
+            # The relevance gate's Decision is computed in prepare_auto_run,
+            # not by an engine.decide call, so the DecisionEngine emitter
+            # never fires for it — publish it here or the trace can't show
+            # why the run abstained (KI-26, D2 item 4).
+            for decision in auto_run.decision_events:
+                if decision.name == "relevance":
+                    await bus.publish(run_id, decision)
             if auto_run.conflict_event is not None:
                 await bus.publish(run_id, auto_run.conflict_event)
             if auto_run.abstain_event is not None:

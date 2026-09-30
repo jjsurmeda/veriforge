@@ -749,11 +749,6 @@ async def prepare_auto_run(
                         ),
                     )
                     decision_events.append(relevance_decision)
-                    # No engine.decide call made this decision, so the
-                    # DecisionEngine emitter never fires for it: publish it
-                    # here or the trace can't show why the run abstained.
-                    if publish is not None:
-                        await publish(params.run_id, relevance_decision)
             expanded_contexts = await expand_context(session, winners)
             top_for_check = expanded_contexts[
                 : int(runtime_value("retrieval.top_k", TOP_CHUNKS_FOR_SUFFICIENT))
