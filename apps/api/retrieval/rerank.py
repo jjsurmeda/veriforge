@@ -14,6 +14,7 @@ import httpx
 
 from config import get_settings
 from decisions.engine import DecisionEngine
+from decisions.thresholds import Engine
 from retrieval.context import count_tokens
 from retrieval.hybrid import ScoredChunk
 from runtime import runtime_value
@@ -176,6 +177,21 @@ class JevRerank:
     def __init__(self, engine: DecisionEngine, run_id: str) -> None:
         self._engine = engine
         self._run_id = run_id
+        # Which engines actually answered (KI-26, D2 item 4): the relevance
+        # gate keys its threshold by this, and an outage (no passage got a
+        # real answer) must skip the gate rather than abstain. Accumulated
+        # across batches, so a breaker trip mid-run is visible.
+        self.answered_by: set[str] = set()
+
+    def relevance_engine(self) -> Engine | None:
+        """The engine the relevance gate should key by: "jev" if any passage
+        was Jev-answered (Jev is the reference scale), else "fallback", else
+        None when no passage got a real answer (skip the gate)."""
+        if "jev" in self.answered_by:
+            return "jev"
+        if self.answered_by:
+            return "fallback"
+        return None
 
     async def rerank(self, *, query: str, documents: list[str], top_n: int) -> RerankResult:
         pairs: list[tuple[int, float]] = []
@@ -189,6 +205,8 @@ class JevRerank:
             )
             for i in batch:
                 answer = answers.get(f"passage_{i}")
+                if answer is not None:
+                    self.answered_by.add(answer.engine)
                 try:
                     score = float(answer.value) if answer is not None else 0.0
                 except (TypeError, ValueError):

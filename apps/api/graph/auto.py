@@ -41,7 +41,13 @@ from retrieval.context import count_tokens, trim_context
 from retrieval.expand import ExpandedContext, dedupe_adjacent, expand_context
 from retrieval.filters import ClientFilters, Ownership
 from retrieval.hybrid import ScoredChunk, hybrid_search
-from retrieval.rerank import RERANK_TOP_N, RerankProvider, apply_rerank, get_reranker
+from retrieval.rerank import (
+    RERANK_TOP_N,
+    JevRerank,
+    RerankProvider,
+    apply_rerank,
+    get_reranker,
+)
 from retrieval.web import ensure_web_chunks
 from runtime import runtime_value
 from schemas.decisions import Noul
@@ -669,12 +675,16 @@ async def prepare_auto_run(
         dropped: list[ScoredChunk] = []
         expanded_contexts: list[ExpandedContext] = []
         abstain_threshold = 0.0
+        # One reranker for the whole run (KI-26, D2 item 4): the relevance
+        # gate reads which engine answered from it after the loop's retries.
+        reranker = get_reranker(engine, str(params.run_id))
+        relevance_ok = True
         while True:
             reranked = await _step(
                 "rerank",
                 partial(
                     _rerank_candidates,
-                    get_reranker(engine, str(params.run_id)),
+                    reranker,
                     query=current_query,
                     chunks=fused,
                     provenance=provenance,
@@ -705,6 +715,40 @@ async def prepare_auto_run(
                     )
                 )
             dropped.extend(sanitize_dropped)
+            # KI-26 (D2 item 4): the second abstain signal. `sufficient`
+            # can't separate answerable from unanswerable evidence (margin
+            # -0.06 in both D1 acceptance runs), but the max rerank score of
+            # the post-sanitize winners can — see `rerank_abstain` in
+            # thresholds.py for the replay table. Gated only on scores
+            # JevRerank answered: NVIDIA/Cohere use other scales, and fused
+            # order's top score is always 1.0. An outage (no passage got a
+            # real answer) skips the gate so it can never abstain.
+            relevance_engine = (
+                reranker.relevance_engine() if isinstance(reranker, JevRerank) else None
+            )
+            relevance_ok = True
+            if relevance_engine is not None:
+                scores = [c.rerank_score for c in winners if c.rerank_score is not None]
+                if scores:
+                    relevance_max = max(scores)
+                    relevance_threshold = threshold("rerank_abstain", relevance_engine)
+                    relevance_ok = relevance_max >= relevance_threshold
+                    decision_events.append(
+                        Decision(
+                            run_id=str(params.run_id),
+                            name="relevance",
+                            value=relevance_max,
+                            probability=None,
+                            probabilities=None,
+                            engine=relevance_engine,
+                            latency_ms=0,
+                            threshold=relevance_threshold,
+                            reasoning=(
+                                "max rerank score of the post-sanitize winners "
+                                f"({len(scores)} scored passages)"
+                            ),
+                        )
+                    )
             expanded_contexts = await expand_context(session, winners)
             top_for_check = expanded_contexts[
                 : int(runtime_value("retrieval.top_k", TOP_CHUNKS_FOR_SUFFICIENT))
@@ -733,7 +777,8 @@ async def prepare_auto_run(
             )
             p_sufficient = float(sufficient.value)
             abstain_threshold = threshold("sufficient_abstain", sufficient.engine)
-            if p_sufficient >= abstain_threshold:
+            # One bar: both signals must clear, with the same single retry.
+            if p_sufficient >= abstain_threshold and relevance_ok:
                 break
             if retries_left > 0:
                 retries_left -= 1
@@ -771,10 +816,14 @@ async def prepare_auto_run(
         # what was found reaches the user as plain text in the abstain message.
         contexts: list[ExpandedContext] = []
 
-        if p_sufficient_final < abstain_threshold:
+        if p_sufficient_final < abstain_threshold or not relevance_ok:
             abstain_event = build_abstain_event(
                 str(params.run_id), kept, offered_actions=["web", "deep"]
             )
+            # `relevance` is emitted before `sufficient` in the loop, so the
+            # last decision being `sufficient` still means the sufficiency
+            # floor was met; an abstention here with p_sufficient_final above
+            # the floor is the relevance gate (KI-26).
         else:
             contexts = expanded_contexts
             conflict_answer_map = await engine.decide(
