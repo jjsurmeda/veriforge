@@ -341,22 +341,42 @@ async def _rerank_candidates(
         picked.extend(
             await apply_rerank(reranker, query=label or query, chunks=group, top_n=share)
         )
+    # Order by rerank score, not group insertion order. Dict order put the
+    # "" (no-entity) share first whatever it scored, so a compare run's
+    # citations [1]-[3] could be the weakest passages (compare-inventors
+    # cited Noli Me Tangere at 0.01-0.02 ahead of Frankenstein and The
+    # Time Machine). The shares stay the same; only the order changes.
+    picked.sort(key=lambda chunk: chunk.rerank_score or 0.0, reverse=True)
     return picked
 
 
 def _sufficient_question(question: str, top_contexts: list[ExpandedContext]) -> Noul:
     remaining = SUFFICIENT_EVIDENCE_CHARS
     entries: list[str] = []
+    # Whole children first, in rank order; parent context follows only if
+    # the budget has room after every child that fits took its turn. The
+    # previous interleaving (each entry's parent before the next entry's
+    # child) let the first source's parent eat the budget, which is how
+    # compare-inventors' sufficiency judge saw only Noli Me Tangere (D2
+    # item 3): entry 1 child + ±1 neighbours ≈ 4,000 chars, so a
+    # 9,000-char budget held ~2 entries.
     for i, context in enumerate(top_contexts):
         if remaining <= 0:
             break
-        matched = context.chunk.text[:remaining]
+        text = context.chunk.text[:remaining]
+        remaining -= len(text)
+        entries.append(f"[{i + 1}] [matched passage]\n{text}")
+    parents: list[str] = []
+    for i, context in enumerate(top_contexts):
+        if remaining <= 0 or i >= len(entries):
+            break
         parent = context.context_text
-        if parent != context.chunk.text and remaining - len(matched) > 0:
-            matched += f"\n[parent context]\n{parent[: remaining - len(matched)]}"
-        remaining -= len(matched)
-        entries.append(f"[{i + 1}] [matched passage]\n{matched}")
-    evidence = "\n\n".join(entries) or "(no evidence retrieved)"
+        if parent == context.chunk.text:
+            continue
+        excerpt = parent[:remaining]
+        parents.append(f"[{i + 1}] [parent context]\n{excerpt}")
+        remaining -= len(excerpt)
+    evidence = "\n\n".join([*entries, *parents]) or "(no evidence retrieved)"
     return Noul(
         prompt=(
             "Do the following retrieved chunks together contain enough "

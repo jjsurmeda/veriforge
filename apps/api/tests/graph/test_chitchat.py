@@ -18,6 +18,7 @@ from graph import auto as auto_module
 from graph.auto import (
     AutoRunInput,
     _entity_queries,
+    _rerank_candidates,
     _sufficient_question,
     greeting_canonical,
     prepare_auto_run,
@@ -203,12 +204,41 @@ def test_sufficient_question_spends_the_budget_across_sources() -> None:
 
     prompt = _sufficient_question("What happened?", [context(i) for i in range(8)]).prompt
 
-    # the first source keeps its whole child and parent; the ~9,000-char
-    # total cap truncates the tail sources rather than every source's head
+    # children first (D2 item 3): the ~9,000-char budget holds ~4 whole
+    # children from four different sources, and no parent context at all;
+    # interleaving would have spent the budget on source 0's child+parent
+    # and source 1's child
     assert "[source 0 matched] " + "m" * 2_000 in prompt
-    assert "[source 0 parent] " + "p" * 2_000 in prompt
+    assert "[source 3 matched]" in prompt
+    assert "[parent context]" not in prompt
     assert "[source 7 matched]" not in prompt
     assert len(prompt) < 10_000
+
+
+def test_sufficient_question_children_first_then_parents_in_rank_order() -> None:
+    def context(i: int) -> ExpandedContext:
+        chunk = ScoredChunk(
+            chunk_id=UUID(int=i + 1),
+            document_id=None,
+            document_name=f"book-{i}.txt",
+            section_id=None,
+            ord=0,
+            page=None,
+            text=f"[child {i}]",
+            heading_path=None,
+            source_type="document",
+            vector_score=None,
+            bm25_score=None,
+            fused_score=0.0,
+        )
+        return ExpandedContext(chunk, f"[parent {i}]")
+
+    prompt = _sufficient_question("What?", [context(i) for i in range(3)]).prompt
+
+    # every child precedes every parent, and parents follow their own child
+    assert prompt.index("[child 0]") < prompt.index("[child 1]") < prompt.index("[child 2]")
+    assert prompt.index("[child 2]") < prompt.index("[parent 0]")
+    assert prompt.index("[parent 0]") < prompt.index("[parent 1]") < prompt.index("[parent 2]")
 
 
 def test_sufficient_question_shows_the_whole_child() -> None:
@@ -233,6 +263,74 @@ def test_sufficient_question_shows_the_whole_child() -> None:
     ).prompt
 
     assert answer in prompt
+
+
+def _chunk_for(uuid_int: int, text: str) -> ScoredChunk:
+    return ScoredChunk(
+        chunk_id=UUID(int=uuid_int),
+        document_id=None,
+        document_name="book.txt",
+        section_id=None,
+        ord=0,
+        page=None,
+        text=text,
+        heading_path=None,
+        source_type="document",
+        vector_score=None,
+        bm25_score=None,
+        fused_score=0.0,
+    )
+
+
+class _FixedScoreRerank:
+    """Answers each passage with a score looked up by its text marker."""
+
+    def __init__(self, scores: dict[str, float]) -> None:
+        self._scores = scores
+
+    async def rerank(
+        self, *, query: str, documents: list[str], top_n: int
+    ) -> list[tuple[int, float]]:
+        pairs = [
+            (i, self._scores[doc.split(":")[0]]) for i, doc in enumerate(documents)
+        ]
+        pairs.sort(key=lambda pair: pair[1], reverse=True)
+        return pairs[:top_n]
+
+
+@pytest.mark.asyncio
+async def test_rerank_candidates_sorts_the_no_entity_share_last() -> None:
+    """D2 item 3: dict insertion order put the "" (no-entity) share first
+    whatever it scored, so a compare run's citations led with its weakest
+    passages. The shares stay; the order follows the rerank score."""
+    chunks = [
+        _chunk_for(1, "none: no-entity passage A"),
+        _chunk_for(2, "none: no-entity passage B"),
+        _chunk_for(3, "victor: Frankenstein passage"),
+        _chunk_for(4, "traveller: Time Machine passage"),
+    ]
+    provenance = {
+        UUID(int=1): "",
+        UUID(int=2): "",
+        UUID(int=3): "Victor Frankenstein",
+        UUID(int=4): "Time Traveller",
+    }
+    reranker = _FixedScoreRerank(
+        {"none": 0.01, "victor": 0.94, "traveller": 0.90}
+    )
+
+    picked = await _rerank_candidates(
+        reranker,
+        query="compare",
+        chunks=chunks,
+        provenance=provenance,
+        limit=4,
+    )
+
+    # every share keeps an equal count, but the entity passages lead
+    assert [c.text.split(":")[0] for c in picked] == ["victor", "traveller", "none", "none"]
+    assert picked[0].rerank_score == 0.94
+    assert picked[-1].rerank_score == 0.01
 
 
 def test_compare_queries_each_named_entity() -> None:
