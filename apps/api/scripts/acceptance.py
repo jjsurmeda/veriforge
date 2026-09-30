@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import httpx
 
 from scripts import smoke_chat
+from textkit import detect_language
 
 SET_FILE = Path(__file__).resolve().parents[3] / "evals" / "acceptance" / "books.json"
 OUT_DIR = Path(__file__).resolve().parents[3] / ".data" / "acceptance"
@@ -67,6 +68,20 @@ def observed_class(item: dict[str, Any], result: dict[str, Any]) -> str:
     return "smalltalk"
 
 
+def language_ok(item: dict[str, Any], result: dict[str, Any]) -> bool:
+    """The reply must be in the language the user asked in.
+
+    Expected language comes from the question, so the xl-* items — English
+    questions about non-English books — expect English with no special case.
+    An item may pin `"expect_language"` for a mixed-language turn the
+    detector cannot read off the question.
+    """
+    expected = item.get("expect_language") or detect_language(item["turns"][-1])
+    got = detect_language(result["answer"])
+    # Undetectable on either side is not evidence of a mismatch.
+    return expected is None or got is None or got == expected
+
+
 def passes(item: dict[str, Any], result: dict[str, Any]) -> bool:
     expected = item["expect"]
     answer = result["answer"]
@@ -79,6 +94,8 @@ def passes(item: dict[str, Any], result: dict[str, Any]) -> bool:
         any(book.lower() in doc.lower() for book in item.get("cite", []))
         for doc in _cited_documents(result)
     )
+    if not language_ok(item, result):
+        return False
     if expected == "smalltalk":
         return completed and not result["citations"]
     if expected == "library":
@@ -89,6 +106,19 @@ def passes(item: dict[str, Any], result: dict[str, Any]) -> bool:
         plain = result["message_status"] == "abstained" or says_not_in_sources(answer)
         return plain and not result["citations"]
     return False
+
+
+def failure_reason(item: dict[str, Any], result: dict[str, Any]) -> str | None:
+    """Why an item failed, so a language regression is not read as a
+    retrieval or citation one."""
+    if passes(item, result):
+        return None
+    if not language_ok(item, result):
+        return "language_mismatch"
+    expected = item["expect"]
+    if expected == "answer" and not result["citations"]:
+        return "no_citations"
+    return "wrong_class_or_content"
 
 
 async def run(only: list[str] | None = None) -> None:
@@ -135,6 +165,9 @@ async def run(only: list[str] | None = None) -> None:
                     "expect": item["expect"],
                     "got": got,
                     "pass": ok,
+                    "reason": failure_reason(item, result),
+                    "q_language": detect_language(item["turns"][-1]),
+                    "a_language": detect_language(result.get("answer") or ""),
                     "ttft_ms": result.get("ttft_ms"),
                     "sufficient": result.get("sufficient"),
                     "status": result.get("status"),
@@ -147,7 +180,11 @@ async def run(only: list[str] | None = None) -> None:
                     "turns": item["turns"],
                 }
             )
-            print(f"  {item['id']}: {got} {'PASS' if ok else 'FAIL'}", flush=True)
+            print(
+                f"  {item['id']}: {got} "
+                f"{'PASS' if ok else 'FAIL' + ' (' + str(rows[-1]['reason']) + ')'}",
+                flush=True,
+            )
             if item is not items[-1] and item["expect"] != "smalltalk":
                 await asyncio.sleep(65)
 
@@ -168,6 +205,14 @@ async def run(only: list[str] | None = None) -> None:
     print(f"\npassed {sum(r['pass'] for r in rows)}/{len(rows)}; TTFT p50 {p50} ms")
     for cls, flags in per_class.items():
         print(f"  {cls}: {sum(flags)}/{len(flags)}")
+    per_language: dict[str, list[int]] = {}
+    for r in rows:
+        per_language.setdefault(str(r["q_language"]), []).append(1 if r["pass"] else 0)
+    print("  by question language:")
+    for lang, flags in sorted(per_language.items()):
+        print(f"    {lang}: {sum(flags)}/{len(flags)}")
+    for reason in sorted({r["reason"] for r in rows if r["reason"]}):
+        print(f"  failed {reason}: {[r['id'] for r in rows if r['reason'] == reason]}")
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")

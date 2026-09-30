@@ -62,6 +62,7 @@ ignore = ["S101"]
 "tests/retrieval/**" = ["RUF001", "RUF002", "RUF003"]
 "tests/test_textkit.py" = ["RUF001", "RUF002", "RUF003"]
 "tests/graph/test_abstain.py" = ["RUF001", "RUF002", "RUF003"]
+"tests/scripts/**" = ["RUF001", "RUF002", "RUF003"]
 "db/migrations/**" = ["RUF001", "RUF002", "RUF003"]
 
 [tool.mypy]
