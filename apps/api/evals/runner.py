@@ -139,6 +139,10 @@ async def _run_item(
     async with record_generation_ids() as generation_ids:
         engine = DecisionEngine()
         pipeline_run_id = uuid7()
+        # source="upload": eval runs are documents-only, the same as the UI
+        # default (ChatComposer sends "upload"/"both", never "auto"), because
+        # the seed set is "over the demo corpus" (TRD §15). "auto" routed to
+        # Tavily and had should-abstain items answered from the web.
         if mode == "deep":
             deep_run = await prepare_deep_run(
                 factory,
@@ -151,7 +155,7 @@ async def _run_item(
                     litellm_model=GENERATOR_MODEL,
                     small_model=SMALL_MODEL,
                     context_window=CONTEXT_WINDOW,
-                    source="auto",
+                    source="upload",
                     client_filters=ClientFilters(),
                     collection_ids=scope,
                 ),
@@ -196,7 +200,7 @@ async def _run_item(
                     litellm_model=GENERATOR_MODEL,
                     small_model=SMALL_MODEL,
                     context_window=CONTEXT_WINDOW,
-                    source="auto",
+                    source="upload",
                     client_filters=ClientFilters(),
                     collection_ids=scope,
                 ),

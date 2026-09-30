@@ -574,7 +574,9 @@ a chosen settings version and mode, then records faithfulness, minimum
 support, citation precision, context precision and recall, answer
 relevance (LLM judge), abstention correctness, latency and credits. Runs
 are compared against a baseline with per-item diffs, and pushed to
-Langfuse as experiments.
+Langfuse as experiments. Eval runs are documents-only
+(`source="upload"`, the same as the UI default), because the seed set is
+"over the demo corpus".
 
 **Dataset sources.** Hand-written; synthetic (an LLM drafts Q&A pairs from
 sampled chunks, an admin approves each); harvested from rated chats
