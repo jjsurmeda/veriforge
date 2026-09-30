@@ -26,8 +26,11 @@ KI-22 batch 1. New this round: KI-23 (misleading key/quota failure copy),
 KI-24 (eval corpus in the Shared library). **C2** (2026-09-30) closed
 KI-25 (abstain no longer cites; `not_in_sources` 0/4 → 3/4) and split its
 leftover into KI-26. C2 also closed KI-19: the BM25 index is re-tokenised
-with `icu` (migration 0013) and both CJK items now retrieve through the
-lexical leg.
+with `icu` (migration 0013), which is what makes the CJK lexical leg
+return rows (0 → 2478 on a Chinese question). Note that the two CJK
+acceptance items already passed before that change — the dead leg was
+real but the vector leg was carrying them. KI-28 records the Jev reranker
+rejection.
 
 ---
 
@@ -533,15 +536,17 @@ already failed it with the same answer.
   "fix" it by adding 菩提祖师 to the item's `mention` list — that would
   make the check pass while the product is still wrong.
 
-## KI-28: The winning reranker is not licensed for production
+## KI-28: Jev reranks better than NVIDIA but regresses abstention (reverted)
 
-Logged 2026-09-30, from the C2 reranker comparison. **Decided, not
-overlooked** — read this before the next reranker change.
+Logged 2026-09-30, from the C2 reranker comparison and the full acceptance
+run that followed it. **Reverted — `retrieval.reranker` is back to the
+`nvidia` default in settings version 137.** Read this before the next
+reranker change.
 
-`retrieval.reranker` is set to `jev` (settings version 136) on the
-strength of an offline replay over all 23 `answer`-class acceptance items
-(`apps/api/.data/rerank-comparison.json`, produced by
-`scripts/compare_rerankers.py`):
+`retrieval.reranker` was set to `jev` in runtime settings version 136 on
+the strength of that table, and **that setting was reverted in version 137
+after the full acceptance run regressed the abstention class in both
+directions.** The table below is the reranker comparison, not the verdict.
 
 | reranker | recall@8 | mean rank of expected | mention@8 | p50 ms | $/query | fell back |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -549,28 +554,43 @@ strength of an offline replay over all 23 `answer`-class acceptance items
 | nvidia | 1.000 | 1.0 | 0.818 | 839 | 0.0 | 0/23 |
 
 Both arms saw byte-identical fused candidates (top 40) and no generation
-happened, so the only variable is the reranker. The prompt's tiebreak is
-recall → latency → cost: recall ties at 1.000, so latency decides, and
-Jev is 1.9× faster. It also finds the `mention` term in the top 8 on four
-items NVIDIA misses (`plot-red-headed-league`, `fact-weena`,
-`ml-fr-bovary-death`, `xl-en-bovary-death`).
+happened, so the reranker was the only variable.
 
-- **The catch:** the $0 NVIDIA column is the *free, evaluation-only* tier
-  (see the provider reference). It is not licensed for production, so
-  $0/query is not a real option to ship. Jev's $0.000607/query is real
-  money — about $0.55 per 1,000 queries, before the run's other calls.
-- **Why it matters:** choosing Jev trades a licensing problem for a
-  per-query cost on the hot path of every answer. At the current eval
-  volume that is noise; it is not noise at volume.
-- **Next step (not this slice):** stand up Cohere Rerank through Bedrock
-  per the earlier provider analysis and replay this same script against
-  all three. `CohereRerank` is already implemented and already takes
-  precedence when `COHERE_API_KEY` is set, so the third arm is a config
-  change plus one more replay, not new code.
+- **Why the comparison was not enough:** it measured *ranking* quality —
+  which book lands first, whether a `mention` term survives into the top
+  8. It did not measure the effect on the `sufficient` noul, which is
+  asked over the reranked top-k and is what actually decides answer vs
+  abstain. A reranker can be better at putting the right book on top and
+  still change sufficiency in both directions. On the full run it did:
+
+  | item | C1 (nvidia) | with jev |
+  | --- | --- | --- |
+  | `fact-bennet-sisters` | answer PASS (0.90) | not_in_sources FAIL |
+  | `fact-irene-adler` | answer PASS (0.65) | not_in_sources FAIL |
+  | `outside-whitman` | not_in_sources (0.03) | **answer** FAIL |
+  | `outside-study-in-scarlet` | answer (0.14) | answer FAIL |
+
+  `outside-whitman` answering a Walt Whitman question from a corpus that
+  does not contain it is the worst outcome in the product, and it is
+  strictly worse than the abstention it replaced. That settles it:
+  shipping the latency win is not worth it.
+- **What a real decision needs:** the comparison harness has to carry the
+  reranked top-k through the `sufficient` noul and record the
+  answer/abstain verdict per item, not just the rank. That is a
+  generation-cost measurement, not an offline replay, so it cannot live in
+  `scripts/compare_rerankers.py` as written.
+- **Still true:** Jev is the better *ranker* here and 1.9x faster, and it
+  keeps the `mention` term in the top 8 on four items NVIDIA drops
+  (`plot-red-headed-league`, `fact-weena`, `ml-fr-bovary-death`,
+  `xl-en-bovary-death`). The three-way replay with Cohere (below) should
+  measure the sufficiency effect, not the rank.
+- **Licensing, unchanged:** the $0 NVIDIA column is the free,
+  evaluation-only tier. It is not shippable, so production still needs
+  Cohere Rerank via Bedrock per the earlier provider analysis.
+  `CohereRerank` is implemented and already takes precedence when
+  `COHERE_API_KEY` is set, so that arm is a config change.
 - **Also worth knowing:** Fast mode cannot use Jev — it has no
   DecisionEngine, so it falls back to fused order and logs a warning.
-  If Fast ever ships, thread an engine through or exclude it from the
-  reranker comparison.
 
 ## Reference: provider findings, 2026-09-26
 
