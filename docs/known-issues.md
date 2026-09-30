@@ -53,6 +53,65 @@ rejection.
   remaining work here is only the unrecorded baseline plus whatever the
   p50 row below says. `make acceptance` is not the gate, but it now runs
   end to end (23/31) if a cheaper sanity pass is wanted first.
+- **Note (2026-09-30, C2): the gate ran three times and the baseline was
+  still NOT written.** Two conditions in the dispatch failed, and one could
+  not be checked at all. Stored baseline: faithfulness 0.9875,
+  context_recall 1.0, abstention 0.25, p50 14384.5 ms, and **no
+  `answer_rate` and no `p50_our_overhead_ms`** — which is itself the
+  reason two of the conditions are unverifiable.
+
+  | run | items | scored | failed | faithfulness | ctx recall | abstention | answer rate | p50 ms | p50 overhead ms |
+  | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+  | baseline | 20 | – | – | 0.9875 | 1.00 | 0.25 | – | 14384.5 | – |
+  | 1 | 20 | 20 | **0** | 0.9868 | 1.00 | **0.00** | 0.9375 | 17306.0 | 11748.5 |
+  | 2 | 20 | 20 | **0** | 0.9759 | 1.00 | **0.00** | 0.9375 | 14338.0 | 8457.0 |
+  | 3 | 20 | 20 | **0** | 0.9813 | null | **0.25** | 0.9375 | 14878.5 | 10977.5 |
+
+  - **0 errored items: PASS**, all three runs (`failed` 0, `scored` 20).
+  - **faithfulness within the gate: PASS.** Worst run 0.9759 against
+    0.9875 is a 0.012 drop, inside `FAITHFULNESS_DROP = 0.03`.
+  - **our-overhead p50 within the gate: FAIL on run 1.** The stored
+    baseline has no `p50_our_overhead_ms`, so `compare` falls back to
+    gating total `p50_latency_ms`; run 1's 17306 ms exceeds
+    14384.5 × 1.20 = 17261. Runs 2 and 3 pass, so this is at the edge,
+    not a clear regression — but "at the edge on one of three" is not a
+    pass.
+  - **abstention accuracy: FAIL.** `ABSTENTION_DROP_POINTS` is 5.0 and
+    runs 1 and 2 score 0.00 against a 0.25 baseline — a 25-point drop.
+    Run 3 recovers to exactly 0.25. **Do not write a baseline on a
+    metric that swings 0.00 / 0.00 / 0.25.**
+  - **answer rate at least the last run's: UNVERIFIABLE.** All three
+    runs report 0.9375, but no prior run ever recorded an answer rate —
+    it is absent from the stored baseline and from the batch-4 table
+    above, so there is nothing to compare against.
+
+  **The abstention spread is the real finding, and 4 items is too few to
+  act on.** All four `should_abstain` items in fast20 are English
+  AW-2000 spec questions, and the three runs abstained on 0, 0 and 1 of
+  them. Ruled out as causes, with measurements rather than argument:
+  - *The CJK tokenizer work (item 3).* Those four items are English, and
+    the BM25 leg's selectivity for an English question is unchanged by
+    it: `paradedb.match(...)` returns 6920 rows where the previous
+    `paradedb.parse(..., lenient => true)` returned 6829 — +1.3%, not a
+    flood. `lex_limit` is 50, so both were already returning their cap.
+  - *The citation change (item 1).* `abstention_accuracy` is computed
+    from `run.abstain_event is not None` alone
+    (`evals/runner.py:392-394`); it never reads citations.
+  - *The Jev reranker (item 4).* Reverted in settings version 137 before
+    these three runs; see KI-28.
+
+  **Next step, in order:** (a) add the four abstention items' *and* some
+  answerable items to a larger abstention set — 4 items cannot resolve a
+  0.00-vs-0.25 question, and widening fast20 is cheaper than
+  re-deciding the threshold on n=4; (b) record `answer_rate` and
+  `p50_our_overhead_ms` in the stored baseline so the two unverifiable
+  conditions become checkable, which means the baseline has to be written
+  once by hand from a run whose abstention number is stable; (c) only
+  then write a new baseline. Do not lower `ABSTENTION_DROP_POINTS` and do
+  not re-baseline the 0.00 rows — that would store an abstention
+  regression as normal, which is the mistake this entry already records
+  once for latency.
+
 - **Note (2026-09-27, batch 4):** the gate **ran** — `python -m evals.gate`
   exited 0, "eval gate passed" — but **no new baseline was written**, for
   two reasons. Both are in the numbers.
