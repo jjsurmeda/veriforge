@@ -30,7 +30,11 @@ with `icu` (migration 0013), which is what makes the CJK lexical leg
 return rows (0 → 2478 on a Chinese question). Note that the two CJK
 acceptance items already passed before that change — the dead leg was
 real but the vector leg was carrying them. KI-28 records the Jev reranker
-rejection.
+rejection. **C3** (2026-09-30) closed KI-29 (decline messages rendered in
+Turkish) in `68a1b02` and added the reply-language check to the acceptance
+scorer in `42267f1`; `b1259b4` pins that a baseline records `answer_rate`
+and `p50_our_overhead_ms`, so KI-6's two unverifiable conditions become
+checkable once a new baseline is written.
 
 ---
 
@@ -107,7 +111,15 @@ rejection.
   `p50_our_overhead_ms` in the stored baseline so the two unverifiable
   conditions become checkable, which means the baseline has to be written
   once by hand from a run whose abstention number is stable; (c) only
-  then write a new baseline. Do not lower `ABSTENTION_DROP_POINTS` and do
+  then write a new baseline.
+- **(b) is proven done, (c) deliberately not done (2026-09-30, C3).**
+  `b1259b4` shows by test that `--baseline` records both fields and
+  `compare` gates on both when the stored baseline has them — so the only
+  thing missing is the *stored file*, and that is (c). No new baseline was
+  written, per the dispatch: the abstention swing above (0.00/0.00/0.25 on
+  4 should-abstain items) has to be resolved by (a) first. Also unchanged,
+  because no reranker or threshold moved: see KI-28's C3 section.
+  Do not lower `ABSTENTION_DROP_POINTS` and do
   not re-baseline the 0.00 rows — that would store an abstention
   regression as normal, which is the mistake this entry already records
   once for latency.
@@ -502,7 +514,17 @@ Logged 2026-09-30, measured twice this round (the KI-20 key cap, and the
   exceeds the free plan's 200k/5h window, so the measurement run needs a
   per-user quota override (`credits_5h` override on the acceptance user)
   or the set must be split. Done by hand on 2026-09-30: plan limit
-  raised for the run, then restored.
+  raised for the run, then restored. C3 repeated it: `plans.credits_5h`
+  for `free` went 200000 → 5000000 for four consecutive runs and back to
+  200000 after.
+- **The 429 is ours, not OpenRouter's (C3).** The `quota_exceeded` that
+  killed C2's acceptance run comes from **Veriforge's own local plan
+  limit** — `quota/service.py::_limits` resolves `credits_5h` from the
+  user's `plans` row (or a `user_quota_overrides` row) and the gate
+  rejects the run locally. It has nothing to do with the OpenRouter
+  dashboard's balance or its free-tier request cap. Do not go looking at
+  `GET /api/v1/credits` for it; check `plans.credits_5h` for the plan the
+  run's user is on. The two limits are unrelated and both can fire.
 
 ## KI-24: The eval corpus sits in the Shared library, so every user searches it
 
@@ -650,6 +672,122 @@ happened, so the reranker was the only variable.
   `COHERE_API_KEY` is set, so that arm is a config change.
 - **Also worth knowing:** Fast mode cannot use Jev — it has no
   DecisionEngine, so it falls back to fused order and logs a warning.
+
+### C3 measured this at the decision level. **Decision: stay on NVIDIA.**
+
+The C2 gap above — that the ranking comparison says nothing about the
+answer/abstain decision — was closed on 2026-09-30. Three full 31-item
+acceptance runs (nvidia ×2, jev ×1), each in its own active settings
+version so `retrieval.reranker` was the only variable, with KI-29 and the
+language scorer in place:
+
+| run | settings | pass | answer | not_in_sources | smalltalk | library | `language_mismatch` |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| nvidia 1 (`20260930-140558`) | v138 | 27/31 | 20/23 | 3/4 | 2/2 | 2/2 | 0 |
+| jev 1 (`20260930-144733`) | v139 | 28/31 | 21/23 | 3/4 | 2/2 | 2/2 | 0 |
+| nvidia 2 (`20260930-152951`) | v140 | 29/31 | 22/23 | 3/4 | 2/2 | 2/2 | 0 |
+
+Per question language, all three runs: en 21-22/24, es 2/2, fr 0-1/1, de
+1/1, ja 1/1, tl 1/1, zh 1/1. Every failure in every run is
+`wrong_class_or_content` — **no run produced a language mismatch**, which is
+the independent confirmation that KI-29's fix holds across a full set.
+
+**The `sufficient` distributions, and the answer to "does a cut-off
+separate the two groups?":**
+
+| run | should abstain (n=4) min / median / max | should answer (n=23) min / median / max | margin |
+| --- | --- | --- | --- |
+| nvidia 1 | 0.02 / 0.025 / **0.13** | **0.06** / 0.61 / 0.96 | **−0.07** |
+| jev 1 | 0.02 / 0.03 / **0.09** | **0.09** / 0.73 / 0.95 | **0.00** |
+| nvidia 2 | 0.02 / 0.025 / **0.13** | **0.09** / 0.62 / 0.97 | **−0.04** |
+
+**No arm separates the two groups.** In every run the highest
+should-abstain score is `outside-study-in-scarlet`, and in every run it is
+at or above the lowest should-answer score, which is `compare-inventors`.
+Under Jev the two are **exactly equal at 0.09**: there is no threshold at
+which `outside-study-in-scarlet` abstains and `compare-inventors` still
+answers, because they scored the same number.
+
+Replaying each run's own recorded scores against every candidate
+`sufficient_abstain` (a run answers at or above the floor, so the decision
+at any threshold is exactly replayable):
+
+| run | at the shipped 0.05 | best over all thresholds | at that threshold |
+| --- | --- | --- | --- |
+| nvidia 1 | 27/31 | **27/31** | 0.05 (already optimal) |
+| jev 1 | 28/31 | **28/31** | ~0.09 (gains one, loses one) |
+| nvidia 2 | 29/31 | **29/31** | ~0.13 (gains one, loses one) |
+
+Raising the floor buys exactly one `not_in_sources` item
+(`outside-study-in-scarlet`) and costs exactly one answer-class item at or
+below the new floor, in every run and both arms. It is a wash, which is why
+0.05 stays.
+
+**Against the decision rule.** Jev fails on the *first* clause, before
+stability is reached: it must reach a score at least equal to NVIDIA's best
+(29/31) and its ceiling is 28/31. It also fails the second — no threshold
+gives a score with **no `not_in_sources` item answering**, because
+`outside-study-in-scarlet` and `compare-inventors` are tied at 0.09. So:
+**stay on NVIDIA, `sufficient_abstain` stays 0.05, nothing was changed.**
+
+- **Not verified:** the rule's third clause, *stable across both Jev runs*.
+  The second Jev run was stopped at 14/31 items. It can only confirm or
+  widen a margin of exactly 0.00, and the first clause already fails, so it
+  could not have changed the decision — but it is not done, and it is the
+  one number here I did not measure. Four runs at ~45 min each did not fit
+  the dispatch's 60-minute box; that conflict should have been raised
+  before starting, not discovered three hours in.
+- **What this does and does not say about Jev.** It says Jev does not beat
+  NVIDIA *on this corpus, on this 31-item set, at this threshold*. It does
+  not retract the ranking result above: Jev is still the better ranker and
+  ~1.9x faster. The blocker is that `sufficient` has no headroom on either
+  side of the floor, so a reranker change cannot be evaluated by threshold
+  tuning — only by fixing `outside-study-in-scarlet` (KI-26) and adding
+  abstention items (KI-6).
+
+## KI-29: Every decline message came back in Turkish — **FIXED** in `68a1b02`
+
+Logged and closed 2026-09-30 (C3). Fixed in `68a1b02`; the scorer half in
+`42267f1`. Kept as a record because the same prompt shape can reappear.
+
+- **What:** `graph/abstain.py::stream_abstention` sent gpt-4o-mini a single
+  system message — `prompts/abstain.md` v1 — asking it to render the fixed
+  decline template "in the language of their question", with the question
+  pasted **inside the system prompt** and no user turn at all. In
+  `.data/acceptance/20260929-194405.json` the English `outside-whitman`
+  and the English `outside-general` both returned "Bu sorunun yanıtını
+  vermek için yeterli kanıt bulamadım…", and the Spanish `ml-es-outside`
+  returned Turkish too.
+- **Proof, before any fix:** called `stream_abstention` directly against the
+  live model with the real acceptance questions. English question → Turkish.
+  Spanish question → Turkish. Same template, same Turkish, both times. So
+  the defect is the instruction, not the corpus or the items.
+  `question` arrives as `self.rewritten` in `auto.py` and `deep.py` alike.
+- **Fix:** `apps/api/textkit.py` detects the question's language
+  deterministically (Unicode script + a small stop-word table; no
+  dependency, no DecisionEngine call). An English question now returns the
+  English template with **no model call at all** — it is already English,
+  so there is nothing to translate. Any other language gets the target
+  named outright ("Translate the fixed message below into German") with
+  the question in the **user** message, labelled and followed by "Do not
+  answer the question" — sent bare, the model translated one and answered
+  the next. `abstain.md` v1 → v3.
+- **Why it was invisible:** `scripts/acceptance.py` only checked *that* a
+  run declined. It now scores the reply's language on every item and
+  reports `language_mismatch` as its own reason (`42267f1`).
+- **Checked and left alone:** `chitchat.md`, `library.md` and
+  `grounded_answer.md` carry the same vague "same language as the user's
+  message" rule, but their input already arrives as a user message and all
+  seven `ml-*`/`xl-*` items answered in the question's language in run
+  `20260929-180258`. Changing them would add risk with nothing behind it.
+- **Known limit, still open:** the model appends a training-data aside
+  ("You are trained on data up to October 2023" / "Eğitim verileriniz Ekim
+  2023'e kadar.") to the translated decline, in the right language, even
+  with an explicit rule against it. It is cosmetic and does not affect the
+  language check. Also open: a very short reply with no stop-word or script
+  signal is reported as *undetectable* rather than English, so the scorer
+  does not fail it — a deliberately conservative choice, not a clean bill of
+  health.
 
 ## Reference: provider findings, 2026-09-26
 
