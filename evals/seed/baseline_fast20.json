@@ -1,7 +1,17 @@
 {
-  "faithfulness": 0.9875,
-  "context_recall": 1.0,
-  "abstention_accuracy": 0.25,
-  "p50_latency_ms": 14384.5,
-  "items": 20.0
+  "models": {
+    "generator": "openrouter/openai/gpt-4o-mini",
+    "small": "openrouter/openai/gpt-4o-mini"
+  },
+  "faithfulness": 0.9683333333333334,
+  "context_recall": 0.8875,
+  "abstention_accuracy": 0.875,
+  "answer_rate": 0.9166666666666666,
+  "p50_latency_ms": 8548.5,
+  "p50_our_overhead_ms": 2317.5,
+  "overhead_items_attributed": 20.0,
+  "p50_total_ms_unattributed_items": null,
+  "items": 20.0,
+  "scored": 20.0,
+  "failed": 0.0
 }
