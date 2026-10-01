@@ -107,11 +107,11 @@ explicit abstention.
 flowchart TD
   A[Ingress<br/>1 Jev call] -->|blocked| X[Refusal]
   A --> B[Rewrite + summary]
-  B --> C{Complexity}
-  C -->|single| D[Multi-query retrieve<br/>sanitize + rerank]
+  B --> C{Mode}
+  C -->|Auto / Fast| D[Multi-query retrieve<br/>rerank + sanitize]
   D --> E{Sufficient?}
   E -->|no, retries left| D
-  C -->|multi| F[Plan sub-questions]
+  C -->|Deep| F[Plan sub-questions]
   F --> G[Parallel hop retrieve<br/>+ extract notes]
   G --> H{Controller}
   H -->|need more| G
@@ -126,17 +126,24 @@ flowchart TD
 Ingress also runs the rewrite in parallel, so the two top boxes cost one
 round trip.
 
+*(Amended 2026-10-02, PRD v3.)* **Auto is single-hop.** The multi-hop branch
+is Deep only; Auto's `complexity` decision affects query parts, not hops. The
+"Sufficient?" box is two evidence checks (sufficiency and relevance/
+answerability, below), with one rewrite + retry. Abstentions carry no
+citations (KI-25).
+
 | Node | Engine | Behaviour |
 | --- | --- | --- |
 | Ingress | Jev, one call | Questions: `guard_injection`, `guard_jailbreak`, `guard_pii`, `off_topic` (noul); `intent` (choice: chitchat, lookup, compare, summarize, multi-part, follow-up, library); `source` (choice, if source = Auto); `complexity` (choice, if mode = Auto); `lexical_weight` (score 0–1); `risk` (choice: low, high). `intent = chitchat` (and not `off_topic`) routes to a direct small-talk reply: no retrieval, no citations, no reviewer, no abstention. *(Amended 2026-09-28, batch A — greeting fast path: a raw message of ≤ 40 chars whose normalised form (NFKC, lowercase, letters/spaces only, ≤ 4 words) exactly matches the greeting allowlist skips ingress and retrieval; the generator receives the canonical phrase only.)* *(Amended 2026-09-30, C2 — `intent = library` answers "what books do we have" / "how many documents are in my sources" from the document list of the chat's own scope (its container plus Shared, the same ids retrieval is given), not from retrieval: no retrieval, no citations, no reviewer. Only documents in a searchable state are listed. Language per book is not reported — no document language is stored.)* |
 | Rewrite + summary | Small LLM | Condenses the question with history; refreshes the rolling chat summary every 10 turns. |
 | Multi-query retrieve | Small LLM + SQL | 3 query variants (Auto only), each through hybrid search; results fused. Fast uses the rewritten query only. |
-| Sufficient? | Jev | `sufficient` noul over question + top chunks. Answer-first *(amended 2026-09-28, batch A)*: at or above `sufficient_abstain`, generate; below it, rewrite and retry once, then abstain. |
+| Sufficient? | Jev | `sufficient` noul over question + top chunks *(amended 2026-10-02: the evidence lists every reranked child first, then parent context while the 9,000-char budget lasts; D2)*. Answer-first *(amended 2026-09-28, batch A)*: at or above `sufficient_abstain`, generate; below it, rewrite and retry once, then abstain. |
+| Relevance gate *(2026-10-02)* | Jev (via `JevRerank`) | Second evidence check: the max raw Jev rerank score over the post-sanitize winners must reach `rerank_abstain` (0.60); both checks must pass. Applies only when Jev reranked and at least one passage got a real score. Published as a `decision` named `relevance`. **P2 replaces it with an answerability `Noul` per passage** ("does this passage contain the answer?"; for summary intents, coverage of the subject). |
 | Plan | Planner LLM | Streams a plan; emits 2–5 sub-questions with dependencies. |
 | Hop retrieve | SQL + small LLM | Independent sub-questions run in parallel; notes extracted per hop with chunk ids kept. |
-| Controller | Jev | `sufficient` / `need_more` + next sub-question type. Stops at 4 hops or the credit budget. |
-| Abstain | Generator LLM | Fixed template: what was found (cited), what is missing, offers Web or Deep as buttons. |
-| Conflict check | Jev | `conflict` noul across top chunks from different documents or source types. If yes, the priority rule and both citations go into the prompt. |
+| Controller | Jev | `sufficient` / `need_more` + next sub-question type. Stops at 4 hops or the credit budget. *(OKF, planned O4: the Choice gains a `follow_link` option, through DecisionEngine, never the planner LLM; ADR-004.)* |
+| Abstain | Generator LLM | Fixed template: what was found (**plain text, no citations**, KI-25), what is missing, offers Web or Deep as buttons. English questions get the template with no model call; other languages get it translated, with the target language named (KI-29). |
+| Conflict check | Jev | `conflict` noul across top chunks from different documents or source types. If yes, the priority rule and both citations go into the prompt. *(2026-10-02: today's side assignment is a midpoint split of document ids and the call is untimed: KI-34.)* |
 | Generate | Generator LLM | Streams the answer with `[n]` markers; native reasoning streamed when the model exposes it. No tools. |
 | Review + deliver | Section 10 | Risk-based delivery; claim verdicts; optional single revision; output guardrail; suggestions in parallel. |
 
@@ -144,7 +151,7 @@ round trip.
 
 | Mode | Plan | Multi-query | Retry loop | Hops | Review |
 | --- | --- | --- | --- | --- | --- |
-| Auto | If multi | Yes | Up to 2 | If multi, up to 4 | Inline, risk-based |
+| Auto | No | Yes | 1 (rewrite + retry) | No (single-hop) | Inline, risk-based |
 | Fast | No | No | No | No | Async after delivery |
 | Deep | Yes | Per hop | Via controller | Up to 4 | Inline, always verified before delivery |
 
@@ -165,6 +172,29 @@ process can stream or cancel any run and Uvicorn can run several workers.
   by a worker sweep.
 - Adapters: `PostgresRunBus` (default) and `RedisRunBus` (Redis Streams
   plus pub/sub, Compose profile `redis`, slice 8).
+
+### 7.1 Latency budget *(amended 2026-10-02, PRD v3 CH-5, ADR-003)*
+
+Targets are client-side, from send, per reply path: answers, declines, held
+answers. `run_events` give the per-stage breakdown. Measured at D4 (fast20
+per-stage p50): ingress+rewrite 1.2–1.5 s, **retrieve 4.1–4.7 s**, rerank
+~0.4 s, sanitize ~0.4 s, sufficient ~0.4 s, generator first token ~0.5 s.
+Declines run the full retry, so they take about twice as long.
+
+Planned structural changes (P3, each measured against the baseline):
+- embed every query variant in **one** `embed_batch` call, and run the
+  hybrid searches in parallel (separate sessions)
+- skip query variants on simple single-hop lookups (`complexity = single`,
+  `intent = lookup`)
+- generate the rewrite and the variants in one LLM call
+- ask the post-rerank Jev questions in **one** `decide` call **only when
+  the sanitizer dropped nothing**; otherwise re-ask over the kept set
+- skip the retry when relevance is far below the gate
+- time the conflict call
+
+Progress: `prepare_auto_run` receives `publish=` so its steps stream live,
+and `retrieve` publishes a sub-step per query variant, so no gap exceeds
+2 s.
 
 ## 8. Decision layer: Jev and LLM fallback
 
@@ -214,7 +244,9 @@ also answers asynchronously. Disagreements are stored in
 | lexical_weight | Score 0–1 | Retrieval fusion | Used as weight |
 | chunk_injection | Noul | Sanitizer | Drop at ≥ 0.7 |
 | sufficient | Noul | Single-hop loop | Answer-first *(amended 2026-09-28, batch A)*: generate at or above `sufficient_abstain`; below it one rewrite + retry, then abstain. `sufficient_retry` is removed; default floor 0.05 |
-| controller | Choice | Deep loop | Argmax |
+| relevance *(2026-10-02)* | Score per passage (`JevRerank`), max taken | Single-hop evidence gate | `rerank_abstain` 0.60 (Jev; fallback cell unmeasured); raw score, never trust-weighted |
+| answerability *(planned, P2)* | Noul per passage | Replaces the relevance gate | Set from the eval sets at P2 |
+| controller | Choice | Deep loop | Argmax *(OKF O4: adds a `follow_link` option)* |
 | conflict | Noul | Conflict check | Disclose at ≥ 0.6 |
 | claim_verdict | Choice | Reviewer | See section 10 |
 | output_toxicity | Noul | Output guardrail | Block at ≥ 0.85 |
@@ -309,6 +341,39 @@ chat's collection.
 Query embeddings are cached in Postgres by hash of the normalised query
 text (30-day TTL). Tavily results are cached as above. Rerank results are
 not cached.
+
+### 9.5 OKF bundles *(amended 2026-10-02, PRD v3 §4.7, ADR-004)*
+
+- **Storage:** each concept is a `documents` row with `format = 'okf'` and
+  `okf_meta` (JSONB: type, title, tags, status, `sources`, `generated`,
+  `verified`, `stale_after`, `resource`, bundle id, bundle-relative path).
+  There's **no new `source_type`**, so `build_scope` and the ownership
+  filter apply unchanged. OKF documents are unique on
+  (collection, bundle, path), not `sha256`.
+- **Ingestion:** **one job per bundle**.
+  - Reject archive entries with absolute paths or `..`; enforce the
+    uncompressed size limit; skip spec-reserved files.
+  - Parse the YAML; **strip frontmatter before chunking**.
+  - Chunk with the existing chunker; batch embeddings across concepts; one
+    starter-question job per bundle.
+  - Re-upload syncs the bundle. Replaced and removed concepts become
+    **non-searchable versions that keep their chunks**, so historical
+    citations resolve.
+- **Edges:** an `okf_links` table (source concept, target bundle + path,
+  or `resource` id for cross-bundle links). Resolved at query time,
+  **inside scope only**.
+- **Expansion (Auto):** after both evidence gates pass, add passages from
+  directly linked, in-scope, non-excluded concepts, up to the admin limit.
+  They go through the sanitizer and are timed as `okf_expand`. A skipped
+  link is reported identically, whatever the reason, with no target title
+  (no existence oracle).
+- **Trust:** `deprecated` excluded by a server-side default; stale flagged;
+  optional trust ordering applied **after** the top-k cut and the gates.
+  Status and verification reach the generator only as attributes on the
+  `<source>` wrapper, never as passage text.
+- **Export:** a reviewed answer renders as an OKF concept. `verified`
+  records the actual verdict engine; human verification is an explicit
+  action, recorded with a pseudonymous id.
 
 ## 10. Reviewer and faithfulness
 
@@ -469,6 +534,13 @@ generated from it.
 | `metrics` | latency by stage, tokens in and out, credits, context used and window, faithfulness, min support |
 | `heartbeat` | every 15 s |
 | `run.completed` / `run.cancelled` / `run.failed` | final status, error code |
+
+*(Amended 2026-10-02, PRD v3.)* No new event types.
+- `RetrievedChunk` gains optional fields `okf_status`, `verified_by`,
+  `stale` and `via_link` (OKF O3, then regenerate TS).
+- Skipped links and retrieval sub-steps are `step.started` /
+  `step.completed` labels.
+- Auto publishes its steps live.
 
 Events flow through the `RunBus` (section 7): the stream endpoint replays
 from `run_events`, then follows live notifications, so it works from any
@@ -642,6 +714,20 @@ not comparable. The baseline also records the models it was measured with, and
 the gate refuses to compare runs whose models differ, because a faithfulness
 or latency number from one model says nothing about the same number from
 another.
+
+**Corpora and run tiers** *(amended 2026-10-02, PRD v3 §5)*.
+- **Corpora:** acceptance covers four: books, AW-2000 manuals, an OKF
+  bundle, and a counterfactual set (deliberately altered facts, so answers
+  must come from the documents). Each has ≥ 20 answerable and ≥ 20
+  should-abstain items, and every label is proven by a scripted hit or
+  zero-hit search.
+- **Run tiers:** each phase gates on fast20 plus a ~10-item stratified
+  subset per corpus (one run). Full sets run at milestones only (P2 exit,
+  OKF exit, P8), 2 runs, on isolated stacks.
+- **Summary fields:** the runner summarises `min_support` and reports
+  per-corpus results.
+- **Isolation:** eval corpora leave the Shared library in P5 (KI-24), and
+  books are re-baselined after the move.
 
 **Answer rate.** The share of items *not* labelled should-abstain that
 produced an answer rather than an abstention. It is a separate gate

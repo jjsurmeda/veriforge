@@ -1354,6 +1354,93 @@ of, and of the two numbers the owner has to rule on.
   the composition until the spread looks small. The spread is real and it is
   concentrated in 4 items; at n=20 those 4 decide the metric.
 
+## KI-33: The language detector reads short French as Spanish
+
+Logged 2026-10-02, from the PRD v3 review (F4). Verified:
+`textkit.detect_language("Peux-tu résumer Madame Bovary ?")` returns `es`.
+
+- **What:** `textkit.py`'s detector uses a stop-word table plus script
+  detection. In this question the only stop word that matches is "tu",
+  which is in the es, fr, pt and pl tables alike. The tie is broken by dict
+  order, and `es` comes first. (Corrected by the second PRD review: an
+  earlier wording blamed the accented title.)
+- **Why it matters:** three things depend on it.
+  - TR-4's "decline in the question's language": `broad-bovary` declined
+    **in Spanish** in D4 run 2.
+  - SR-7.
+  - The acceptance scorer, which uses the same detector: run 1's correct
+    French answer to `broad-bovary` was scored `language_mismatch`.
+  A detector bug looks like a product bug **and** like a scorer bug.
+- **Fix:** prove it on a captured set of short questions per language
+  first, then fix it at the root, in `detect_language`. **A tie must never
+  be resolved by dict order.** Return `None` (undetectable) on a tie or a
+  thin margin, and use distinctive characters or words (e.g. `ç`, `ê`,
+  "peux", "résumer") to break real ties. The scorer already treats
+  undetectable as "no evidence". Test: the captured short-question set, every language in
+  SR-7.
+
+## KI-34: Conflict disclosure splits document ids at the midpoint, not by side
+
+Logged 2026-10-02, from the PRD v3 review (F7). Verified at `graph/auto.py`
+(the conflict branch after the `conflict_disclose` threshold).
+
+- **What:** when the conflict decision fires, the code takes the document
+  ids of the top 5 winners and assigns the first half to
+  `citation_ids_left` and the rest to `citation_ids_right`. These aren't
+  the passages that disagree, just a list cut in two. The conflict call is
+  also outside `_step`, so it isn't timed.
+- **Why it matters:** TR-5 promises "cites both sides". The UI can show a
+  conflict whose "sides" agree with each other. OKF's OK-6 (status breaks
+  the tie) builds on this.
+- **Fix:** the conflict decision has to say *which* passages disagree. One
+  option is a DecisionEngine question per candidate pair, or a Choice over
+  the passages for each side; that's a TRD §8 decision, not a code
+  shortcut. Time the step. Test: two passages asserting different values
+  for the same fact land on opposite sides.
+
+## KI-35: Password-reset email is logged, never sent
+
+Logged 2026-10-02, from the PRD v3 review (F13). Verified:
+`auth/router.py` wires `DevLogEmailTransport`.
+
+- **What:** AC-1's password reset generates the token and link, but the
+  transport writes the email to the log. A real user who forgets their
+  password can't recover their account.
+- **Why it matters:** it's a production blocker for AC-1 and invisible
+  locally, where the log is right there.
+- **Fix:** a real transport behind the existing interface (SES fits the AWS
+  plan, slice 9/P8), selected by settings, with the dev-log transport kept
+  for local. Test: the production transport is selected when configured,
+  and the dev transport never runs with production settings.
+
+## KI-36: Two acceptance items are wrong, not the pipeline
+
+Logged 2026-10-02, verified against the corpus and the D4 runs.
+
+- **`outside-whitman` is mislabelled `not_in_sources`.** The Pride and
+  Prejudice preface in the corpus reads: *"Walt Whitman has somewhere a fine
+  and just distinction between 'loving by allowance' and 'loving with
+  personal love.'"* The answer is in the sources, and the pipeline is right
+  to answer. It "passed" before only because retrieval missed that passage.
+- **`fact-weena`'s check is too narrow.** The answer is correct (it cites
+  The Time Machine 7 times and describes Weena accurately), but the item
+  requires the word "Eloi".
+- **Why it matters:** both read as product failures and distort the
+  abstention and answer rates. The original 31 items never got D1's
+  label audit.
+- **Fix:**
+  - Relabel `outside-whitman` as `answer`, requiring a Pride and Prejudice
+    citation **and** the mention "allowance". The D4 answers cite the
+    preface as [1] alongside 7 unrelated citations, so the cite check alone
+    is too weak. Add a genuinely off-corpus Whitman question.
+  - Widen `fact-weena`'s accepted mentions to **"flower"**, which both D4
+    answers contain (the garland of flowers), **with the reason in the
+    item**. Not "Time Traveller": run 1's correct answer never says it.
+  - Annotate KI-28's "worst outcome in the product" note and KI-24's
+    `outside-whitman` references: that "answer" was correct.
+  - Then audit **every** item's label: a hit search for answer items, a
+    zero-hit search for should-abstain items (PRD v3.1 §5).
+
 ## Reference: provider findings, 2026-09-26
 These aren't defects, but check them before changing models or providers.
 
