@@ -7,7 +7,9 @@ latency", so only the latter is hard-gated (TRD §15).
 Endpoint and field names were read off a live response rather than assumed:
 the generation id arrives in the `x-generation-id` response header, which
 litellm surfaces on the streaming response as `_response_headers`, and
-`generation_time` is that generation's total generation duration in ms.
+`generation_time` is that generation's total generation duration in ms. Jev's
+records are the exception — `api_type == "decisions"` reports the duration in
+`latency` and leaves `generation_time` at 0 (A3; `_record_provider_ms`).
 
 Two things this deliberately does not do:
 
@@ -122,6 +124,28 @@ async def _stats(generation_id: str) -> dict[str, Any] | None:
     return None
 
 
+def _record_provider_ms(record: dict[str, Any]) -> int | None:
+    """The provider time this one generation record accounts for, in ms.
+
+    Two shapes, both read off live responses rather than assumed:
+
+    - An ordinary chat completion reports `generation_time`.
+    - A Jev call reports `api_type == "decisions"` and its `generation_time`
+      is **0** on every probe (D2 2c: two calls, 22 and 1590 native tokens,
+      both `generation_time` 0 with `latency` 241-242 ms). The duration sits
+      in `latency` instead. Reading `generation_time` for these counted Jev's
+      time as 0, so every Jev millisecond — rerank batches, sufficient,
+      sanitize, conflict, ingress, review verification — was charged to *our*
+      overhead in the figure the gate hard-limits. Owner decision A3 records
+      Jev's time from `latency`; TRD §15's latency paragraph says so.
+    """
+    if record.get("api_type") == "decisions":
+        latency = record.get("latency")
+        return int(latency) if latency is not None else None
+    generation_time = record.get("generation_time")
+    return int(generation_time) if generation_time is not None else None
+
+
 async def provider_time_ms(generation_ids: list[str]) -> tuple[int, int]:
     """Total provider generation time across these generations, and how many
     were actually attributed. Lookups run concurrently, so a whole item costs
@@ -129,8 +153,10 @@ async def provider_time_ms(generation_ids: list[str]) -> tuple[int, int]:
     if not generation_ids:
         return 0, 0
     results = await asyncio.gather(*(_stats(gid) for gid in generation_ids))
-    found = [r for r in results if r is not None and r.get("generation_time") is not None]
-    return sum(int(r["generation_time"]) for r in found), len(found)
+    found = [
+        ms for ms in (_record_provider_ms(r) for r in results if r is not None) if ms is not None
+    ]
+    return sum(found), len(found)
 
 
 async def attribute(total_ms: float, generation_ids: list[str]) -> Attribution:

@@ -491,6 +491,97 @@
         "蜘蛛の糸では、犍陀多はなぜ極楽から落ちてしまいましたか？"
       ],
       "expect": "not_in_sources"
+    },
+    {
+      "id": "broad-alice",
+      "turns": [
+        "can you give me the gist of alice's adventures in wonderland?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Alice"
+      ],
+      "mention": [
+        "rabbit",
+        "tea party",
+        "Wonderland"
+      ]
+    },
+    {
+      "id": "broad-time-machine",
+      "turns": [
+        "what is the time machine about? what's the big idea"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Time Machine"
+      ],
+      "mention": [
+        "Eloi",
+        "Morlock",
+        "Weena"
+      ]
+    },
+    {
+      "id": "broad-quijote",
+      "turns": [
+        "¿De qué trata Don Quijote? Cuéntame algo."
+      ],
+      "expect": "answer",
+      "cite": [
+        "Quijote"
+      ],
+      "mention": [
+        "Quijote",
+        "Sancho",
+        "caballero",
+        "molino"
+      ]
+    },
+    {
+      "id": "broad-verwandlung",
+      "turns": [
+        "Worum geht es in Die Verwandlung?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Verwandlung"
+      ],
+      "mention": [
+        "Gregor",
+        "Insekt",
+        "Kakerlake"
+      ]
+    },
+    {
+      "id": "broad-wukong",
+      "turns": [
+        "孫悟空是怎麼回事？簡單說一下。"
+      ],
+      "expect": "answer",
+      "cite": [
+        "西遊記"
+      ],
+      "mention": [
+        "孫悟空",
+        "猴王",
+        "取經"
+      ]
+    },
+    {
+      "id": "broad-bovary",
+      "turns": [
+        "Peux-tu résumer Madame Bovary ?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Bovary"
+      ],
+      "mention": [
+        "Emma",
+        "Bovary",
+        "Rodolphe"
+      ]
     }
   ]
 }

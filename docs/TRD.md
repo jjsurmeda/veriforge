@@ -590,18 +590,36 @@ stored baseline.
 
 **Which latency is gated (owner decision, 2026-09-29, KI-18).** The strictly
 gated figure is `p50_our_overhead_ms`: the measured wall clock minus the
-generation time OpenRouter reports for the same calls
-(`GET /api/v1/generation?id=…` → `generation_time`). A slow provider is not a
-regression in this repo, and gating on it produced failures this codebase
-could not fix. Total wall-clock `p50_latency_ms` is still recorded in the run
+provider time OpenRouter reports for the same calls
+(`GET /api/v1/generation?id=…`). A slow provider is not a regression in this
+repo, and gating on it produced failures this codebase could not fix. Total
+wall-clock `p50_latency_ms` is still recorded in the run
 summary and still displayed — latency demonstrably matters, and the total is
 what the PRD's CH-5/TX-6 budgets are written against — but it does not by
 itself fail the gate. It is compared instead only when a run attributed no
 calls at all, which restores the pre-KI-18 behaviour rather than silently
 disabling the check. An item whose calls cannot be attributed records no
-overhead figure: the summary reports `null`, never a fabricated zero. Because
-`evals/seed/baseline_fast20.json` predates this change, the gate keeps
-comparing totals until the next `--baseline` run; the two are not comparable.
+overhead figure: the summary reports `null`, never a fabricated zero.
+
+**Which field holds the provider time (owner decision A3, 2026-10-01).** The
+stats record's field depends on the call. A chat completion reports
+`generation_time`, and that is the duration used. A **Jev** call
+(`api_type == "decisions"`) reports `generation_time` as **0** and carries its
+duration in `latency` instead — verified live on two probes (22 and 1590
+native tokens; `generation_time` 0 both times, `latency` 241 and 242 ms). Jev
+provider time is therefore read from `latency`; LLM generations keep
+`generation_time`. Reading `generation_time` for Jev credited it with 0 ms,
+which charged every Jev millisecond — rerank batches, sufficient, sanitize,
+conflict, ingress and review verification — to our own overhead in the one
+figure this section gates. A record with neither field is not attributed at
+all, which is a coverage gap the summary reports, never a fabricated zero.
+
+Because `evals/seed/baseline_fast20.json` predates both this change and KI-18,
+the gate keeps comparing totals until the next `--baseline` run; the two are
+not comparable. The baseline also records the models it was measured with, and
+the gate refuses to compare runs whose models differ, because a faithfulness
+or latency number from one model says nothing about the same number from
+another.
 
 **Answer rate.** The share of items *not* labelled should-abstain that
 produced an answer rather than an abstention. It is a separate gate

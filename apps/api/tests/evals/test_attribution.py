@@ -7,6 +7,9 @@ the Jev client reports it through `generation_id_sink` whenever
 `record_generation_ids` is active. The stats lookups themselves moved
 from per-item (~20 s each, the record's landing delay) to one deferred
 pass at the end of run_eval.
+
+Which field of a record holds the duration — Jev's `latency` rather than
+`generation_time` (A3) — is in `test_jev_latency_attribution.py`.
 """
 
 import json
