@@ -5,9 +5,9 @@
     "multihop-02", "multihop-05",
     "keyword-01", "keyword-04",
     "conflict-01", "conflict-03",
-    "abstain-02", "abstain-05", "abstain-11", "abstain-12", "abstain-13",
-    "abstain-14", "abstain-15", "abstain-16",
-    "injection-01", "injection-03"
+    "injection-01", "injection-03",
+    "abstain-02", "abstain-05", "abstain-04", "abstain-06", "abstain-07",
+    "abstain-10", "abstain-19", "abstain-20"
   ],
   "items": [
     {

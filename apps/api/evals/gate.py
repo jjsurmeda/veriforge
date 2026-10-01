@@ -20,14 +20,63 @@ Usage: uv run python -m evals.gate
 import asyncio
 import json
 import sys
+from collections.abc import Mapping
 
 from evals.loader import STATE_FILE
-from evals.runner import BASELINE_FAST20_FILE, BASELINE_FILE, aggregate, run_eval
+from evals.runner import (
+    BASELINE_FAST20_FILE,
+    BASELINE_FILE,
+    aggregate,
+    models_on_record,
+    run_eval,
+)
 
 FAITHFULNESS_DROP = 0.03
 ABSTENTION_DROP_POINTS = 5.0
 ANSWER_RATE_DROP_POINTS = 5.0
 LATENCY_RISE_FACTOR = 1.20
+
+
+def compare_models(
+    baseline: Mapping[str, object], current: Mapping[str, object]
+) -> list[str]:
+    """Refuse to compare runs that did not use the same models.
+
+    A faithfulness or latency number from gpt-4o-mini says nothing about the
+    same number from Haiku. Comparing them would either invent a regression
+    (the cheaper, noisier model scores worse) or hide a real one, and the
+    difference is invisible in the output: the rows line up, only the models
+    moved. So this is checked before the metrics, and a baseline with no
+    `models` key at all is named too rather than quietly accepted.
+    """
+    base = baseline.get("models")
+    curr = current.get("models")
+    if base == curr:
+        return []
+    if base is None:
+        return [
+            "the baseline records no models, so this comparison cannot be trusted; "
+            "rewrite it with `python -m evals.runner --subset fast20 --baseline`"
+        ]
+    if curr is None:
+        return ["this run records no models, so it cannot be compared with the baseline"]
+    # Both are the {role: model} mapping `models_on_record` writes; anything
+    # else in the baseline file is not a role record.
+    base_roles = base if isinstance(base, dict) else {}
+    curr_roles = curr if isinstance(curr, dict) else {}
+    differing = sorted(
+        role
+        for role in set(base_roles) | set(curr_roles)
+        if base_roles.get(role) != curr_roles.get(role)
+    )
+    detail = ", ".join(
+        f"{role}: {base_roles.get(role)!r} -> {curr_roles.get(role)!r}" for role in differing
+    )
+    return [
+        f"the baseline was measured with different models ({detail}); a faithfulness "
+        "or latency number is not comparable across models, so the gate does not "
+        "compare them. Re-measure and rewrite the baseline on the current models."
+    ]
 
 
 def compare(baseline: dict[str, float | None], current: dict[str, float | None]) -> list[str]:
@@ -93,10 +142,19 @@ async def main() -> None:
     baseline = json.loads(baseline_path.read_text())
     _, results = await run_eval(subset="fast20", baseline=False)
     current = aggregate(results)
-    failures = compare(baseline, current)
+    # The metric rows and the model record are kept apart so `compare` keeps its
+    # numeric signature; only `compare_models` sees the mixed shape.
+    failures = compare_models(baseline, {"models": models_on_record(), **current}) + compare(
+        baseline, current
+    )
     print(
         json.dumps(
-            {"baseline_file": baseline_path.name, "baseline": baseline, "current": current},
+            {
+                "baseline_file": baseline_path.name,
+                "models": models_on_record(),
+                "baseline": baseline,
+                "current": current,
+            },
             indent=2,
         )
     )

@@ -5,9 +5,9 @@ from uuid import uuid4
 import pytest
 
 from db.models import EvalItem, EvalResult
-from evals.gate import compare
+from evals.gate import compare, compare_models
 from evals.judge import parse_judge_response
-from evals.runner import aggregate
+from evals.runner import aggregate, models_on_record
 
 GOOD = """```json
 {"context_precision": 0.6, "context_recall": 0.75, "answer_relevance": 0.9}
@@ -57,6 +57,52 @@ def test_parse_judge_response_keeps_each_field_that_parses() -> None:
     assert scores.context_precision == pytest.approx(1.0)
     assert scores.context_recall is None
     assert scores.answer_relevance == pytest.approx(0.5)
+
+
+def test_gate_passes_when_the_models_match() -> None:
+    baseline = {"models": models_on_record(), "faithfulness": 0.80}
+    current = {"models": models_on_record(), "faithfulness": 0.80}
+    assert compare_models(baseline, current) == []
+
+
+def test_gate_refuses_when_the_models_differ() -> None:
+    """A faithfulness or latency number is not comparable across models, so
+    the gate says so instead of reporting a regression that is a config
+    change (D3 item 2)."""
+    baseline = {
+        "models": {
+            "generator": "openrouter/openai/gpt-4o-mini",
+            "small": "openrouter/anthropic/claude-haiku-4.5",
+        },
+        "faithfulness": 0.80,
+    }
+    current = {"models": models_on_record(), "faithfulness": 0.80}
+    failures = compare_models(baseline, current)
+    assert len(failures) == 1
+    # The message has to name the role and both models, or the next reader
+    # cannot tell which of two pinned constants moved.
+    assert "small" in failures[0]
+    assert "claude-haiku-4.5" in failures[0]
+    assert models_on_record()["small"] in failures[0]
+    assert "gpt-4o-mini" in failures[0]
+
+
+def test_gate_refuses_a_baseline_that_records_no_models() -> None:
+    """A baseline written before models were on record cannot be compared;
+    saying nothing would let a stale baseline keep gating silently."""
+    failures = compare_models({"faithfulness": 0.80}, {"models": models_on_record()})
+    assert len(failures) == 1 and "no models" in failures[0]
+
+
+def test_the_harness_models_are_the_models_the_product_runs() -> None:
+    """`model_roles` puts gpt-4o-mini in every LLM role, with Haiku only as
+    the generator's and planner's fallback. Pinning Haiku for the small role
+    made the gate measure rewrite, query variants and claim extraction on a
+    model the product does not use there (O2; P7 picks the real ones)."""
+    assert models_on_record() == {
+        "generator": "openrouter/openai/gpt-4o-mini",
+        "small": "openrouter/openai/gpt-4o-mini",
+    }
 
 
 def test_gate_passes_within_thresholds() -> None:

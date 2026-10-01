@@ -56,8 +56,16 @@ logger = logging.getLogger(__name__)
 SEED_DIR = Path(__file__).resolve().parents[3] / "evals" / "seed"
 BASELINE_FILE = SEED_DIR / "baseline.json"
 BASELINE_FAST20_FILE = SEED_DIR / "baseline_fast20.json"
+# Both roles are gpt-4o-mini because that is what the product runs today, not
+# because it is the better model: `model_roles` has gpt-4o-mini in every LLM
+# role with claude-haiku-4.5 only as the generator's and planner's *fallback*.
+# The harness used to pin haiku for the small role, so the gate measured
+# rewrite, query variants and claim extraction on a model the product does not
+# use there — a comparison between the harness and the product rather than a
+# regression check on it. P7 chooses the production models per role and
+# rebaselines; until then the gate measures what ships. (O2)
 GENERATOR_MODEL = "openrouter/openai/gpt-4o-mini"
-SMALL_MODEL = "openrouter/anthropic/claude-haiku-4.5"
+SMALL_MODEL = "openrouter/openai/gpt-4o-mini"
 CONTEXT_WINDOW = 128_000
 
 # The harness drives one item at a time, so its own small pool is the whole
@@ -396,6 +404,18 @@ async def run_eval(
     return eval_run, results
 
 
+def models_on_record() -> dict[str, str]:
+    """The models this harness ran with, per role.
+
+    Recorded in every run summary and in the baseline, and compared by
+    `evals.gate`. A faithfulness or latency number measured on one model says
+    nothing about another, so comparing a run against a baseline written with
+    different models would report a regression that is really a config change
+    — or hide one that is real. The gate refuses that case instead.
+    """
+    return {"generator": GENERATOR_MODEL, "small": SMALL_MODEL}
+
+
 def _seed_ids(payload: dict[str, object]) -> dict[str, str]:
     rows = payload["items"]
     assert isinstance(rows, list)
@@ -465,9 +485,12 @@ async def main() -> None:
         subset=args.subset, baseline=args.baseline, mode=args.mode, category=args.category
     )
     summary = aggregate(results)
-    print(json.dumps({"eval_run": str(eval_run.id), **summary}, indent=2))
+    models = models_on_record()
+    print(json.dumps({"eval_run": str(eval_run.id), "models": models, **summary}, indent=2))
     if args.baseline:
-        BASELINE_FILE.write_text(json.dumps(summary, indent=2) + "\n")
+        # `models` rides along in the baseline so evals.gate can refuse a
+        # comparison against a run that used different models.
+        BASELINE_FILE.write_text(json.dumps({"models": models, **summary}, indent=2) + "\n")
         print(f"baseline written to {BASELINE_FILE}")
         # The gate runs the fast20 subset; comparing it against a full-50
         # baseline fails on sampling noise (abstention is ~6 Bernoulli
@@ -476,7 +499,9 @@ async def main() -> None:
         seed_ids = _seed_ids(json.loads((SEED_DIR / "items.json").read_text()))
         subset = [(i, r) for i, r in results if seed_ids.get(i.question) in fast20]
         subset_summary = aggregate(subset)
-        BASELINE_FAST20_FILE.write_text(json.dumps(subset_summary, indent=2) + "\n")
+        BASELINE_FAST20_FILE.write_text(
+            json.dumps({"models": models, **subset_summary}, indent=2) + "\n"
+        )
         print(f"fast20 baseline written to {BASELINE_FAST20_FILE}")
 
 

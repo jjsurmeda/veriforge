@@ -7,13 +7,25 @@ honoured by `compare`; what was missing was proof, so these tests pin both
 sides against a synthetic baseline — the shape the runner would write.
 """
 
+import asyncio
 import json
+import sys
+from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from uuid import uuid4
 
+import pytest
+
 from db.models import EvalItem, EvalResult
-from evals.gate import ANSWER_RATE_DROP_POINTS, LATENCY_RISE_FACTOR, compare
-from evals.runner import aggregate
+from evals import runner
+from evals.gate import (
+    ANSWER_RATE_DROP_POINTS,
+    LATENCY_RISE_FACTOR,
+    compare,
+    compare_models,
+)
+from evals.runner import aggregate, models_on_record
 
 # What `evals.runner --baseline` writes for a clean run: both fields present.
 SYNTHETIC_BASELINE: dict[str, float | None] = {
@@ -138,3 +150,67 @@ def test_a_baseline_with_the_fields_ignores_a_missing_current_field() -> None:
         compare(SYNTHETIC_BASELINE, _current(p50_our_overhead_ms=None, p50_latency_ms=14384.5))
         == []
     )
+
+
+# --- the models on record (D3 item 2) -------------------------------------
+#
+# The writer is `evals.runner.main`, which prints the run summary and writes
+# both baseline files. It is exercised here through the real entry point with
+# `run_eval` stubbed, because the contract that matters is "the file ci.yml
+# reads names the models it was measured with" -- reading the source for the
+# string would not prove the key reaches the file.
+
+
+def test_the_run_summary_carries_the_models(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    results = [(_item(), _result())]
+
+    async def fake_run_eval(**_: Any) -> tuple[Any, list[tuple[EvalItem, EvalResult]]]:
+        return SimpleNamespace(id=uuid4()), results
+
+    monkeypatch.setattr(runner, "run_eval", fake_run_eval)
+    monkeypatch.setattr(sys, "argv", ["evals.runner"])
+    asyncio.run(runner.main())
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["models"] == models_on_record()
+    assert set(summary["models"]) == {"generator", "small"}
+
+
+def test_the_written_baseline_carries_the_models(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The gate reads baseline_fast20.json; if the models are not in it,
+    `compare_models` has nothing to check the next run against."""
+    results = [(_item(), _result())]
+    (tmp_path / "items.json").write_text(
+        json.dumps(
+            {"dataset": "seed", "fast20_ids": [], "items": [{"id": "lookup-01", "question": "q"}]}
+        ),
+        encoding="utf-8",
+    )
+
+    async def fake_run_eval(**_: Any) -> tuple[Any, list[tuple[EvalItem, EvalResult]]]:
+        return SimpleNamespace(id=uuid4()), results
+
+    monkeypatch.setattr(runner, "run_eval", fake_run_eval)
+    # The baseline paths are module constants derived from SEED_DIR at import
+    # time, so pointing SEED_DIR at tmp_path is not enough on its own — and
+    # letting them resolve for real would overwrite the committed baseline.
+    monkeypatch.setattr(runner, "SEED_DIR", tmp_path)
+    monkeypatch.setattr(runner, "BASELINE_FILE", tmp_path / "baseline.json")
+    monkeypatch.setattr(runner, "BASELINE_FAST20_FILE", tmp_path / "baseline_fast20.json")
+    monkeypatch.setattr(sys, "argv", ["evals.runner", "--baseline"])
+    asyncio.run(runner.main())
+    capsys.readouterr()
+    # The writer targets the module constants, not SEED_DIR. Assert they are
+    # redirected before reading anything, so a future edit that drops the
+    # monkeypatch fails here instead of overwriting the committed baselines --
+    # which is exactly what it did the first time this test ran.
+    assert runner.BASELINE_FILE.parent == tmp_path
+    assert runner.BASELINE_FAST20_FILE.parent == tmp_path
+    for name in ("baseline.json", "baseline_fast20.json"):
+        written = json.loads((tmp_path / name).read_text(encoding="utf-8"))
+        assert written["models"] == models_on_record(), name
+        # And the stored baseline is one the gate accepts as comparable.
+        assert compare_models(written, {"models": models_on_record()}) == []
