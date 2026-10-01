@@ -198,8 +198,12 @@
         "Time Machine"
       ],
       "mention": [
-        "Eloi"
-      ]
+        "Eloi",
+        "flower"
+      ],
+      "why_mention_list": "Widened 2026-10-02 (KI-36) from ['Eloi'] alone. 'Eloi' rejects a correct answer that never uses the word: both D4 runs cited The Time Machine 7x and described Weena accurately without it — run 1 (20261001-170931) says only 'childlike' and 'giving flowers', run 2 (20261001-172911) says 'a small creature, reminiscent of a child' and 'a garland of flowers'. Both contain 'flower', so it is the one content word every correct phrasing shares. Kept 'Eloi' first because naming her class is the most precise available signal and remains the better answer when it appears.",
+      "rejected_mention": "Considered and rejected on evidence: 'Time Traveller' (the agent's usual name for her rescuer) would accept run 2 but not run 1, whose correct answer says 'the protagonist' throughout and never 'Time Traveller'. A mention that passes one correct answer and fails the other is not a check on correctness.",
+      "note": "The risk this widens: 'flower' is a common English noun, so a wrong answer about Weena that happens to mention flowers would pass the mention check. The cite check is not affected — the item still requires a Time Machine citation — so the failure mode is a right-source, loosely-worded answer rather than a confidently wrong one. Accepted deliberately: the alternative ('Eloi' alone) rejects correct answers, which is the worse defect, and the recorded D4 pair is the evidence for what a correct answer looks like on this item."
     },
     {
       "id": "scene-tea-party",
@@ -266,7 +270,26 @@
       "turns": [
         "What does Walt Whitman find distinct between loving by allowance and loving with personal love?"
       ],
-      "expect": "not_in_sources"
+      "expect": "answer",
+      "proof": "2026-10-02, read-only psql over the 10,733 chunks the acceptance run user can retrieve (every chunk of every visibility='shared' collection — `Shared` 10,704 + `eval-seed-corpus` 29): the only '%whitman%' chunk is Pride and Prejudice.txt ord 0, and it contains the answer verbatim: \"Walt Whitman has somewhere a fine and just distinction between 'loving by allowance' and 'loving with personal love.' This distinction applies to books as well as to men and women; and in the case of the not very numerous authors who are the objects of the personal affection, it brings a curious consequence with it.\" Relabelled not_in_sources -> answer (KI-36): the passage is in the corpus, so abstaining was the wrong behaviour. It only 'passed' before because retrieval missed this passage, not because the answer was absent.",
+      "cite": [
+        "Pride and Prejudice"
+      ],
+      "mention": [
+        "allowance"
+      ],
+      "why_both_checks": "Both checks are load-bearing. The cite check alone is too weak: in both D4 runs (20261001-170931, 20261001-172911) this answer carried 8 citations, only [1] of which is Pride and Prejudice — [2]-[8] are Noli Me Tangere and Don Quijote — so an answer that cited anything but the right book could still pass. The mention check alone is too weak the other way: 'loving with personal love' is in the question, so an abstaining or hallucinating echo of the question's own words would satisfy it. cite pins the source, mention pins the answer's substance.",
+      "note": "Relabelled 2026-10-02 (KI-36). Prerequisite: 'Pride and Prejudice' is this item's only corpus answer, and the passage above is the only Whitman material in scope — the new sibling item 'outside-whitman-lilacs' carries the zero-hit proof for genuinely off-corpus Whitman."
+    },
+    {
+      "id": "outside-whitman-lilacs",
+      "turns": [
+        "What does Walt Whitman say in 'When Lilacs Last in the Dooryard Bloom' about the death of Abraham Lincoln?"
+      ],
+      "expect": "not_in_sources",
+      "proof": "Zero-hit search, 2026-10-02, read-only psql over the same 10,733 chunks an acceptance run user can retrieve (every chunk of every visibility='shared' collection — the exact set `retrieval/filters.py::build_scope` returns for the fresh `smoke-*@example.com` user `scripts/acceptance.py` signs up, which owns no collection of its own). Hits per pattern over that scope: '%whitman%' 1 (the Pride and Prejudice preface above, which is about loving by allowance / personal love and says nothing about a poem, lilacs, Lincoln, or an elegy — spot-read, false hit); '%lilac%' 0; '%dooryard%' 0; '%when lilacs%' 0; '%lincoln%' 0; '%elegy%' 0; '%leaves of grass%' 0; '%song of myself%' 0; '%calamus%' 0; '%specimen day%' 0; '%abraham%' 1 (Noli Me Tangere.txt ord 1, a footnote about Calvary/Golgotha and Jerusalem — spot-read, false hit); '%martyr%' 4 (Frankenstein 'martyrs of old', Bovary 'martyr' — spot-read, false hits); '%cemetery%' 1 (Frankenstein ord 1, Victor wandering at the entrance of the cemetery at Geneva — spot-read, false hit); '%funeral%' 4 and '%mourning%' 4 (Frankenstein's 'house of mourning' / Justine's mourning dress, Bovary, Noli — spot-read, false hits); '%president%' 3 (Noli 'Presidente Municipal', Bovary index — spot-read, false hits); '%bloom%' 9 and '%blooming%' 4 (Frankenstein 'blooming' cheeks/hair, Holmes, 'bloom' of a plan — spot-read, false hits). No chunk in scope mentions Whitman's poetry as poetry: the only Whitman chunk in the corpus is the Pride and Prejudice preface quotation, and it is a literary-critical aside, not Leaves of Grass. So the passage this question asks about is not in the corpus, and the only near-miss ('%whitman%' -> Pride and Prejudice ord 0) is a different claim about a different thing.",
+      "why_this_question": "Chosen because it is provably absent rather than merely unlikely, and because it is topically adjacent to the one Whitman passage the corpus does hold — so it tests whether the pipeline declines a Whitman question it cannot actually answer, instead of generalising from the preface to answer anything with Whitman's name on it. That is the failure mode KI-28's 'worst outcome in the product' note described, now with the corpus checked first (testing.md: 'A label that contradicts the corpus is a test bug').",
+      "note": "Added 2026-10-02 (KI-36) to replace the abstention coverage outside-whitman gave up when it was relabelled answer."
     },
     {
       "id": "outside-study-in-scarlet",

@@ -23,9 +23,11 @@ VALID_EXPECTS = {"answer", "library", "not_in_sources", "smalltalk"}
 
 # The counts the KI-6 widening leaves behind, plus D3 item 3's six broad /
 # summarize answer items: 10 new not_in_sources and 6 new answer on top of the
-# original 31-item set.
+# original 31-item set. KI-36 then moved `outside-whitman` from
+# not_in_sources to answer (its answer was in the corpus all along) and added
+# `outside-whitman-lilacs` to replace the abstention coverage it gave up.
 EXPECTED_CLASS_COUNTS = {
-    "answer": 29,
+    "answer": 30,
     "not_in_sources": 14,
     "smalltalk": 2,
     "library": 2,
@@ -45,7 +47,7 @@ BROAD_ANSWER_ITEMS = [
 
 
 def test_the_set_loads_and_every_item_has_the_required_fields() -> None:
-    assert len(ITEMS) == 47
+    assert len(ITEMS) == 48
     ids = [item["id"] for item in ITEMS]
     assert len(set(ids)) == len(ids), "duplicate ids"
     for item in ITEMS:

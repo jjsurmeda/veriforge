@@ -813,6 +813,18 @@ be deleted are exactly the ones holding this corpus).
   measuring retrieval over a corpus the real corpus doesn't contain, so
   `not_in_sources` items only pass because the out-of-scope answer is
   sitting right there.
+
+  > **Correction, 2026-10-02 (KI-36).** The parenthetical above is wrong
+  > about `outside-whitman`, on both halves. That item was **not** an
+  > example of the fixture answering a should-abstain question: the
+  > Pride and Prejudice preface is *books* corpus and contains the Whitman
+  > passage the item claimed was absent, so the fixture was never what it
+  > passed on. `outside-whitman` is relabelled `answer` (cite Pride and
+  > Prejudice + mention "allowance"), and a genuinely off-corpus Whitman
+  > abstention item (`outside-whitman-lilacs`, zero-hit proof recorded in
+  > the item) now carries that role. The rest of this entry — the fixture
+  > being user-visible product content, and `outside-general` behaving as
+  > described — is untouched.
 - **Fix:** before any AWS slice, decide the eval corpus's home. Cheapest
   honest option: keep it owned by `evals@veriforge.local` but make its
   collection `visibility='private'`, and have the eval runner create its
@@ -1045,6 +1057,22 @@ happened, so the reranker was the only variable.
   does not contain it is the worst outcome in the product, and it is
   strictly worse than the abstention it replaced. That settles it:
   shipping the latency win is not worth it.
+
+  > **Correction, 2026-10-02 (KI-36). The corpus *did* contain it.** The
+  > `outside-whitman` answer read as the worst outcome in the product
+  > because the item asserted the corpus had no Whitman passage. It has
+  > one: the Pride and Prejudice preface states the "loving by
+  > allowance" / "loving with personal love" distinction verbatim (read
+  > back by zero-hit/hit search over the 10,733 chunks an acceptance run
+  > user can retrieve — the only `%whitman%` chunk in scope is Pride and
+  > Prejudice.txt ord 0). So the answer in the C2 run was **correct**,
+  > and this is an item defect, not a product defect. The item is now
+  > `answer`, with a Pride and Prejudice cite check and an "allowance"
+  > mention check. The reasoning above still stands for the reranker
+  > decision it was used in — C2's `not_in_sources` classes scored
+  > against labels that were partly wrong, so the abstention evidence in
+  > this section is softer than it reads — but the specific "worst
+  > outcome in the product" claim about this item is retracted.
 - **What a real decision needs:** the comparison harness has to carry the
   reranked top-k through the `sufficient` noul and record the
   answer/abstain verdict per item, not just the rank. That is a
@@ -1486,6 +1514,31 @@ Logged 2026-10-02, verified against the corpus and the D4 runs.
     `outside-whitman` references: that "answer" was correct.
   - Then audit **every** item's label: a hit search for answer items, a
     zero-hit search for should-abstain items (PRD v3.1 §5).
+
+**Fixed 2026-10-02 (labels only, no pipeline change).** `outside-whitman`
+is `answer` (`cite: ["Pride and Prejudice"]`, `mention: ["allowance"]`, with
+the reason both checks are kept recorded in the item). `fact-weena`'s
+accepted mentions are `["Eloi", "flower"]`, with "flower" justified from the
+two D4 answers and "Time Traveller" recorded as considered-and-rejected (run
+1's correct answer says "the protagonist"). New abstention item
+`outside-whitman-lilacs` ("When Lilacs Last in the Dooryard Bloom" /
+Lincoln) carries a zero-hit proof over the 10,733 chunks an acceptance run
+user can retrieve, with spot-read notes on the false hits. KI-28's "worst
+outcome in the product" claim and KI-24's `outside-whitman` reference are
+annotated as retracted item defects.
+
+Offline re-score of D4's two recorded result files under the new labels
+(no live run, $0): `20261001-170931` 42/47 → 44/48 and `20261001-172911`
+41/47 → 43/48, the two gained items being `outside-whitman` and
+`fact-weena` in both runs (`wrong_class_or_content` → pass). Per class after
+relabelling: answer 30, not_in_sources 14, library 2, smalltalk 2 = 48. Note
+`outside-whitman-lilacs` has no recorded result — it is counted as not-run,
+so the "after" denominators are 48 with 47 scored.
+
+**Still open:** the remaining 45 items' labels are still unaudited (the fix
+above covers the two this issue names). The class-count test in
+`tests/scripts/test_acceptance_books.py` and the label-replay tests in
+`tests/scripts/test_acceptance_ki36_labels.py` pin what was changed.
 
 ## Reference: provider findings, 2026-09-26
 These aren't defects, but check them before changing models or providers.

@@ -1,0 +1,67 @@
+{
+  "note": "Captured verbatim from .data/acceptance/<run>.json (D4 acceptance runs, 2026-10-01). The scorer fields acceptance.py::passes reads are the only ones kept; the answers are not edited. testing.md: recorded responses, not hand-written fakes.",
+  "runs": {
+    "20261001-170931": {
+      "outside-whitman": {
+        "answer": "Walt Whitman distinguishes between \"loving by allowance\" and \"loving with personal love,\" suggesting that the former is often a conventional expression of affection towards individuals or works, based on societal expectations rather than genuine connection. In contrast, \"loving with personal love\" implies a deeper, more authentic affection that is selective and rare, leading to a more significant appreciation of the subject's work or character. This distinction applies not only to people but also to books, indicating that the love derived from personal connection results in a deeper engagement than that of love given by societal norms or obligation [1].",
+        "citations": [
+          "[1] Pride and Prejudice.txt",
+          "[2] Noli Me Tangere.txt",
+          "[3] Noli Me Tangere.txt",
+          "[4] Don Quijote.txt",
+          "[5] Don Quijote.txt",
+          "[6] Don Quijote.txt",
+          "[7] Noli Me Tangere.txt",
+          "[8] Noli Me Tangere.txt"
+        ],
+        "status": "completed",
+        "message_status": "complete"
+      },
+      "fact-weena": {
+        "answer": "Weena is a character from \"The Time Machine\" who the protagonist meets during his travels into the future. She is described as childlike, exhibiting a strong desire to be with the protagonist continuously, and she develops a close bond with him over the course of their acquaintance. Weena expresses affection through gestures like giving flowers and shows fear of the dark, which indicates a level of emotional depth despite her lack of sophistication. The protagonist initially misunderstands her attachment, thinking it is merely childish affection, but later recognizes her significance and the comfort she provides him during his perilous experiences [1][6].",
+        "citations": [
+          "[1] The Time Machine.txt",
+          "[2] The Time Machine.txt",
+          "[3] The Time Machine.txt",
+          "[4] The Time Machine.txt",
+          "[5] The Time Machine.txt",
+          "[6] The Time Machine.txt",
+          "[7] The Time Machine.txt"
+        ],
+        "status": "completed",
+        "message_status": "complete"
+      }
+    },
+    "20261001-172911": {
+      "outside-whitman": {
+        "answer": "Walt Whitman distinguishes between \"loving by allowance\" and \"loving with personal love\" in that the former is a conditional and more superficial form of affection, often felt to be the right thing to do by convention, whereas the latter is a genuine personal attachment that results in a deeper appreciation and connection to the individual's work, whether that be a person or an author. This distinction implies that loving by allowance lacks the heartfelt engagement and significance found in personal love, leading to a variance in quality and recognition of their best works [1]. The sources, however, do not provide detailed elaboration on how Whitman articulates these differences beyond this initial premise.",
+        "citations": [
+          "[1] Pride and Prejudice.txt",
+          "[2] Noli Me Tangere.txt",
+          "[3] Noli Me Tangere.txt",
+          "[4] Don Quijote.txt",
+          "[5] Don Quijote.txt",
+          "[6] Noli Me Tangere.txt",
+          "[7] Noli Me Tangere.txt",
+          "[8] Noli Me Tangere.txt"
+        ],
+        "status": "completed",
+        "message_status": "complete"
+      },
+      "fact-weena": {
+        "answer": "Weena is a character from H.G. Wells' \"The Time Machine.\" She is described as a small creature, reminiscent of a child, with whom the Time Traveller forms a unique bond during his adventures in the distant future. The Time Traveller first meets Weena when he rescues her from drowning, after which she expresses her gratitude by giving him a garland of flowers. Throughout their time together, Weena exhibits a child-like affection and dependence on the Time Traveller, wanting to be with him constantly and showing distress when he leaves her [1]. She is portrayed as innocent and fearful, particularly of the dark, and her presence brings comfort to the Time Traveller amid the perils he faces [7].",
+        "citations": [
+          "[1] The Time Machine.txt",
+          "[2] The Time Machine.txt",
+          "[3] The Time Machine.txt",
+          "[4] The Time Machine.txt",
+          "[5] The Time Machine.txt",
+          "[6] The Time Machine.txt",
+          "[7] The Time Machine.txt"
+        ],
+        "status": "completed",
+        "message_status": "complete"
+      }
+    }
+  }
+}
