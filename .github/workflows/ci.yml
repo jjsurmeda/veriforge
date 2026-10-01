@@ -131,12 +131,13 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
-      # oxlint's native linter ships as 18 platform-specific optional deps,
-      # and a lockfile generated on one machine only records that machine's
-      # (npm/cli#4828). Without the Linux binding `npm run lint` dies with
-      # "Cannot find native binding". Fail here, with the reason, instead.
-      - name: Check the oxlint native binding is resolvable on Linux
-        run: node ../../scripts/patch-oxlint-lock.mjs --check
+      # oxlint, rolldown, @tailwindcss/oxide and lightningcss each ship a
+      # native binary as per-platform optional deps, and a lockfile generated
+      # on one machine records only that machine's (npm/cli#4828). Without the
+      # Linux bindings `npm run lint` and `npm run build` die with "Cannot find
+      # native binding". Fail here, with the reason, instead.
+      - name: Check the native bindings are resolvable on Linux
+        run: node ../../scripts/patch-native-lock.mjs --check
       # check-colors.sh searches with ripgrep, which the ubuntu runner image
       # does not ship. Without this the script's `rg` calls exit 127, which
       # its `if ! rg -q` reads as "contract absent" — so a missing tool
