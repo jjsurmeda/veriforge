@@ -46,6 +46,38 @@ faithfulness spread is 0.0300, exactly `FAITHFULNESS_DROP`, and run-to-run
 `LATENCY_RISE_FACTOR`. Next: P3's latency work, which is what should move the
 overhead number.
 
+**D5** (2026-10-02) widened both flapping limits by owner decision — the
+overhead factor to **1.35** (A6) and abstention/answer-rate to **item counts**
+failing at ≥ 2 (A7) — and re-measured on `1008e08` to try to rewrite the
+baseline. **Five of the six stability conditions pass; the sixth fails, so the
+baseline was deliberately NOT rewritten**, and the branch was not pushed or
+PR'd:
+
+| condition | limit | result | |
+| --- | --- | --- | --- |
+| errored items | 0 | 0, 0, 0 | PASS |
+| abstention spread | ≤ 0.125 | 0.000 (0.875 × 3) | PASS |
+| answer-rate spread | ≤ 0.05 | 0.000 (0.9167 × 3) | PASS |
+| judge coverage | ≥ 95% | 100% × 3 | PASS |
+| overhead attributed | ≥ 90% | 100% × 3 (20/20) | PASS |
+| **faithfulness spread** | **≤ 0.03** | **0.0722** (0.98056 / 0.90833 / 0.91583) | **FAIL** |
+
+The new overhead factor did its job: `p50_our_overhead_ms` measured 2417 /
+2270 / 2863 ms, and 2863 against the 2317.5 stored baseline is **+23.5%** —
+which the old 1.20 factor would have failed and the new 1.35 passes. But that
+same noise is why the baseline cannot be pinned by three runs: a ±13% spread on
+the gated figure does not resolve to a median worth storing.
+
+**The faithfulness failure is one item, not variance: see the new KI-37.**
+"What does the AW-2000 package contain?" scores 1.000 / 0.000 / 0.000 because
+the generator twice answered with a list of the corpus's internal filenames
+instead of answering. Excluding that single item the spread is **0.0234**,
+inside the bar. Two consequences for the owner: KI-32's step 3 (raise
+`FAITHFULNESS_DROP`) is the **wrong** lever, because the spread is a product
+defect rather than noise; and the baseline stays unwritable until KI-37 is
+fixed, since writing it now would bake a 0.0722 spread into the file every
+later run is compared against.
+
 ---
 
 ## KI-6: Graph change merged without the eval gate (process debt)
@@ -1435,6 +1467,22 @@ of, and of the two numbers the owner has to rule on.
   below 0.02 is unmeasured, and per the note above it needs an eval-gate run
   (provider credit), which this work did not spend. Do not read the merged
   change as the variance being closed.
+- **Step 2 ran, and it did NOT work (2026-10-02, D5, three fast20 runs on
+  `1008e08`).** The faithfulness means are **0.98056 / 0.90833 / 0.91583** —
+  a spread of **0.0722**, against 0.0300 before the pin and a bar of 0.03.
+  So pinning extraction to 0 did not reduce the spread; on these three runs it
+  is 2.4x larger. **Proposal step 3 (raise `FAITHFULNESS_DROP`) is not the
+  answer, because the spread is not variance** — see KI-37. One single item
+  ("What does the AW-2000 package contain?") scores 1.000 / 0.000 / 0.000 and
+  accounts for the entire failure: excluding it the spread is **0.0234**,
+  inside the bar. Pinning extraction cannot fix a generator that intermittently
+  answers with a list of filenames.
+  - What the pin *did* do, for the record: the claim counts on the moving items
+    still differ per run (5/2/2, 1/5/5, 3/2/2), which is expected and not
+    evidence against the pin — extraction is deterministic *given an answer*,
+    and the answers still differ. So the pin is still correct on its own terms
+    (a parsing call should not be stochastic) and should stay, but it is not
+    the lever for this metric.
 
 ## KI-33: The language detector reads short French as Spanish
 
@@ -1547,6 +1595,59 @@ so the "after" denominators are 48 with 47 scored.
 above covers the two this issue names). The class-count test in
 `tests/scripts/test_acceptance_books.py` and the label-replay tests in
 `tests/scripts/test_acceptance_ki36_labels.py` pin what was changed.
+
+## KI-37: The generator sometimes answers with a list of the source filenames
+
+Logged 2026-10-02 (D5 Phase 2), from the three fast20 runs on `1008e08`. This
+is the finding that made the baseline unwritable, and it is **not** variance.
+
+- **What:** on the item "What does the AW-2000 package contain?", two of the
+  three runs answered, **byte-identically**:
+
+      You have 7 documents in your sources:
+      - faq.md
+      - field_service_note.md
+      - manual.md
+      - returns.md
+      - spec_sheet.md
+      - warranty_2025.md
+      - warranty_legacy.md
+
+  That is a list of the corpus's internal filenames, not an answer. It scores
+  **faithfulness 0.000** (two claims, both `unsupported`, no citations, no
+  contexts), and — importantly — it does **not** abstain, so the abstention and
+  answer-rate metrics are correct to see an answer here. The third run answered
+  correctly and fully (five `supported` claims, all citing [1], faithfulness
+  1.000).
+- **Why it matters, beyond the score.** Three things at once.
+  1. It leaks internal storage filenames (`warranty_legacy.md`,
+     `faq.md`) to a user as if they were content. That is a product-surface
+     defect on its own, independent of any metric.
+  2. It is **reproducible**: runs 2 and 3 produced the identical string, so
+     this is a systematic trigger, not sampling. A variance-driven metric
+     cannot be tuned around a defect that repeats.
+  3. It single-handedly fails the baseline's stability condition. With it,
+     the faithfulness spread is 0.0722; without it, **0.0234** — inside the
+     0.03 bar. The other six moving items (spread 0.100-0.500 each) move the
+     mean far less.
+- **Not yet diagnosed.** The string is in no prompt (`grep` over
+  `apps/api/prompts/` and `apps/api/graph/` finds nothing like it), so it is
+  the model echoing the `doc="…"` attribute of the `<source>` tags it was
+  shown — all seven corpus documents, named. Whether the trigger is the
+  question's shape, the number of sources, or the source-header format is
+  **unmeasured**. Guessing is what this file exists to prevent.
+- **Suggested next step, in order:** (a) reproduce it offline first — replay
+  the exact `build_grounded_messages` output for this item against the
+  generator at temperature 0 and at the provider default, and see whether the
+  degenerate answer is reachable deterministically; (b) if the model is
+  echoing `doc=`, then the source header is leaking implementation detail into
+  the prompt, and the fix is in `build_grounded_messages` (show a
+  human-readable title, not a filename) rather than in the model or the
+  threshold; (c) add a fast20 item that would catch it, so the gate fails on
+  this class in future rather than contributing it to a spread.
+- **Do not** resolve this by widening `FAITHFULNESS_DROP`, re-baselining on a
+  favourable run, or dropping the item. The condition failed for a real
+  product reason, and the baseline was deliberately **not** written.
 
 ## Reference: provider findings, 2026-09-26
 These aren't defects, but check them before changing models or providers.
