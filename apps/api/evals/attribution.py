@@ -46,12 +46,24 @@ import litellm
 logger = logging.getLogger(__name__)
 
 STATS_URL = "https://openrouter.ai/api/v1/generation?id={generation_id}"
-# Measured live 2026-09-29: the record for a generation lands roughly 20 s
-# after the call, so a lookup needs a budget longer than that or it reports
-# nothing. That is ~20 s of wall clock per eval item, and the lookups for one
-# item run concurrently, so a fast20 run pays it once per item.
-STATS_ATTEMPTS = 8
-STATS_BACKOFF_SECONDS = 3.0
+# The record for a generation lands asynchronously, and how long that takes has
+# a long tail that the old 8 x 3.0 s (~21 s) budget did not cover.
+#
+# Measured 2026-10-02 (D4 item 2), four consecutive `complete()` calls through
+# our own `providers/llm.py`, polling by hand every 5 s from the moment the call
+# returned: 0.4 s, 0.4 s, 0.4 s, **123.6 s**. So 20 s is typical, not a bound.
+# In a fast20 run three ids 404'd for the whole 21 s budget at ages 36-39 s, and
+# all three answered 200 on a manual `GET /generation?id=…` a minute later, with
+# their durations intact (`generation_time` 681 / 2392 / 0 + `latency` 306).
+# That is the KI-31 cause: not a class of call that is never indexed, and not an
+# id recorded for a call that was not made — a budget shorter than the tail.
+#
+# The lookups all run at the end of a run and concurrently, so a larger budget
+# costs nothing unless something is genuinely missing, in which case it costs
+# exactly the wait it takes to find out. 30 x 6.0 s ≈ 174 s covers the measured
+# 123.6 s outlier with room; past that an id is reported, not waited on.
+STATS_ATTEMPTS = 30
+STATS_BACKOFF_SECONDS = 6.0
 
 
 @dataclass(frozen=True)

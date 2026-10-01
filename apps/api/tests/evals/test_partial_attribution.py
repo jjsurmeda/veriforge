@@ -31,6 +31,7 @@ from db.models import EvalItem, EvalResult
 from evals import runner
 from evals.attribution import (
     STATS_ATTEMPTS,
+    STATS_BACKOFF_SECONDS,
     Attribution,
     GenerationRef,
     attribute,
@@ -39,8 +40,29 @@ from evals.attribution import (
 # asyncio_mode = "auto" (pyproject.toml), so the async tests need no marker and
 # the two pure-`aggregate` ones stay sync.
 
+# The longest measured wait between a call returning and its stats record being
+# readable, over four consecutive `complete()` calls polled every 5 s: 0.4 s,
+# 0.4 s, 0.4 s, 123.6 s (D4 item 2).
+MEASURED_WORST_CASE_LANDING_S = 123.6
+
 JEV_RECORD = {"api_type": "decisions", "generation_time": 0, "latency": 240}
 CHAT_RECORD = {"api_type": "chat", "generation_time": 1234}
+
+
+def test_the_lookup_budget_covers_the_measured_landing_tail() -> None:
+    """The KI-31 cause, pinned as arithmetic rather than as a comment.
+
+    Measured 2026-10-02 over four consecutive calls: 0.4 s, 0.4 s, 0.4 s and
+    **123.6 s** for the record to land. The budget was 8 x 3.0 s ~= 21 s, which
+    is why ids 404'd for the whole budget and then answered 200 a minute later.
+    A budget below the measured tail is the defect; this fails if the constants
+    are ever lowered back under it.
+    """
+    budget_s = (STATS_ATTEMPTS - 1) * STATS_BACKOFF_SECONDS
+    assert budget_s >= MEASURED_WORST_CASE_LANDING_S, (
+        f"lookup budget {budget_s:.0f}s is below the measured {MEASURED_WORST_CASE_LANDING_S}s "
+        "tail; ids will be reported unresolved that simply had not landed yet"
+    )
 
 
 def _stats_from(

@@ -33,6 +33,24 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 api="$root/apps/api"
 cd "$api"
 
+# The gate runs `.venv/bin/python -m evals.gate` locally rather than in the api
+# container, and `config.py` reads `env_file=".env"` relative to the working
+# directory — so from `apps/api` it looks for `apps/api/.env`, which does not
+# exist. Without this, `OPENROUTER_API_KEY` is empty, every Jev call raises
+# "OPENROUTER_API_KEY not set", the breaker opens, the LLM fallback answers with
+# an auth error instead of JSON, and all 20 items come back
+# `FallbackError: fallback returned non-JSON`. That is a harness fault dressed
+# as 20 product failures; D3's runs had the key exported by hand.
+#
+# Explicitly-set variables still win, so CI (which passes them itself) is
+# unaffected, and a caller who exported the key is not overridden.
+if [ -f "$root/.env" ]; then
+  set -a
+  # shellcheck disable=SC1091
+  . "$root/.env"
+  set +a
+fi
+
 # Same image and credentials as ci.yml's eval-gate service, but a database of
 # its own. CI gets a fresh database from the service container; locally that
 # is a fresh database inside the same ParadeDB container.

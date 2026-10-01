@@ -614,6 +614,28 @@ conflict, ingress and review verification — to our own overhead in the one
 figure this section gates. A record with neither field is not attributed at
 all, which is a coverage gap the summary reports, never a fabricated zero.
 
+**Coverage must not bias the median (owner decision, 2026-10-02).** A
+generation's stats record lands asynchronously, and the wait has a long tail:
+measured over four consecutive calls, 0.4 s three times and 123.6 s once. An
+id that has not landed inside the lookup budget is therefore *unresolved*, not
+absent, and the item is **partially** attributed. Two rules follow, and they
+pull in opposite directions on purpose:
+
+- The provider time that **did** resolve is kept on the item, and the count of
+  ids that did not is recorded beside it. Discarding a real measurement because
+  a sibling lookup timed out loses information that was paid for.
+- `our_overhead_ms` is still withheld on a partially attributed item. Wall
+  clock minus a *partial* provider sum overstates our overhead, and the figure
+  this section gates must not be a guess in either direction.
+
+So the median runs over the fully attributed items, as before, and the summary
+reports `p50_total_ms_unattributed_items` — the median wall clock of exactly the
+items that median excludes. Without it the coverage number
+(`overhead_items_attributed`) reads as a footnote while the median it qualifies
+is quietly drawn from the faster, better-covered half. Every unresolved id is
+reported with its call site, its final HTTP status and how long after the call
+it was abandoned.
+
 Because `evals/seed/baseline_fast20.json` predates both this change and KI-18,
 the gate keeps comparing totals until the next `--baseline` run; the two are
 not comparable. The baseline also records the models it was measured with, and
