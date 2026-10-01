@@ -113,6 +113,11 @@ async def _run_one_item(
 
     class _Review:
         scores = None
+        # `_run_item` reads these to build `review_detail` (item 3); this test
+        # is about `source`, so an empty review is enough.
+        def __init__(self) -> None:
+            self.claims: list[object] = []
+            self.revised_text = None
 
     async def fake_review(**kwargs: Any) -> _Review:
         return _Review()

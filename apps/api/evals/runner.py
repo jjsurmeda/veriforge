@@ -18,6 +18,7 @@ numbers are rebaselined against slice 5's stored baseline.
 
 import argparse
 import asyncio
+import hashlib
 import json
 import logging
 import statistics
@@ -25,6 +26,7 @@ import time
 from collections.abc import Awaitable, Callable
 from functools import partial
 from pathlib import Path
+from typing import Any
 from uuid import UUID
 
 import asyncpg
@@ -241,6 +243,27 @@ async def _run_item(
     # the two mechanisms separate). Abstentions assert nothing: 1.0.
     faithfulness: float | None = None
     citation_precision: float | None = None
+    # The claims and their verdicts, kept per item. Faithfulness is a mean over
+    # them, so when it moves between two runs the mean alone cannot say which
+    # claim moved or why — a different answer, a different extraction, the same
+    # claim judged differently, or a different context. `eval-gate-local` drops
+    # the database on exit, so this has to be persisted to be read at all.
+    claim_detail: list[dict[str, Any]] = []
+    # The retrieved contexts, whether or not the item abstained: a citation or
+    # context difference between two runs is one of the four candidate sources
+    # for a faithfulness swing, so it has to be recorded to be ruled out. A
+    # digest, not the text — the passages are long and the comparison only
+    # needs to know whether they were the same ones.
+    context_detail = [
+        {
+            "n": index,
+            "chunk_id": str(context.chunk.chunk_id),
+            "document_id": str(context.chunk.document_id or ""),
+            "chars": len(context.context_text),
+            "digest": hashlib.sha256(context.context_text.encode()).hexdigest()[:16],
+        }
+        for index, context in enumerate(contexts, start=1)
+    ]
     if not abstained:
         review_started = time.monotonic()
         review = await review_answer(
@@ -256,6 +279,19 @@ async def _run_item(
         if review.scores is not None:
             faithfulness = review.scores.faithfulness
             citation_precision = review.scores.citation_precision
+        claim_detail = [
+            {
+                "id": verified.claim.claim_id,
+                "text": verified.claim.text,
+                "citation_ids": verified.claim.citation_ids,
+                "is_factual": verified.claim.is_factual,
+                "verdict": verified.verdict,
+                "p_supported": verified.p_supported,
+                "engine": verified.engine,
+            }
+            for verified in review.claims
+        ]
+        stage_ms["review_revised"] = int(review.revised_text is not None)
     else:
         faithfulness = 1.0
         citation_precision = 1.0
@@ -279,6 +315,7 @@ async def _run_item(
         stage_ms=stage_ms,
         tokens_in=tokens_in,
         tokens_out=tokens_out,
+        review_detail={"claims": claim_detail, "contexts": context_detail},
     )
     async with factory() as session, session.begin():
         session.add(result)
