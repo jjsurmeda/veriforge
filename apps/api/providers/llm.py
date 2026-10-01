@@ -100,6 +100,7 @@ def _request_kwargs(
     inherited_key: str | None = None,
     *,
     reasoning: bool = False,
+    temperature: float | None = None,
 ) -> dict[str, Any]:
     settings = get_settings()
     role = metadata.get("role", "unknown")
@@ -114,6 +115,12 @@ def _request_kwargs(
             "role": role,
         },
     }
+    # Absent (None) means "send nothing", so the provider's own default applies
+    # and every caller that predates this parameter behaves exactly as before
+    # (KI-32). A pinned value is rebuilt here rather than carried in `extra` so
+    # the one-hop failover gets the same one.
+    if temperature is not None:
+        kwargs["temperature"] = temperature
     api_key = _api_key(model) or inherited_key
     if api_key is not None:
         kwargs["api_key"] = api_key
@@ -145,6 +152,7 @@ async def _open(
     metadata: dict[str, str],
     *,
     reasoning: bool = False,
+    temperature: float | None = None,
     **extra: Any,
 ) -> tuple[str, Any]:
     """Start one completion, capped per model; on a transient failure hop once
@@ -152,8 +160,10 @@ async def _open(
 
     The cap covers opening the call, not reading a stream: provider limits
     count requests started. A stream never fails over after its first token.
+    `temperature` is re-applied on the failover attempt: a request that
+    restarts on llm_fallback_model must not silently lose it (KI-32).
     """
-    kwargs = _request_kwargs(model, metadata, reasoning=reasoning)
+    kwargs = _request_kwargs(model, metadata, reasoning=reasoning, temperature=temperature)
     try:
         async with _slot(model):
             return model, await _acomplete(model, messages, kwargs, extra)
@@ -166,7 +176,9 @@ async def _open(
         )
         same_provider = model.split("/", 1)[0] == fallback.split("/", 1)[0]
         inherited = kwargs.get("api_key") if same_provider else None
-        fallback_kwargs = _request_kwargs(fallback, metadata, inherited, reasoning=reasoning)
+        fallback_kwargs = _request_kwargs(
+            fallback, metadata, inherited, reasoning=reasoning, temperature=temperature
+        )
         async with _slot(fallback):
             return fallback, await _acomplete(fallback, messages, fallback_kwargs, extra)
 
@@ -192,6 +204,7 @@ async def _stream_once(
     metadata: dict[str, str],
     *,
     on_reasoning: Callable[[str], Awaitable[None]] | None,
+    temperature: float | None = None,
 ) -> AsyncIterator[tuple[str, str]]:
     """One streamed attempt. Yields (model that answered, content delta). A
     provider error raised while iterating surfaces to the caller, which is what
@@ -202,6 +215,7 @@ async def _stream_once(
         metadata,
         # A caller that renders the thinking stream (Deep mode) needs it on.
         reasoning=on_reasoning is not None,
+        temperature=temperature,
         stream=True,
         stream_options={"include_usage": True},
     )
@@ -231,6 +245,7 @@ async def stream_completion(
     messages: list[dict[str, str]],
     metadata: dict[str, str],
     on_reasoning: Callable[[str], Awaitable[None]] | None = None,
+    temperature: float | None = None,
 ) -> AsyncIterator[str]:
     """Yield content deltas from one streamed chat completion.
 
@@ -239,6 +254,13 @@ async def stream_completion(
     (litellm normalises provider-specific chain-of-thought fields to
     `delta.reasoning_content`) — existing callers that don't pass it see
     no behaviour change.
+
+    `temperature` is `None` by default, which sends nothing at all and leaves
+    the provider's own default in place; a number is passed through unchanged,
+    including onto the restart after a mid-stream death (KI-32). Pinning it
+    where a call's output has to be reproducible — claim extraction, whose
+    claim list feeds the faithfulness mean — is a caller decision, not a
+    default here.
 
     A provider that dies after its first chunk restarts the whole request on
     llm_fallback_model rather than killing the run (KI-17). Partial output is
@@ -256,7 +278,13 @@ async def stream_completion(
         current = model
         try:
             async for answered, delta in _stream_once(
-                current, messages, metadata, on_reasoning=on_reasoning
+                current,
+                messages,
+                metadata,
+                on_reasoning=on_reasoning,
+                # Re-applied on every restart: the retry is a new request to a
+                # new model, so it carries the same pinned temperature (KI-32).
+                temperature=temperature,
             ):
                 current = answered
                 if held is None:
@@ -288,16 +316,23 @@ async def complete(
     litellm_model: str,
     messages: list[dict[str, str]],
     metadata: dict[str, str],
+    temperature: float | None = None,
 ) -> str:
     """One non-streamed completion; returns the assistant message content.
 
     For simple background LLM calls (e.g. starter-question regeneration,
     TRD §9.1 step 6) — routing/scoring/verification decisions go through
     DecisionEngine instead (CLAUDE.md non-negotiable, slice 4+).
+
+    `temperature` is `None` by default, which sends nothing and leaves the
+    provider's default in place; a number is pinned on both the first attempt
+    and the one-hop failover to llm_fallback_model (KI-32). Claim extraction
+    pins 0 because a parsing call whose claim list feeds a mean has no reason
+    to be stochastic; every other caller stays unpinned until measured.
     """
     _configure_langfuse()
     model = await _resolved_model(litellm_model, metadata)
-    model, response = await _open(model, messages, metadata)
+    model, response = await _open(model, messages, metadata, temperature=temperature)
     usage = _usage(response)
     if usage is not None:
         await _record_usage(model, metadata, *usage)

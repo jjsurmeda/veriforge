@@ -1353,6 +1353,19 @@ of, and of the two numbers the owner has to rule on.
 - **Do not** resolve this by re-baselining on a favourable run or by widening
   the composition until the spread looks small. The spread is real and it is
   concentrated in 4 items; at n=20 those 4 decide the metric.
+- **Step 1 landed (2026-10-02, owner decision A4), not the measurement.**
+  `extract_claims` now pins `temperature=0` (`graph/review.py`), which is
+  proposal 1 above. `providers/llm.complete` / `stream_completion` gained a
+  keyword-only `temperature` whose `None` default sends nothing at all, so no
+  other caller changed behaviour; the pin is re-applied on the open failover,
+  the mid-stream restart (KI-17) and the reasoning 400-retry, all three of
+  which rebuild the kwargs. The generator reads a new
+  `generation_temperature` setting that is **unset by default**, so generation
+  is byte-identical to before — the generator's value is for phase P2 on the
+  full eval sets. **Step 2 has not run:** whether the spread actually drops
+  below 0.02 is unmeasured, and per the note above it needs an eval-gate run
+  (provider credit), which this work did not spend. Do not read the merged
+  change as the variance being closed.
 
 ## KI-33: The language detector reads short French as Spanish
 

@@ -8,6 +8,8 @@ the revision loop) follow the Standard LangGraph node-test rule: engine
 and `complete_fn` are fakes, no live calls.
 """
 
+from typing import Any
+
 import pytest
 
 from graph.review import (
@@ -17,10 +19,12 @@ from graph.review import (
     _needs_revision,
     _p_for_verdict,
     batch_claims,
+    extract_claims,
     make_diff,
     parse_claims,
     plan_delivery,
     review_answer,
+    revise_answer,
     score_review,
     verify_claims,
 )
@@ -280,7 +284,11 @@ class TestRevisionLoop:
         calls: list[str] = []
 
         async def fake_complete(
-            *, litellm_model: str, messages: list[dict[str, str]], metadata: dict[str, str]
+            *,
+            litellm_model: str,
+            messages: list[dict[str, str]],
+            metadata: dict[str, str],
+            **kwargs: object,
         ) -> str:
             job = metadata.get("job", "")
             calls.append(job)
@@ -344,7 +352,11 @@ class TestRevisionLoop:
         calls: list[str] = []
 
         async def fake_complete(
-            *, litellm_model: str, messages: list[dict[str, str]], metadata: dict[str, str]
+            *,
+            litellm_model: str,
+            messages: list[dict[str, str]],
+            metadata: dict[str, str],
+            **kwargs: object,
         ) -> str:
             calls.append(metadata.get("job", ""))
             return '[{"claim": "battery lasts ten hours", "citation_ids": [1], "is_factual": true}]'
@@ -381,3 +393,75 @@ class TestNeedsRevision:
 def test_make_diff() -> None:
     diff = make_diff("line one\nline two", "line one\nline three")
     assert "-line two" in diff and "+line three" in diff
+
+
+class TestClaimExtractionTemperature:
+    """KI-32: extraction runs at temperature 0. It is a parsing call whose
+    claim list is the denominator of the faithfulness mean, so leaving it at
+    the provider default made 4 of 20 fast20 items re-split their claims
+    between runs (claim counts 2/5/4, 5/4/6, 1/1/3, 3/1/1)."""
+
+    async def test_extraction_pins_temperature_zero(self) -> None:
+        seen: list[dict[str, object]] = []
+
+        async def fake_complete(**kwargs: object) -> str:
+            seen.append(kwargs)
+            return '[{"claim": "battery lasts ten hours", "citation_ids": [1]}]'
+
+        claims = await extract_claims(
+            answer="x [1]", small_model="small", complete_fn=fake_complete
+        )
+
+        assert seen[0]["temperature"] == 0
+        # The intent assertion, not a "did not crash": the parsed output still
+        # comes back, so the pin is on a live extraction call.
+        assert [claim.text for claim in claims] == ["battery lasts ten hours"]
+
+    async def test_the_revision_call_is_left_unpinned(self) -> None:
+        """Only extraction was repinned. The revision pass rewrites prose, and
+        answer variety there is a product choice, so it sends no temperature —
+        `complete` treats None as "send nothing"."""
+        seen: list[dict[str, object]] = []
+
+        async def fake_complete(**kwargs: object) -> str:
+            seen.append(kwargs)
+            return "The battery lasts ten hours [1] (revised)."
+
+        await revise_answer(
+            answer="The battery lasts 100 years [1]",
+            flagged=[
+                VerifiedClaim(ExtractedClaim("c1", "x", [1], True), "contradicted", 0.0, "jev")
+            ],
+            contexts=[],
+            litellm_model="big",
+            complete_fn=fake_complete,
+        )
+
+        assert "temperature" not in seen[0]
+
+    async def test_review_answer_pins_extraction(self) -> None:
+        """End to end through `review_answer`, so the pin is asserted on the call
+        the pipeline actually makes rather than on the helper in isolation."""
+        seen: list[tuple[str, object]] = []
+
+        async def fake_complete(**kwargs: Any) -> str:
+            metadata: dict[str, str] = kwargs["metadata"]
+            job = metadata.get("job", "")
+            seen.append((job, kwargs.get("temperature", "<absent>")))
+            if job == "claim_extraction":
+                return '[{"claim": "the battery lasts 100 years", "citation_ids": [1]}]'
+            return "The battery lasts ten hours [1] (revised)."
+
+        await review_answer(
+            engine=_RecordingEngine(),
+            run_id="r",
+            answer="The battery lasts 100 years [1]",
+            contexts=_ctx(),
+            citation_count=1,
+            small_model="small",
+            litellm_model="big",
+            complete_fn=fake_complete,
+        )
+
+        extraction = [t for job, t in seen if job == "claim_extraction"]
+        assert extraction and set(extraction) == {0}

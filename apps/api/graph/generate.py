@@ -7,6 +7,7 @@ escaping of any such tags inside chunk text (TRD §11 layers 1-3).
 
 from collections.abc import AsyncIterator, Awaitable, Callable
 
+from config import get_settings
 from prompts.load import load_prompt
 from providers.llm import stream_completion
 from retrieval.expand import ExpandedContext
@@ -72,11 +73,20 @@ async def stream_grounded_answer(
     metadata: dict[str, str],
     on_reasoning: Callable[[str], Awaitable[None]] | None = None,
 ) -> AsyncIterator[str]:
+    """Stream the grounded answer.
+
+    The generator's temperature is read from `generation_temperature`, which
+    is unset by default, so nothing is sent and the provider default applies
+    byte-for-byte as before (KI-32). Answer variety is a product choice, so
+    the value is decided on the full eval sets rather than here; claim
+    extraction is pinned at 0 because it is a parsing call (graph/review.py).
+    """
     async for token in stream_completion(
         litellm_model=litellm_model,
         messages=build_grounded_messages(question, contexts, history),
         metadata={**metadata, "role": "generator"},
         on_reasoning=on_reasoning,
+        temperature=get_settings().generation_temperature,
     ):
         yield token
 

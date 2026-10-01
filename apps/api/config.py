@@ -102,6 +102,14 @@ class Settings(BaseSettings):
     breaker_cooldown_seconds: float = 60.0
     shadow_sample_rate: float = 0.02
 
+    # Generation (TRD §7). Unset by default and that is the point: `None` means
+    # send no temperature at all, so the provider default (1.0 for gpt-4o-mini)
+    # applies and generation behaves exactly as it did before this setting
+    # existed. Set it to decide the generator's temperature on the full eval
+    # sets; claim extraction is pinned at 0 in code, not here, because it is a
+    # parsing call and not a product-quality choice (KI-32).
+    generation_temperature: float | None = None
+
     # Environment fallback; active runtime settings can override these values.
     deep_max_hops: int = 4
     deep_credit_budget: int = 40_000
