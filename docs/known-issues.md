@@ -282,6 +282,39 @@ overhead number.
      runs would have hidden it, which is why the median was used and this is
      being reported instead. P3's latency work is what should move this; the
      alternative is the owner's call on `LATENCY_RISE_FACTOR`, not mine.
+
+- **Both rulings landed: the gate's limits are widened, deliberately
+  (2026-10-02, owner decisions A6 and A7).** Item 2 above is answered by A6,
+  and the abstention arithmetic by A7. `evals/gate.py`, `evals/runner.py`,
+  TRD §15 and `tests/evals/test_gate_thresholds.py` change together.
+  - **A6 — `OVERHEAD_RISE_FACTOR` 1.20 → 1.35, on `p50_our_overhead_ms`
+    only.** The total-latency fallback keeps `LATENCY_RISE_FACTOR = 1.20`, and
+    the two are now chosen together with the key they apply to, so the failure
+    message names the factor that actually ran — it used to hardcode "20%",
+    naming a limit the gate does not apply. *Reset at P3 exit:* re-measure
+    **≥ 5 fast20 runs** and set the factor to `max(1.20, 1 + 2 × spread)` on
+    the observed run-to-run spread of `p50_our_overhead_ms`.
+  - **A7 — abstention accuracy and answer rate are gated in items, failing at
+    ≥ 2 items with a 1-item warning.** fast20 holds **8 should-abstain and 12
+    answerable** items, so one flip is **12.5** and **8.3** points against a
+    5-point tolerance: the old gate failed on a single item. `aggregate()` now
+    records `should_abstain_correct` and `answerable_answered`, and the gate
+    compares those counts. *Reset at P1b*, when per-corpus resolution makes
+    percentage points meaningful again.
+  - **These are relaxations, made to stop noise failing the gate. They are not
+    evidence that the product improved** — nothing about the product was
+    measured to justify them, and both rest on the spread numbers already
+    recorded in this entry. `FAITHFULNESS_DROP` is untouched at **0.03** and
+    remains the gate's strictest condition; item 1 above is still open and is
+    still exactly at the bar.
+  - **Consequence to action now:** `baseline_fast20.json` predates the two
+    counts, so the next gate run reports those two metrics **UNVERIFIED** — a
+    warning, not a pass, and not a failure, since an old baseline is not a
+    regression. They become checkable again on the next `--baseline` run, which
+    this entry already needs. The counts are deliberately **not** back-filled by
+    hand from the stored rates: those rates are a median of three runs and the
+    denominator is not in the file, so any number written there would be
+    invented.
 - **What did improve, and is worth not losing.** `context_recall` is
   non-null on every run (0.86–0.96) against C2's `null` and D1's 17–19 of 20
   null — the judge parser fix (KI-30 2b) is holding. `abstention_accuracy`

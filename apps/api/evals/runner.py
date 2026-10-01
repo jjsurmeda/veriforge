@@ -489,8 +489,14 @@ def aggregate(results: list[tuple[EvalItem, EvalResult]]) -> dict[str, float | N
     abstention_accuracy = (
         mean([1.0 if r.abstained else 0.0 for _, r in abstain_items]) if abstain_items else None
     )
+    # Owner decision A7 (2026-10-02, KI-6): the gate compares these counts,
+    # not the rates above. With 8 should-abstain items in fast20, one flip is
+    # 12.5 points — twice the gate's old 5-point tolerance — so a rate
+    # comparison fails on a single item. The count says what actually changed.
+    should_abstain_correct = float(sum(1 for _, r in abstain_items if r.abstained))
     answerable = [(i, r) for i, r in scored if not i.should_abstain]
     answer_rate = mean([0.0 if r.abstained else 1.0 for _, r in answerable]) if answerable else None
+    answerable_answered = float(sum(1 for _, r in answerable if not r.abstained))
     latencies = sorted(r.latency_ms for _, r in scored)
     p50 = float(statistics.median(latencies)) if latencies else None
     # p50_our_overhead_ms is the strictly gated number (KI-18): wall clock
@@ -519,6 +525,8 @@ def aggregate(results: list[tuple[EvalItem, EvalResult]]) -> dict[str, float | N
         "context_recall": context_recall,
         "abstention_accuracy": abstention_accuracy,
         "answer_rate": answer_rate,
+        "should_abstain_correct": should_abstain_correct,
+        "answerable_answered": answerable_answered,
         "p50_latency_ms": p50,
         "p50_our_overhead_ms": (float(statistics.median(overheads)) if overheads else None),
         "overhead_items_attributed": float(len(overheads)),

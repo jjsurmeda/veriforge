@@ -20,19 +20,24 @@ import pytest
 from db.models import EvalItem, EvalResult
 from evals import runner
 from evals.gate import (
-    ANSWER_RATE_DROP_POINTS,
+    ITEM_FLIP_LIMIT,
     LATENCY_RISE_FACTOR,
+    OVERHEAD_RISE_FACTOR,
     compare,
     compare_models,
+    notes,
 )
 from evals.runner import aggregate, models_on_record
 
-# What `evals.runner --baseline` writes for a clean run: both fields present.
+# What `evals.runner --baseline` writes for a clean run: both fields present,
+# and the two item counts A7 gates on.
 SYNTHETIC_BASELINE: dict[str, float | None] = {
     "faithfulness": 0.9875,
     "context_recall": 1.0,
     "abstention_accuracy": 0.25,
     "answer_rate": 0.9375,
+    "should_abstain_correct": 2.0,
+    "answerable_answered": 15.0,
     "p50_latency_ms": 14384.5,
     "p50_our_overhead_ms": 8457.0,
     "items": 20.0,
@@ -98,19 +103,22 @@ def test_a_baseline_run_records_both_fields() -> None:
 
 
 def test_the_gate_checks_answer_rate_when_the_baseline_has_it() -> None:
-    failures = compare(SYNTHETIC_BASELINE, _current(answer_rate=0.50))
+    failures = compare(SYNTHETIC_BASELINE, _current(answerable_answered=13.0))
     assert len(failures) == 1 and "answer rate" in failures[0]
-    assert f"{ANSWER_RATE_DROP_POINTS} pts" in failures[0]
+    assert f"{ITEM_FLIP_LIMIT} items flipped" in failures[0]
 
 
-def test_a_small_answer_rate_drop_is_inside_the_gate() -> None:
-    drop = ANSWER_RATE_DROP_POINTS / 100
-    assert compare(SYNTHETIC_BASELINE, _current(answer_rate=0.9375 - drop / 2)) == []
+def test_a_one_item_answer_rate_drop_is_inside_the_gate() -> None:
+    one_down = _current(answerable_answered=14.0)
+    assert compare(SYNTHETIC_BASELINE, one_down) == []
+    assert any("1 item flipped" in warning for warning in notes(SYNTHETIC_BASELINE, one_down))
 
 
 def test_the_gate_prefers_our_overhead_over_total_latency() -> None:
     """A 3x rise that is all provider time must not fail: only the attributed
-    remainder is this repo's to regress (KI-18)."""
+    remainder is this repo's to regress (KI-18). The rising figure is +42%
+    because A6 moved the factor from 1.20 to 1.35 — 11000 was +30%, which the
+    gate now passes on purpose."""
     assert (
         compare(
             SYNTHETIC_BASELINE,
@@ -120,10 +128,13 @@ def test_the_gate_prefers_our_overhead_over_total_latency() -> None:
     )
     failures = compare(
         SYNTHETIC_BASELINE,
-        _current(p50_latency_ms=40000.0, p50_our_overhead_ms=11000.0),
+        _current(p50_latency_ms=40000.0, p50_our_overhead_ms=12000.0),
     )
     assert len(failures) == 1 and "our_overhead_ms" in failures[0]
-    assert f"{LATENCY_RISE_FACTOR}" not in failures[0]
+    # The message names the factor that actually applied (A6), not the
+    # fallback's 1.20 — the two are different limits on different figures.
+    assert f"{OVERHEAD_RISE_FACTOR:.2f}" in failures[0]
+    assert f"{LATENCY_RISE_FACTOR:.2f}" not in failures[0]
 
 
 def test_a_stale_baseline_still_gates_on_what_it_does_have() -> None:
@@ -133,7 +144,13 @@ def test_a_stale_baseline_still_gates_on_what_it_does_have() -> None:
     stale = {
         k: v
         for k, v in SYNTHETIC_BASELINE.items()
-        if k not in ("answer_rate", "p50_our_overhead_ms")
+        if k
+        not in (
+            "answer_rate",
+            "answerable_answered",
+            "should_abstain_correct",
+            "p50_our_overhead_ms",
+        )
     }
     failures = compare(
         stale, _current(answer_rate=0.1, p50_our_overhead_ms=99999.0, p50_latency_ms=14384.5)

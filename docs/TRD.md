@@ -656,9 +656,49 @@ sampled chunks, an admin approves each); harvested from rated chats
 
 **Gates in CI.** A 20-item fast subset runs on every merge to `main` that
 touches `graph`, `retrieval`, `decisions` or prompts. The merge fails if
-faithfulness drops by more than 0.03, abstention accuracy or answer rate
-by more than 5 points, or p50 latency rises by more than 20% against the
-stored baseline.
+faithfulness drops by more than 0.03, if the number of items classified
+correctly drops by 2 or more, or if the gated latency rises by more than its
+factor. Three of these limits are wider than the ones this section originally
+carried, and each was widened for a measured reason, not to make a run pass —
+see the two decisions below and KI-6.
+
+**Limits expressed in items, not points (owner decision A7, 2026-10-02).**
+Abstention accuracy and answer rate are compared as **item counts**, not as
+percentage points, and each fails when the count of items classified correctly
+drops by **2 or more**. A drop of exactly one item is printed as a warning and
+passes. The reason is arithmetic, not judgement: the fast20 subset holds **8
+should-abstain items and 12 answerable items**, so one item flipping moves the
+two rates by **12.5** and **8.3** points respectively. Both are more than twice
+the 5-point tolerance this section used to apply, which meant a single item —
+one coin toss in a 20-item run — failed the gate. One flip is noise; two flips
+are a regression, and that is the line the code now draws. The rates are still
+recorded in the run summary and the baseline; they are simply not what the gate
+compares, because on a subset this size the denominator is the measurement.
+
+*Reset:* at **P1b**, when per-corpus resolution adds items, these limits are
+replaced — with more items per corpus a rate moves by less than one item and
+percentage points become meaningful again.
+
+**Latency factors (owner decision A6, 2026-10-02).** Two factors, one per
+figure, and each is named in the failure it produces. `p50_our_overhead_ms`
+may rise by **1.35×** (35%); total `p50_latency_ms` — still recorded, still
+displayed, still compared only when neither run attributed a call, which is the
+no-attribution fallback — keeps **1.20×** (20%). The overhead factor was
+1.20 and measured run-to-run noise on an unchanged commit is **+22.9%**
+(2317 / 2533 / 2848 ms across three consecutive fast20 runs), so the gate could
+fail a merge for variance alone. 1.35 puts the limit outside that spread; the
+fallback keeps 1.20 because it exists to stop the check being silently
+disabled, not to express a measured tolerance.
+
+*Reset:* at **P3 exit**, re-measure **≥ 5 fast20 runs** after P3's latency work
+and set the overhead factor to `max(1.20, 1 + 2 × spread)`, where `spread` is
+the observed run-to-run spread of `p50_our_overhead_ms`. P3 is expected to move
+the number down; the widening buys the gate back its authority until then.
+
+**What the widening is not.** Neither change is evidence that the product
+improved — both were measured against a gate that flapped on noise. The
+faithfulness limit is untouched at 0.03, and it stays the gate's strictest
+condition.
 
 **Which latency is gated (owner decision, 2026-09-29, KI-18).** The strictly
 gated figure is `p50_our_overhead_ms`: the measured wall clock minus the
@@ -737,7 +777,8 @@ report perfect faithfulness *and* perfect abstention accuracy and pass
 every metric above it. Answer rate is not defined in terms of the outcome
 it measures, which is what makes it a counterweight rather than a fourth
 view of the same number. It is stored in the run summary and in the
-baseline, and the gate fails if it drops more than 5 points.
+baseline, and the gate fails it in items, not points: two or fewer items is a
+regression, one is a warning (owner decision A7, 2026-10-02, above).
 
 **Tracing.** The Langfuse LangGraph callback traces every run with node
 spans, model calls, tokens and cost; decision calls appear as spans with
