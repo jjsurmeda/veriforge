@@ -62,8 +62,11 @@ async def test_provider_time_sums_jev_latency_across_calls(
         "gen-chat-1": {"api_type": "chat", "generation_time": 1234, "latency": 1400},
     }
 
-    async def fake_stats(generation_id: str) -> dict[str, object] | None:
-        return records.get(generation_id)
+    async def fake_stats(
+        generation_id: str,
+    ) -> tuple[dict[str, object] | None, int | None, int]:
+        record = records.get(generation_id)
+        return (dict(record) if record is not None else None), (200 if record else 404), 1
 
     monkeypatch.setattr("evals.attribution._stats", fake_stats)
     provider_ms, attributed = await provider_time_ms(list(records))
@@ -77,8 +80,11 @@ async def test_jev_latency_moves_time_off_our_overhead(
     """The consequence the gate sees. A 5000 ms item whose only generation is
     one Jev call at 240 ms is 4760 ms of ours, not 5000 ms — and it is
     `complete`, so the figure is recorded rather than withheld."""
-    async def fake_stats(generation_id: str) -> dict[str, object] | None:
-        return dict(JEV)
+
+    async def fake_stats(
+        generation_id: str,
+    ) -> tuple[dict[str, object] | None, int | None, int]:
+        return dict(JEV), 200, 1
 
     monkeypatch.setattr("evals.attribution._stats", fake_stats)
     provider_ms, attributed = await provider_time_ms(["gen-jev-1"])

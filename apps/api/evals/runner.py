@@ -41,7 +41,7 @@ from config import get_settings
 from db.ids import uuid7
 from db.models import Chat, EvalDataset, EvalItem, EvalResult, EvalRun, Message, User
 from decisions import DecisionEngine
-from evals.attribution import attribute, record_generation_ids
+from evals.attribution import GenerationRef, attribute, record_generation_ids
 from evals.judge import judge_answer
 from evals.loader import EVAL_USER_EMAIL, STATE_FILE
 from graph.auto import AutoRunInput, finalize_auto_run, prepare_auto_run
@@ -126,7 +126,7 @@ async def _run_item(
     eval_run_id: UUID,
     item: EvalItem,
     mode: str = "auto",
-) -> tuple[EvalResult, list[str]]:
+) -> tuple[EvalResult, list[GenerationRef]]:
     async with factory() as session, session.begin():
         chat = Chat(
             user_id=user.id,
@@ -325,7 +325,7 @@ async def run_eval(
         eval_run_id = eval_run.id
 
     results: list[tuple[EvalItem, EvalResult]] = []
-    pending_ids: dict[int, list[str]] = {}  # id(result) -> generation ids
+    pending_ids: dict[int, list[GenerationRef]] = {}  # id(result) -> its LLM calls
     # One item at a time. A concurrent `gather` here would multiply the DB
     # footprint by the item count; if that ever becomes worth it, raise
     # EVAL_POOL_SIZE/EVAL_MAX_OVERFLOW with it.
@@ -385,15 +385,24 @@ async def run_eval(
             if id(result) in pending_ids
         )
     )
-    attributed_results = [
-        result for _, result in results if id(result) in pending_ids
-    ]
+    attributed_results = [result for _, result in results if id(result) in pending_ids]
     for result, attribution in zip(attributed_results, attributions, strict=True):
         stage_ms = {
             **(result.stage_ms or {}),
             "provider_ms": attribution.provider_ms,
             "generations_attributed": attribution.attributed,
         }
+        # KI-31: a partial attribution is reported, not discarded. The
+        # provider time that did resolve stays on the item, the count of ids
+        # that did not is recorded next to it, and `our_overhead_ms` is still
+        # withheld because a partial sum understates provider time and would
+        # overstate ours. `p50_total_ms_unattributed_items` puts the withheld
+        # wall clock in the summary so the gap is visible.
+        if attribution.unattributed:
+            stage_ms["generations_unattributed"] = attribution.unattributed
+            stage_ms["unresolved_generation_ids"] = [
+                entry.describe() for entry in attribution.unresolved
+            ]
         if attribution.complete:
             stage_ms["our_overhead_ms"] = attribution.overhead_ms
         result.stage_ms = stage_ms
@@ -457,16 +466,28 @@ def aggregate(results: list[tuple[EvalItem, EvalResult]]) -> dict[str, float | N
         for _, r in scored
         if r.stage_ms and r.stage_ms.get("our_overhead_ms") is not None
     ]
+    # KI-31: `p50_our_overhead_ms` is a median over the attributed items only,
+    # and the slow items are the ones that fail to attribute, so that median
+    # is biased *downward* — the gate compares a flattering subset. This is
+    # the median wall clock of exactly those excluded items, so the size of
+    # the flattering subset is visible in the same summary. It is reported,
+    # never gated.
+    unattributed_latencies = [
+        float(r.latency_ms)
+        for _, r in scored
+        if r.stage_ms and r.stage_ms.get("generations_unattributed")
+    ]
     return {
         "faithfulness": faithfulness,
         "context_recall": context_recall,
         "abstention_accuracy": abstention_accuracy,
         "answer_rate": answer_rate,
         "p50_latency_ms": p50,
-        "p50_our_overhead_ms": (
-            float(statistics.median(overheads)) if overheads else None
-        ),
+        "p50_our_overhead_ms": (float(statistics.median(overheads)) if overheads else None),
         "overhead_items_attributed": float(len(overheads)),
+        "p50_total_ms_unattributed_items": (
+            float(statistics.median(unattributed_latencies)) if unattributed_latencies else None
+        ),
         "items": float(len(results)),
         "scored": float(len(scored)),
         "failed": float(len(results) - len(scored)),

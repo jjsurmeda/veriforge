@@ -135,7 +135,7 @@ async def _usd_for(ids: list[str]) -> float | None:
     total = 0.0
     seen = False
     for generation_id in ids:
-        data = await _stats(generation_id)
+        data, _status, _attempts = await _stats(generation_id)
         if data is None:
             continue
         seen = True
