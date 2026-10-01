@@ -82,3 +82,65 @@ this repo's expected size). They are separate from and run before the
 `graph`/`retrieval`/`decisions`/prompts and is slower — don't conflate
 the two in CI config or in the slice's squash commit message; "tests
 pass" and "eval gate passes" are reported and required separately.
+## Recorded responses at every external boundary
+
+Generalises the Jev fixture rule above. Any value our code *parses* from
+outside the repo is tested against a **captured real response**, not a
+hand-written fake:
+- model outputs we parse: judge JSON, claim extraction, planner rows, chat
+  titles, starter questions
+- provider API fields: OpenRouter `/generation` stats, Jev response headers,
+  rerank payloads
+
+Fixtures live in `tests/fixtures/<provider>/<name>.json`, with the capture
+date and model in the file. A hand-written fake may *add* edge cases, but it
+never replaces the capture.
+
+Parsers are tolerant: they extract the JSON from the prose around it. A parse
+failure is **counted and surfaced** (a metric, a log line, a failure reason),
+never a silent `None`.
+
+Why: D2. Haiku wrote an explanation after the JSON, so 17–19 of 20 judge
+scores came back null. Also D2: Jev's stats record carries `latency`, not
+`generation_time`.
+
+## Intent tests
+
+When a comment, the TRD or an ADR states what code is *for*, a test asserts
+that outcome, not just "no crash" or "within budget". Example: "children
+first, parents only if room" means a test that every entity's child reaches
+the judge.
+
+Why: D2. The evidence code was fully covered and still contradicted its own
+comment.
+
+## Coverage numbers don't replace intent
+
+The tiers above stay. A coverage percentage measures which lines ran, not
+whether the behaviour is right. Covered code with no intent test counts as
+untested in review.
+
+## A changed default runs the full suite
+
+Flipping a default (reranker, model, threshold, temperature, source) runs the
+**whole** suite, not the area's tests.
+
+Why: `1ba8f3f` switched the reranker to Jev and only the rerank tests ran,
+which broke `test_sanitize_asks_only_about_the_reranked_top_k`.
+
+## Test data is audited like code
+
+Every acceptance and seed item carries proof of its label:
+- `answer` items: the query that finds the answering passage (hit > 0,
+  passage quoted)
+- `not_in_sources` items: the zero-hit queries over everything the test user
+  can retrieve, with spot-read notes on false hits
+- one-referent questions are checked for a second valid answer in the corpus
+
+`mention` checks accept every correct phrasing seen in a correct answer, with
+the reason recorded in the item. Re-run the audit whenever the corpus changes.
+A label that contradicts the corpus is a test bug: fix the item, never the
+pipeline.
+
+Why: KI-36. `outside-whitman`'s answer was in the corpus all along, and
+`fact-weena`'s check rejected a correct answer.

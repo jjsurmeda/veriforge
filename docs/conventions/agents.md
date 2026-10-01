@@ -62,6 +62,22 @@ back to a run that went wrong. See "Where these came from".
   gate, smoke runs), the prompt tells the agent to check the balance and
   stop below a floor.
 
+## Parallel work
+
+- **Independent code items:** sub-agents in separate git worktrees, one
+  branch each, with a test database name per worktree. Merge one at a time,
+  each through the gate.
+- **Quality runs** may run concurrently **only on isolated stacks**: an
+  ephemeral DB per fast20 run (`eval-gate-local`), and a separate api
+  container pinned to the commit for each acceptance run. Never against the
+  hot-reloading dev api.
+- **Latency is measured alone:** one run with nothing else on the machine,
+  or the CI gate. Concurrent runs inflate p50, and a baseline carries
+  latency.
+- **Quality phases stay serial:** one variable at a time.
+- Start with 2–3 concurrent runs. On any 429, back off and note it in the
+  report.
+
 ## Where these came from
 
 - **2026-09-27, KI-14 (flaky tests):** 2 hours on one item, zero commits.
