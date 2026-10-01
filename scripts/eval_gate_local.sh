@@ -76,10 +76,21 @@ DATABASE_URL="$DB_URL" .venv/bin/python -m procrastinate --app=ingest.worker.app
 echo "==> seed items + corpus (7 AW-2000 documents, eval user only)"
 DATABASE_URL="$DB_URL" .venv/bin/python -m evals.loader
 
+gate_status=0
 if [ "${BASELINE:-0}" = "1" ]; then
   echo "==> writing baseline_fast20.json from this run"
-  DATABASE_URL="$DB_URL" .venv/bin/python -m evals.runner --subset fast20 --baseline
+  DATABASE_URL="$DB_URL" .venv/bin/python -m evals.runner --subset fast20 --baseline || gate_status=$?
 else
   echo "==> gate: fast20 vs baseline_fast20.json"
-  DATABASE_URL="$DB_URL" .venv/bin/python -m evals.gate
+  DATABASE_URL="$DB_URL" .venv/bin/python -m evals.gate || gate_status=$?
 fi
+
+# Read the per-stage latency breakdown back out of eval_results. The gate's own
+# summary does not carry it, the database is about to be dropped, and P3's
+# latency work needs the numbers. Read-only; it calls no provider. It runs even
+# when the gate failed, because a failing run is exactly when the stage
+# breakdown matters most.
+echo "==> per-stage latency and per-item detail"
+DATABASE_URL="$DB_URL" .venv/bin/python scripts/eval_dump_stages.py || true
+
+exit "$gate_status"
