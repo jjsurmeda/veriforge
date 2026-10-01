@@ -15,8 +15,14 @@ import argparse
 import asyncio
 import json
 import statistics
+import sys
 from collections import defaultdict
+from pathlib import Path
 from typing import Any
+
+# Run as `python scripts/eval_dump_stages.py`, so sys.path[0] is scripts/ and
+# the app packages are not importable without this (acceptance.py does the same).
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from sqlalchemy import select
 
