@@ -6,6 +6,13 @@ Reuses smoke_chat's sign-up / run_turn / SSE reading (same HTTP surface as
 `make smoke`); one fresh chat per item, turns in order, source "upload",
 mode "auto". Writes raw results to .data/acceptance/<timestamp>.json.
 
+The run user is moved to the seeded `internal-eval` plan through the admin
+API before the first turn: a full run costs ~310k quota credits (KI-20) and
+`free` allows 200k per 5 h, so runs used to raise `free`'s limit by hand and
+restore it. `free` and `pro` are never mutated here. Needs `ADMIN_EMAIL` /
+`ADMIN_PASSWORD` (`make seed-admin`); without them the run stops rather than
+falling back to editing the database.
+
 Usage: uv run python scripts/acceptance.py [id1,id2,...] [--pace SECONDS].
 
 Pacing is opt-in: `--pace N` sleeps N seconds between items (skip after
@@ -17,6 +24,7 @@ runs back-to-back, which paid models can afford.
 import argparse
 import asyncio
 import json
+import os
 import re
 import statistics
 import sys
@@ -34,6 +42,17 @@ from textkit import detect_language
 
 SET_FILE = Path(__file__).resolve().parents[3] / "evals" / "acceptance" / "books.json"
 OUT_DIR = Path(__file__).resolve().parents[3] / ".data" / "acceptance"
+
+# Seeded by migration 0014 with headroom for a full run. Never `free` or `pro`:
+# those are the rows real users are on.
+EVAL_PLAN_NAME = "internal-eval"
+
+NO_ADMIN = (
+    "acceptance needs admin credentials to move its run user onto the "
+    f"{EVAL_PLAN_NAME} plan: set ADMIN_EMAIL and ADMIN_PASSWORD in .env "
+    "(`make seed-admin` creates the account). Refusing to raise a plan's "
+    "credit limit instead — that mutates the row real users are on."
+)
 
 # "Says plainly it's not in the sources" — generous on purpose: batch B owns
 # the exact wording, this only has to recognise the shape.
@@ -128,6 +147,55 @@ def failure_reason(item: dict[str, Any], result: dict[str, Any]) -> str | None:
     return "wrong_class_or_content"
 
 
+async def assign_eval_plan(client: httpx.AsyncClient, run_email: str) -> str:
+    """Put `run_email` on the seeded `internal-eval` plan, via the admin API.
+
+    The product path, so the change is audited (`admin/service.py::update_user`)
+    and needs no direct database access. Returns the plan name for the report.
+    """
+    email = os.environ.get("ADMIN_EMAIL")
+    password = os.environ.get("ADMIN_PASSWORD")
+    if not email or not password:
+        raise SystemExit(NO_ADMIN)
+
+    login = await client.post("/auth/login", json={"email": email, "password": password})
+    if login.status_code != 200:
+        raise SystemExit(
+            f"admin login failed: {login.status_code} {login.text[:200]}\n"
+            "run `make seed-admin` to create or promote the account"
+        )
+    admin_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    plans = await client.get("/admin/plans", headers=admin_headers)
+    if plans.status_code != 200:
+        raise SystemExit(f"admin plans lookup failed: {plans.status_code} {plans.text[:200]}")
+    match = next((p for p in plans.json() if p["name"] == EVAL_PLAN_NAME), None)
+    if match is None:
+        raise SystemExit(
+            f"no {EVAL_PLAN_NAME} plan (have: {[p['name'] for p in plans.json()]}); "
+            "run the migrations (`docker compose restart api`)"
+        )
+
+    users = await client.get("/admin/users", headers=admin_headers)
+    if users.status_code != 200:
+        raise SystemExit(f"admin users lookup failed: {users.status_code} {users.text[:200]}")
+    target = next((u for u in users.json() if u["email"] == run_email), None)
+    if target is None:
+        raise SystemExit(f"run user {run_email} not visible to the admin")
+
+    patched = await client.patch(
+        f"/admin/users/{target['id']}", headers=admin_headers, json={"plan_id": match["id"]}
+    )
+    if patched.status_code != 200:
+        raise SystemExit(f"plan assignment failed: {patched.status_code} {patched.text[:200]}")
+    assigned = patched.json().get("plan_id")
+    if assigned != match["id"]:
+        raise SystemExit(
+            f"plan assignment did not take: plan_id is {assigned}, wanted {match['id']}"
+        )
+    return EVAL_PLAN_NAME
+
+
 async def run(
     only: list[str] | None = None,
     *,
@@ -148,6 +216,10 @@ async def run(
     rows: list[dict[str, Any]] = []
     async with httpx.AsyncClient(base_url=smoke_chat.API_URL, timeout=timeout) as client:
         email = await smoke_chat.sign_up(client)
+        # Before the first turn: the quota gate reserves on the first run, so
+        # a later assignment would be too late for item 1's reserve.
+        plan = await assign_eval_plan(client, email)
+        print(f"run user {email} assigned to the {plan} plan\n")
         for item in items:
 
             async def play(item: dict[str, Any] = item) -> dict[str, Any]:

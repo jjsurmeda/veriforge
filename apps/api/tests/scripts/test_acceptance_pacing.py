@@ -106,6 +106,13 @@ def paced_run(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> PacedRun:
         item = next(i for i in items if i["turns"] == [turn])
         return _result_for(item)
 
+    # The plan assignment is D4 item 1 and has its own tests
+    # (test_acceptance_plan.py); pacing is not where it belongs.
+    async def assign_eval_plan(_client: Any, _email: str) -> str:
+        return "internal-eval"
+
+    monkeypatch.setattr(acceptance, "assign_eval_plan", assign_eval_plan)
+
     monkeypatch.setattr(acceptance, "SET_FILE", set_file)
     monkeypatch.setattr(acceptance, "OUT_DIR", tmp_path / "out")
     monkeypatch.setattr(acceptance.smoke_chat, "sign_up", sign_up)

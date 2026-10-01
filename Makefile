@@ -1,13 +1,18 @@
 # Local task entry points. Apps run in Docker Compose; the scripts talk to the
 # same Postgres through DATABASE_URL in .env.
 
-.PHONY: seed-models seed-books smoke acceptance eval-gate-local
+.PHONY: seed-models seed-books seed-admin smoke acceptance eval-gate-local
 
 seed-models:
 	cd apps/api && .venv/bin/python scripts/seed_models.py
 
 seed-books:
 	cd apps/api && .venv/bin/python scripts/seed_gutenberg.py
+
+# The local admin `make acceptance` authenticates as. Needs ADMIN_EMAIL and
+# ADMIN_PASSWORD in .env; idempotent, so it is also the password reset.
+seed-admin:
+	cd apps/api && .venv/bin/python scripts/seed_admin.py
 
 smoke:
 	cd apps/api && .venv/bin/python scripts/smoke_chat.py
