@@ -3,6 +3,10 @@ name: ci
 on:
   push:
     branches: [main]
+  # So a branch can be verified before it is merged — CLAUDE.md requires the
+  # eval gate on graph/prompt changes, and that has to be checkable on the
+  # branch, not only after the merge to main.
+  workflow_dispatch:
 
 jobs:
   api:
@@ -72,10 +76,20 @@ jobs:
       - name: Check whether the gate applies to this push
         id: scope
         run: |
-          if git diff --name-only HEAD~1 HEAD | grep -Eq '^(apps/api/(graph|retrieval|decisions|prompts)/)'; then
-            echo "applies=true" >> "$GITHUB_OUTPUT"
-          else
+          # `reason` is empty only when the gate will really run. A skip is
+          # reported with its cause instead of passing silently: a green
+          # eval-gate job that never called OpenRouter is not evidence that
+          # the gate passed, and reading it as one is how the baseline went
+          # unrecorded for three runs (KI-6).
+          if ! git diff --name-only HEAD~1 HEAD | grep -Eq '^(apps/api/(graph|retrieval|decisions|prompts)/)'; then
             echo "applies=false" >> "$GITHUB_OUTPUT"
+            echo "reason=no graph/retrieval/decisions/prompts change in this push" >> "$GITHUB_OUTPUT"
+          elif [ -z "${OPENROUTER_API_KEY:-}" ]; then
+            echo "applies=true" >> "$GITHUB_OUTPUT"
+            echo "reason=the OPENROUTER_API_KEY secret is not set (owner action O1); nothing was measured" >> "$GITHUB_OUTPUT"
+          else
+            echo "applies=true" >> "$GITHUB_OUTPUT"
+            echo "reason=" >> "$GITHUB_OUTPUT"
           fi
       - if: steps.scope.outputs.applies == 'true' && env.OPENROUTER_API_KEY != ''
         run: uv sync --frozen
@@ -83,10 +97,27 @@ jobs:
         run: DATABASE_URL=postgresql+asyncpg://veriforge:veriforge@localhost:5432/veriforge uv run alembic upgrade head
       - if: steps.scope.outputs.applies == 'true' && env.OPENROUTER_API_KEY != ''
         run: DATABASE_URL=postgresql+asyncpg://veriforge:veriforge@localhost:5432/veriforge uv run python -m evals.loader
-      - if: steps.scope.outputs.applies == 'true' && env.OPENROUTER_API_KEY != ''
+      - name: Eval gate (TRD §15 fast20 vs the stored baseline)
+        id: gate
+        if: steps.scope.outputs.applies == 'true' && env.OPENROUTER_API_KEY != ''
         run: DATABASE_URL=postgresql+asyncpg://veriforge:veriforge@localhost:5432/veriforge uv run python -m evals.gate
-      - if: steps.scope.outputs.applies != 'true' || env.OPENROUTER_API_KEY == ''
-        run: echo "eval gate skipped (no graph/retrieval/decisions/prompts change, or no key)"
+      - name: Report the eval gate outcome
+        if: always()
+        run: |
+          {
+            echo "### eval gate"
+            echo ""
+            if [ -n "${{ steps.scope.outputs.reason }}" ]; then
+              echo "**eval gate SKIPPED:** ${{ steps.scope.outputs.reason }}"
+              echo ""
+              echo "The TRD §15 fast20 gate is **unverified** on this push. This is not a pass."
+            else
+              echo "**eval gate RAN** and exited \`${{ steps.gate.outcome }}\` on \`$(git rev-parse HEAD)\`."
+              echo ""
+              echo "Baseline: \`evals/seed/baseline_fast20.json\`. The comparison is meaningless if the"
+              echo "models differ, and \`evals.gate\` now refuses that case rather than comparing."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
   web:
     runs-on: ubuntu-latest
@@ -100,6 +131,12 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
+      # oxlint's native linter ships as 18 platform-specific optional deps,
+      # and a lockfile generated on one machine only records that machine's
+      # (npm/cli#4828). Without the Linux binding `npm run lint` dies with
+      # "Cannot find native binding". Fail here, with the reason, instead.
+      - name: Check the oxlint native binding is resolvable on Linux
+        run: node ../../scripts/patch-oxlint-lock.mjs --check
       - run: npm ci
       - run: npm run codegen:ci
       - run: npm run lint
