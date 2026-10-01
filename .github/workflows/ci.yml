@@ -137,6 +137,13 @@ jobs:
       # "Cannot find native binding". Fail here, with the reason, instead.
       - name: Check the oxlint native binding is resolvable on Linux
         run: node ../../scripts/patch-oxlint-lock.mjs --check
+      # check-colors.sh searches with ripgrep, which the ubuntu runner image
+      # does not ship. Without this the script's `rg` calls exit 127, which
+      # its `if ! rg -q` reads as "contract absent" — so a missing tool
+      # reported itself as a tokens.css violation. It was masked until the
+      # oxlint fix let this job get past `npm ci`.
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
       - run: npm ci
       - run: npm run codegen:ci
       - run: npm run lint
