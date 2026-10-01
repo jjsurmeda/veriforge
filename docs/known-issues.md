@@ -171,6 +171,65 @@ checkable once a new baseline is written.
   acceptance + fast20 sequence, after the owner's review. Do not
   re-baseline against the numbers above.
 
+- **(2026-10-01, D3 item 4: measured on the fixed harness, and the baseline
+  is STILL not written — two of six conditions failed.)** Three fast20 runs
+  via `make eval-gate-local`, each against its own fresh ephemeral database
+  (KI-24's half-fix, so the corpus is the seed corpus only), commit
+  `5bb3986`, 0 errored items in all three:
+
+  | run | faithfulness | ctx recall | abstention (of 8) | answer rate | p50 ms | p50 overhead ms | overhead attributed | judge coverage |
+  | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+  | 1 | 0.9707 | 0.96 | 0.875 (7) | 0.9167 | 8665.5 | 2344.0 | 17/20 (85%) | not captured |
+  | 2 | 0.9250 | 0.89 | 0.875 (7) | 0.9167 | 8467.0 | 2551.0 | 18/20 (90%) | not captured |
+  | 3 | 0.9771 | 0.86 | 0.875 (7) | 0.9167 | 8754.5 | 2691.5 | 16/20 (80%) | 19/20 (95%) |
+
+  **PASS:** 0 errored items (all three, and this is the first clean set of
+  three on the fixed harness); abstention spread **0.000** (0.875 in all
+  three, 7 of 8 every time — against 0.125/0.000/0.125 in D1 and
+  0.00/0.00/0.25 in C2); answer-rate spread **0.000** (0.9167 every run,
+  and `answer_rate` is now recorded); judge coverage 95% on run 3, exactly
+  at the bar. **FAIL:**
+  - *Faithfulness spread 0.0521 > 0.03* (0.9250 in run 2 against 0.9771 in
+    run 3). The variance is concentrated, not spread: on run 3 two items carry
+    it — `multihop-05` (AW-2000-XE pairing under firmware 3.1.0) at 0.667
+    and `lookup-01` (battery life) at 0.875 — with the other 18 at 1.0.
+    `context_recall` swings 0.96 / 0.89 / 0.86, and per item it is 0.0 on
+    `abstain-10`, 0.5 on both `conflict` items, 0.6 on `multihop-02`. So one
+    or two borderline items decide the metric at n=20.
+  - *Overhead attributed on only 80–90% of items, against a ≥ 90% bar.*
+    D1's blocker is much improved (3–4 of 20 → 16–18 of 20) but not closed.
+    The mechanism is unchanged and is by design: `attribution.py` records
+    `our_overhead_ms` only when `Attribution.complete`, i.e. **every**
+    generation id on that item resolved to a stats record inside the
+    8 × 3 s budget. On run 3 the four uncovered items *do* carry a
+    `provider_ms` (3481 / 6202 / 3622 / 3472 ms) — so it is not that the
+    calls went unrecorded, it is that one generation id among them never
+    came back, which discards the item's whole figure. See **KI-31**.
+
+  Per the dispatch, a baseline is written only when all six hold, so none
+  was written. `baseline_fast20.json` still carries D1-era numbers with no
+  `models` key, and `evals.gate` now *refuses* to compare against it by name
+  — which is why all three runs exited 1 on the model check. That refusal is
+  correct, not a regression to work around: **do not relax it to make the
+  gate green, and do not re-baseline against these rows until KI-31 and the
+  faithfulness variance are resolved.**
+- **What did improve, and is worth not losing.** `context_recall` is
+  non-null on every run (0.86–0.96) against C2's `null` and D1's 17–19 of 20
+  null — the judge parser fix (KI-30 2b) is holding. `abstention_accuracy`
+  is the same 0.875 in all three runs, where it used to swing across three
+  values; and the six AW-2000 near-misses that replaced the book twins in
+  fast20 are the reason it is a real number (D1's 0.125 meant 1 of 8). The
+  new fast20 composition is doing its job.
+- **`abstain-10` may be mislabelled, and the owner should decide.** It is
+  the single item that answers in all three runs ("Can the AW-2000-XE run the
+  enterprise management protocol over 5 GHz Wi-Fi?"). The corpus says
+  *"All models operate on 2.4 GHz"*, so answering "no" is arguably correct
+  and grounded — it scores faithfulness 1.0 with `context_recall` **0.0**,
+  which is the tell: the reviewer found the answer supported, the judge found
+  it unsupported. It is a should-abstain item by label, not by fact. D3 did
+  not retune it (no item is tuned against the pipeline), so it stays and the
+  owner decides whether the label or the question changes.
+
 - **Note (2026-09-27, batch 4):** the gate **ran** — `python -m evals.gate`
   exited 0, "eval gate passed" — but **no new baseline was written**, for
   two reasons. Both are in the numbers.
@@ -402,6 +461,22 @@ checkable once a new baseline is written.
   explained and not reproduced. If it returns, the drain is no longer a
   candidate — look at what else is pending when it stalls, and dump it.
 
+- **Not the cause of the red `ci` (2026-10-01, D3 item 1).** The `ci` run
+  that was red on `main` (`36723227681`) failed
+  `test_chats_runs.py` three times and
+  `test_cache_and_web.py` once, and it is worth recording *why*, because the
+  file is a suspect here and was not: the log shows `litellm` POSTing to
+  `https://openrouter.ai/api/v1/chat/completions` and receiving
+  `401 {"error":{"message":"No cookie auth credentials found"}}`. Those four
+  tests reached a live provider, which `testing.md` forbids. `main` had no key
+  to blank — `git show fae47a5:apps/api/tests/conftest.py` contains no
+  `OPENROUTER_API_KEY` — and locally `.env` supplies a real key, so the call
+  succeeded and the test passed. Nothing hung. `060845e` blanked the key on
+  `fix/darcy`; re-running the same two files with every outbound HTTPS request
+  proxied to a closed port and only localhost exempt passes 22/22, so the
+  branch's suite makes no live provider call. This entry is unchanged by D3:
+  the hang is still unexplained, and 467 passed in 50 s on the D3 tree.
+
 ## KI-8: Six Playwright specs drive live LLM runs
 
 - **What:** `abstain`, `suggestions`, `cancel-mid-stream`,
@@ -617,6 +692,20 @@ be deleted are exactly the ones holding this corpus).
   own signed-in user that includes it explicitly (the eval set already
   signs up a throwaway user per run). Then re-baseline — the
   `not_in_sources` items will legitimately change.
+- **Half-fixed (2026-10-01, D3 item 2): fast20 no longer depends on the
+  Shared library.** The corpus is still `visibility='shared'` and still in
+  every user's retrieval scope — that half is untouched and stays open until
+  P5. What D3 fixed is the *measurement*: the gate's fast20 subset is now the
+  seed-corpus domain only. The six literary twins (`abstain-11..16`, questions
+  about Moriarty, Dracula, the Looking-Glass, Cosette, 賈寶玉) left fast20
+  because in CI they are near-misses against an empty topic and decline
+  trivially, while locally they met real passages through the Shared library —
+  so a local baseline and the CI gate were not comparable. They stay in the
+  full seed set, so the full run and acceptance still measure abstention over
+  two corpora (Q1). `make eval-gate-local` also runs the loader and the gate
+  against a fresh ephemeral database, the way `ci.yml` does, so a local
+  baseline is measured on the corpus CI loads. Books belong to acceptance,
+  which is still measured against the Shared library by design.
 
 ## KI-26: `outside-study-in-scarlet` answers at 0.12 sufficient, above the 0.05 floor
 
@@ -1023,6 +1112,76 @@ KI-6 tables — was produced by this harness.
   them (faithfulness 0.9492, null overhead) is explained by 2a and 2b.
   Re-measure from D3 on the fixed harness; do not backfill comparisons
   across the fix.
+- **A3 applied (2026-10-01, D3 item 3): the Jev field is now `latency`.**
+  Owner decision A3 records Jev's provider time from the stats record's
+  `latency` rather than its `generation_time`, because
+  `api_type == "decisions"` reports the latter as 0. `evals/attribution.py`'s
+  `_record_provider_ms` dispatches on the record: `latency` for a `decisions`
+  record, `generation_time` for a chat completion, and *no* figure when
+  neither field is present — a record with no `latency` is left unattributed
+  rather than credited 0 ms, because 0 would put the whole call back on our
+  overhead through the other door. TRD §15's latency paragraph now states
+  which field each call type reports and why.
+- **Coverage, and what A3 does not reach.** The attribution still cannot see
+  `litellm.aembedding` (no generation record exists for an embedding) or a
+  NVIDIA/Cohere rerank (not OpenRouter, and only used when
+  `retrieval.reranker != "jev"`). Both remain counted as *our* overhead, so
+  `p50_our_overhead_ms` still overstates our share by whatever those cost.
+  D3's own measurement of that gap is in the D3 report: the per-stage p50s
+  from `stage_ms`, now dumped by `scripts/eval_dump_stages.py` before
+  `make eval-gate-local` drops its database. A3's effect is visible in the
+  item-3 test (`latency` 240 → 240 ms of provider time; a 5000 ms item with
+  one Jev call in it is 4760 ms of ours, not 5000 ms).
+
+## KI-31: One unresolvable generation id discards an item's whole overhead figure
+
+Logged 2026-10-01 (D3 item 4), found while deciding whether the fast20
+baseline could be written. It is the last thing standing between D3 and a
+baseline.
+
+- **What:** `evals/attribution.py` records `our_overhead_ms` for an item
+  only when `Attribution.complete` is true, and `complete` is
+  `unattributed == 0 and attributed > 0` — i.e. when **every** generation id
+  on that item resolved to a stats record within `STATS_ATTEMPTS` (8) ×
+  `STATS_BACKOFF_SECONDS` (3.0) ≈ 24 s. One id that never comes back throws
+  away the item's entire figure, including the provider time that *did*
+  resolve. Across D3's three fast20 runs, 16, 18 and 17 of 20 items were
+  attributed (80% / 90% / 85%), against a ≥ 90% bar.
+- **Evidence, run 3:** the four uncovered items — "Does the AW-2000 work with
+  Zigbee smart-home hubs?" (abstained), "When will the AW-3000 be released?"
+  (abstained), "How much does the AW-2000 weigh with the mounting bracket?",
+  "How long is the warranty on an AW-2000?" — each carry a real
+  `provider_ms` of 3481 / 6202 / 3622 / 3472 ms and a null
+  `our_overhead_ms`. So the calls *were* recorded; one id per item did not
+  resolve. Their wall clocks were 11545 / 10140 / 7747 / 6866 ms, which is
+  33706 ms of pipeline time silently counted as nobody's.
+- **Why it matters beyond the bar:** `p50_our_overhead_ms` is the figure the
+  gate hard-limits (TRD §15, KI-18). It is a median over the *attributed*
+  items, so dropping the slow items biases it **downward** — the gate is
+  currently comparing a flattering subset. That is the opposite of the
+  conservative direction, which is why this is a defect and not a coverage
+  footnote.
+- **Not yet diagnosed:** *why* a generation id fails to resolve. The lookups
+  all run after the whole run has finished, so the ~20 s landing delay
+  (D2's measurement) is long since past and the budget is not the issue.
+  Candidates, none yet ruled in or out: OpenRouter never indexing a stats
+  record for some requests; Jev's `gen-dec-*` ids behaving differently from
+  `gen-*` ones; or a transient 5xx being swallowed. **Do this first:** log
+  the generation id, the attempt count and the final HTTP status for every
+  unresolved lookup in one fast20 run, and read the ids back by hand with
+  `curl https://openrouter.ai/api/v1/generation?id=…`. Everything above rests
+  on the symptom, not the cause.
+- **Fix direction, once diagnosed:** record the *partial* attribution rather
+  than discarding it — `provider_ms` from the ids that resolved, plus a
+  count of how many did not, and let `aggregate` report the median over
+  items with a stated coverage rather than a silently favourable subset.
+  TRD §15 already says an unattributable item records no figure and the
+  summary reports the coverage (`overhead_items_attributed`); what it does
+  not yet say is that coverage must not bias the median downward, and that
+  is the change to make.
+- **Do not** fix this by loosening the gate's thresholds or by writing a
+  baseline on the current coverage. That is the mistake KI-6 has already
+  recorded once for latency.
 
 ## Reference: provider findings, 2026-09-26
 These aren't defects, but check them before changing models or providers.
