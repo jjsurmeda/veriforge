@@ -684,9 +684,12 @@ figure, and each is named in the failure it produces. `p50_our_overhead_ms`
 may rise by **1.35×** (35%); total `p50_latency_ms` — still recorded, still
 displayed, still compared only when neither run attributed a call, which is the
 no-attribution fallback — keeps **1.20×** (20%). The overhead factor was
-1.20 and measured run-to-run noise on an unchanged commit is **+22.9%**
-(2317 / 2533 / 2848 ms across three consecutive fast20 runs), so the gate could
-fail a merge for variance alone. 1.35 puts the limit outside that spread; the
+1.20 and the measured run-to-run noise on an unchanged commit already exceeds
+it: the three fast20 runs the baseline was written from measured **2317.5 /
+2632.5 / 2348.5 ms** of overhead (**+13.6%** from the lowest to the highest),
+and a fourth confirmation run measured **2848.0 ms** — **+22.9%** against the
+2317.5 median baseline, which failed the 20% factor and exited the gate on
+nothing but variance. 1.35 puts the limit outside the measured spread; the
 fallback keeps 1.20 because it exists to stop the check being silently
 disabled, not to express a measured tolerance.
 
@@ -777,8 +780,9 @@ report perfect faithfulness *and* perfect abstention accuracy and pass
 every metric above it. Answer rate is not defined in terms of the outcome
 it measures, which is what makes it a counterweight rather than a fourth
 view of the same number. It is stored in the run summary and in the
-baseline, and the gate fails it in items, not points: two or fewer items is a
-regression, one is a warning (owner decision A7, 2026-10-02, above).
+baseline, and the gate fails it in items, not points: a drop of **two or more**
+items is a regression, a drop of one is a warning (owner decision A7,
+2026-10-02, above).
 
 **Tracing.** The Langfuse LangGraph callback traces every run with node
 spans, model calls, tokens and cost; decision calls appear as spans with

@@ -315,6 +315,14 @@ overhead number.
     hand from the stored rates: those rates are a median of three runs and the
     denominator is not in the file, so any number written there would be
     invented.
+  - **The honest cost of A7, stated rather than buried:** a baseline that
+    predates the two counts can no longer catch *any* run-level failure in
+    those two metrics — including the abstain-everything case the answer-rate
+    counterweight exists for, which the old rate comparison did catch. It is
+    reported UNVERIFIED instead, so until the next `--baseline` run the gate
+    is **blind** to both, not merely noisy on them. Rewriting the baseline
+    from runs measured on this code closes it; until then, treat a green
+    abstention/answer-rate row in CI as unchecked rather than as passing.
 - **What did improve, and is worth not losing.** `context_recall` is
   non-null on every run (0.86–0.96) against C2's `null` and D1's 17–19 of 20
   null — the judge parser fix (KI-30 2b) is holding. `abstention_accuracy`

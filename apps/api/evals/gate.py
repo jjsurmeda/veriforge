@@ -33,13 +33,14 @@ from evals.runner import (
 
 FAITHFULNESS_DROP = 0.03
 # Owner decision A6 (2026-10-02, KI-6/A6): the gated overhead key gets its
-# own, wider factor than the total-latency fallback. Evidence: three
-# consecutive fast20 runs measured p50_our_overhead_ms 2317 / 2533 / 2848 ms
-# on an unchanged commit, so run-to-run spread is already +22.9% — wider
-# than the 20% this gate used to allow, which means the gate flapped on
-# measurement noise and a confirmation run at +22.9% FAILED on nothing but
-# variance. 1.35 puts the bar outside that spread without touching the
-# fallback below.
+# own, wider factor than the total-latency fallback. Evidence, all on the
+# unchanged commit 692f073: the three fast20 runs the baseline was written
+# from measured p50_our_overhead_ms 2317.5 / 2632.5 / 2348.5 ms (+13.6% from
+# the lowest to the highest), and a fourth confirmation run measured 2848.0 ms
+# — +22.9% against the 2317.5 median baseline, which FAILED the 20% this gate
+# allowed and exited on nothing but variance. So the run-to-run noise is
+# already wider than the factor, and 1.35 puts the bar outside the measured
+# spread without touching the fallback below.
 #
 # RESET AT P3 EXIT (owner decision, 2026-10-02): re-measure >= 5 fast20 runs
 # after P3's latency work and set this factor to max(1.20, 1 + 2 * spread),
