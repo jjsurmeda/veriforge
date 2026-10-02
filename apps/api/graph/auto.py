@@ -17,6 +17,7 @@ import unicodedata
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from functools import partial
+from itertools import combinations
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -50,7 +51,7 @@ from retrieval.rerank import (
 )
 from retrieval.web import ensure_web_chunks
 from runtime import runtime_value
-from schemas.decisions import Noul
+from schemas.decisions import Answer, Choice, Noul, Score
 from schemas.events import (
     Abstain,
     Conflict,
@@ -87,6 +88,13 @@ MULTI_PARTS = (
 MAX_SUFFICIENT_RETRIES = 1
 TOP_CHUNKS_FOR_SUFFICIENT = 5
 SUFFICIENT_EVIDENCE_CHARS = 9_000
+
+# KI-34: the conflict check asks one question per candidate PAIR of passages,
+# batched into a single DecisionEngine call. With at most
+# TOP_CHUNKS_FOR_SUFFICIENT sides there are 10 pairs, which is the cap: it
+# bounds one call's prompt size without dropping a pair that could be the real
+# conflict.
+CONFLICT_MAX_PAIRS = 10
 
 # Greeting fast path (batch A, owner-approved carve-out from "all
 # classification through DecisionEngine"): a raw message of at most 40
@@ -393,23 +401,65 @@ def _sufficient_question(question: str, top_contexts: list[ExpandedContext]) -> 
     )
 
 
-def _conflict_question(top_chunks: list[ScoredChunk]) -> Noul:
-    remaining = SUFFICIENT_EVIDENCE_CHARS
-    entries: list[str] = []
-    for i, chunk in enumerate(top_chunks):
-        if remaining <= 0:
+def _conflict_sides(winners: list[ScoredChunk]) -> list[ScoredChunk]:
+    """The top passages eligible to be a conflict side: at most
+    `TOP_CHUNKS_FOR_SUFFICIENT`, one per document.
+
+    One per document because a conflict is a disagreement *between sources*.
+    Two chunks of the same document are the same source, and pairing them
+    would let the checker report a document disagreeing with itself.
+    """
+    sides: list[ScoredChunk] = []
+    seen: set[object] = set()
+    for chunk in winners:
+        key = chunk.document_id or chunk.chunk_id
+        if key in seen:
+            continue
+        seen.add(key)
+        sides.append(chunk)
+        if len(sides) >= TOP_CHUNKS_FOR_SUFFICIENT:
             break
-        text = chunk.text[:remaining]
-        remaining -= len(text)
-        entries.append(f"[{i + 1}] (doc: {chunk.document_name or chunk.source_type}) {text}")
-    evidence = "\n\n".join(entries)
-    return Noul(
-        prompt=(
-            "Do any two of the following chunks disagree about a fact the "
-            "question depends on? Yes only if both chunks assert "
-            f"incompatible claims.\n\n{evidence}"
+    return sides
+
+
+def _conflict_pair_questions(
+    sides: list[ScoredChunk], question: str
+) -> dict[str, Noul | Choice | Score]:
+    """One DecisionEngine question per candidate pair of sides, batched into
+    a single `decide` call (TRD §8 supports several questions per call).
+
+    KI-34: the old single question asked "do ANY two of these chunks
+    disagree?" and the code then split the document ids at the midpoint. The
+    "sides" it published were therefore not the passages that disagreed — just
+    a list cut in two, so the UI could show a conflict whose two sides agreed
+    with each other (TR-5 promises "cites both sides"). A question per PAIR is
+    what makes the answer attributable: the pair that fires names the two
+    passages, and those two are the sides.
+
+    At most `CONFLICT_MAX_PAIRS` pairs, so a long passage list cannot turn one
+    call into an unbounded question set.
+    """
+    budget = SUFFICIENT_EVIDENCE_CHARS // max(1, len(sides) * (len(sides) - 1) // 2)
+    questions: dict[str, Noul | Choice | Score] = {}
+    for index, (left, right) in enumerate(combinations(sides, 2)):
+        if index >= CONFLICT_MAX_PAIRS:
+            break
+        questions[f"conflict_{index}"] = Noul(
+            prompt=(
+                "Do these two passages assert INCOMPATIBLE values for the "
+                "same fact — two different values, where a reader could not "
+                "hold both? Say yes only for a direct factual contradiction "
+                "on a fact the question depends on. Say no if they agree, if "
+                "they are about different facts, or if one is merely more "
+                "detailed than the other.\n\n"
+                f"[question]\n{question}\n\n"
+                f"[passage A — {left.document_name or left.source_type}]\n"
+                f"{left.text[:budget]}\n\n"
+                f"[passage B — {right.document_name or right.source_type}]\n"
+                f"{right.text[:budget]}"
+            )
         )
-    )
+    return questions
 
 
 async def prepare_auto_run(
@@ -826,33 +876,41 @@ async def prepare_auto_run(
             # the floor is the relevance gate (KI-26).
         else:
             contexts = expanded_contexts
-            conflict_answer_map = await engine.decide(
-                state={"run_id": str(params.run_id), "kind": "conflict"},
-                questions={"conflict": _conflict_question(winners[:TOP_CHUNKS_FOR_SUFFICIENT])},
-            )
-            conflict_answer = conflict_answer_map["conflict"]
-            decision_events.append(
-                Decision(
-                    run_id=str(params.run_id),
-                    name="conflict",
-                    value=conflict_answer.value,
-                    probability=conflict_answer.probability,
-                    probabilities=conflict_answer.probabilities,
-                    engine=conflict_answer.engine,
-                    latency_ms=conflict_answer.latency_ms,
-                    reasoning=conflict_answer.reasoning,
+            # KI-34: timed (it was an untimed `await` between two timed
+            # steps, so its cost appeared in no latency figure), and asking
+            # about PAIRS rather than the whole evidence set, so the two
+            # passages that disagree are the two the event names.
+            sides = _conflict_sides(winners)
+            pair_questions = _conflict_pair_questions(sides, params.question)
+            conflict_answers = (
+                await _step(
+                    "conflict",
+                    partial(
+                        engine.decide,
+                        state={"run_id": str(params.run_id), "kind": "conflict"},
+                        questions=pair_questions,
+                    ),
                 )
+                if pair_questions
+                else {}
             )
-            if float(conflict_answer.value) >= threshold(
-                "conflict_disclose", conflict_answer.engine
+            best: tuple[ScoredChunk, ScoredChunk, Answer] | None = None
+            for index, (left, right) in enumerate(combinations(sides, 2)):
+                pair_answer: Answer | None = conflict_answers.get(f"conflict_{index}")
+                if pair_answer is None:
+                    continue
+                if float(pair_answer.value) > 0 and (
+                    best is None or float(pair_answer.value) > float(best[2].value)
+                ):
+                    best = (left, right, pair_answer)
+            if best is not None and float(best[2].value) >= threshold(
+                "conflict_disclose", best[2].engine
             ):
-                docs = {c.document_id or c.chunk_id for c in winners[:5]}
-                doc_list = list(docs)
-                midpoint = max(1, len(doc_list) // 2)
+                left, right, _ = best
                 conflict_event = Conflict(
                     run_id=str(params.run_id),
-                    citation_ids_left=[str(d) for d in doc_list[:midpoint]],
-                    citation_ids_right=[str(d) for d in doc_list[midpoint:]],
+                    citation_ids_left=[str(left.chunk_id)],
+                    citation_ids_right=[str(right.chunk_id)],
                     rule_applied=str(runtime_value("source_priority", "documents_first")),
                 )
 

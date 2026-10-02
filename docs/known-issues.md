@@ -1755,3 +1755,15 @@ Bovary question now detects `fr` (it was `es`). Note the two
 English-must-never-be-lost rules kept: English wins by default and a tie
 *below* English is English, not a tie — only a tie among non-English
 languages is a tie.
+
+**Fixed 2026-10-02 (P3, per the owner decision).** `_conflict_sides`
+takes the top 5 winners one per document; `_conflict_pair_questions`
+builds one `Noul` per candidate pair (at most `CONFLICT_MAX_PAIRS` = 10,
+which is exactly C(5,2)) and sends them in ONE batched
+`DecisionEngine.decide`; the sides are the passages of the
+highest-probability pair, published only above the existing
+`conflict_disclose` threshold. The call is wrapped in `_step("conflict",
+...)` so it is timed — before, it sat between two timed steps and its cost
+appeared in no latency figure. `citation_ids_left`/`right` now carry
+`chunk_id`s of the two disagreeing passages, where before they carried
+document ids cut at the midpoint.
