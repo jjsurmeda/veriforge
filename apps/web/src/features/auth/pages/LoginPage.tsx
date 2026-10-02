@@ -26,6 +26,12 @@ export function LoginPage() {
       }
       setAccessToken(data.access_token)
       void navigate({ to: '/' })
+    } catch {
+      // A rejected request (offline, CORS, a thrown transport error) has no
+      // { error } to read, so it used to clear `busy` and vanish silently.
+      // The inputs are uncontrolled, so the entered values survive the
+      // re-render and the user can just press Sign in again.
+      setError('Could not reach the server. Check your connection and try again.')
     } finally {
       setBusy(false)
     }
