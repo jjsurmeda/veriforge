@@ -17,9 +17,23 @@ import { TracePanel, type TraceTab } from '../../trace/components/TracePanel'
 import { useTrace } from '../../trace/hooks/useTrace'
 import { Menu, MenuContent, MenuItemWithIcon, MenuTrigger } from '../../../components/ui/primitives'
 
-function runFailureMessage(code: string): string {
+export function runFailureMessage(code: string, quotaResetAt?: string): string {
   if (code === 'web_search_unconfigured') return "Couldn't search the web because no web search provider is configured. Try your documents instead."
   if (code === 'web_search_failed') return 'The web search provider could not answer that question. Try again.'
+  // KI-23: a quota or provider-key failure cannot be retried away, so it
+  // must not send the user back in a loop that spends nothing and succeeds
+  // never. These three codes are published by the API on run.failed.
+  if (code === 'quota_exceeded') {
+    return quotaResetAt
+      ? `You've reached your limit for this window; resets at ${quotaResetAt}.`
+      : "You've reached your limit for this window. It resets on a timer — your chats and documents are untouched."
+  }
+  if (code === 'provider_key_invalid') {
+    return 'The model provider rejected our API key, so nothing will run until it is replaced. This is on us, not on you.'
+  }
+  if (code === 'provider_unavailable') {
+    return 'The model provider is unavailable right now. Nothing will run until it recovers; your chats and documents are fine.'
+  }
   return 'The run could not finish. Try again.'
 }
 
@@ -186,7 +200,7 @@ export function ChatView({ chatId }: { chatId: string }) {
           {chat.isError ? <p className="p-6 text-sm text-fg-muted">Chat not found.</p> : <>
             <div ref={threadScrollRef} onScroll={(event) => { const element = event.currentTarget; setShowScrollButton(element.scrollHeight - element.scrollTop - element.clientHeight > 160) }} className="min-h-0 flex-1 overflow-y-auto">
               <MessageList messages={messages.data ?? []} live={live} optimisticQuestion={optimisticQuestion} onSuggestion={(question) => void onSend(question, runOptions(deep, web))} onAbstainAction={onAbstainAction} onOpenSources={openCitations} onSelectMessage={setSelectedMessageId} onShowSteps={showSteps} />
-              {live?.status === 'failed' && live.error && <p role="alert" className="mx-auto max-w-[720px] px-4 pb-4 text-sm text-warning">{runFailureMessage(live.error)}</p>}
+              {live?.status === 'failed' && live.error && <p role="alert" className="mx-auto max-w-[720px] px-4 pb-4 text-sm text-warning">{runFailureMessage(live.error, quota.data?.reset_at_5h)}</p>}
               {live?.status === 'connection_lost' && <div className="mx-auto max-w-[720px] px-4 pb-4"><button type="button" onClick={resume} className="pressable rounded-lg border border-border/40 px-3 py-1.5 text-sm text-danger hover:bg-raised focus-visible:outline-2 focus-visible:outline-danger">Connection lost — resume</button></div>}
             </div>
             {showScrollButton && <button type="button" aria-label="Scroll to bottom" onClick={scrollToBottom} className="icon-button absolute bottom-[9.5rem] left-1/2 z-20 size-9 -translate-x-1/2 rounded-full border border-border bg-raised"><ArrowDown size={16} strokeWidth={1.75} aria-hidden="true" /></button>}
