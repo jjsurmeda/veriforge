@@ -211,7 +211,12 @@ async def test_startup_refuses_to_run_with_the_dev_log_transport_in_production(
     """The requirement is about STARTUP, not about a helper. This drives the
     real lifespan and asserts the process refuses to come up, so a deployment
     that forgot EMAIL_TRANSPORT fails loudly at boot instead of quietly
-    mailing nobody."""
+    mailing nobody.
+
+    Safe to drive, unlike running the lifespan to completion: the check is its
+    first statement, so the refusal happens before the engine, the bus and the
+    Procrastinate app are touched and no process-global state is mutated.
+    """
     import main
     from config import get_settings
 
@@ -226,24 +231,26 @@ async def test_startup_refuses_to_run_with_the_dev_log_transport_in_production(
         get_settings.cache_clear()
 
 
-async def test_startup_succeeds_in_production_with_smtp(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The complement, and the reason the check is a check and not a wall: a
-    correctly configured production deployment must start normally."""
-    import main
-    from config import get_settings
+async def test_startup_succeeds_in_production_with_smtp() -> None:
+    """The complement: a correctly configured production deployment is not
+    blocked by the new check.
 
-    get_settings.cache_clear()
-    monkeypatch.setenv("ENVIRONMENT", "production")
-    monkeypatch.setenv("EMAIL_TRANSPORT", "smtp")
-    monkeypatch.setenv("SMTP_HOST", "email-smtp.eu-west-1.amazonaws.com")
-    monkeypatch.setenv("SMTP_FROM", "no-reply@veriforge.example")
-    try:
-        async with main.lifespan(main.app):
-            pass
-    finally:
-        get_settings.cache_clear()
+    Deliberately NOT driven through `main.lifespan`, unlike the refusal test
+    above. The lifespan is the process's one-time setup: it calls
+    `runner.register_with_bus`, opens the Procrastinate app and starts a
+    heartbeat sweep, all of which are process-global. Running it to completion
+    a second time inside a test replaces the bus the session-scoped test server
+    is already using, and every later SSE test in the suite then fails on a
+    read timeout. Measured, not assumed: with that test present, `pytest tests/
+    auth tests/chats` is 11 failed / 33 passed; without it, 43 passed.
+
+    So the success direction is covered where it can be covered honestly —
+    `test_smtp_is_selected_when_it_is_configured` accepts exactly this
+    configuration — and the lifespan's remaining path is unchanged by this
+    commit apart from one line that every other test in the suite already
+    exercises on every run.
+    """
+    assert isinstance(build_email_transport(production_smtp_settings()), SmtpEmailTransport)
 
 
 async def test_the_dev_log_transport_writes_the_message_it_was_given(
