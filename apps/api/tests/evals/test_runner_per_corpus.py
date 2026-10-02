@@ -267,3 +267,78 @@ def test_the_gate_subset_is_not_the_fast20_subset() -> None:
     set_file = Path(__file__).resolve().parents[4] / "evals" / "seed" / "items.json"
     payload = json.loads(set_file.read_text(encoding="utf-8"))
     assert set(payload["gate_subsets"]["aw-2000"]) != set(payload["fast20_ids"])
+
+
+# --------------------------------------------------------------------------
+# corpus fields and per-corpus gate subsets across all three set files
+# --------------------------------------------------------------------------
+
+_ROOT = Path(__file__).resolve().parents[4]
+_SET_FILES = (
+    _ROOT / "evals" / "seed" / "items.json",
+    _ROOT / "evals" / "counterfactual" / "items.json",
+    _ROOT / "evals" / "acceptance" / "books.json",
+)
+
+
+def test_every_item_of_every_set_carries_its_corpus() -> None:
+    """Without a per-item corpus the rollup cannot bucket the set, and the
+    PRD §5 table has a row per corpus (KI: the Phase 1 report's blocker 1)."""
+    for set_file in _SET_FILES:
+        payload = json.loads(set_file.read_text(encoding="utf-8"))
+        missing = [row["id"] for row in payload["items"] if not row.get("corpus")]
+        assert not missing, f"{set_file}: items without corpus: {missing[:5]}"
+        corpora = {row["corpus"] for row in payload["items"]}
+        assert len(corpora) == 1, f"{set_file}: one set should be one corpus, got {corpora}"
+
+
+def test_the_rollup_buckets_every_item_of_every_set() -> None:
+    """Post-migration, no row may fall into the `unassigned` bucket — that
+    bucket is the report of a missing field, not a corpus."""
+    for set_file in _SET_FILES:
+        payload = json.loads(set_file.read_text(encoding="utf-8"))
+        rows: list[tuple[Any, Any]] = []
+        for row in payload["items"]:
+            rows.append(
+                (
+                    SimpleNamespace(
+                        should_abstain=row.get("should_abstain") or row.get("expect") != "answer",
+                        corpus=row["corpus"],
+                        question=row.get("question") or (row.get("turns") or [""])[0],
+                    ),
+                    SimpleNamespace(
+                        error=None, faithfulness=1.0, min_support=1.0, abstained=False,
+                        answer="a", context_recall=None, latency_ms=1, stage_ms=None,
+                    ),
+                )
+            )
+        bucketed = aggregate_by_corpus(rows)
+        assert "unassigned" not in bucketed
+        assert sum(int(b["items"] or 0) for b in bucketed.values()) == len(rows)
+
+
+def test_counterfactual_gate_subset_is_stratified() -> None:
+    set_file = _ROOT / "evals" / "counterfactual" / "items.json"
+    payload = json.loads(set_file.read_text(encoding="utf-8"))
+    ids = payload["gate_subsets"]["counterfactual"]
+    assert 8 <= len(ids) <= 12, ids
+    by_id = {row["id"]: row for row in payload["items"]}
+    assert set(ids) <= set(by_id)
+    categories = {by_id[i]["category"] for i in ids}
+    assert len(categories) >= 3, categories
+    assert "table_lookup" in categories and "multihop" in categories
+    expects = {by_id[i]["expect"] for i in ids}
+    assert expects == {"answer", "not_in_sources"}, expects
+    assert {by_id[i]["corpus"] for i in ids} == {"counterfactual"}
+
+
+def test_books_gate_subset_is_stratified() -> None:
+    set_file = _ROOT / "evals" / "acceptance" / "books.json"
+    payload = json.loads(set_file.read_text(encoding="utf-8"))
+    ids = payload["gate_subsets"]["books"]
+    assert 8 <= len(ids) <= 12, ids
+    by_id = {row["id"]: row for row in payload["items"]}
+    assert set(ids) <= set(by_id)
+    expects = {by_id[i]["expect"] for i in ids}
+    assert "answer" in expects and "not_in_sources" in expects, expects
+    assert {by_id[i]["corpus"] for i in ids} == {"books"}

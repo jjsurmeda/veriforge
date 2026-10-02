@@ -242,7 +242,7 @@ def test_the_warning_is_printed_and_the_gate_still_exits_zero(
     monkeypatch.setattr(gate, "STATE_FILE", state)
     asyncio.run(gate.main())
     captured = capsys.readouterr()
-    assert "eval gate passed" in captured.out
+    assert "eval gate (fast20) passed" in captured.out
     assert captured.err.count("GATE WARN:") == 2
     assert "GATE FAIL" not in captured.err
 
@@ -390,7 +390,7 @@ def test_the_gate_exits_non_zero_on_a_totals_mismatch(
     captured = capsys.readouterr()
     assert "GATE FAIL" in captured.err
     assert "should_abstain_total" in captured.err
-    assert "eval gate passed" not in captured.out
+    assert "eval gate (fast20) passed" not in captured.out
 
 
 # --- unchanged behaviour ---------------------------------------------------

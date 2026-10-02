@@ -275,3 +275,13 @@ def test_the_gate_output_is_tee_d_to_the_log(job: Job) -> None:
     assert re.search(tee, gate_step, re.M), (
         "the gate's stdout and stderr are not captured to the log"
     )
+
+def test_the_loader_loads_the_counterfactual_corpus_in_ci(job: Job) -> None:
+    """The counterfactual gate subset needs its corpus in the database, and
+    the loader is the one code path that loads it for both local and CI —
+    this pins that the CI job calls it rather than loading only the seed."""
+    body = str(job["body"])
+    assert "-m evals.loader" in body, (
+        "CI no longer loads the corpora, so the counterfactual gate subset "
+        "cannot run in CI"
+    )

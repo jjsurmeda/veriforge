@@ -59,6 +59,10 @@ logger = logging.getLogger(__name__)
 SEED_DIR = Path(__file__).resolve().parents[3] / "evals" / "seed"
 BASELINE_FILE = SEED_DIR / "baseline.json"
 BASELINE_FAST20_FILE = SEED_DIR / "baseline_fast20.json"
+# The counterfactual gate subset baseline (P1b item 2 wiring).
+BASELINE_CF_GATE_FILE = (
+    Path(__file__).resolve().parents[3] / "evals" / "counterfactual" / "baseline_gate.json"
+)
 # Both roles are gpt-4o-mini because that is what the product runs today, not
 # because it is the better model: `model_roles` has gpt-4o-mini in every LLM
 # role with claude-haiku-4.5 only as the generator's and planner's *fallback*.
@@ -367,6 +371,8 @@ async def run_eval(
         if raw:
             corpus_ids.append(UUID(raw))
 
+    if subset == "counterfactual_gate":
+        dataset_name = "counterfactual"
     if dataset_name == "seed":
         payload = json.loads((SEED_DIR / "items.json").read_text(encoding="utf-8"))
         fast20 = set(payload.get("fast20_ids", []))
@@ -399,6 +405,9 @@ async def run_eval(
         )
         if subset == "fast20":
             items = [i for i in items if seed_ids.get(i.question) in fast20]
+        elif subset == "counterfactual_gate":
+            subset_ids = set(item_ids_for_gate_subset(payload, "counterfactual"))
+            items = [i for i in items if seed_ids.get(i.question) in subset_ids]
         if category is not None:
             items = [i for i in items if i.category == category]
         eval_run = EvalRun(dataset_id=dataset.id, mode=mode, is_baseline=baseline)
@@ -705,7 +714,7 @@ def aggregate(results: list[tuple[EvalItem, EvalResult]]) -> dict[str, float | N
 
 async def main() -> None:
     parser = argparse.ArgumentParser(description="Veriforge eval runner")
-    parser.add_argument("--subset", choices=["fast20"], default=None)
+    parser.add_argument("--subset", choices=["fast20", "counterfactual_gate"], default=None)
     parser.add_argument("--baseline", action="store_true")
     parser.add_argument("--mode", choices=["auto", "deep"], default="auto")
     parser.add_argument("--category", default=None)
@@ -731,19 +740,25 @@ async def main() -> None:
     if args.baseline:
         # `models` rides along in the baseline so evals.gate can refuse a
         # comparison against a run that used different models.
-        BASELINE_FILE.write_text(json.dumps({"models": models, **summary}, indent=2) + "\n")
-        print(f"baseline written to {BASELINE_FILE}")
-        # The gate runs the fast20 subset; comparing it against a full-50
-        # baseline fails on sampling noise (abstention is ~6 Bernoulli
-        # trials in the subset). Store a like-for-like subset baseline too.
-        fast20 = set(json.loads((SEED_DIR / "items.json").read_text()).get("fast20_ids", []))
-        seed_ids = _seed_ids(json.loads((SEED_DIR / "items.json").read_text()))
-        subset = [(i, r) for i, r in results if seed_ids.get(i.question) in fast20]
-        subset_summary = aggregate(subset)
-        BASELINE_FAST20_FILE.write_text(
-            json.dumps({"models": models, **subset_summary}, indent=2) + "\n"
-        )
-        print(f"fast20 baseline written to {BASELINE_FAST20_FILE}")
+        if args.subset == "counterfactual_gate":
+            BASELINE_CF_GATE_FILE.write_text(
+                json.dumps({"models": models, **summary}, indent=2) + "\n"
+            )
+            print(f"counterfactual gate baseline written to {BASELINE_CF_GATE_FILE}")
+        else:
+            BASELINE_FILE.write_text(json.dumps({"models": models, **summary}, indent=2) + "\n")
+            print(f"baseline written to {BASELINE_FILE}")
+            # The gate runs the fast20 subset; comparing it against a full-50
+            # baseline fails on sampling noise (abstention is ~6 Bernoulli
+            # trials in the subset). Store a like-for-like subset baseline too.
+            fast20 = set(json.loads((SEED_DIR / "items.json").read_text()).get("fast20_ids", []))
+            seed_ids = _seed_ids(json.loads((SEED_DIR / "items.json").read_text()))
+            subset_rows = [(i, r) for i, r in results if seed_ids.get(i.question) in fast20]
+            subset_summary = aggregate(subset_rows)
+            BASELINE_FAST20_FILE.write_text(
+                json.dumps({"models": models, **subset_summary}, indent=2) + "\n"
+            )
+            print(f"fast20 baseline written to {BASELINE_FAST20_FILE}")
 
 
 if __name__ == "__main__":
