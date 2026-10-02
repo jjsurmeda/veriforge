@@ -87,6 +87,10 @@ jobs:
           enable-cache: true
       - name: Check whether the gate applies to this push
         id: scope
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
         run: |
           # `reason` is empty only when the gate will really run. A skip is
           # reported with its cause instead of passing silently: a green
@@ -94,22 +98,49 @@ jobs:
           # the gate passed, and reading it as one is how the baseline went
           # unrecorded for three runs (KI-6).
           #
-          # The scope is the BRANCH, not the last commit. A workflow_dispatch
-          # checks out one commit, so `HEAD~1..HEAD` sees only that commit and
-          # reports "no gated paths" for a branch whose earlier commits changed
-          # them — the gate would skip on exactly the pushes it exists for. So
-          # diff against the merge-base with main, which is what the gate is
-          # actually protecting.
-          if ! git rev-parse --verify --quiet origin/main >/dev/null; then
-            echo "::error::origin/main not fetched; the gate's scope check cannot decide"
-            exit 1
-          fi
-          base=$(git merge-base HEAD origin/main)
-          if [ -z "$base" ]; then
-            echo "::error::no merge-base with origin/main; the gate's scope check cannot decide"
-            exit 1
-          fi
-          echo "comparing against merge-base $base"
+          # Two different questions, one per event, and answering them with
+          # the same command is what skipped the gate on `main` (D8 item 1).
+          #
+          # On a PUSH the event carries the parent it moved from, so the diff
+          # that decides the scope is `before..sha`. `before` is not always
+          # available: it is empty on a `workflow_dispatch`, and all zeros when
+          # a branch is created. Neither case is a reason to skip, because a
+          # scope that cannot be decided must not read as "nothing gated
+          # changed" — that is the silent-skip failure KI-6 records, and it is
+          # exactly what a merge-base gives on a push to `main`, where HEAD *is*
+          # the new `origin/main`: the merge-base is HEAD, the diff is empty,
+          # and the push that TRD §15 gates on the merge reported
+          # `applies=false`. Run 36970934461 (the D1-D6 merge) skipped this way.
+          #
+          # Everywhere else — `workflow_dispatch` on a branch — the scope is the
+          # BRANCH, not the last commit. A dispatch checks out one commit, so
+          # `HEAD~1..HEAD` sees only that commit and reports "no gated paths"
+          # for a branch whose earlier commits changed them — the gate would
+          # skip on exactly the pushes it exists for. So diff against the
+          # merge-base with main, which is what the gate is actually protecting.
+          case "$EVENT_NAME" in
+            push)
+              if [ -z "$BEFORE_SHA" ] || printf '%s' "$BEFORE_SHA" | grep -Eq '^0+$'; then
+                echo "applies=true"
+                echo "reason=the push reports no parent commit (before is missing or all zeros); the gate runs rather than skips on an unknown diff"
+              else
+                base="$BEFORE_SHA"
+                echo "comparing against the pushed parent $base"
+              fi
+              ;;
+            *)
+              if ! git rev-parse --verify --quiet origin/main >/dev/null; then
+                echo "::error::origin/main not fetched; the gate's scope check cannot decide"
+                exit 1
+              fi
+              base=$(git merge-base "$HEAD_SHA" origin/main)
+              if [ -z "$base" ]; then
+                echo "::error::no merge-base with origin/main; the gate's scope check cannot decide"
+                exit 1
+              fi
+              echo "comparing against merge-base $base"
+              ;;
+          esac
           # `evals/` and the baseline are in scope as well as the four product
           # packages. A change to the gate's own limits, or to the file it
           # compares against, is invisible to every unit test and invisible to a
