@@ -2240,3 +2240,13 @@ Now every non-404 HTTP status records as a miss (`(None, None)`), the same
 class as a transport failure: a broken request path must not be reported as
 missing evidence, but it must not kill a finished eval run either. Caught by
 `test_get_soft_fails_on_a_transient_408` and `test_get_reports_404_as_a_404`.
+
+
+Also 2026-10-03, from the same baseline runs: the remaining half of the
+attribution pipeline was too impatient. A direct one-call probe that night
+showed generation records landing only after ~140 s, on 2026-10-03, while
+every call in the driving runs had already exhausted its 174 s console of
+attempts and been declared unresolved — several minutes each, never landed.
+The window is now 30 x 12 s (348 s). The ample lookup of it is per-id and
+concurrent, so a larger window costs a run nothing unless something is
+genuinely missing.

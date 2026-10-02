@@ -60,10 +60,13 @@ STATS_URL = "https://openrouter.ai/api/v1/generation?id={generation_id}"
 #
 # The lookups all run at the end of a run and concurrently, so a larger budget
 # costs nothing unless something is genuinely missing, in which case it costs
-# exactly the wait it takes to find out. 30 x 6.0 s ≈ 174 s covers the measured
-# 123.6 s outlier with room; past that an id is reported, not waited on.
+# exactly the wait it takes to find out. 30 x 12.0 s ≈ 348 s: the 123.6 s
+# outlier of D4 item 2 was measured against a 174 s budget, and on 2026-10-03
+# generation records took several minutes (one call's record only appeared
+# ~140 s late, against a budget then of ~174 s), so the budget is doubled to
+# hold past that added tail; past it an id is reported, not waited on.
 STATS_ATTEMPTS = 30
-STATS_BACKOFF_SECONDS = 6.0
+STATS_BACKOFF_SECONDS = 12.0
 
 
 @dataclass(frozen=True)
