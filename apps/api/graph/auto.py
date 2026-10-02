@@ -13,11 +13,13 @@ import asyncio
 import logging
 import math
 import re
+import time
 import unicodedata
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from functools import partial
 from itertools import combinations
+from typing import TypeVar
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -58,9 +60,13 @@ from schemas.events import (
     Decision,
     Retrieval,
     RetrievedChunk,
+    StepCompleted,
+    StepStarted,
 )
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
 
 EXCERPT_CHARS = 240
 MULTI_QUERY_VARIANTS = 3
@@ -401,6 +407,60 @@ def _sufficient_question(question: str, top_contexts: list[ExpandedContext]) -> 
     )
 
 
+async def _search_one_variant(
+    session: AsyncSession,
+    variant: str,
+    *,
+    params: AutoRunInput,
+    ingress: IngressOutcome,
+) -> list[ScoredChunk]:
+    """One variant's hybrid search, with the ownership filter injected here
+    (CLAUDE.md: every retrieval query gets its ownership filter server-side,
+    and `params.client_filters` may only narrow it)."""
+    embedding = await get_query_embedding(session, variant)
+    ownership = Ownership(
+        user_id=params.user_id,
+        collection_ids=list(params.collection_ids),
+        chat_id=params.chat_id,
+    )
+    return await hybrid_search(
+        session,
+        query_text=variant,
+        query_embedding=embedding,
+        ownership=ownership,
+        filters=params.client_filters,
+        lexical_weight=ingress.lexical_weight,
+    )
+
+
+def _sub_step_timer(
+    publish: EventPublisher | None, *, node: str, run_id: UUID
+) -> Callable[[str, Callable[[], Awaitable[T]]], Awaitable[T]]:
+    """Like `make_step_timer`, but the duration is NOT added to `latency_ms`.
+
+    CH-5 (progress, live): the sub-steps inside one outer step exist so the
+    trace shows the work as it happens rather than after the fact. Their
+    labels name the query being run, and `latency_ms` is published as the
+    run's node metrics, so recording them there would put a query string
+    into a metric key and add one entry per variant per run. The outer
+    `retrieve` step still carries the total.
+    """
+
+    async def _sub_step(label: str, work: Callable[[], Awaitable[T]]) -> T:
+        if publish is None:
+            return await work()
+        await publish(run_id, StepStarted(node=node, label=label))
+        started = time.monotonic()
+        try:
+            result = await work()
+        finally:
+            duration = int((time.monotonic() - started) * 1000)
+            await publish(run_id, StepCompleted(node=node, label=label, duration_ms=duration))
+        return result
+
+    return _sub_step
+
+
 def _conflict_sides(winners: list[ScoredChunk]) -> list[ScoredChunk]:
     """The top passages eligible to be a conflict side: at most
     `TOP_CHUNKS_FOR_SUFFICIENT`, one per document.
@@ -480,6 +540,9 @@ async def prepare_auto_run(
     _step = make_step_timer(
         node="auto", run_id=params.run_id, latency_ms=latency_ms, publish=publish
     )
+    # CH-5: the same publisher, minus the latency accounting (see
+    # `_sub_step_timer`), for the sub-steps inside one outer step.
+    _variant_step = _sub_step_timer(publish, node="auto", run_id=params.run_id)
 
     async with session_factory() as session, session.begin():
         chat = await session.get(Chat, params.chat_id)
@@ -667,19 +730,18 @@ async def prepare_auto_run(
             events: list[Retrieval] = []
             provenance: dict[UUID, str] = {}
             for variant in variants:
-                embedding = await get_query_embedding(session, variant)
-                ownership = Ownership(
-                    user_id=params.user_id,
-                    collection_ids=list(params.collection_ids),
-                    chat_id=params.chat_id,
-                )
-                fused = await hybrid_search(
-                    session,
-                    query_text=variant,
-                    query_embedding=embedding,
-                    ownership=ownership,
-                    filters=params.client_filters,
-                    lexical_weight=ingress.lexical_weight,
+                # One published sub-step per variant, so the trace shows the
+                # multi-query fan-out as it runs rather than one opaque
+                # `retrieve` that appears only when it is already over.
+                fused = await _variant_step(
+                    f"retrieve: {variant}",
+                    partial(
+                        _search_one_variant,
+                        session,
+                        variant,
+                        params=params,
+                        ingress=ingress,
+                    ),
                 )
                 result_sets.append(fused)
                 if variant in part_queries:

@@ -687,6 +687,10 @@ async def execute_run(
 
         if mode == "auto":
             engine.set_event_emitter(emit_decision)
+
+            async def _publish_step(rid: UUID, event: RunStreamEvent) -> None:
+                await bus.publish(rid, event)
+
             auto_run = await prepare_auto_run(
                 session_factory,
                 AutoRunInput(
@@ -703,6 +707,10 @@ async def execute_run(
                     collection_ids=collection_ids or [],
                 ),
                 engine,
+                # CH-5: Auto's steps used to be timed but never published, so
+                # the trace showed nothing until the run was already over.
+                # Deep has always passed this; Auto now does too.
+                publish=_publish_step,
             )
             for event in auto_run.retrieval_events:
                 await bus.publish(run_id, event)
