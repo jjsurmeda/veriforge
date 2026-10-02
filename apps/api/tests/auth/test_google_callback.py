@@ -97,12 +97,36 @@ async def test_google_callback_does_not_link_an_unverified_email_to_an_existing_
 
     assert response.status_code == 307
     assert response.headers["location"].endswith("/login?error=oauth_failed")
-    linked = (
-        await db.execute(select(func.count()).select_from(OauthAccount))  # type: ignore[arg-type]
-    ).scalar_one()
+    linked = (await db.execute(select(func.count()).select_from(OauthAccount))).scalar_one()
     assert linked == 0, "an unverified google email was linked to an existing account"
     # And the account it would have hijacked still authenticates by password.
     login = await client.post(
         "/auth/login", json={"email": "victim@test.dev", "password": "password123"}
     )
     assert login.status_code == 200
+
+
+async def test_google_callback_sets_refresh_cookie_and_deletes_state_cookie(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    oauth_state: str,
+) -> None:
+    """S2: both cookie effects must be on the redirect the browser receives."""
+
+    async def fake_exchange_code(**_kwargs: object) -> GoogleIdentity:
+        return GoogleIdentity(
+            subject="google-sub-1", email="linked@test.dev", email_verified=True
+        )
+
+    monkeypatch.setattr(router_module, "exchange_code", fake_exchange_code)
+    response = await _callback(client, oauth_state)
+
+    assert response.status_code == 307
+    cookies = response.headers.get_list("set-cookie")
+    assert any(c.startswith("vf_refresh=") and len(c) > len("vf_refresh=;") for c in cookies), (
+        f"no refresh cookie on the callback response: {cookies}"
+    )
+    # delete_cookie renders as an empty value with Max-Age=0.
+    assert any(
+        c.startswith("vf_oauth_state=") and "Max-Age=0" in c for c in cookies
+    ), f"state cookie not deleted on the callback response: {cookies}"

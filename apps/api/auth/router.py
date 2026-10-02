@@ -187,20 +187,29 @@ async def google_login(request: Request) -> RedirectResponse:
 @router.get("/google/callback")
 async def google_callback(
     request: Request,
-    response: Response,
     session: SessionDep,
     code: str | None = None,
     state: str | None = None,
     vf_oauth_state: Annotated[str | None, Cookie()] = None,
 ) -> RedirectResponse:
     settings = get_settings()
-    fail = RedirectResponse(f"{settings.web_origin}/login?error=oauth_failed")
     if not code or not state or not vf_oauth_state or ":" not in vf_oauth_state:
-        return fail
+        return RedirectResponse(f"{settings.web_origin}/login?error=oauth_failed")
     expected_state, verifier = vf_oauth_state.split(":", 1)
     if not secrets.compare_digest(expected_state, state):
-        return fail
-    response.delete_cookie(OAUTH_STATE_COOKIE)
+        return RedirectResponse(f"{settings.web_origin}/login?error=oauth_failed")
+
+    def fail_now() -> RedirectResponse:
+        """The failure redirect, with the one-time state cookie cleared.
+
+        Every response this handler returns is built here and returned, so a
+        `Set-Cookie` on an injected `response` is never seen by the browser
+        (review S2). Past the state check the state cookie is spent, whatever
+        the outcome, so it is cleared on each of these exits too.
+        """
+        redirect = RedirectResponse(f"{settings.web_origin}/login?error=oauth_failed")
+        redirect.delete_cookie(OAUTH_STATE_COOKIE)
+        return redirect
 
     try:
         identity = await exchange_code(
@@ -210,13 +219,13 @@ async def google_callback(
         )
     except Exception:
         logger.exception("google oauth exchange failed")
-        return fail
+        return fail_now()
 
     # Defence in depth at the linking site itself: an unverified address must
     # never reach the lookup below, whatever produced the identity (review S1).
     if not identity.email_verified:
         logger.error("refusing to link an unverified google email")
-        return fail
+        return fail_now()
 
     oauth = (
         await session.execute(
@@ -229,7 +238,7 @@ async def google_callback(
     if oauth is not None:
         user = await session.get(User, oauth.user_id)
         if user is None:
-            return fail
+            return fail_now()
     else:
         existing = (
             await session.execute(select(User).where(User.email == identity.email))
@@ -247,8 +256,12 @@ async def google_callback(
 
     access = create_access_token(user)
     refresh = await issue_refresh_token(session, user.id)
-    set_refresh_cookie(response, refresh)
-    return RedirectResponse(f"{settings.web_origin}/auth/callback#access_token={quote(access)}")
+    # The redirect IS the response; both cookie effects go on it, because
+    # nothing mutates a response the handler does not return (review S2).
+    redirect = RedirectResponse(f"{settings.web_origin}/auth/callback#access_token={quote(access)}")
+    set_refresh_cookie(redirect, refresh)
+    redirect.delete_cookie(OAUTH_STATE_COOKIE)
+    return redirect
 
 
 @router.post("/forgot-password", status_code=202)
