@@ -398,6 +398,48 @@ later run is compared against.
   it unsupported. It is a should-abstain item by label, not by fact. D3 did
   not retune it (no item is tuned against the pipeline), so it stays and the
   owner decides whether the label or the question changes.
+  - **Third observation, and the mechanism is now named (2026-10-02, D8).**
+    Same item, three more measurements: **1.000 in all six local runs and in two
+    of three CI runs, 0.667 in the third** (`36984829138`). The three CI runs
+    retrieved *identical* context — the leading context digests are
+    `7bf25cef4d1933c9` and `d2fd51b97845a164` in all three — so it is not
+    retrieval. What varies is the verdict on the answer's **absence claim**:
+    `unsupported, p=0.0, citation_ids: []` in the failing run against
+    `supported, p=0.59` in the other. An uncited claim scores 0, so asserting
+    something the corpus genuinely does not say costs a third of the item's
+    faithfulness. The full table, and why this contradicts KI-32's
+    claim-verdict stability measurement, are in **KI-43**. Still not tuned, and
+    still the owner's call on the label: D4's reading — "it is a should-abstain
+    item by label, not by fact" — is not contradicted by anything measured since.
+
+- **CLOSED 2026-10-02 (D8). Outcome: the gate ran, and it runs.** Every blocker
+  this entry accumulated is now behind us, and the thing it was opened for — a
+  graph change merged without the gate — cannot recur for the reason that
+  mattered: the gate **executes**, it **keeps its evidence**, and its **own
+  mechanics are tested**. All verified, not assumed:
+  - `evals/seed/baseline_fast20.json` is written from the **mean of five runs**
+    (A8), with the counts *and their denominators*, so the abstention and
+    answer-rate rows are checkable rather than UNVERIFIED. The
+    `GATE WARN: baseline records no …` lines this entry opened with are **zero**.
+  - `FAITHFULNESS_DROP` **0.06** under `FAITHFULNESS_FLOOR` **0.90** (A9, A10).
+    Both numbers are asserted by `tests/evals/test_gate_retry.py`, so a limit
+    cannot be widened alongside the retry without a test going red.
+  - **The scope check is a tested script** (`scripts/eval_gate_scope.sh`; 19
+    tests, 9 mutations). It was wrong three times — D6 twice, D7 once — with no
+    test each time. It also never ran on a push to `main`, because
+    `git merge-base HEAD origin/main` *is* HEAD there: the diff was empty and
+    **run `36970934461`, the D1-D6 merge, skipped the gate** (`640c561`).
+  - **CI keeps its evidence** — per-item export, run summaries and the gate log,
+    uploaded on the failure path as well as the success path (`7e4763d`).
+  - **A failing gate re-runs and judges the mean of 3**, so one unlucky draw no
+    longer stops a merge (`39c755d`). That is the answer to this entry's standing
+    concern that the gate "flapped on noise": the spread is real and unchanged,
+    and the gate simply stops drawing once from it.
+  - Three green CI runs on `e3c66d5` with the gate executed and the artifact
+    attached; the measurement is recorded in **KI-42**.
+  **Not closed by tuning.** Nothing here was made to pass by widening a limit,
+  re-labelling an item, or re-baselining from a favourable run. The one question
+  this entry hands on is `abstain-10`'s label, which is the owner's.
 
 - **Note (2026-09-27, batch 4):** the gate **ran** — `python -m evals.gate`
   exited 0, "eval gate passed" — but **no new baseline was written**, for
@@ -1988,3 +2030,95 @@ against, per D7's stop rule.
   denominators, a median of three) and reverting would restore the
   abstention/answer-rate blindness this item was dispatched to close. The
   tolerance and the floor are untouched.
+
+- **RESOLVED 2026-10-02 (D8 item 5), decision rule A.** Three CI runs were taken on
+  `e3c66d5` — `36983971448`, `36984829138`, `36985348875` — scoring **0.98333 /
+  0.96458 / 1.00000**, mean **0.98264**, against D7's six local runs
+  (mean **0.97713**). **CI is 0.00551 *above* local, not below it**, so the
+  rule's condition ("CI mean within 0.03 of the local mean") is met and the
+  answer is A: keep the local baseline, and let retry-on-failure cover the tail.
+  Adding D7's own CI run to the set (4 CI measurements) gives 0.96406, still
+  **0.01307** from local — A either way.
+
+  **D7's 0.90833 was the tail of the same distribution, not a different one.**
+  The item-by-item comparison against the six local per-item exports shows 19
+  of 20 items identical or *better* in CI, and the whole difference is one item.
+  So KI-42's open question — "whether CI's 0.90833 is the tail of the same
+  distribution or a different one" — is answered: **the same one**, and this
+  could only be established because D8 item 3 put the per-item export in CI. The
+  evidence that answered it did not exist when this entry was written, which is
+  the strongest argument for having made that change first.
+
+  The one item that moved is logged as **KI-43**, with the answers and verdicts.
+  `baseline_fast20_ci.json` is therefore **not** written: option 1 and option 3
+  were both contingent on CI measuring systematically lower, and it does not.
+
+- **Also closed by D8, and why this entry existed at all.** Three of the four
+  options above are no longer live:
+  1. *Write the baseline from CI runs* — not needed; rule A. The rule-B path
+     (write `baseline_fast20_ci.json` from the CI mean) stays implemented-ready
+     in `evals.baseline --out`, should a future measurement make it necessary.
+  2. *Add `eval_dump_stages.py` to `ci.yml`* — **done**, `7e4763d`. It runs on
+     the failure path too, with the gate log, uploaded as `eval-gate-evidence`.
+     Two bugs in that change were found only by real runs and are recorded there
+     (`0915b41`, `e3c66d5`): the export was silently skipped on a red gate, and
+     the artifact shipped without the gate log on a **green** run.
+  4. *Re-measure >= 5 runs on CI and reset A9* — four CI measurements now exist
+     (0.98333 / 0.96458 / 1.00000 / 0.90833), spread **0.09167**, and
+     `FAITHFULNESS_DROP` stays **0.06**. The spread is *not* narrower than the
+     tolerance, so this option is **deferred, not dismissed**: A9's own reset
+     rule fires at P2's generator-temperature decision and at P1b, and the
+     retry means a single unlucky draw no longer fails a merge in the meantime.
+  - `FAITHFULNESS_DROP` **0.06** and `FAITHFULNESS_FLOOR` **0.90** are unchanged,
+    and `tests/evals/test_gate_retry.py` asserts both numbers so a later edit
+    cannot widen a limit alongside the retry and leave the retry looking like
+    the cause.
+
+## KI-43: An absence claim is judged `unsupported` in one run and `supported` in the next, and it costs a third of the item's faithfulness
+
+Logged 2026-10-02 (D8 item 5), from the per-item exports of CI runs
+`36983971448`, `36984829138` and `36985348875` on `e3c66d5`. Found because D8
+item 3 put `scripts/eval_dump_stages.py` into the eval-gate job — this question
+was unanswerable before that, which is the point of the change.
+
+- **What.** One fast20 item — *"Can the AW-2000-XE run the enterprise management
+  protocol over 5 GHz Wi-Fi?"* — is **1.000 in all six local runs** and in two of
+  the three CI runs, and **0.667 in the third**. It accounts for essentially the
+  whole of CI's item-level difference from local. The three runs retrieved the
+  same passage: the leading context digests are `7bf25cef4d1933c9` and
+  `d2fd51b97845a164` in **all three**, so this is not retrieval.
+- **The mechanism.** The answer in the failing run asserts an *absence* — "There
+  is no mention of any capability to run the enterprise management protocol over
+  5 GHz Wi-Fi" — and that claim was judged:
+
+  | run | faithfulness | context_recall | the absence claim |
+  | --- | --- | --- | --- |
+  | 1 | 1.000 | 1.0 | not extracted |
+  | 2 | **0.667** | **0.0** | **`unsupported`, p=0.0, `citation_ids: []`** |
+  | 3 | 1.000 | 1.0 | `supported`, p=0.59, cites [1] |
+
+  The same claim text, from the same context, got opposite verdicts. In run 2 it
+  carries **no citation**, and an uncited claim scores 0 — so one negative claim
+  takes a third off the item. `context_recall` going to **0.0** in the same run
+  is the same judge disagreeing a second time on the same evidence.
+- **Why it matters more than one item's score.** **KI-32** measured Jev's
+  `claim_verdict` as stable across 64 claim texts that recurred between runs,
+  and D7 leaned on that to argue the spread was *not* judge noise and was
+  upstream of the judge. This is a direct counterexample on one claim: a text
+  that recurred, with identical context digests, judged both ways. Absence and
+  negative claims ("the sources do not say X") are the case where a
+  support-verdict grader has nothing to point at, and they are exactly what the
+  `not_in_sources` items depend on.
+- **Not fixed here, deliberately.** This is a grader-quality question, it is
+  P1b's ("validating the graders against human labels"), and the prompt for D8
+  puts the eval sets and the graders out of scope. Recorded, not tuned: the
+  tolerance was **not** widened and no item was re-labelled.
+- **Next step.** At P1b, when the graders are validated against human labels,
+  measure this case specifically — **uncited / absence claims** — rather than
+  only well-cited affirmative ones. The useful question is whether a claim that
+  can have no supporting citation should be routed to a different verdict than
+  `unsupported`, since today it is scored as a faithfulness failure of the
+  *answer* for asserting something the corpus genuinely does not say.
+
+**Consequence for `fix/eval-baseline`: none.** Rule A applied, the branch's
+baseline is unchanged, and the gate passed all three CI runs.

@@ -6,6 +6,10 @@ back to a run that went wrong. See "Where these came from".
 
 ## Rules for the agent
 
+- **Gate and CI mechanics are done as of D8 (2026-10-02).** New gate or CI
+  issues are **logged, not dispatched**, unless they block a merge. The scope
+  check is a tested script, CI keeps its evidence on both paths, and a failing
+  gate re-runs and judges the mean of 3.
 - **Time box: 30 minutes per item.** At 30 minutes without a verified
   fix, stop.
   - Commit what is verified. A failing repro test marked `xfail`, with
