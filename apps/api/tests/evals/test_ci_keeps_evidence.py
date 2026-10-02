@@ -35,8 +35,9 @@ The first and the last of those two were both wrong in the first version of this
 work, and a CI run is what caught them — see the two tests that name the run.
 """
 
+import posixpath
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
 
@@ -148,24 +149,66 @@ def test_the_export_runs_even_when_the_gate_fails(job: Job) -> None:
 def test_the_gate_log_directory_exists_before_tee_opens_it(job: Job) -> None:
     """`tee` opens its output file when the pipeline *starts*.
 
-    `.data/evals` is created by `evals.baseline.record` inside the gate, which
-    is six minutes into a run — so without an explicit `mkdir` first, tee exits
-    non-zero on a missing directory, and `pipefail` (which item 3 put there to
-    stop a failed gate reporting green) turns a *passing* gate into a failed
-    step. Also CI run 36982769288: the gate passed at 0.96042 and the job went
-    red on this line.
+    The directory is otherwise created by `evals.baseline.record` inside the
+    gate, six minutes into a run — so without an explicit `mkdir` first, tee
+    exits non-zero on the missing directory, and `pipefail` (which item 3 put
+    there to stop a failed gate reporting green) turns a *passing* gate into a
+    failed step. Also CI run 36982769288: the gate passed at 0.96042 and the job
+    went red on this line.
     """
     body = str(job["body"])
     gate_step = next(text for _, text in _steps(body) if "-m evals.gate" in text)
 
-    mkdir_at = gate_step.find("mkdir -p .data/evals")
-    tee_at = gate_step.find("| tee .data/evals/gate.log")
+    mkdir_at = gate_step.find("mkdir -p ")
+    tee_at = gate_step.find("| tee ")
 
-    assert mkdir_at != -1, "the gate step never creates .data/evals, so tee cannot open its log"
+    assert mkdir_at != -1, (
+        "the gate step never creates the evidence directory, so tee cannot open its log"
+    )
     assert tee_at != -1, "the gate output is not tee'd"
     assert mkdir_at < tee_at, (
         "the mkdir must come before the tee; tee opens the file as the pipeline starts, "
         "not when the gate finishes"
+    )
+
+
+def test_the_gate_log_is_written_where_the_upload_looks_for_it(job: Job) -> None:
+    """The tee and the upload have to name the same file, and they resolve
+    relative paths differently.
+
+    `run` steps inherit `defaults.run.working-directory` (`apps/api` here);
+    a `uses:` step — `actions/upload-artifact` — does **not**, and resolves its
+    paths against the workspace root. So the same string means two different
+    files in the same job.
+
+    CI run 36983971448 is the proof: the job went green, the artifact contained
+    the two run summaries (written by `evals.baseline` at the repo root) and the
+    45 KB per-item export, and no `gate.log` at all — the tee had written it to
+    `apps/api/.data/evals/`. Green, with evidence missing, which is the failure
+    this whole item exists to prevent.
+
+    So the two paths are compared as *resolved files*, not as strings.
+    """
+    body = str(job["body"])
+    gate_step = next(text for _, text in _steps(body) if "-m evals.gate" in text)
+    upload_step = next(text for _, text in _steps(body) if "actions/upload-artifact" in text)
+
+    written = re.search(r"\|\s*tee\s+(\S+)", gate_step)
+    assert written is not None, "the gate output is not tee'd to a file"
+    # `run` steps resolve against the job's working-directory, so the path is
+    # normalised to get the file it actually names.
+    written_path = PurePosixPath(posixpath.normpath(f"apps/api/{written.group(1)}"))
+
+    uploaded = [
+        PurePosixPath(posixpath.normpath(path))
+        for path in re.findall(r"^\s+(\S+\.(?:log|json))$", upload_step, re.M)
+    ]
+    assert uploaded, "the upload step lists no files"
+    # `uses:` steps resolve against the workspace root.
+    assert written_path in uploaded, (
+        f"the gate writes its log to {written_path} but the upload only collects "
+        f"{uploaded}: a `uses:` step does not inherit the job's working-directory, "
+        "so the artifact ships without the log and the run looks green anyway"
     )
 
 
@@ -228,7 +271,7 @@ def test_the_gate_output_is_tee_d_to_the_log(job: Job) -> None:
         "without `set -o pipefail` the tee pipeline's exit status is tee's, and a "
         "failed gate reports success"
     )
-    tee = r"^\s*uv run python -m evals\.gate 2>&1 \| tee \.data/evals/gate\.log\s*$"
+    tee = r"^\s*uv run python -m evals\.gate 2>&1 \| tee (\S+)\s*$"
     assert re.search(tee, gate_step, re.M), (
         "the gate's stdout and stderr are not captured to the log"
     )

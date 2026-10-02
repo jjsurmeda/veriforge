@@ -124,15 +124,23 @@ jobs:
         if: steps.scope.outputs.applies == 'true' && env.OPENROUTER_API_KEY != ''
         run: |
           set -o pipefail
-          # Before the tee, not after: `tee` opens its file when the pipeline
-          # starts, and `.data/evals` is created by `evals.baseline.record`
-          # *inside* the gate — i.e. six minutes later. Without this, tee exits
-          # non-zero on a missing directory and pipefail turns a *passing* gate
-          # into a failed step. Found on CI run 36982769288: the gate passed at
-          # 0.96042 and the job still went red.
-          mkdir -p .data/evals
+          # `../../.data/evals`, not `.data/evals`: this step's working directory
+          # is apps/api, so the relative path would write the log into
+          # apps/api/.data/ — while the upload step below, being a `uses:` step,
+          # does NOT inherit that working directory and resolves its paths
+          # against the workspace root. The two disagreed, and the log was
+          # missing from the artifact while the run summaries (written by
+          # evals.baseline at the repo root) were in it. CI run 36983971448.
+          #
+          # The mkdir is before the tee because `tee` opens its file when the
+          # pipeline starts, and this directory is otherwise created six minutes
+          # later by `evals.baseline.record` inside the gate. Without it tee
+          # exits non-zero on the missing directory and pipefail turns a
+          # *passing* gate into a failed step — CI run 36982769288, which passed
+          # at 0.96042 and still went red.
+          mkdir -p ../../.data/evals
           DATABASE_URL=postgresql+asyncpg://veriforge:veriforge@localhost:5432/veriforge \
-            uv run python -m evals.gate 2>&1 | tee .data/evals/gate.log
+            uv run python -m evals.gate 2>&1 | tee ../../.data/evals/gate.log
       # The per-item export (answers, claims with their verdicts, the retrieved
       # contexts, `stage_ms`) has to be read back out of eval_results while the
       # database still exists, and it runs even when the gate failed — a failing
@@ -157,7 +165,9 @@ jobs:
         if: always() && steps.scope.outputs.applies == 'true' && env.OPENROUTER_API_KEY != ''
         run: |
           set -euo pipefail
-          mkdir -p .data/evals
+          # `../../` for the same reason as the gate step's tee: this step runs
+          # in apps/api and the export is written at the workspace root.
+          mkdir -p ../../.data/evals
           DATABASE_URL=postgresql+asyncpg://veriforge:veriforge@localhost:5432/veriforge \
             uv run python scripts/eval_dump_stages.py
       - name: Report the eval gate outcome
