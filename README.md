@@ -1,5 +1,21 @@
 # Veriforge
 
+**A RAG system that shows its work.** Veriforge answers from your documents
+and the web with inline citations, **per-claim verification** and an explicit
+"I don't know". Every routing and verification step goes through a
+**decision model** with an LLM fallback, and is streamed live to a trace
+panel. Its quality is guarded by an **eval gate in CI**.
+
+→ **[The showcase](docs/showcase.md)**: architecture, why a decision model,
+OKF + RAG, the measured scorecard, and the bugs the evals caught.
+
+| | |
+| --- | --- |
+| Retrieval | Hybrid BM25 + vector (weighted RRF), decision-model rerank, small-to-big, multi-query |
+| Trust | Claim verification, faithfulness and minimum support, abstention with no fabricated citations, conflict disclosure |
+| Quality | Faithfulness **0.976** (mean of 5 runs, fast20, 2026-10-02); 7 languages |
+| Engineering | Multi-user, quotas, admin and audit, resumable SSE, PRD/TRD/ADRs, known-issues log |
+
 Adaptive agentic RAG chatbot showcase. See [`CLAUDE.md`](CLAUDE.md) for
 working instructions and [`docs/PRD.md`](docs/PRD.md) / [`docs/TRD.md`](docs/TRD.md)
 for the numbered requirements (`CH-`, `TR-`, `SR-`, `TX-`, `AC-`, `AD-`)
