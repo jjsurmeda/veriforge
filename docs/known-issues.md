@@ -1921,3 +1921,70 @@ comparing it against table counts will see a mismatch. Not fixed here: it is a
 reporting nit in code this item did not otherwise touch, and the test asserts
 the weaker true contract (rows gone, count non-zero) with the reason recorded.
 The fix would be to accumulate the rowcount of the per-page deletes.
+
+## KI-42: The baseline is written from local runs, and the CI runner is a 7th run that lands outside the bar
+
+Logged 2026-10-02 (D7 item 3), from CI run **36975735015** on `c84a76d`. The
+baseline is written and the gate now sees every metric — and the first thing
+measured against it *on a different machine* failed. Reported rather than tuned
+against, per D7's stop rule.
+
+- **What.** `evals/seed/baseline_fast20.json` is the mean of five **local**
+  fast20 runs: faithfulness **0.97556**, spread **0.03571**, every run between
+  0.96429 and 1.00000. The sixth local run (the confirmation) scored 0.985 and
+  passed. Then the CI eval-gate job — same commit, same models, same items,
+  same image, a GitHub runner — scored **0.90833**: a drop of **0.06723**, past
+  `FAITHFULNESS_DROP = 0.06`. `GATE FAIL: faithfulness 0.976 → 0.908`.
+- **It is not the floor, and not the counts.** The 0.90 floor cleared by
+  +0.00833. `should_abstain_correct` 7/8 and `answerable_answered` 11/12 both
+  held, and **zero** `GATE WARN` lines — the `baseline records no …` blindness
+  KI-6 and D5 recorded is closed. The file is doing its job; the number in it
+  is machine-local.
+- **The spread is wider than A9 was set for.** Seven measurements of one
+  product: local 1-6 mean 0.97713, spread 0.03571; local 1-6 plus CI, mean
+  0.96730, **spread 0.09167**. A9 set 0.06 from four *local* runs (0.05625), so
+  the tolerance is now demonstrably inside the real distribution. Six of seven
+  pass, which is why **this is not a one-line fix**: the failure is at
+  0.06723 against a 0.06 bar, i.e. inside the variance, and no single widening
+  makes the gate honest on both machines.
+- **CI's runner is materially different on the figures we can compare**, which
+  says the two environments are not the same measurement: `p50_our_overhead_ms`
+  **1236.0** against the baseline's 2565.3 (**0.48x**) and `p50_latency_ms`
+  **5888.5** against 8856.8 (**0.67x**). A runner with a different machine, a
+  different network path to OpenRouter and a cold container is not the laptop
+  that produced the baseline, and faithfulness does not have an obvious
+  mechanism for that — which is the open question below, not an explanation.
+- **What is NOT established, and must not be assumed.** Whether CI's 0.90833
+  is the tail of the same distribution or a *different* one. The per-item
+  export (`scripts/eval_dump_stages.py`, which is what decomposed D4's and D5's
+  spreads down to named items) **does not run in CI** — `ci.yml`'s eval-gate
+  job calls `evals.gate` and nothing else — so the claims, verdicts and
+  context digests that would say *which* items moved are thrown away with the
+  runner. Guessing "just variance" here is exactly what KI-32, KI-37 and D6
+  each warn against: KI-37 looked like variance and was a reproducible defect.
+- **Options, for the owner (this is TRD §15's call, not the agent's).**
+  1. Write the baseline from **CI runs** rather than local ones, so the number
+     the gate is measured against comes from the machine that runs the gate.
+     Costs a CI run per measurement; needs the export added to `ci.yml` first,
+     or the same blindness recurs.
+  2. Add `scripts/eval_dump_stages.py` to the eval-gate job and keep the
+     artefacts, so the *next* such failure can be decomposed rather than
+     re-argued. Cheap, and it closes the gap regardless of which option wins.
+  3. Separate the two faithfulness figures: a **local** baseline for the
+     developer loop and a **CI** baseline for the merge gate. Two numbers to
+     keep in step, and one more thing to go stale.
+  4. Re-measure ≥ 5 runs *on CI* and reset A9's tolerance to the measured
+     spread, per the reset rule A9 already names. Only meaningful after (1) or
+     (3) — re-measuring locally again would reproduce the number already known
+     to be wrong for the runner.
+  - **Not on the list, and deliberately: widening 0.06 until this run passes.**
+    That is D5's and D6's error repeated, and the 0.90 floor from A10 exists so
+    that "widen until it passes" at least cannot lower quality below the product
+    bar — which is why 0.90833 cleared the floor by 0.00833 rather than
+    0.00833 being spent as headroom.
+- **Consequence for the branch.** `fix/eval-baseline` is **not** ready for the
+  owner's local merge: its CI run is red. The baseline is kept rather than
+  reverted, because the file it replaces is strictly worse (no counts, no
+  denominators, a median of three) and reverting would restore the
+  abstention/answer-rate blindness this item was dispatched to close. The
+  tolerance and the floor are untouched.
