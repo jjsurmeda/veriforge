@@ -13,6 +13,7 @@ Which field of a record holds the duration — Jev's `latency` rather than
 """
 
 import json
+from collections.abc import Sequence
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -150,6 +151,7 @@ async def test_run_eval_defers_attribution_and_persists_overhead(
         eval_run_id: UUID,
         item: EvalItem,
         mode: str = "auto",
+        corpus_collection_ids: Sequence[UUID] = (),
     ) -> tuple[EvalResult, list[GenerationRef]]:
         result = EvalResult(
             eval_run_id=eval_run_id,
@@ -232,6 +234,7 @@ async def test_run_eval_skips_attribution_for_items_without_ids(
         eval_run_id: UUID,
         item: EvalItem,
         mode: str = "auto",
+        corpus_collection_ids: Sequence[UUID] = (),
     ) -> tuple[EvalResult, list[GenerationRef]]:
         result = EvalResult(
             eval_run_id=eval_run_id,

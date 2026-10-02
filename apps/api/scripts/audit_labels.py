@@ -49,6 +49,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 # --------------------------------------------------------------------------
 
 _LATIN = re.compile(r"[^\W\d_]+", re.UNICODE)
+# A number is a token. `[^\W\d_]` excludes digits, so without this second pass
+# every figure in the corpus was invisible to the audit and
+# `answer_not_in_corpus` fired on each item whose answer *is* a number — which
+# is most of a specification. Scanned in one pass with the words so the stream
+# keeps its order: the phrase "1 640" must match "1 640" and not a "1" and a
+# "640" that happen to sit in the same chunk.
+_WORD_OR_DIGIT = re.compile(r"[^\W\d_]+|\d+", re.UNICODE)
 # CJK has no word boundaries. Character bigrams are the standard cheap
 # approximation and are what a BM25 index over Chinese or Japanese text
 # degenerates to anyway.
@@ -183,13 +190,17 @@ def normalise(text: str) -> str:
 
 
 def tokenize(text: str) -> list[str]:
-    """Latin words plus CJK bigrams, casefolded and accent-stripped."""
+    """Latin words plus CJK bigrams, casefolded and accent-stripped.
+
+    Single letters are still dropped: they carry no content. Digits are kept
+    whatever their length — see `_WORD_OR_DIGIT`.
+    """
     lowered = normalise(text)
     cjk_runs = _CJK_RUN.findall(lowered)
     # CJK characters match `[^\W\d_]` too, so they would be emitted a third
     # time as one whole "word". Strip them from the Latin pass first.
     latin_only = _CJK.sub(" ", lowered)
-    tokens = [t for t in _LATIN.findall(latin_only) if len(t) > 1]
+    tokens = [t for t in _WORD_OR_DIGIT.findall(latin_only) if len(t) > 1 or t.isdigit()]
     for run in cjk_runs:
         if len(run) == 1:
             tokens.append(run)
@@ -406,6 +417,10 @@ def _mentions_of(item: dict[str, Any]) -> list[str]:
     return [str(m) for m in item.get("mention", [])]
 
 
+def _alt_mentions_of(item: dict[str, Any]) -> list[str]:
+    return [str(m) for m in item.get("alt_mention", [])]
+
+
 def audit_items(
     items: Sequence[dict[str, Any]],
     corpus: Corpus,
@@ -446,6 +461,35 @@ def audit_items(
                     attested.append((mention, found[0]))
                 else:
                     missing.append(mention)
+            # `alt_mention` is the same value written another way — "6400" for
+            # the corpus's "6,400", "Soreheim" for "Sørheim". It has to be a
+            # *spelling* of something the item already accepts, not a new fact:
+            # an alt string the corpus never attests and whose mention-list twin
+            # is also unattested would let an item smuggle in a second, unchecked
+            # answer, which is the defect `answer_not_in_corpus` exists to catch.
+            alt = _alt_mentions_of(item)
+            unattested_alts = [
+                a
+                for a in alt
+                if not corpus.passages_containing(a)
+                and normalise(a) not in document_names
+                and not any(corpus.passages_containing(m) for m in mentions)
+            ]
+            if unattested_alts:
+                findings.append(
+                    Finding(
+                        "alt_mention_unattested",
+                        f"alt_mention {unattested_alts!r} is accepted by the item but the "
+                        "corpus attests neither it nor any `mention` string, so it is a second "
+                        "unchecked answer rather than a spelling of an attested one. Add the "
+                        "value to `mention`.",
+                    )
+                )
+            if missing and not attested:
+                # Every mention is unattested but an alt_mention spelled it a way
+                # the corpus uses. Report the alts instead of the misses.
+                if any(corpus.passages_containing(a) for a in alt):
+                    missing = []
             if missing:
                 findings.append(
                     Finding(
@@ -474,7 +518,17 @@ def audit_items(
             # finding about the item's checks, and the cross-document map goes
             # in the proof for a human to judge the KI-27 question.
             source_documents = sorted({p.document for _, p in attested})
-            if len(attested) > 1 and len(source_documents) > 1 and not item.get("cite"):
+            if (
+                len(attested) > 1
+                and len(source_documents) > 1
+                and not item.get("cite")
+                and expect != "library"
+            ):
+                # A `library` item is *supposed* to name every document in the
+                # library, so "the accepted mentions span five documents" is the
+                # item working correctly, not a finding. Without the exemption
+                # the rule reported a correct answer as a defect, which is worse
+                # than not having the rule: it teaches a reader to ignore it.
                 findings.append(
                     Finding(
                         "underdetermined_source",
@@ -706,6 +760,29 @@ def corpus_from_db(
     return Corpus.from_rows(rows), ", ".join(parts)
 
 
+def corpus_from_files(directory: Path) -> Corpus:
+    """A corpus built straight from the set's own markdown files.
+
+    For a set whose corpus is not in a database — the counterfactual set ships
+    its documents in the repo — this is the corpus the ingest pipeline would
+    produce: `ingest.chunk.chunk_document` is the production chunker, so the
+    passages audited here are the passages that would be retrievable. Nothing is
+    embedded, so the audit needs no database, no provider and no credits.
+    """
+    from ingest.chunk import chunk_document
+
+    rows: list[tuple[str, int, str]] = []
+    for path in sorted(directory.glob("*.md")):
+        for section in chunk_document(path.read_text(encoding="utf-8"), []):
+            drafts = list(section.children)
+            if drafts:
+                for draft in drafts:
+                    rows.append((path.name, draft.ord, draft.text))
+            else:
+                rows.append((path.name, section.ord, section.text))
+    return Corpus.from_rows(rows)
+
+
 # --------------------------------------------------------------------------
 # CLI
 # --------------------------------------------------------------------------
@@ -765,6 +842,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         "retrieve). Use it for a set with its own corpus.",
     )
     parser.add_argument(
+        "--corpus-dir",
+        type=Path,
+        default=None,
+        help="audit against the markdown files in this directory instead of the database, "
+        "using the production chunker. For a set whose corpus ships in the repo.",
+    )
+    parser.add_argument(
         "--database-url",
         default=None,
         help="defaults to $DATABASE_URL",
@@ -775,18 +859,30 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="stamp the generated proof into the set file (never overwrites a hand-written proof)",
     )
+    parser.add_argument(
+        "--require-clean",
+        action="store_true",
+        help="exit 1 when any item carries a finding. A spot-read finding is "
+        "recorded in the item, not fixed away, so this is for CI over a set "
+        "whose items are all annotated.",
+    )
     args = parser.parse_args(argv)
 
     import os
 
-    database_url = args.database_url or os.environ.get("DATABASE_URL")
-    if not database_url:
-        raise SystemExit("set DATABASE_URL or pass --database-url")
-
-    corpus, description = corpus_from_db(
-        database_url, user_email=args.user, collection=args.collection
-    )
     payload = load_set(args.set_file)
+    if args.corpus_dir is not None:
+        corpus = corpus_from_files(args.corpus_dir)
+        description = (
+            f"the {len(list(args.corpus_dir.glob('*.md')))} markdown files in {args.corpus_dir}"
+        )
+    else:
+        database_url = args.database_url or os.environ.get("DATABASE_URL")
+        if not database_url:
+            raise SystemExit("set DATABASE_URL, pass --database-url, or pass --corpus-dir")
+        corpus, description = corpus_from_db(
+            database_url, user_email=args.user, collection=args.collection
+        )
     audits = audit_items(payload["items"], corpus)
     report = AuditReport(
         set_name=str(payload.get("dataset") or args.set_file.stem),
@@ -813,6 +909,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         written = write_back(args.set_file, audits)
         print(f"proof written to {written} item(s) in {args.set_file}")
     # A finding is not a crash: the audit reports, a human fixes the label.
+    if args.require_clean and report.findings():
+        return 1
     return 0
 
 

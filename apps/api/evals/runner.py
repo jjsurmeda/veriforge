@@ -23,7 +23,7 @@ import json
 import logging
 import statistics
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from functools import partial
 from pathlib import Path
 from typing import Any
@@ -135,6 +135,7 @@ async def _run_item(
     eval_run_id: UUID,
     item: EvalItem,
     mode: str = "auto",
+    corpus_collection_ids: Sequence[UUID] = (),
 ) -> tuple[EvalResult, list[GenerationRef]]:
     async with factory() as session, session.begin():
         chat = Chat(
@@ -144,7 +145,7 @@ async def _run_item(
         session.add(chat)
         await session.flush()
         chat_id = chat.id
-        scope = await resolve_scope(session, chat)
+        scope = await resolve_scope(session, chat, corpus_collection_ids)
         user_message = Message(
             chat_id=chat_id, role="user", content=item.question, status="complete"
         )
@@ -343,15 +344,39 @@ async def _run_item(
 
 
 async def run_eval(
-    *, subset: str | None, baseline: bool, mode: str = "auto", category: str | None = None
+    *,
+    subset: str | None,
+    baseline: bool,
+    mode: str = "auto",
+    category: str | None = None,
+    dataset_name: str = "seed",
 ) -> tuple[EvalRun, list[tuple[EvalItem, EvalResult]]]:
     if not STATE_FILE.exists():
         raise SystemExit("run `uv run python -m evals.loader` first")
-    if not json.loads(STATE_FILE.read_text()).get("corpus_collection_id"):
+    state = json.loads(STATE_FILE.read_text())
+    if not state.get("corpus_collection_id"):
         raise SystemExit("seed corpus missing: run `uv run python -m evals.loader` first")
-    payload = json.loads((SEED_DIR / "items.json").read_text(encoding="utf-8"))
-    fast20 = set(payload.get("fast20_ids", []))
-    seed_ids = _seed_ids(payload)
+
+    # KI-24: both eval corpora are private collections owned by the eval user,
+    # so neither is in a chat's default scope and both have to be handed to
+    # `resolve_scope` by id. `build_scope` still checks ownership in SQL, so a
+    # wrong id here retrieves nothing rather than leaking.
+    corpus_ids: list[UUID] = []
+    for key in ("corpus_collection_id", "counterfactual_collection_id"):
+        raw = state.get(key)
+        if raw:
+            corpus_ids.append(UUID(raw))
+
+    if dataset_name == "seed":
+        payload = json.loads((SEED_DIR / "items.json").read_text(encoding="utf-8"))
+        fast20 = set(payload.get("fast20_ids", []))
+        seed_ids = _seed_ids(payload)
+    else:
+        from evals.loader import COUNTERFACTUAL_ITEMS
+
+        payload = json.loads(COUNTERFACTUAL_ITEMS.read_text(encoding="utf-8"))
+        fast20 = set()
+        seed_ids = _seed_ids(payload)
 
     factory = _eval_factory()
     async with factory() as session, session.begin():
@@ -359,7 +384,7 @@ async def run_eval(
             await session.execute(select(User).where(User.email == EVAL_USER_EMAIL))
         ).scalar_one()
         dataset = (
-            await session.execute(select(EvalDataset).where(EvalDataset.name == "seed"))
+            await session.execute(select(EvalDataset).where(EvalDataset.name == dataset_name))
         ).scalar_one()
         items = (
             (
@@ -396,6 +421,7 @@ async def run_eval(
                     eval_run_id=eval_run_id,
                     item=item,
                     mode=mode,
+                    corpus_collection_ids=corpus_ids,
                 ),
                 what=seed_ids.get(item.question, str(item.id)),
             )
@@ -483,9 +509,24 @@ def models_on_record() -> dict[str, str]:
 
 
 def _seed_ids(payload: dict[str, object]) -> dict[str, str]:
+    """id → question lookup keyed on the question, across both set shapes.
+
+    The seed set spells its items `question`; the counterfactual set spells
+    them `turns` (the acceptance shape). Keying on one of them would make the
+    report label every counterfactual item by its raw turn text.
+    """
     rows = payload["items"]
     assert isinstance(rows, list)
-    return {str(row["question"]): str(row["id"]) for row in rows}
+    out: dict[str, str] = {}
+    for row in rows:
+        assert isinstance(row, dict)
+        question = row.get("question")
+        if question is None:
+            turns = row.get("turns")
+            assert isinstance(turns, list) and turns
+            question = turns[-1]
+        out[str(question)] = str(row["id"])
+    return out
 
 
 CORPUS_ANSWER_STATES = frozenset({"abstained", "completed", "failed"})
@@ -668,10 +709,21 @@ async def main() -> None:
     parser.add_argument("--baseline", action="store_true")
     parser.add_argument("--mode", choices=["auto", "deep"], default="auto")
     parser.add_argument("--category", default=None)
+    parser.add_argument(
+        "--dataset",
+        choices=["seed", "counterfactual"],
+        default="seed",
+        help="which dataset to run. 'counterfactual' is the P1b item-2 set, whose "
+        "corpus states deliberately altered facts.",
+    )
     args = parser.parse_args()
 
     eval_run, results = await run_eval(
-        subset=args.subset, baseline=args.baseline, mode=args.mode, category=args.category
+        subset=args.subset,
+        baseline=args.baseline,
+        mode=args.mode,
+        category=args.category,
+        dataset_name=args.dataset,
     )
     summary = aggregate(results)
     models = models_on_record()

@@ -6,6 +6,7 @@ session, so the row was lost and a `latency_ms=0` placeholder still reached
 """
 
 import json
+from collections.abc import Sequence
 from pathlib import Path
 from uuid import UUID
 
@@ -60,6 +61,7 @@ async def test_failed_item_is_persisted_and_excluded_from_p50(
         eval_run_id: UUID,
         item: EvalItem,
         mode: str = "auto",
+        corpus_collection_ids: Sequence[UUID] = (),
     ) -> tuple[EvalResult, list[str]]:
         if item.question is not None and item.question == "raises":
             raise RuntimeError("boom")
@@ -164,6 +166,7 @@ async def test_a_run_that_abstains_on_everything_fails_the_gate(
         eval_run_id: UUID,
         item: EvalItem,
         mode: str = "auto",
+        corpus_collection_ids: Sequence[UUID] = (),
     ) -> tuple[EvalResult, list[str]]:
         result = EvalResult(
             eval_run_id=eval_run_id,
