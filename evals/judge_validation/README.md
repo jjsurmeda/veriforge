@@ -6,8 +6,13 @@ owner who reads `supported` before deciding reaches for the same answer the
 model did, and the agreement number then measures the model agreeing with
 itself.
 
-Open both in a spreadsheet. `claims.csv` has **30** rows, `answers.csv` has
-**30**.
+Open both in a spreadsheet. `claims.csv` has **45** rows, `answers.csv` has
+**30** — 75 to label, about 1h15. Of the claims rows, 30 come from the eval
+pools and 15 are **seeded negatives**: real claims rewritten so the cited
+passage does not support them (8 `unsupported`, 7 `contradicted` by
+construction). They are shuffled in and marked only in the hidden `_seeded`
+column, so label them exactly like the others. They exist to measure how
+strict the reviewer is; the strictness number goes in the Phase 2 report.
 
 ## Verdicts (TRD §10)
 
