@@ -30,6 +30,11 @@ cdk.out/
 .sisyphus/
 .codegraph/
 
+# Parallel dispatch worktrees (agents.md). `.venv/` above matches a
+# directory, not the symlink a worktree's apps/api/.venv is.
+.worktrees/
+apps/api/.venv
+
 # graphify generated artifacts (regenerate with: graphify, /graphify --update)
 graphify-out/
 
