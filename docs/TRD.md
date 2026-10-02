@@ -656,11 +656,11 @@ sampled chunks, an admin approves each); harvested from rated chats
 
 **Gates in CI.** A 20-item fast subset runs on every merge to `main` that
 touches `graph`, `retrieval`, `decisions` or prompts. The merge fails if
-faithfulness drops by more than 0.03, if the number of items classified
-correctly drops by 2 or more, or if the gated latency rises by more than its
-factor. Three of these limits are wider than the ones this section originally
-carried, and each was widened for a measured reason, not to make a run pass —
-see the two decisions below and KI-6.
+faithfulness drops by more than **0.06** or falls below the absolute floor of
+**0.90**, if the number of items classified correctly drops by 2 or more, or
+if the gated latency rises by more than its factor. Four of these limits are
+wider than the ones this section originally carried, and each was widened for a
+measured reason, not to make a run pass — see the decisions below and KI-6.
 
 **Limits expressed in items, not points (owner decision A7, 2026-10-02).**
 Abstention accuracy and answer rate are compared as **item counts**, not as
@@ -698,10 +698,65 @@ and set the overhead factor to `max(1.20, 1 + 2 × spread)`, where `spread` is
 the observed run-to-run spread of `p50_our_overhead_ms`. P3 is expected to move
 the number down; the widening buys the gate back its authority until then.
 
-**What the widening is not.** Neither change is evidence that the product
-improved — both were measured against a gate that flapped on noise. The
-faithfulness limit is untouched at 0.03, and it stays the gate's strictest
-condition.
+**The faithfulness bar: a 0.06 tolerance under a 0.90 floor (owner decisions
+A9 and A10, 2026-10-02).** The drop limit moves from 0.03 to **0.06**, and an
+absolute floor of **0.90** is added below which a run fails whatever the
+baseline says. The two are one decision, because only together they are
+defensible.
+
+*Why 0.06.* Four serial fast20 runs on the unchanged D6 tree (`ed1ea59`) scored
+faithfulness **1.00000 / 0.97500 / 0.98333 / 0.94375** — a spread of
+**0.05625**, wider than the 0.03 this section allowed. The variance is not
+judge noise and not the KI-37 filename-list defect (fixed; 1.000 in every run):
+KI-32 measured Jev's `claim_verdict` as stable on all 64 claim texts that
+recurred across runs, so the movement is upstream of the judge. It is the
+**generator at the provider's default temperature of 1.0** on four multi-claim
+product questions, each asserting a different number of checkable claims on a
+different run — so the denominator of the mean moves, not the verdicts.
+
+*Why the floor.* A drop is a comparison against a measured baseline, so on its
+own it can only say a run is *worse than the last one*. A baseline written at
+0.93 with a 0.06 tolerance would pass 0.88 forever, and the product bar is
+**≥ 0.90 mean per corpus** (PRD v3 §5) — a floor, not a trend. The floor is
+checked before the drop and names itself in the failure, so a reader can tell
+a quality bar from a noise allowance. The floor is what makes the wider
+tolerance safe: it buys the gate authority over variance without becoming
+permission for quality to fall.
+
+*Reset:* at **P2's generator-temperature decision**, and again when **P1b's
+per-corpus subsets** land, re-measure ≥ 5 fast20 runs and set the drop to the
+measured spread — or back to **0.03** if the variance is closed. The floor does
+not move with it.
+
+**The baseline is the mean of N runs (owner decision A8, 2026-10-02).**
+`evals/seed/baseline_fast20.json` is written by `evals.baseline` as the
+**per-metric mean of N recorded run summaries** (faithfulness, context recall,
+abstention and answer rate, the two item counts, both p50s, the attributed-item
+count and the errored count), never from a single run. Every gate run records its
+own summary to `.data/evals/summary-*.json`, so a run enters a mean whether or
+not anyone is writing a baseline at the time. The file also records **`runs: N`**
+and **every run's faithfulness**, so the spread the tolerance was widened for is
+auditable from the file rather than from the report that wrote it.
+
+A **median of three is not a mean and cannot be used as one**: it is a
+selection, and it selects the favourable subset. D6 wrote a baseline from the
+median of three runs (0.98333) whose first three spread 0.0250; the fourth run
+scored 0.94375 and failed the gate against it. The mean is the same statistic
+for every run in the set, so it cannot select.
+
+The writer **refuses** rather than guessing, and writes nothing when it does:
+runs that used **different models** (the comparison `evals.gate.compare_models`
+already refuses), and runs that graded **different item sets** (the same
+argument as the totals check above). A mean over either is not a measurement —
+and unlike a failed comparison, it would then be *stored* for every later run to
+be measured against.
+
+**What the widening is not.** None of these changes is evidence that the
+product improved — every one was measured against a gate that flapped on noise.
+A wider tolerance says only that the measurement is noisier than the bar
+assumed; it does not raise the bar. The 0.90 floor is the part that could, and
+it is not a relaxation: it is the first faithfulness condition this section
+carries that does not move with the baseline.
 
 **Which latency is gated (owner decision, 2026-09-29, KI-18).** The strictly
 gated figure is `p50_our_overhead_ms`: the measured wall clock minus the
@@ -752,11 +807,12 @@ reported with its call site, its final HTTP status and how long after the call
 it was abandoned.
 
 Because `evals/seed/baseline_fast20.json` predates both this change and KI-18,
-the gate keeps comparing totals until the next `--baseline` run; the two are
-not comparable. The baseline also records the models it was measured with, and
-the gate refuses to compare runs whose models differ, because a faithfulness
-or latency number from one model says nothing about the same number from
-another.
+the gate kept comparing totals rather than the attributed overhead, and warned
+that it could not verify abstention or answer rate at all; the file is now
+written from the mean of five runs (A8, above), so both are comparable. The
+baseline also records the models it was measured with, and the gate refuses to
+compare runs whose models differ, because a faithfulness or latency number from
+one model says nothing about the same number from another.
 
 **Corpora and run tiers** *(amended 2026-10-02, PRD v3 §5)*.
 - **Corpora:** acceptance covers four: books, AW-2000 manuals, an OKF

@@ -336,9 +336,9 @@ later run is compared against.
   - **These are relaxations, made to stop noise failing the gate. They are not
     evidence that the product improved** — nothing about the product was
     measured to justify them, and both rest on the spread numbers already
-    recorded in this entry. `FAITHFULNESS_DROP` is untouched at **0.03** and
-    remains the gate's strictest condition; item 1 above is still open and is
-    still exactly at the bar.
+    recorded in this entry. `FAITHFULNESS_DROP` was untouched at **0.03** here
+    and is now **0.06** (A9, below); item 1 above is still open, and it is now
+    further inside the bar than it was.
   - **Consequence to action now:** `baseline_fast20.json` predates the two
     counts, so the next gate run reports those two metrics **UNVERIFIED** — a
     warning, not a pass, and not a failure, since an old baseline is not a
@@ -355,6 +355,33 @@ later run is compared against.
     is **blind** to both, not merely noisy on them. Rewriting the baseline
     from runs measured on this code closes it; until then, treat a green
     abstention/answer-rate row in CI as unchecked rather than as passing.
+- **The bar is set and the baseline is written (2026-10-02, D7; owner
+  decisions A8, A9, A10).** The two things this entry was waiting on are now
+  decided and implemented, and the "Consequence to action now" bullet above is
+  **closed**: `baseline_fast20.json` is written from the mean of five runs, so
+  it records the two item counts and their denominators, and the gate's
+  abstention/answer-rate rows are checkable again rather than UNVERIFIED.
+  - **A9 — `FAITHFULNESS_DROP` 0.03 → 0.06.** Evidence is D6's four serial runs
+    on the unchanged tree (`ed1ea59`): **1.00000 / 0.97500 / 0.98333 /
+    0.94375**, a spread of **0.05625**. That is the item-1 concern in this
+    entry, answered with the wider number rather than a smaller spread — the
+    spread did not shrink, it was always this wide. *Reset at P2's
+    generator-temperature decision and at P1b:* re-measure ≥ 5 runs, set the
+    drop to the measured spread, or back to 0.03 if it closed.
+  - **A10 — `FAITHFULNESS_FLOOR = 0.90`**, from PRD v3 §5 ("faithfulness ≥ 0.90
+    mean per corpus"). This is the condition that makes A9 safe, and it is the
+    only faithfulness check here that does not move with the baseline: a drop
+    compares against a measurement, so a baseline at 0.93 with a 0.06 tolerance
+    would otherwise pass 0.88 forever. It is checked *before* the drop and names
+    itself in the failure, so a reader can tell a quality bar from a noise
+    allowance.
+  - **A8 — the baseline is the mean of N runs, not one of them.** New
+    `apps/api/evals/baseline.py` writes the file as the per-metric mean of the
+    run summaries `evals.gate` now records to `.data/evals/summary-*.json`, and
+    records `runs: N` plus every run's faithfulness so the spread is auditable
+    from the file. It **refuses** runs with different models or different item
+    totals and writes nothing when it does. D6's failure was not bad luck: a
+    median of three is a *selection*, and it selected the favourable subset.
 - **What did improve, and is worth not losing.** `context_recall` is
   non-null on every run (0.86–0.96) against C2's `null` and D1's 17–19 of 20
   null — the judge parser fix (KI-30 2b) is holding. `abstention_accuracy`
@@ -1436,7 +1463,7 @@ baseline.
   recorded once for latency. TRD §15's "coverage must not bias the median
   downward" paragraph landed with the fix.
 
-## KI-32: Faithfulness moves 0.0300 between runs, exactly at the gate's tolerance
+## KI-32: Faithfulness moves between runs because the generator rewrites the answer, not because the judge disagrees
 
 Logged 2026-10-02 (D4 item 3), while deciding whether the fast20 baseline could
 be written. It was written — this is the record of what the variance is made
@@ -1517,6 +1544,31 @@ of, and of the two numbers the owner has to rule on.
     and the answers still differ. So the pin is still correct on its own terms
     (a parsing call should not be stochastic) and should stay, but it is not
     the lever for this metric.
+
+- **Step 3 taken as a tolerance, not as a claim the variance is fixed (2026-10-02,
+  D7, owner decisions A9/A10).** D6's four runs on the merged tree put the true
+  spread at **0.05625** (1.00000 / 0.97500 / 0.98333 / 0.94375) — outside the
+  0.03 bar and about what this entry predicted, and larger than the 0.0722 D5
+  saw only because the KI-37 item is fixed. So the 0.03 bar is now **0.06**
+  (A9), reset at P2's generator-temperature decision and again at P1b, and an
+  absolute **0.90 floor** (A10, PRD v3 §5) sits under it.
+  - **What the widening does and does not say.** It says the measurement is
+    noisier than the bar assumed. It does **not** say the variance is handled:
+    the cause identified above — generator temperature 1.0 changing how many
+    checkable claims an answer makes, which moves the *denominator* of the mean
+    — is untouched, because pinning the extractor cannot reach it. Proposal 1
+    from this entry is still correct on its own terms and is still not the
+    lever for this metric.
+  - **The structural point, which the 0.06 makes sharper rather than softer.**
+    Faithfulness on fast20 is a mean over ~50 claims drawn from 20 items, and
+    four items decide it; a 0.06 window is 2% of that mean. So the gate now
+    tolerates a move that is a whole item's worth of claims, and the floor is
+    what stops that from compounding. **P2's generator-temperature decision and
+    P1b's per-corpus subsets are still the real fix**, and both are named as the
+    reset for the number — this entry stays open until one of them runs.
+  - **Measurement of the fix is still owed.** Whether pinning the *generator*
+    drops the spread below 0.02 has never been run, and this entry is where that
+    result belongs when it is.
 
 ## KI-33: The language detector reads short French as Spanish
 

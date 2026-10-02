@@ -1,7 +1,8 @@
 """Eval gate (TRD §15): run the 20-item fast subset and compare with the
-stored baseline. Fails (exit 1) when faithfulness drops by more than 0.03,
-the count of items classified correctly drops by 2 or more, or the gated
-latency rises by more than its factor.
+stored baseline. Fails (exit 1) when faithfulness drops by more than 0.06 or
+falls below the absolute floor of 0.90, the count of items classified
+correctly drops by 2 or more, or the gated latency rises by more than its
+factor.
 
 Since KI-18 the gated latency is `p50_our_overhead_ms` — wall clock minus the
 generation time OpenRouter reports for the same calls — because a slow
@@ -22,6 +23,7 @@ import json
 import sys
 from collections.abc import Mapping
 
+from evals.baseline import record as record_summary
 from evals.loader import STATE_FILE
 from evals.runner import (
     BASELINE_FAST20_FILE,
@@ -31,7 +33,32 @@ from evals.runner import (
     run_eval,
 )
 
-FAITHFULNESS_DROP = 0.03
+# Owner decision A9 (2026-10-02, D7): 0.06, about the measured run-to-run
+# spread. Evidence, four serial fast20 runs on the unchanged D6 tree
+# (`ed1ea59`): faithfulness **1.00000 / 0.97500 / 0.98333 / 0.94375**, a
+# spread of **0.05625** — wider than the 0.03 this gate allowed, so the
+# baseline D6 wrote from the median of the first three (0.98333) sat 0.039
+# above the fourth and the gate failed on variance alone. The spread is not
+# judge noise: KI-32 measured Jev's `claim_verdict` as stable on identical
+# claim text across 64 repeated claims, and KI-37 (the filename-list answer)
+# is fixed and scores 1.000 in every run. It is the generator at the
+# provider's default temperature of 1.0 on four multi-claim product
+# questions, each asserting a different number of checkable claims on a
+# different run — a mean whose denominator is the claims, not the items.
+#
+# RESET (owner decision, 2026-10-02): re-measure >= 5 fast20 runs at P2's
+# generator-temperature decision, and again when P1b's per-corpus subsets
+# land, and set this to the measured spread — or back to 0.03 if the variance
+# is closed. This number buys the gate its authority against noise; it is not
+# permission for quality to fall, which is what the floor below is for.
+FAITHFULNESS_DROP = 0.06
+# Owner decision A10 (2026-10-02, D7), from PRD v3 §5: "Faithfulness >= 0.90
+# mean per corpus" is the product bar. The drop above is *relative* to a
+# measured baseline, so on its own it can only say a run is worse than the
+# last one — and a baseline written at 0.93 with a 0.06 tolerance would pass
+# 0.88 forever. So the floor is absolute and fails whatever the baseline says,
+# which is what makes the wider tolerance above defensible.
+FAITHFULNESS_FLOOR = 0.90
 # Owner decision A6 (2026-10-02, KI-6/A6): the gated overhead key gets its
 # own, wider factor than the total-latency fallback. Evidence, all on the
 # unchanged commit 692f073: the three fast20 runs the baseline was written
@@ -241,6 +268,16 @@ def check(
             "(an errored run is not a measurement)"
         )
     base_f, curr_f = baseline.get("faithfulness"), current.get("faithfulness")
+    # The floor first (A10), because it is the harder fact: it does not depend
+    # on what the last run measured, and a run under the product bar is not a
+    # regression to be weighed against a baseline — it is a failure on its own
+    # terms. The drop below is what stays generous, and only because this holds.
+    if curr_f is not None and curr_f < FAITHFULNESS_FLOOR:
+        failures.append(
+            f"faithfulness {curr_f:.3f} is below the floor {FAITHFULNESS_FLOOR:.2f} (PRD v3 §5), "
+            "whatever the baseline says: the tolerance is for run-to-run variance, not for a "
+            "lower product bar"
+        )
     if base_f is not None and curr_f is not None and curr_f < base_f - FAITHFULNESS_DROP:
         failures.append(f"faithfulness {base_f:.3f} → {curr_f:.3f} (drop > {FAITHFULNESS_DROP})")
     # Before the counts below, not after: they are denominators for those
@@ -307,8 +344,15 @@ async def main() -> None:
         print("eval gate skipped: no baseline (run evals.runner --baseline first)")
         return
     baseline = json.loads(baseline_path.read_text())
-    _, results = await run_eval(subset="fast20", baseline=False)
+    eval_run, results = await run_eval(subset="fast20", baseline=False)
     current = aggregate(results)
+    # Every run records its own summary (A8), so a baseline is the mean of
+    # summaries already on disk rather than whichever run happened to write it.
+    # D6 wrote a baseline from one run four times and had to revert it when the
+    # fourth broke the spread the first three had hidden. The recorded path is
+    # printed so the CI log says where the number came from.
+    summary_path = record_summary({"eval_run": str(eval_run.id), **models_on_record(), **current})
+    print(f"run summary recorded at {summary_path}")
     # The metric rows and the model record are kept apart so `compare` keeps its
     # numeric signature; only `compare_models` sees the mixed shape.
     failures = compare_models(baseline, {"models": models_on_record(), **current}) + compare(

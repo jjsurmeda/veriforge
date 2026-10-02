@@ -1,12 +1,18 @@
-"""The gate's two widened limits (owner decisions A6 and A7, 2026-10-02).
+"""The gate's three widened limits (owner decisions A6, A7 and A9/A10, 2026-10-02).
 
-Both changes came from the same measurement: the fast20 gate was failing on
+All three came from the same measurement: the fast20 gate was failing on
 run-to-run noise rather than on anything the product did. A6 widens the
 overhead factor from 1.20 to 1.35 because measured run-to-run spread of
 `p50_our_overhead_ms` is +22.9%; A7 compares abstention accuracy and answer
 rate as item counts because fast20 holds 8 should-abstain and 12 answerable
 items, so one flip is 12.5 and 8.3 percentage points against a 5-point
-tolerance. See `evals.gate`, TRD §15 and KI-6.
+tolerance; A9 widens the faithfulness drop from 0.03 to 0.06 because four
+runs on an unchanged commit spread 0.05625. See `evals.gate`, TRD §15 and
+KI-6.
+
+A10 is the limit that makes A9 safe to widen: faithfulness also has to clear an
+absolute floor of 0.90 (PRD v3 §5), so the wider tolerance buys the gate its
+authority against noise without becoming permission for quality to fall.
 
 The comments in `evals.gate` claim two things that a reader should be able to
 check directly, and most of this file is that check: the factor applied to the
@@ -27,6 +33,8 @@ import pytest
 from db.models import EvalItem, EvalResult
 from evals import gate
 from evals.gate import (
+    FAITHFULNESS_DROP,
+    FAITHFULNESS_FLOOR,
     ITEM_FLIP_LIMIT,
     LATENCY_RISE_FACTOR,
     OVERHEAD_RISE_FACTOR,
@@ -388,11 +396,69 @@ def test_the_gate_exits_non_zero_on_a_totals_mismatch(
 # --- unchanged behaviour ---------------------------------------------------
 
 
-def test_the_faithfulness_limit_is_untouched_at_0_03() -> None:
-    """A6 and A7 relaxed two limits. They did not touch this one: a drop just
-    past 0.03 still fails, and one just inside it still passes."""
-    assert compare(FAST20_BASELINE, _run(faithfulness=FAITHFULNESS - 0.031)) != []
-    assert compare(FAST20_BASELINE, _run(faithfulness=FAITHFULNESS - 0.02)) == []
+def test_the_faithfulness_drop_is_0_06_and_the_floor_is_0_90() -> None:
+    """A9 and A10, named as constants as well as in the messages: the point of
+    a widened limit is that it is written down, so a reader can see it without
+    reconstructing it from the failure text."""
+    assert FAITHFULNESS_DROP == 0.06
+    assert FAITHFULNESS_FLOOR == 0.90
+
+
+def test_a_drop_past_0_06_fails_and_one_inside_it_passes() -> None:
+    """The two sides of the widened tolerance, at the boundary rather than at
+    a round number: 0.07 out, 0.05 in. These are the numbers A8 was decided
+    against — D6's four runs spread 0.05625, so a 0.05 run-to-run move is
+    inside the bar and a 0.07 one is not.
+
+    From a baseline of 1.0, so the 0.07 run lands at 0.93 and the only thing
+    that can fail it is the drop. A 0.9683 baseline would put it at 0.898 and
+    the floor would fail it first, which is the floor working, not this check.
+    """
+    assert compare(_run(faithfulness=1.0), _run(faithfulness=1.0 - 0.07)) != []
+    assert compare(_run(faithfulness=1.0), _run(faithfulness=1.0 - 0.05)) == []
+
+
+def test_the_faithfulness_failure_names_the_tolerance_it_applied() -> None:
+    failures = compare(_run(faithfulness=1.0), _run(faithfulness=1.0 - 0.07))
+    assert "0.06" in failures[0]
+    assert "0.03" not in failures[0]
+
+
+def test_a_run_under_the_floor_fails_even_within_tolerance_of_the_baseline() -> None:
+    """The whole point of the floor (A10, PRD v3 §5's ">= 0.90 mean per
+    corpus"). 0.89 against a 0.92 baseline is a 0.03 drop — half the tolerance
+    — so the drop check alone passes it, and a baseline written at 0.93 would
+    let the product sit at 0.88 indefinitely. The floor is absolute."""
+    baseline = _run(faithfulness=0.92)
+    current = _run(faithfulness=0.89)
+    assert FAITHFULNESS_DROP >= 0.92 - 0.89  # the drop check really does pass it
+    failures = compare(baseline, current)
+    assert len(failures) == 1
+    assert "0.890" in failures[0] and "floor" in failures[0]
+    assert "0.90" in failures[0]
+
+
+def test_the_floor_is_not_moved_by_a_wide_tolerance() -> None:
+    """The pair, stated as the invariant it is: whatever the baseline says, a
+    run below 0.90 fails. A baseline at the floor itself and a run a hair under
+    it is the tightest version of that, and it fails."""
+    assert compare(_run(faithfulness=0.90), _run(faithfulness=0.8999)) != []
+
+
+def test_a_run_at_or_above_the_floor_is_not_failed_by_the_floor_alone() -> None:
+    """0.90 exactly passes, and so does a run the drop check rejects. The floor
+    must not become a second, redundant way of failing everything below a
+    baseline — it is a bar, not a shadow of the tolerance."""
+    assert compare(_run(faithfulness=0.90), _run(faithfulness=0.90)) == []
+    failures = compare(_run(faithfulness=1.0), _run(faithfulness=1.0 - 0.07))
+    assert not [f for f in failures if "floor" in f]
+
+
+def test_an_unmeasured_faithfulness_is_not_a_floor_failure() -> None:
+    """A run that recorded no faithfulness has not been shown to be under the
+    floor. `None` is no measurement, the same rule the drop check already
+    follows."""
+    assert not [f for f in compare(FAST20_BASELINE, _run(faithfulness=None)) if "floor" in f]
 
 
 def test_an_errored_run_is_still_refused() -> None:
