@@ -130,14 +130,16 @@ class DecisionEngine:
 
         # auto
         if self._breaker.allow_jev():
+            # `probe` owns the breaker state allow_jev() just set, so a probe
+            # that is cancelled or raises something unexpected still resolves
+            # it instead of leaving the breaker PROBING forever (review S6).
             try:
-                answers = await self._jev.decide(state=state, questions=questions)
+                async with self._breaker.probe():
+                    answers = await self._jev.decide(state=state, questions=questions)
             except (JevError, TimeoutError) as exc:
                 logger.warning("jev failed, retrying on fallback: %s", exc)
-                self._breaker.record_failure()
                 answers = await self._fallback.decide(state=state, questions=questions)
             else:
-                self._breaker.record_success()
                 self._maybe_shadow(state, questions, answers)
         else:
             answers = await self._fallback.decide(state=state, questions=questions)

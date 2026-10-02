@@ -12,6 +12,8 @@ ADR-001's "scale-out" section).
 
 import time
 from collections import deque
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from enum import Enum
@@ -77,6 +79,28 @@ class CircuitBreaker:
         if len(self._failures) >= self.failure_threshold:
             self._opened_at = now
             self._state = BreakerState.OPEN
+
+    @asynccontextmanager
+    async def probe(self) -> AsyncIterator[None]:
+        """Resolve the state `allow_jev` just moved to, on every exit path.
+
+        `allow_jev` returning True from OPEN means the breaker is now PROBING
+        and will reject every later Jev attempt until something resolves it.
+        Resolving it in the caller's success/failure branches left it
+        unresolved when the probe was cancelled or raised anything else, and
+        an unresolved PROBING state is permanent for the process: every later
+        decision uses the fallback (review S6). So the outcome is recorded
+        here, next to the state it resolves, rather than at each call site.
+
+        A non-probe attempt is unaffected — `record_success` and
+        `record_failure` on a CLOSED breaker behave as they always did.
+        """
+        try:
+            yield
+        except BaseException:
+            self.record_failure()
+            raise
+        self.record_success()
 
     @property
     def state(self) -> BreakerState:
