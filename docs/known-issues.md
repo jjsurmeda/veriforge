@@ -1683,7 +1683,7 @@ is the finding that made the baseline unwritable, and it is **not** variance.
   favourable run, or dropping the item. The condition failed for a real
   product reason, and the baseline was deliberately **not** written.
 
-## KI-38: Four more web queries read `.data` and render failures as empty
+## KI-40: Four more web queries read `.data` and render failures as empty
 
 Logged 2026-10-02 (lane 3 burn-down), found while fixing the reviewed
 admin/library failures (F3/F4). The same pattern the 2026-09-29 frontend
@@ -1698,17 +1698,35 @@ failed provider/models read in those panels still renders an empty table. Fix
 by converting each queryFn to `unwrap` and giving the panel the same
 `QueryError` treatment as `AdminPage`; do not add a per-caller `?? []`.
 
-## KI-39: `run.failed` carries no quota reset time, so AC-6 copy is best-effort
+## KI-41: `run.failed` carries no quota reset time, so AC-6 copy is best-effort
 
-Logged 2026-10-02 (lane 3, F7). The generated `RunFailed` schema
-(`apps/api/schemas/events.py:183`) has only `error_code` and `message`, so the
-"resets at <time>" half of the KI-23 quota copy reads its time from the quota
-meter's `QuotaOut.reset_at_5h` instead — correct, but only when that query has
-resolved, and it names the 5h window even when the monthly window is the one
-that was exhausted. Lane 2's backend fix is the right place to settle this: add
-an optional `reset_at` to `RunFailed` and have the event carry it, then
-regenerate. Until that lands the copy degrades to the no-time variant, which
-is still correct advice.
+Logged 2026-10-02 (lane 3, F7). **Superseded the same day by lane 2's P8 and now
+resolved** — see the resolution note below. Originally: the generated
+`RunFailed` schema had only `error_code` and `message`, so the "resets at
+<time>" half of the KI-23 quota copy read its time from the quota meter's
+`QuotaOut.reset_at_5h` instead — correct, but only when that query had resolved,
+and it named the 5h window even when the monthly window was the one exhausted.
+
+**Resolution (P8, `quota_exceeded` now carries `reset_at`).** `RunFailed` gained
+an optional `reset_at: str | None`, published by the runner from the failure's
+own window and `null` where there is no window to name (a provider-side
+exhaustion). `apps/web/openapi.json` was regenerated, so the frontend field
+exists after codegen.
+
+**Still open, and this is the real remainder.** `ChatView.tsx:203` passes
+`quota.data?.reset_at_5h` into `runFailureMessage`, not the event's own
+`reset_at`. So for a *monthly* window exhaustion the copy can still name the 5h
+reset time, which is wrong. Preferring the event's value is **not** a one-line
+change — the run store holds `error: string | null` only, so it means threading
+a `resetAt?: string` field through `features/chat/store.ts`,
+`useRunStream`'s `run.failed` handler and every fixture that builds a failed
+`live` state, plus a test that the event's time wins over the quota meter's.
+That is a change to the live-run state shape and wants its own review; it is not
+part of the F7 burn-down item and was deliberately left alone here (dispatch:
+new problems are recorded and moved on, not fixed in passing).
+
+Until then the copy is directionally right and never wrong about the important
+thing — it names a window and never says "try again".
 
 ## Reference: provider findings, 2026-09-26
 These aren't defects, but check them before changing models or providers.
