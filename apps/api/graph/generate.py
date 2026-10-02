@@ -7,10 +7,10 @@ escaping of any such tags inside chunk text (TRD §11 layers 1-3).
 
 from collections.abc import AsyncIterator, Awaitable, Callable
 
-from config import get_settings
 from prompts.load import load_prompt
 from providers.llm import stream_completion
 from retrieval.expand import ExpandedContext
+from runtime import runtime_value
 
 SOURCE_MAX_CHARS = 6000
 
@@ -75,18 +75,23 @@ async def stream_grounded_answer(
 ) -> AsyncIterator[str]:
     """Stream the grounded answer.
 
-    The generator's temperature is read from `generation_temperature`, which
-    is unset by default, so nothing is sent and the provider default applies
-    byte-for-byte as before (KI-32). Answer variety is a product choice, so
-    the value is decided on the full eval sets rather than here; claim
-    extraction is pinned at 0 because it is a parsing call (graph/review.py).
+    The generator's temperature is read from the runtime setting
+    `generation.temperature`, which is `null` by default, so nothing is sent
+    and the provider default applies byte-for-byte as before (KI-32). It is a
+    runtime setting and not an env-only `Settings` field because it is a
+    product-quality decision to be made on the full eval sets, which is
+    exactly what an admin needs to change without a redeploy; every other
+    tunable (reranker, thresholds, top_k) is already admin-settable and this
+    one being not was an inconsistency. Answer variety is decided on the eval
+    sets rather than here; claim extraction is pinned at 0 in
+    `graph/review.py` because it is a parsing call, not a product choice.
     """
     async for token in stream_completion(
         litellm_model=litellm_model,
         messages=build_grounded_messages(question, contexts, history),
         metadata={**metadata, "role": "generator"},
         on_reasoning=on_reasoning,
-        temperature=get_settings().generation_temperature,
+        temperature=runtime_value("generation.temperature", None),
     ):
         yield token
 

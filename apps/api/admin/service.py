@@ -60,6 +60,7 @@ _ALLOWED_SETTINGS = {
     "web_search_keys",
     "source_priority",
     "thresholds",
+    "generation",
 }
 
 
@@ -118,6 +119,23 @@ def _validate_settings(data: dict[str, Any]) -> None:
             raise AppError(
                 "invalid_settings", "Thresholds must be between 0 and 1", status_code=422
             )
+    generation = data.get("generation", {})
+    if not isinstance(generation, dict):
+        raise AppError("invalid_settings", "Generation settings must be an object", status_code=422)
+    temperature = generation.get("temperature")
+    # `None` is meaningful, not absent: it means "send no temperature", so it
+    # passes. A number must be in [0, 2], the range every provider we use
+    # accepts (gpt-4o-mini and the Nemotron models reject anything above 2).
+    if temperature is not None and (
+        not isinstance(temperature, (int, float))
+        or isinstance(temperature, bool)
+        or not 0 <= temperature <= 2
+    ):
+        raise AppError(
+            "invalid_settings",
+            "generation.temperature must be null or a number between 0 and 2",
+            status_code=422,
+        )
     deep = data.get("deep", {})
     if not isinstance(deep, dict) or (
         deep.get("per_run_credit_cap") is not None
