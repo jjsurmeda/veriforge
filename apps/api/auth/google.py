@@ -46,6 +46,34 @@ def auth_url(*, state: str, challenge: str, redirect_uri: str) -> str:
 class GoogleIdentity:
     subject: str
     email: str
+    email_verified: bool
+
+
+def identity_from_id_token(id_token: str) -> GoogleIdentity:
+    """Verified claims of a Google id_token, or raise.
+
+    The token arrived over TLS from Google directly; verify the registered
+    claims rather than the signature (we never accepted it from a client).
+
+    `email_verified` is required, not informational: `auth.router` looks an
+    existing account up by this address and attaches the subject to it, so an
+    unverified claim would be an account-takeover path (review S1).
+    """
+    settings = get_settings()
+    claims: dict[str, Any] = jwt.decode(
+        id_token, options={"verify_signature": False, "verify_exp": True}
+    )
+    if claims.get("iss") not in ("https://accounts.google.com", "accounts.google.com"):
+        raise RuntimeError("unexpected id_token issuer")
+    if claims.get("aud") != settings.google_client_id:
+        raise RuntimeError("unexpected id_token audience")
+    if claims.get("email_verified") is not True:
+        raise RuntimeError("id_token email is not verified")
+    return GoogleIdentity(
+        subject=str(claims["sub"]),
+        email=str(claims["email"]),
+        email_verified=True,
+    )
 
 
 async def exchange_code(*, code: str, verifier: str, redirect_uri: str) -> GoogleIdentity:
@@ -64,13 +92,4 @@ async def exchange_code(*, code: str, verifier: str, redirect_uri: str) -> Googl
         )
         response.raise_for_status()
         id_token: str = response.json()["id_token"]
-    # The token arrived over TLS from Google directly; verify the registered
-    # claims rather than the signature (we never accepted it from a client).
-    claims: dict[str, Any] = jwt.decode(
-        id_token, options={"verify_signature": False, "verify_exp": True}
-    )
-    if claims.get("iss") not in ("https://accounts.google.com", "accounts.google.com"):
-        raise RuntimeError("unexpected id_token issuer")
-    if claims.get("aud") != settings.google_client_id:
-        raise RuntimeError("unexpected id_token audience")
-    return GoogleIdentity(subject=str(claims["sub"]), email=str(claims["email"]))
+    return identity_from_id_token(id_token)

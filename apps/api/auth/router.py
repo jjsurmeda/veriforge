@@ -212,6 +212,12 @@ async def google_callback(
         logger.exception("google oauth exchange failed")
         return fail
 
+    # Defence in depth at the linking site itself: an unverified address must
+    # never reach the lookup below, whatever produced the identity (review S1).
+    if not identity.email_verified:
+        logger.error("refusing to link an unverified google email")
+        return fail
+
     oauth = (
         await session.execute(
             select(OauthAccount).where(
