@@ -122,7 +122,29 @@ jobs:
       - name: Eval gate (TRD §15 fast20 vs the stored baseline)
         id: gate
         if: steps.scope.outputs.applies == 'true' && env.OPENROUTER_API_KEY != ''
-        run: DATABASE_URL=postgresql+asyncpg://veriforge:veriforge@localhost:5432/veriforge uv run python -m evals.gate
+        run: |
+          set -o pipefail
+          DATABASE_URL=postgresql+asyncpg://veriforge:veriforge@localhost:5432/veriforge \
+            uv run python -m evals.gate 2>&1 | tee .data/evals/gate.log
+      # The per-item export (answers, claims with their verdicts, the retrieved
+      # contexts, `stage_ms`) has to be read back out of eval_results while the
+      # database still exists, and it runs even when the gate failed — a failing
+      # run is exactly when the breakdown matters, and it is the only thing that
+      # can say WHICH items moved rather than only that the number did.
+      #
+      # KI-42 is the cost of not doing this: CI scored 0.90833 against a 0.97556
+      # local baseline and nothing on the run could say whether that was the tail
+      # of the distribution or a different distribution, because the export does
+      # not run in CI and the claims and verdicts were discarded with the runner.
+      # The same blindness cost D3, D4, D5 and D7 a CI run each — the question
+      # could be re-argued but never decomposed.
+      - name: Per-item export (answers, claims, verdicts, stage_ms)
+        if: steps.scope.outputs.applies == 'true' && env.OPENROUTER_API_KEY != ''
+        run: |
+          set -euo pipefail
+          mkdir -p .data/evals
+          DATABASE_URL=postgresql+asyncpg://veriforge:veriforge@localhost:5432/veriforge \
+            uv run python scripts/eval_dump_stages.py
       - name: Report the eval gate outcome
         if: always()
         run: |
@@ -140,6 +162,22 @@ jobs:
               echo "models differ, and \`evals.gate\` now refuses that case rather than comparing."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+      # The evidence is kept, whether the gate passed or failed, so a red run can
+      # be diagnosed from the run page instead of re-run locally. `always()` is
+      # the whole point: a gate that fails is the case worth keeping evidence
+      # for. `if-no-files-found: error` rather than `warn`, because an artifact
+      # step that silently uploads nothing would recreate KI-42 — a green upload
+      # that means there is nothing in it.
+      - name: Upload the eval gate evidence
+        if: always() && steps.scope.outputs.applies == 'true' && env.OPENROUTER_API_KEY != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-gate-evidence
+          path: |
+            .data/evals/*.json
+            .data/evals/gate.log
+          if-no-files-found: error
+          retention-days: 30
 
   web:
     runs-on: ubuntu-latest
