@@ -87,38 +87,31 @@ jobs:
           enable-cache: true
       - name: Check whether the gate applies to this push
         id: scope
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
         run: |
-          # `reason` is empty only when the gate will really run. A skip is
-          # reported with its cause instead of passing silently: a green
-          # eval-gate job that never called OpenRouter is not evidence that
-          # the gate passed, and reading it as one is how the baseline went
-          # unrecorded for three runs (KI-6).
-          #
-          # The scope is the BRANCH, not the last commit. A workflow_dispatch
-          # checks out one commit, so `HEAD~1..HEAD` sees only that commit and
-          # reports "no gated paths" for a branch whose earlier commits changed
-          # them — the gate would skip on exactly the pushes it exists for. So
-          # diff against the merge-base with main, which is what the gate is
-          # actually protecting.
-          if ! git rev-parse --verify --quiet origin/main >/dev/null; then
-            echo "::error::origin/main not fetched; the gate's scope check cannot decide"
-            exit 1
-          fi
-          base=$(git merge-base HEAD origin/main)
-          if [ -z "$base" ]; then
-            echo "::error::no merge-base with origin/main; the gate's scope check cannot decide"
-            exit 1
-          fi
-          echo "comparing against merge-base $base"
-          if ! git diff --name-only "$base" HEAD | grep -Eq '^(apps/api/(graph|retrieval|decisions|prompts)/)'; then
-            echo "applies=false" >> "$GITHUB_OUTPUT"
-            echo "reason=no graph/retrieval/decisions/prompts change in this push" >> "$GITHUB_OUTPUT"
-          elif [ -z "${OPENROUTER_API_KEY:-}" ]; then
-            echo "applies=true" >> "$GITHUB_OUTPUT"
+          # The decision lives in scripts/eval_gate_scope.sh, not here, because
+          # a bug in this step cannot report itself: a scope check that wrongly
+          # says "applies=false" produces a green eval-gate job that measured
+          # nothing, which is indistinguishable from a pass. D6 fixed this step
+          # twice and D7 changed it a third time, with no test each time.
+          # tests/evals/test_gate_scope.py runs the same script against a
+          # temporary git repository.
+          set -euo pipefail
+          scope_out=$(../../scripts/eval_gate_scope.sh \
+            "$EVENT_NAME" "$BEFORE_SHA" "$HEAD_SHA")
+          echo "$scope_out"
+          echo "$scope_out" >> "$GITHUB_OUTPUT"
+          # The one input the script cannot see: whether a provider key exists.
+          # A duplicate key in $GITHUB_OUTPUT takes its last value, so writing
+          # `reason` again here is what makes the secret missing reported as
+          # unverified rather than as a silent skip. `applies` stays true, so
+          # the job still does not claim to have passed.
+          if printf '%s' "$scope_out" | grep -q '^applies=true$' \
+            && [ -z "${OPENROUTER_API_KEY:-}" ]; then
             echo "reason=the OPENROUTER_API_KEY secret is not set (owner action O1); nothing was measured" >> "$GITHUB_OUTPUT"
-          else
-            echo "applies=true" >> "$GITHUB_OUTPUT"
-            echo "reason=" >> "$GITHUB_OUTPUT"
           fi
       - if: steps.scope.outputs.applies == 'true' && env.OPENROUTER_API_KEY != ''
         run: uv sync --frozen
@@ -129,7 +122,54 @@ jobs:
       - name: Eval gate (TRD §15 fast20 vs the stored baseline)
         id: gate
         if: steps.scope.outputs.applies == 'true' && env.OPENROUTER_API_KEY != ''
-        run: DATABASE_URL=postgresql+asyncpg://veriforge:veriforge@localhost:5432/veriforge uv run python -m evals.gate
+        run: |
+          set -o pipefail
+          # `../../.data/evals`, not `.data/evals`: this step's working directory
+          # is apps/api, so the relative path would write the log into
+          # apps/api/.data/ — while the upload step below, being a `uses:` step,
+          # does NOT inherit that working directory and resolves its paths
+          # against the workspace root. The two disagreed, and the log was
+          # missing from the artifact while the run summaries (written by
+          # evals.baseline at the repo root) were in it. CI run 36983971448.
+          #
+          # The mkdir is before the tee because `tee` opens its file when the
+          # pipeline starts, and this directory is otherwise created six minutes
+          # later by `evals.baseline.record` inside the gate. Without it tee
+          # exits non-zero on the missing directory and pipefail turns a
+          # *passing* gate into a failed step — CI run 36982769288, which passed
+          # at 0.96042 and still went red.
+          mkdir -p ../../.data/evals
+          DATABASE_URL=postgresql+asyncpg://veriforge:veriforge@localhost:5432/veriforge \
+            uv run python -m evals.gate 2>&1 | tee ../../.data/evals/gate.log
+      # The per-item export (answers, claims with their verdicts, the retrieved
+      # contexts, `stage_ms`) has to be read back out of eval_results while the
+      # database still exists, and it runs even when the gate failed — a failing
+      # run is exactly when the breakdown matters, and it is the only thing that
+      # can say WHICH items moved rather than only that the number did.
+      #
+      # `always()` is load-bearing here, and not as a nicety. A step whose `if:`
+      # contains no status check function inherits `success()` from the step
+      # before it, so `if: steps.scope.outputs.applies == 'true'` is really
+      # "if the gate passed AND the scope check said yes". On CI run
+      # 36982769288 the gate failed and this step was skipped without running —
+      # the export missing on exactly the run it exists for, and the artifact
+      # uploaded with one 621-byte summary in it.
+      #
+      # KI-42 is the cost of not having it: CI scored 0.90833 against a 0.97556
+      # local baseline and nothing on the run could say whether that was the tail
+      # of the distribution or a different distribution, because the claims and
+      # verdicts were discarded with the runner. The same blindness cost D3, D4,
+      # D5 and D7 a CI run each — the question could be re-argued but never
+      # decomposed.
+      - name: Per-item export (answers, claims, verdicts, stage_ms)
+        if: always() && steps.scope.outputs.applies == 'true' && env.OPENROUTER_API_KEY != ''
+        run: |
+          set -euo pipefail
+          # `../../` for the same reason as the gate step's tee: this step runs
+          # in apps/api and the export is written at the workspace root.
+          mkdir -p ../../.data/evals
+          DATABASE_URL=postgresql+asyncpg://veriforge:veriforge@localhost:5432/veriforge \
+            uv run python scripts/eval_dump_stages.py
       - name: Report the eval gate outcome
         if: always()
         run: |
@@ -147,6 +187,22 @@ jobs:
               echo "models differ, and \`evals.gate\` now refuses that case rather than comparing."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+      # The evidence is kept, whether the gate passed or failed, so a red run can
+      # be diagnosed from the run page instead of re-run locally. `always()` is
+      # the whole point: a gate that fails is the case worth keeping evidence
+      # for. `if-no-files-found: error` rather than `warn`, because an artifact
+      # step that silently uploads nothing would recreate KI-42 — a green upload
+      # that means there is nothing in it.
+      - name: Upload the eval gate evidence
+        if: always() && steps.scope.outputs.applies == 'true' && env.OPENROUTER_API_KEY != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-gate-evidence
+          path: |
+            .data/evals/*.json
+            .data/evals/gate.log
+          if-no-files-found: error
+          retention-days: 30
 
   web:
     runs-on: ubuntu-latest

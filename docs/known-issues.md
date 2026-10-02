@@ -336,9 +336,9 @@ later run is compared against.
   - **These are relaxations, made to stop noise failing the gate. They are not
     evidence that the product improved** — nothing about the product was
     measured to justify them, and both rest on the spread numbers already
-    recorded in this entry. `FAITHFULNESS_DROP` is untouched at **0.03** and
-    remains the gate's strictest condition; item 1 above is still open and is
-    still exactly at the bar.
+    recorded in this entry. `FAITHFULNESS_DROP` was untouched at **0.03** here
+    and is now **0.06** (A9, below); item 1 above is still open, and it is now
+    further inside the bar than it was.
   - **Consequence to action now:** `baseline_fast20.json` predates the two
     counts, so the next gate run reports those two metrics **UNVERIFIED** — a
     warning, not a pass, and not a failure, since an old baseline is not a
@@ -355,6 +355,33 @@ later run is compared against.
     is **blind** to both, not merely noisy on them. Rewriting the baseline
     from runs measured on this code closes it; until then, treat a green
     abstention/answer-rate row in CI as unchecked rather than as passing.
+- **The bar is set and the baseline is written (2026-10-02, D7; owner
+  decisions A8, A9, A10).** The two things this entry was waiting on are now
+  decided and implemented, and the "Consequence to action now" bullet above is
+  **closed**: `baseline_fast20.json` is written from the mean of five runs, so
+  it records the two item counts and their denominators, and the gate's
+  abstention/answer-rate rows are checkable again rather than UNVERIFIED.
+  - **A9 — `FAITHFULNESS_DROP` 0.03 → 0.06.** Evidence is D6's four serial runs
+    on the unchanged tree (`ed1ea59`): **1.00000 / 0.97500 / 0.98333 /
+    0.94375**, a spread of **0.05625**. That is the item-1 concern in this
+    entry, answered with the wider number rather than a smaller spread — the
+    spread did not shrink, it was always this wide. *Reset at P2's
+    generator-temperature decision and at P1b:* re-measure ≥ 5 runs, set the
+    drop to the measured spread, or back to 0.03 if it closed.
+  - **A10 — `FAITHFULNESS_FLOOR = 0.90`**, from PRD v3 §5 ("faithfulness ≥ 0.90
+    mean per corpus"). This is the condition that makes A9 safe, and it is the
+    only faithfulness check here that does not move with the baseline: a drop
+    compares against a measurement, so a baseline at 0.93 with a 0.06 tolerance
+    would otherwise pass 0.88 forever. It is checked *before* the drop and names
+    itself in the failure, so a reader can tell a quality bar from a noise
+    allowance.
+  - **A8 — the baseline is the mean of N runs, not one of them.** New
+    `apps/api/evals/baseline.py` writes the file as the per-metric mean of the
+    run summaries `evals.gate` now records to `.data/evals/summary-*.json`, and
+    records `runs: N` plus every run's faithfulness so the spread is auditable
+    from the file. It **refuses** runs with different models or different item
+    totals and writes nothing when it does. D6's failure was not bad luck: a
+    median of three is a *selection*, and it selected the favourable subset.
 - **What did improve, and is worth not losing.** `context_recall` is
   non-null on every run (0.86–0.96) against C2's `null` and D1's 17–19 of 20
   null — the judge parser fix (KI-30 2b) is holding. `abstention_accuracy`
@@ -371,6 +398,48 @@ later run is compared against.
   it unsupported. It is a should-abstain item by label, not by fact. D3 did
   not retune it (no item is tuned against the pipeline), so it stays and the
   owner decides whether the label or the question changes.
+  - **Third observation, and the mechanism is now named (2026-10-02, D8).**
+    Same item, three more measurements: **1.000 in all six local runs and in two
+    of three CI runs, 0.667 in the third** (`36984829138`). The three CI runs
+    retrieved *identical* context — the leading context digests are
+    `7bf25cef4d1933c9` and `d2fd51b97845a164` in all three — so it is not
+    retrieval. What varies is the verdict on the answer's **absence claim**:
+    `unsupported, p=0.0, citation_ids: []` in the failing run against
+    `supported, p=0.59` in the other. An uncited claim scores 0, so asserting
+    something the corpus genuinely does not say costs a third of the item's
+    faithfulness. The full table, and why this contradicts KI-32's
+    claim-verdict stability measurement, are in **KI-43**. Still not tuned, and
+    still the owner's call on the label: D4's reading — "it is a should-abstain
+    item by label, not by fact" — is not contradicted by anything measured since.
+
+- **CLOSED 2026-10-02 (D8). Outcome: the gate ran, and it runs.** Every blocker
+  this entry accumulated is now behind us, and the thing it was opened for — a
+  graph change merged without the gate — cannot recur for the reason that
+  mattered: the gate **executes**, it **keeps its evidence**, and its **own
+  mechanics are tested**. All verified, not assumed:
+  - `evals/seed/baseline_fast20.json` is written from the **mean of five runs**
+    (A8), with the counts *and their denominators*, so the abstention and
+    answer-rate rows are checkable rather than UNVERIFIED. The
+    `GATE WARN: baseline records no …` lines this entry opened with are **zero**.
+  - `FAITHFULNESS_DROP` **0.06** under `FAITHFULNESS_FLOOR` **0.90** (A9, A10).
+    Both numbers are asserted by `tests/evals/test_gate_retry.py`, so a limit
+    cannot be widened alongside the retry without a test going red.
+  - **The scope check is a tested script** (`scripts/eval_gate_scope.sh`; 19
+    tests, 9 mutations). It was wrong three times — D6 twice, D7 once — with no
+    test each time. It also never ran on a push to `main`, because
+    `git merge-base HEAD origin/main` *is* HEAD there: the diff was empty and
+    **run `36970934461`, the D1-D6 merge, skipped the gate** (`640c561`).
+  - **CI keeps its evidence** — per-item export, run summaries and the gate log,
+    uploaded on the failure path as well as the success path (`7e4763d`).
+  - **A failing gate re-runs and judges the mean of 3**, so one unlucky draw no
+    longer stops a merge (`39c755d`). That is the answer to this entry's standing
+    concern that the gate "flapped on noise": the spread is real and unchanged,
+    and the gate simply stops drawing once from it.
+  - Three green CI runs on `e3c66d5` with the gate executed and the artifact
+    attached; the measurement is recorded in **KI-42**.
+  **Not closed by tuning.** Nothing here was made to pass by widening a limit,
+  re-labelling an item, or re-baselining from a favourable run. The one question
+  this entry hands on is `abstain-10`'s label, which is the owner's.
 
 - **Note (2026-09-27, batch 4):** the gate **ran** — `python -m evals.gate`
   exited 0, "eval gate passed" — but **no new baseline was written**, for
@@ -1436,7 +1505,7 @@ baseline.
   recorded once for latency. TRD §15's "coverage must not bias the median
   downward" paragraph landed with the fix.
 
-## KI-32: Faithfulness moves 0.0300 between runs, exactly at the gate's tolerance
+## KI-32: Faithfulness moves between runs because the generator rewrites the answer, not because the judge disagrees
 
 Logged 2026-10-02 (D4 item 3), while deciding whether the fast20 baseline could
 be written. It was written — this is the record of what the variance is made
@@ -1517,6 +1586,31 @@ of, and of the two numbers the owner has to rule on.
     and the answers still differ. So the pin is still correct on its own terms
     (a parsing call should not be stochastic) and should stay, but it is not
     the lever for this metric.
+
+- **Step 3 taken as a tolerance, not as a claim the variance is fixed (2026-10-02,
+  D7, owner decisions A9/A10).** D6's four runs on the merged tree put the true
+  spread at **0.05625** (1.00000 / 0.97500 / 0.98333 / 0.94375) — outside the
+  0.03 bar and about what this entry predicted, and larger than the 0.0722 D5
+  saw only because the KI-37 item is fixed. So the 0.03 bar is now **0.06**
+  (A9), reset at P2's generator-temperature decision and again at P1b, and an
+  absolute **0.90 floor** (A10, PRD v3 §5) sits under it.
+  - **What the widening does and does not say.** It says the measurement is
+    noisier than the bar assumed. It does **not** say the variance is handled:
+    the cause identified above — generator temperature 1.0 changing how many
+    checkable claims an answer makes, which moves the *denominator* of the mean
+    — is untouched, because pinning the extractor cannot reach it. Proposal 1
+    from this entry is still correct on its own terms and is still not the
+    lever for this metric.
+  - **The structural point, which the 0.06 makes sharper rather than softer.**
+    Faithfulness on fast20 is a mean over ~50 claims drawn from 20 items, and
+    four items decide it; a 0.06 window is 2% of that mean. So the gate now
+    tolerates a move that is a whole item's worth of claims, and the floor is
+    what stops that from compounding. **P2's generator-temperature decision and
+    P1b's per-corpus subsets are still the real fix**, and both are named as the
+    reset for the number — this entry stays open until one of them runs.
+  - **Measurement of the fix is still owed.** Whether pinning the *generator*
+    drops the spread below 0.02 has never been run, and this entry is where that
+    result belongs when it is.
 
 ## KI-33: The language detector reads short French as Spanish
 
@@ -1869,3 +1963,162 @@ comparing it against table counts will see a mismatch. Not fixed here: it is a
 reporting nit in code this item did not otherwise touch, and the test asserts
 the weaker true contract (rows gone, count non-zero) with the reason recorded.
 The fix would be to accumulate the rowcount of the per-page deletes.
+
+## KI-42: The baseline is written from local runs, and the CI runner is a 7th run that lands outside the bar
+
+Logged 2026-10-02 (D7 item 3), from CI run **36975735015** on `c84a76d`. The
+baseline is written and the gate now sees every metric — and the first thing
+measured against it *on a different machine* failed. Reported rather than tuned
+against, per D7's stop rule.
+
+- **What.** `evals/seed/baseline_fast20.json` is the mean of five **local**
+  fast20 runs: faithfulness **0.97556**, spread **0.03571**, every run between
+  0.96429 and 1.00000. The sixth local run (the confirmation) scored 0.985 and
+  passed. Then the CI eval-gate job — same commit, same models, same items,
+  same image, a GitHub runner — scored **0.90833**: a drop of **0.06723**, past
+  `FAITHFULNESS_DROP = 0.06`. `GATE FAIL: faithfulness 0.976 → 0.908`.
+- **It is not the floor, and not the counts.** The 0.90 floor cleared by
+  +0.00833. `should_abstain_correct` 7/8 and `answerable_answered` 11/12 both
+  held, and **zero** `GATE WARN` lines — the `baseline records no …` blindness
+  KI-6 and D5 recorded is closed. The file is doing its job; the number in it
+  is machine-local.
+- **The spread is wider than A9 was set for.** Seven measurements of one
+  product: local 1-6 mean 0.97713, spread 0.03571; local 1-6 plus CI, mean
+  0.96730, **spread 0.09167**. A9 set 0.06 from four *local* runs (0.05625), so
+  the tolerance is now demonstrably inside the real distribution. Six of seven
+  pass, which is why **this is not a one-line fix**: the failure is at
+  0.06723 against a 0.06 bar, i.e. inside the variance, and no single widening
+  makes the gate honest on both machines.
+- **CI's runner is materially different on the figures we can compare**, which
+  says the two environments are not the same measurement: `p50_our_overhead_ms`
+  **1236.0** against the baseline's 2565.3 (**0.48x**) and `p50_latency_ms`
+  **5888.5** against 8856.8 (**0.67x**). A runner with a different machine, a
+  different network path to OpenRouter and a cold container is not the laptop
+  that produced the baseline, and faithfulness does not have an obvious
+  mechanism for that — which is the open question below, not an explanation.
+- **What is NOT established, and must not be assumed.** Whether CI's 0.90833
+  is the tail of the same distribution or a *different* one. The per-item
+  export (`scripts/eval_dump_stages.py`, which is what decomposed D4's and D5's
+  spreads down to named items) **does not run in CI** — `ci.yml`'s eval-gate
+  job calls `evals.gate` and nothing else — so the claims, verdicts and
+  context digests that would say *which* items moved are thrown away with the
+  runner. Guessing "just variance" here is exactly what KI-32, KI-37 and D6
+  each warn against: KI-37 looked like variance and was a reproducible defect.
+- **Options, for the owner (this is TRD §15's call, not the agent's).**
+  1. Write the baseline from **CI runs** rather than local ones, so the number
+     the gate is measured against comes from the machine that runs the gate.
+     Costs a CI run per measurement; needs the export added to `ci.yml` first,
+     or the same blindness recurs.
+  2. Add `scripts/eval_dump_stages.py` to the eval-gate job and keep the
+     artefacts, so the *next* such failure can be decomposed rather than
+     re-argued. Cheap, and it closes the gap regardless of which option wins.
+  3. Separate the two faithfulness figures: a **local** baseline for the
+     developer loop and a **CI** baseline for the merge gate. Two numbers to
+     keep in step, and one more thing to go stale.
+  4. Re-measure ≥ 5 runs *on CI* and reset A9's tolerance to the measured
+     spread, per the reset rule A9 already names. Only meaningful after (1) or
+     (3) — re-measuring locally again would reproduce the number already known
+     to be wrong for the runner.
+  - **Not on the list, and deliberately: widening 0.06 until this run passes.**
+    That is D5's and D6's error repeated, and the 0.90 floor from A10 exists so
+    that "widen until it passes" at least cannot lower quality below the product
+    bar — which is why 0.90833 cleared the floor by 0.00833 rather than
+    0.00833 being spent as headroom.
+- **Consequence for the branch.** `fix/eval-baseline` is **not** ready for the
+  owner's local merge: its CI run is red. The baseline is kept rather than
+  reverted, because the file it replaces is strictly worse (no counts, no
+  denominators, a median of three) and reverting would restore the
+  abstention/answer-rate blindness this item was dispatched to close. The
+  tolerance and the floor are untouched.
+
+- **RESOLVED 2026-10-02 (D8 item 5), decision rule A.** Three CI runs were taken on
+  `e3c66d5` — `36983971448`, `36984829138`, `36985348875` — scoring **0.98333 /
+  0.96458 / 1.00000**, mean **0.98264**, against D7's six local runs
+  (mean **0.97713**). **CI is 0.00551 *above* local, not below it**, so the
+  rule's condition ("CI mean within 0.03 of the local mean") is met and the
+  answer is A: keep the local baseline, and let retry-on-failure cover the tail.
+  Adding D7's own CI run to the set (4 CI measurements) gives 0.96406, still
+  **0.01307** from local — A either way.
+
+  **D7's 0.90833 was the tail of the same distribution, not a different one.**
+  The item-by-item comparison against the six local per-item exports shows 19
+  of 20 items identical or *better* in CI, and the whole difference is one item.
+  So KI-42's open question — "whether CI's 0.90833 is the tail of the same
+  distribution or a different one" — is answered: **the same one**, and this
+  could only be established because D8 item 3 put the per-item export in CI. The
+  evidence that answered it did not exist when this entry was written, which is
+  the strongest argument for having made that change first.
+
+  The one item that moved is logged as **KI-43**, with the answers and verdicts.
+  `baseline_fast20_ci.json` is therefore **not** written: option 1 and option 3
+  were both contingent on CI measuring systematically lower, and it does not.
+
+- **Also closed by D8, and why this entry existed at all.** Three of the four
+  options above are no longer live:
+  1. *Write the baseline from CI runs* — not needed; rule A. The rule-B path
+     (write `baseline_fast20_ci.json` from the CI mean) stays implemented-ready
+     in `evals.baseline --out`, should a future measurement make it necessary.
+  2. *Add `eval_dump_stages.py` to `ci.yml`* — **done**, `7e4763d`. It runs on
+     the failure path too, with the gate log, uploaded as `eval-gate-evidence`.
+     Two bugs in that change were found only by real runs and are recorded there
+     (`0915b41`, `e3c66d5`): the export was silently skipped on a red gate, and
+     the artifact shipped without the gate log on a **green** run.
+  4. *Re-measure >= 5 runs on CI and reset A9* — four CI measurements now exist
+     (0.98333 / 0.96458 / 1.00000 / 0.90833), spread **0.09167**, and
+     `FAITHFULNESS_DROP` stays **0.06**. The spread is *not* narrower than the
+     tolerance, so this option is **deferred, not dismissed**: A9's own reset
+     rule fires at P2's generator-temperature decision and at P1b, and the
+     retry means a single unlucky draw no longer fails a merge in the meantime.
+  - `FAITHFULNESS_DROP` **0.06** and `FAITHFULNESS_FLOOR` **0.90** are unchanged,
+    and `tests/evals/test_gate_retry.py` asserts both numbers so a later edit
+    cannot widen a limit alongside the retry and leave the retry looking like
+    the cause.
+
+## KI-43: An absence claim is judged `unsupported` in one run and `supported` in the next, and it costs a third of the item's faithfulness
+
+Logged 2026-10-02 (D8 item 5), from the per-item exports of CI runs
+`36983971448`, `36984829138` and `36985348875` on `e3c66d5`. Found because D8
+item 3 put `scripts/eval_dump_stages.py` into the eval-gate job — this question
+was unanswerable before that, which is the point of the change.
+
+- **What.** One fast20 item — *"Can the AW-2000-XE run the enterprise management
+  protocol over 5 GHz Wi-Fi?"* — is **1.000 in all six local runs** and in two of
+  the three CI runs, and **0.667 in the third**. It accounts for essentially the
+  whole of CI's item-level difference from local. The three runs retrieved the
+  same passage: the leading context digests are `7bf25cef4d1933c9` and
+  `d2fd51b97845a164` in **all three**, so this is not retrieval.
+- **The mechanism.** The answer in the failing run asserts an *absence* — "There
+  is no mention of any capability to run the enterprise management protocol over
+  5 GHz Wi-Fi" — and that claim was judged:
+
+  | run | faithfulness | context_recall | the absence claim |
+  | --- | --- | --- | --- |
+  | 1 | 1.000 | 1.0 | not extracted |
+  | 2 | **0.667** | **0.0** | **`unsupported`, p=0.0, `citation_ids: []`** |
+  | 3 | 1.000 | 1.0 | `supported`, p=0.59, cites [1] |
+
+  The same claim text, from the same context, got opposite verdicts. In run 2 it
+  carries **no citation**, and an uncited claim scores 0 — so one negative claim
+  takes a third off the item. `context_recall` going to **0.0** in the same run
+  is the same judge disagreeing a second time on the same evidence.
+- **Why it matters more than one item's score.** **KI-32** measured Jev's
+  `claim_verdict` as stable across 64 claim texts that recurred between runs,
+  and D7 leaned on that to argue the spread was *not* judge noise and was
+  upstream of the judge. This is a direct counterexample on one claim: a text
+  that recurred, with identical context digests, judged both ways. Absence and
+  negative claims ("the sources do not say X") are the case where a
+  support-verdict grader has nothing to point at, and they are exactly what the
+  `not_in_sources` items depend on.
+- **Not fixed here, deliberately.** This is a grader-quality question, it is
+  P1b's ("validating the graders against human labels"), and the prompt for D8
+  puts the eval sets and the graders out of scope. Recorded, not tuned: the
+  tolerance was **not** widened and no item was re-labelled.
+- **Next step.** At P1b, when the graders are validated against human labels,
+  measure this case specifically — **uncited / absence claims** — rather than
+  only well-cited affirmative ones. The useful question is whether a claim that
+  can have no supporting citation should be routed to a different verdict than
+  `unsupported`, since today it is scored as a faithfulness failure of the
+  *answer* for asserting something the corpus genuinely does not say.
+
+**Consequence for `fix/eval-baseline`: none.** Rule A applied, the branch's
+baseline is unchanged, and the gate passed all three CI runs.

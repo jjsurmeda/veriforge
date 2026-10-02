@@ -107,12 +107,12 @@ def test_the_harness_models_are_the_models_the_product_runs() -> None:
 
 def test_gate_passes_within_thresholds() -> None:
     baseline: dict[str, float | None] = {
-        "faithfulness": 0.80,
+        "faithfulness": 0.96,
         "abstention_accuracy": 0.90,
         "p50_latency_ms": 2000.0,
     }
     current: dict[str, float | None] = {
-        "faithfulness": 0.78,
+        "faithfulness": 0.94,
         "abstention_accuracy": 0.87,
         "p50_latency_ms": 2100.0,
     }
@@ -120,15 +120,17 @@ def test_gate_passes_within_thresholds() -> None:
 
 
 def test_gate_fails_on_faithfulness_drop() -> None:
-    baseline = {"faithfulness": 0.80, "abstention_accuracy": None, "p50_latency_ms": 2000.0}
-    current = {"faithfulness": 0.76, "abstention_accuracy": None, "p50_latency_ms": 2000.0}
+    """A drop past A9's 0.06, from above the floor so this is the drop and not
+    the floor speaking."""
+    baseline = {"faithfulness": 1.0, "abstention_accuracy": None, "p50_latency_ms": 2000.0}
+    current = {"faithfulness": 0.93, "abstention_accuracy": None, "p50_latency_ms": 2000.0}
     failures = compare(baseline, current)
-    assert len(failures) == 1 and "faithfulness" in failures[0]
+    assert len(failures) == 1 and "drop > 0.06" in failures[0]
 
 
 def test_gate_fails_on_latency_rise() -> None:
-    baseline = {"faithfulness": 0.8, "abstention_accuracy": None, "p50_latency_ms": 2000.0}
-    current = {"faithfulness": 0.8, "abstention_accuracy": None, "p50_latency_ms": 3000.0}
+    baseline = {"faithfulness": 0.96, "abstention_accuracy": None, "p50_latency_ms": 2000.0}
+    current = {"faithfulness": 0.96, "abstention_accuracy": None, "p50_latency_ms": 3000.0}
     failures = compare(baseline, current)
     assert len(failures) == 1 and "latency" in failures[0]
 
@@ -136,27 +138,32 @@ def test_gate_fails_on_latency_rise() -> None:
 def test_gate_abstention_check_is_passive_without_decision() -> None:
     # TODO(slice-4): abstention accuracy must not fail the gate when the
     # decision layer does not exist yet — recorded but pass-through.
-    baseline = {"faithfulness": 0.8, "abstention_accuracy": None, "p50_latency_ms": None}
-    current = {"faithfulness": 0.8, "abstention_accuracy": 0.0, "p50_latency_ms": None}
+    baseline = {"faithfulness": 0.96, "abstention_accuracy": None, "p50_latency_ms": None}
+    current = {"faithfulness": 0.96, "abstention_accuracy": 0.0, "p50_latency_ms": None}
     assert compare(baseline, current) == []
 
 
 def test_gate_missing_metrics_do_not_fail() -> None:
+    """A metric the baseline does not record is not a comparison, and the
+    faithfulness floor needs a *measured* number to judge: `None` on the
+    baseline side is what makes this a non-comparison. A current faithfulness of
+    0.0 is not in here because it is now a real floor failure, and that is
+    covered in `test_gate_thresholds`."""
     assert compare({}, {}) == []
-    assert compare({"faithfulness": None}, {"faithfulness": 0.0}) == []
+    assert compare({"faithfulness": None}, {"faithfulness": 0.95}) == []
 
 
 def test_gate_gates_our_overhead_not_the_providers_time() -> None:
     """KI-18: a 3x rise in wall clock that is all upstream must not fail the
     gate, because nothing in this repo regressed."""
     baseline = {
-        "faithfulness": 0.8,
+        "faithfulness": 0.96,
         "abstention_accuracy": None,
         "p50_latency_ms": 6000.0,
         "p50_our_overhead_ms": 300.0,
     }
     current = {
-        "faithfulness": 0.8,
+        "faithfulness": 0.96,
         "abstention_accuracy": None,
         "p50_latency_ms": 18000.0,
         "p50_our_overhead_ms": 320.0,
@@ -166,13 +173,13 @@ def test_gate_gates_our_overhead_not_the_providers_time() -> None:
 
 def test_gate_fails_when_our_own_overhead_rises() -> None:
     baseline = {
-        "faithfulness": 0.8,
+        "faithfulness": 0.96,
         "abstention_accuracy": None,
         "p50_latency_ms": 6000.0,
         "p50_our_overhead_ms": 300.0,
     }
     current = {
-        "faithfulness": 0.8,
+        "faithfulness": 0.96,
         "abstention_accuracy": None,
         "p50_latency_ms": 6000.0,
         "p50_our_overhead_ms": 900.0,
@@ -183,8 +190,8 @@ def test_gate_fails_when_our_own_overhead_rises() -> None:
 
 def test_gate_falls_back_to_total_when_no_run_was_attributed() -> None:
     """No overhead on either side must not silently disable the check."""
-    baseline = {"faithfulness": 0.8, "abstention_accuracy": None, "p50_latency_ms": 2000.0}
-    current = {"faithfulness": 0.8, "abstention_accuracy": None, "p50_latency_ms": 3000.0}
+    baseline = {"faithfulness": 0.96, "abstention_accuracy": None, "p50_latency_ms": 2000.0}
+    current = {"faithfulness": 0.96, "abstention_accuracy": None, "p50_latency_ms": 3000.0}
     failures = compare(baseline, current)
     assert len(failures) == 1 and "p50_latency_ms" in failures[0]
 

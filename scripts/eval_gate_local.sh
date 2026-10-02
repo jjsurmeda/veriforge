@@ -20,13 +20,27 @@
 #
 # Usage:
 #   make eval-gate-local                    # gate the fast20 subset
-#   make eval-gate-local BASELINE=1         # also rewrite baseline_fast20.json
+#   make eval-gate-local BASELINE=1         # rewrite baseline_fast20.json from THIS run
 #   scripts/eval_gate_local.sh --items 47   # the full seed set instead of fast20
 #
-# Baselines are written only this way. `evals/seed/baseline_fast20.json` is the
-# file ci.yml's gate compares against, and a number measured over a different
-# corpus or a different set of models is not a comparison (evals.gate now
-# refuses a model mismatch rather than reporting one).
+# BASELINE=1 is the *single-run* writer, and it is not how the fast20 baseline is
+# written any more (owner decision A8, 2026-10-02): it stores whichever run just
+# happened, and D6 stored a median of three that its own fourth run then failed.
+# The fast20 baseline is the mean of N runs —
+#
+#   for i in 1 2 3 4 5; do make eval-gate-local; done   # each run records
+#                                                        # .data/evals/summary-*.json
+#   (cd apps/api && uv run python -m evals.baseline ../../.data/evals/summary-*.json)
+#
+# — which refuses runs that used different models or graded different item sets.
+# BASELINE=1 is still here for the full-50 `baseline.json` and for re-measuring
+# deliberately against a single run.
+#
+# Baselines are measured only this way — against a fresh, ephemeral database, so
+# the number is comparable with the one ci.yml's gate computes.
+# `evals/seed/baseline_fast20.json` is the file ci.yml compares against, and a
+# number measured over a different corpus or a different set of models is not a
+# comparison (evals.gate refuses a model mismatch rather than reporting one).
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
