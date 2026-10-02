@@ -8,11 +8,49 @@ from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-# Must land before any app import: module-level engines read it.
 TEST_DATABASE_URL = os.environ.get(
     "TEST_DATABASE_URL",
     "postgresql+asyncpg://veriforge:veriforge@localhost:5432/veriforge_test",
 )
+
+
+def _database_name(url: str) -> str:
+    """The database name from a DSN, or "" if there isn't one.
+
+    Scheme-relative, so the scheme's own "//" isn't mistaken for the path
+    separator: "postgresql://u:p@h:5432" names no database, and neither
+    does "postgresql://u:p@h:5432/".
+    """
+    _, sep, tail = url.partition("://")
+    if not sep:
+        return ""
+    _, _, path = tail.partition("/")
+    return path.split("?", 1)[0]
+
+
+def _assert_safe_test_database(url: str) -> None:
+    """Refuse to run the suite against anything but a test database.
+
+    The suite creates the database, migrates it and TRUNCATEs every table
+    between tests. If TEST_DATABASE_URL is misconfigured to name anything
+    else, that is silent and unrecoverable data loss, so it aborts before
+    the first connection rather than before the first write.
+
+    Accepted names end in `_test` (`veriforge_test`, `foo_test`) or start
+    with `veriforge_test_` (one database per lane/worktree).
+    """
+    name = _database_name(url)
+    if not name or not (name.endswith("_test") or name.startswith("veriforge_test_")):
+        raise RuntimeError(
+            f"refusing to run the test suite against database {name!r}: "
+            "TEST_DATABASE_URL must name a test database (suffix '_test', "
+            "or prefix 'veriforge_test_'). Nothing was created, migrated or "
+            "truncated."
+        )
+
+
+# Must land before any app import: module-level engines read it.
+_assert_safe_test_database(TEST_DATABASE_URL)
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ["COOKIE_SECURE"] = "false"  # tests run over plain http
 # Never reach live providers from tests (testing.md); .env and Compose
@@ -158,8 +196,13 @@ async def db() -> AsyncIterator[AsyncSession]:
 
 @pytest.fixture(scope="session")
 async def server() -> AsyncIterator[str]:
-    """Real uvicorn on a socket — ASGITransport buffers SSE, sockets stream."""
-    config = uvicorn.Config(app, host="127.0.0.1", port=8765, log_level="error")
+    """Real uvicorn on a socket — ASGITransport buffers SSE, sockets stream.
+
+    Port 0, not a fixed one: two suites in two worktrees must not collide on
+    it (D5 review). The kernel picks a free port and we read it back off the
+    bound socket, so every session gets its own.
+    """
+    config = uvicorn.Config(app, host="127.0.0.1", port=0, log_level="error")
     instance = uvicorn.Server(config)
     serve = asyncio.create_task(instance.serve())
     deadline = time.monotonic() + 10
@@ -167,7 +210,13 @@ async def server() -> AsyncIterator[str]:
         if time.monotonic() > deadline:
             raise RuntimeError("test server failed to start")
         await asyncio.sleep(0.01)
-    yield "http://127.0.0.1:8765"
+    servers = instance.servers
+    if not servers or not servers[0].sockets:
+        instance.should_exit = True
+        await serve
+        raise RuntimeError("test server bound no socket")
+    port = int(servers[0].sockets[0].getsockname()[1])
+    yield f"http://127.0.0.1:{port}"
     instance.should_exit = True
     await serve
 
