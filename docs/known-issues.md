@@ -1683,6 +1683,50 @@ is the finding that made the baseline unwritable, and it is **not** variance.
   favourable run, or dropping the item. The condition failed for a real
   product reason, and the baseline was deliberately **not** written.
 
+### Resolved 2026-10-02 (D6, item P1) — and the baseline is STILL not written
+
+**The defect is fixed and verified.** `ff0d528` fixes both halves: the intent
+prompt now names this exact question as its counterexample ("a question about
+what a document or product CONTAINS, SAYS, INCLUDES, SHIPS WITH or COMES WITH
+is NEVER 'library'"), and `library` gained a 0.70 per-option confidence floor
+(`library_min_confidence`, `CHOICE_MIN_CONFIDENCE`). Live, on `ed1ea59`, 10
+ingress calls on this question: **`library` chosen 0 of 10**, all `lookup` via
+jev, p(library) 0.0 every time. Across four fast20 runs this item scores
+**1.000 in every run** — the filename-list answer is gone.
+
+**The baseline remains unwritten, for a new reason that this entry now owns.**
+Three runs gave faithfulness 1.00000 / 0.97500 / 0.98333 — a spread of 0.0250,
+inside the 0.03 bar, so all six conditions held and the baseline was written
+from the median run. A **fourth** run then scored **0.94375**, which the gate
+correctly failed (drop 0.039 > 0.03). So:
+
+- true spread over four runs is **0.05625**, not 0.0250;
+- the median of runs 1-3 (0.98333) sits 0.039 above that worst run, so the
+  median of *any* consecutive triple including it fails the bar;
+- the three moving items are ordinary variance on multi-claim product questions
+  ("How many devices can I pair with an AW-2000-XE", "How long does the
+  AW-2000-X take to fully charge", the submerge and battery-life items) — none
+  of them KI-37, all of them pre-existing.
+
+The candidate baseline was therefore **reverted**; `baseline_fast20.json` is
+byte-identical to `d36a034`. This is precisely the "re-baselining on a
+favourable run" the rule above forbids, caught only because a fourth run was
+taken after the fact rather than stopping at three.
+
+**So the real remaining question is no longer KI-37.** It is that fast20
+faithfulness has a run-to-run spread around 0.05 driven by four multi-claim
+items, against a 0.03 bar — the condition D5 also failed, for the same
+underlying reason it did then. Three honest options, none of which this
+dispatch may take on its own: (a) reduce the variance at the source — the
+claim-extraction count per item moves run to run because the *answers* differ in
+how many checkable claims they make, so normalise claims per answer or pin the
+extractor (KI-32's step 1 already pinned temperature and did not help, because
+the answers themselves differ); (b) raise `FAITHFULNESS_DROP` to ~0.06, which
+D5's report already called the wrong lever and which this evidence now
+contradicts less strongly than it did; (c) accept that a 20-item subset cannot
+resolve a 0.05 spread and gate faithfulness on more items. **This is an owner
+decision (PRD/TRD §15 governs the bar) and is deliberately not taken here.**
+
 ## KI-40: Four more web queries read `.data` and render failures as empty
 
 Logged 2026-10-02 (lane 3 burn-down), found while fixing the reviewed
