@@ -62,10 +62,10 @@ async def load_items(session: AsyncSession) -> EvalDataset:
         session.add(dataset)
         await session.flush()
     existing = (
-        await session.execute(
-            select(EvalItem).where(EvalItem.dataset_id == dataset.id)
-        )
-    ).scalars().all()
+        (await session.execute(select(EvalItem).where(EvalItem.dataset_id == dataset.id)))
+        .scalars()
+        .all()
+    )
     by_question = {item.question: item for item in existing}
     for row in payload["items"]:
         if row["question"] in by_question:
@@ -73,6 +73,11 @@ async def load_items(session: AsyncSession) -> EvalDataset:
             item.category = row["category"]
             item.reference_answer = row["reference_answer"]
             item.should_abstain = row["should_abstain"]
+            # PRD §5: the runner summarises per corpus, so the item has to
+            # carry which one. Keyed on the payload's optional `corpus`, which
+            # is absent for a set that predates it — a NULL here is honest,
+            # a guessed corpus is not.
+            item.corpus = row.get("corpus")
             continue
         session.add(
             EvalItem(
@@ -81,6 +86,7 @@ async def load_items(session: AsyncSession) -> EvalDataset:
                 question=row["question"],
                 reference_answer=row["reference_answer"],
                 should_abstain=row["should_abstain"],
+                corpus=row.get("corpus"),
             )
         )
     await session.flush()

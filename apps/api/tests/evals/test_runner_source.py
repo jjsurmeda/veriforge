@@ -10,6 +10,7 @@ the auto and the deep branch.
 
 import json
 from collections.abc import AsyncIterator
+from types import SimpleNamespace
 from typing import Any
 from uuid import UUID
 
@@ -70,16 +71,19 @@ async def _run_one_item(
     tmp_path: Any,
     *,
     mode: str,
+    review: Any = None,
 ) -> str:
-    """Drive _run_item with the pipeline stubbed; return the captured source."""
+    """Drive _run_item with the pipeline stubbed; return the captured source.
+
+    Every provider boundary is stubbed here — the graph, the reviewer, the
+    judge and the attribution lookup — so a test that reuses this harness
+    cannot reach a live model (testing.md). `review` lets a caller substitute
+    a review that actually scored something.
+    """
     from evals.loader import EVAL_USER_EMAIL as EMAIL
 
-    user = (
-        await db.execute(select(User).where(User.email == EMAIL))
-    ).scalar_one()
-    dataset = (
-        await db.execute(select(EvalDataset).where(EvalDataset.name == "seed"))
-    ).scalar_one()
+    user = (await db.execute(select(User).where(User.email == EMAIL))).scalar_one()
+    dataset = (await db.execute(select(EvalDataset).where(EvalDataset.name == "seed"))).scalar_one()
     item = (
         await db.execute(select(EvalItem).where(EvalItem.dataset_id == dataset.id))
     ).scalar_one()
@@ -113,14 +117,15 @@ async def _run_one_item(
 
     class _Review:
         scores = None
+
         # `_run_item` reads these to build `review_detail` (item 3); this test
         # is about `source`, so an empty review is enough.
         def __init__(self) -> None:
             self.claims: list[object] = []
             self.revised_text = None
 
-    async def fake_review(**kwargs: Any) -> _Review:
-        return _Review()
+    async def fake_review(**kwargs: Any) -> Any:
+        return _Review() if review is None else review
 
     async def fake_judge(**kwargs: Any) -> None:
         return None
@@ -137,9 +142,7 @@ async def _run_one_item(
     from db.models import EvalRun
     from db.session import get_session_factory
 
-    eval_run_id = (
-        await db.execute(select(EvalRun.id))
-    ).scalar_one()
+    eval_run_id = (await db.execute(select(EvalRun.id))).scalar_one()
     await runner._run_item(
         get_session_factory(), user=user, eval_run_id=eval_run_id, item=item, mode=mode
     )
@@ -158,3 +161,33 @@ async def test_deep_eval_runs_are_documents_only(
 ) -> None:
     await _seed_eval_user(db)
     assert await _run_one_item(db, monkeypatch, tmp_path, mode="deep") == "upload"
+
+
+class _ScoredReview:
+    """A review that scored something, so `_run_item` records the figures."""
+
+    scores = SimpleNamespace(faithfulness=0.75, min_support=0.42, citation_precision=0.9)
+
+    def __init__(self) -> None:
+        self.claims: list[object] = []
+        self.revised_text = None
+
+
+@pytest.mark.parametrize("mode", ["auto", "deep"])
+async def test_min_support_is_persisted_on_the_result(
+    db: AsyncSession, monkeypatch: pytest.MonkeyPatch, tmp_path: Any, mode: str
+) -> None:
+    """PRD §5's grounding row is only measurable if the reviewer's weakest
+    claim support is stored per result. `faithfulness` is a mean over the
+    claims and hides the one that is unsupported, so this is a separate column
+    and needs its own test — the rollup tests build EvalResults by hand and so
+    would pass even if `_run_item` never wrote the field.
+    """
+    await _seed_eval_user(db)
+    await _run_one_item(db, monkeypatch, tmp_path, mode=mode, review=_ScoredReview())
+
+    from db.models import EvalResult
+
+    stored = (await db.execute(select(EvalResult))).scalars().one()
+    assert stored.min_support == pytest.approx(0.42)
+    assert stored.faithfulness == pytest.approx(0.75)

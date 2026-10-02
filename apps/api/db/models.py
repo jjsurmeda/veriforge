@@ -533,6 +533,11 @@ class EvalItem(Base):
         JSONB, nullable=True
     )
     should_abstain: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # PRD v3 §5: each corpus is summarised separately (faithfulness,
+    # decline accuracy, ...), so an item has to declare which one it speaks
+    # for. Nullable because the rows predate the column; an item with no
+    # corpus is reported under `corpus: null`, never folded into one.
+    corpus: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -569,6 +574,11 @@ class EvalResult(Base):
     citation_precision: Mapped[float | None] = mapped_column(nullable=True)
     context_precision: Mapped[float | None] = mapped_column(nullable=True)
     context_recall: Mapped[float | None] = mapped_column(nullable=True)
+    # The reviewer's *minimum* claim support for this answer (TRD §10), the
+    # figure PRD §5 gates at "≥ 0.6 on ≥ 95% of answers". Recorded per result
+    # rather than derived from the faithfulness mean: the mean hides the one
+    # weakly-supported claim that the gate is written to catch.
+    min_support: Mapped[float | None] = mapped_column(nullable=True)
     abstained: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     latency_ms: Mapped[int] = mapped_column(Integer, nullable=False)
     # Per-stage breakdown of the same item (graph/timing.make_step_timer), so a
