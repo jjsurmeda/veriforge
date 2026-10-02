@@ -2,16 +2,24 @@
 evals/acceptance/books.json against the live local stack and classifies the
 last turn of each item.
 
-Reuses smoke_chat's sign-up / run_turn / SSE reading (same HTTP surface as
-`make smoke`); one fresh chat per item, turns in order, source "upload",
-mode "auto". Writes raw results to .data/acceptance/<timestamp>.json.
+Reuses smoke_chat's run_turn / SSE reading (same HTTP surface as `make smoke`);
+one fresh chat per item, turns in order, source "upload", mode "auto". Writes
+raw results to .data/acceptance/<timestamp>.json.
 
-The run user is moved to the seeded `internal-eval` plan through the admin
-API before the first turn: a full run costs ~310k quota credits (KI-20) and
-`free` allows 200k per 5 h, so runs used to raise `free`'s limit by hand and
-restore it. `free` and `pro` are never mutated here. Needs `ADMIN_EMAIL` /
-`ADMIN_PASSWORD` (`make seed-admin`); without them the run stops rather than
-falling back to editing the database.
+**The run user is a fixed account, not a signup** (KI-24). The books stay
+`visibility='shared'` and every fresh user sees them, so the demo corpus is
+unchanged; but the eval-only corpora (AW-2000 seed, counterfactual) are private
+collections owned by `evals@veriforge.local`, and a throwaway signup has no
+access to them — which is exactly the point of the move. Acceptance signs in as
+that same account so it measures the Shared library through the same identity
+the seed corpus is measured with. Only the identity persists: **every run still
+creates a fresh chat per item**, so no item can see another's context.
+
+Credentials are `EVAL_USER_EMAIL` / `EVAL_USER_PASSWORD`, the same shape as
+`ADMIN_EMAIL` / `ADMIN_PASSWORD`; `make seed-eval-user` creates the account and
+assigns the seeded `internal-eval` plan to it once. Without them the run stops
+rather than signing up a user that cannot see what it is being scored on. The
+books need no grant: `visibility='shared'` is in every user's scope.
 
 Usage: uv run python scripts/acceptance.py [id1,id2,...] [--pace SECONDS].
 
@@ -43,15 +51,18 @@ from textkit import detect_language
 SET_FILE = Path(__file__).resolve().parents[3] / "evals" / "acceptance" / "books.json"
 OUT_DIR = Path(__file__).resolve().parents[3] / ".data" / "acceptance"
 
-# Seeded by migration 0014 with headroom for a full run. Never `free` or `pro`:
-# those are the rows real users are on.
+# Seeded by migration 0014 with headroom for a full run. Assigned ONCE, to the
+# persistent eval account, by `make seed-eval-user` — a per-run assignment would
+# be a mutation of the same row 48 times, and the account outlives the run.
 EVAL_PLAN_NAME = "internal-eval"
 
-NO_ADMIN = (
-    "acceptance needs admin credentials to move its run user onto the "
-    f"{EVAL_PLAN_NAME} plan: set ADMIN_EMAIL and ADMIN_PASSWORD in .env "
-    "(`make seed-admin` creates the account). Refusing to raise a plan's "
-    "credit limit instead — that mutates the row real users are on."
+NO_EVAL_USER = (
+    "acceptance signs in as the fixed eval account so it can see the eval "
+    "corpora it is scored against (KI-24). Set EVAL_USER_EMAIL and "
+    "EVAL_USER_PASSWORD in .env, then run `make seed-eval-user` to create the "
+    "account and put it on the "
+    f"{EVAL_PLAN_NAME} plan. Refusing to sign up a throwaway user instead — it "
+    "would score a library the eval never uses."
 )
 
 # "Says plainly it's not in the sources" — generous on purpose: batch B owns
@@ -94,6 +105,51 @@ def observed_class(item: dict[str, Any], result: dict[str, Any]) -> str:
     return "smalltalk"
 
 
+def mentions_hit(item: dict[str, Any], answer: str) -> bool:
+    """True when the answer states every string the item requires.
+
+    `mention_all` is the ambiguity-item channel: the corpus answers the question
+    two ways, so the item names **both** referents and an answer that names only
+    one has not answered the question the corpus poses. These items are expected
+    to fail today — P2's prompt change is what surfaces the ambiguity — and are
+    marked `pending_p2` so they are reported separately and do not drag down the
+    pass rate.
+    """
+    lowered = answer.lower()
+    required = [str(m).lower() for m in item.get("mention_all", [])]
+    optional = [str(m).lower() for m in item.get("mention", [])]
+    optional += [str(m).lower() for m in item.get("alt_mention", [])]
+    if required:
+        return all(m in lowered for m in required) and (
+            not optional or any(m in lowered for m in optional)
+        )
+    if not optional:
+        return True
+    return any(m in lowered for m in optional)
+
+
+def forbids_hit(item: dict[str, Any], answer: str) -> str | None:
+    """The first `forbid` string the answer contains, if any.
+
+    For a counterfactual item (evals/counterfactual) the corpus states a
+    deliberately altered fact, so the real-world value is the one a model
+    produces from memory. `forbid` names it: an answer that states the
+    document's value **and** the real one fails, because the product would have
+    handed the user a figure its own sources contradict.
+
+    Matched on word boundaries for the same reason `mention` should be: `IP68`
+    must not fire on `IP69K`, and `330` must not fire on `3300`.
+    """
+    for raw in item.get("forbid", []):
+        needle = str(raw).lower()
+        if not needle:
+            continue
+        pattern = r"(?<!\w)" + re.escape(needle) + r"(?!\w)"
+        if re.search(pattern, answer.lower()):
+            return str(raw)
+    return None
+
+
 def language_ok(item: dict[str, Any], result: dict[str, Any]) -> bool:
     """The reply must be in the language the user asked in.
 
@@ -113,14 +169,20 @@ def passes(item: dict[str, Any], result: dict[str, Any]) -> bool:
     answer = result["answer"]
     lowered = answer.lower()
     completed = result["status"] == "completed" and result["message_status"] != "abstained"
-    mentions = [m.lower() for m in item.get("mention", [])]
-    # no mention list means there is nothing to check for
-    mention_hit = True if not mentions else any(m in lowered for m in mentions)
+    # `alt_mention` is the same value written another way ("6400" for the
+    # corpus's "6,400"); `mention_all` is the ambiguity-item channel and is
+    # handled inside mentions_hit.
+    mention_hit = mentions_hit(item, answer)
     cite_hit = any(
         any(book.lower() in doc.lower() for book in item.get("cite", []))
         for doc in _cited_documents(result)
     )
     if not language_ok(item, result):
+        return False
+    # Checked before the class, so a forbidden value fails an item regardless of
+    # what else it got right. A should-abstain item cannot reach here with a
+    # forbidden string unless the item is malformed, and then it must fail.
+    if forbids_hit(item, answer) is not None:
         return False
     if expected == "smalltalk":
         return completed and not result["citations"]
@@ -141,59 +203,35 @@ def failure_reason(item: dict[str, Any], result: dict[str, Any]) -> str | None:
         return None
     if not language_ok(item, result):
         return "language_mismatch"
+    forbidden = forbids_hit(item, result["answer"])
+    if forbidden is not None:
+        # Named separately from wrong_class_or_content because the remedy is
+        # different: this is the pipeline reaching for a real-world value its
+        # own sources contradict, not a retrieval or class problem.
+        return f"forbidden_value:{forbidden}"
     expected = item["expect"]
     if expected == "answer" and not result["citations"]:
         return "no_citations"
     return "wrong_class_or_content"
 
 
-async def assign_eval_plan(client: httpx.AsyncClient, run_email: str) -> str:
-    """Put `run_email` on the seeded `internal-eval` plan, via the admin API.
+async def eval_sign_in(client: httpx.AsyncClient) -> tuple[str, str]:
+    """Sign in as the fixed eval account; return (email, password).
 
-    The product path, so the change is audited (`admin/service.py::update_user`)
-    and needs no direct database access. Returns the plan name for the report.
+    The password comes back out because every turn re-authenticates — the
+    access token is a 15-minute TTL and a full run is longer than that.
     """
-    email = os.environ.get("ADMIN_EMAIL")
-    password = os.environ.get("ADMIN_PASSWORD")
+    email = os.environ.get("EVAL_USER_EMAIL")
+    password = os.environ.get("EVAL_USER_PASSWORD")
     if not email or not password:
-        raise SystemExit(NO_ADMIN)
-
-    login = await client.post("/auth/login", json={"email": email, "password": password})
-    if login.status_code != 200:
+        raise SystemExit(NO_EVAL_USER)
+    response = await client.post("/auth/login", json={"email": email, "password": password})
+    if response.status_code != 200:
         raise SystemExit(
-            f"admin login failed: {login.status_code} {login.text[:200]}\n"
-            "run `make seed-admin` to create or promote the account"
+            f"eval user login failed: {response.status_code} {response.text[:200]}\n"
+            "run `make seed-eval-user` to create the account or re-set its password"
         )
-    admin_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
-
-    plans = await client.get("/admin/plans", headers=admin_headers)
-    if plans.status_code != 200:
-        raise SystemExit(f"admin plans lookup failed: {plans.status_code} {plans.text[:200]}")
-    match = next((p for p in plans.json() if p["name"] == EVAL_PLAN_NAME), None)
-    if match is None:
-        raise SystemExit(
-            f"no {EVAL_PLAN_NAME} plan (have: {[p['name'] for p in plans.json()]}); "
-            "run the migrations (`docker compose restart api`)"
-        )
-
-    users = await client.get("/admin/users", headers=admin_headers)
-    if users.status_code != 200:
-        raise SystemExit(f"admin users lookup failed: {users.status_code} {users.text[:200]}")
-    target = next((u for u in users.json() if u["email"] == run_email), None)
-    if target is None:
-        raise SystemExit(f"run user {run_email} not visible to the admin")
-
-    patched = await client.patch(
-        f"/admin/users/{target['id']}", headers=admin_headers, json={"plan_id": match["id"]}
-    )
-    if patched.status_code != 200:
-        raise SystemExit(f"plan assignment failed: {patched.status_code} {patched.text[:200]}")
-    assigned = patched.json().get("plan_id")
-    if assigned != match["id"]:
-        raise SystemExit(
-            f"plan assignment did not take: plan_id is {assigned}, wanted {match['id']}"
-        )
-    return EVAL_PLAN_NAME
+    return email, password
 
 
 async def run(
@@ -201,8 +239,10 @@ async def run(
     *,
     pace: float = 0.0,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    set_file: Path | None = None,
 ) -> None:
-    dataset = json.loads(SET_FILE.read_text())
+    path = set_file or SET_FILE
+    dataset = json.loads(path.read_text())
     items = dataset["items"]
     if only:
         items = [i for i in items if i["id"] in only]
@@ -215,21 +255,27 @@ async def run(
     )
     rows: list[dict[str, Any]] = []
     async with httpx.AsyncClient(base_url=smoke_chat.API_URL, timeout=timeout) as client:
-        email = await smoke_chat.sign_up(client)
-        # Before the first turn: the quota gate reserves on the first run, so
-        # a later assignment would be too late for item 1's reserve.
-        plan = await assign_eval_plan(client, email)
-        print(f"run user {email} assigned to the {plan} plan\n")
+        email, password = await eval_sign_in(client)
+        print(f"run user {email} (fixed eval account; fresh chat per item)\n")
+
+        async def fresh_token() -> str:
+            response = await client.post("/auth/login", json={"email": email, "password": password})
+            if response.status_code != 200:
+                raise SystemExit(
+                    f"eval user login failed mid-run: {response.status_code} {response.text[:200]}"
+                )
+            return str(response.json()["access_token"])
+
         for item in items:
 
             async def play(item: dict[str, Any] = item) -> dict[str, Any]:
-                token = await smoke_chat.sign_in(client, email)
+                token = await fresh_token()
                 headers = {"Authorization": f"Bearer {token}"}
                 chat = await client.post("/chats", headers=headers, json={"title": None})
                 chat_id = str(chat.json()["id"])
                 result: dict[str, Any] = {}
                 for turn in item["turns"]:
-                    fresh = await smoke_chat.sign_in(client, email)
+                    fresh = await fresh_token()
                     result = await smoke_chat.run_turn(client, fresh, chat_id, turn)
                 return result
 
@@ -249,6 +295,7 @@ async def run(
                     "expect": item["expect"],
                     "got": got,
                     "pass": ok,
+                    "pending_p2": bool(item.get("pending_p2")),
                     "reason": failure_reason(item, result),
                     "q_language": detect_language(item["turns"][-1]),
                     "a_language": detect_language(result.get("answer") or ""),
@@ -285,20 +332,37 @@ async def run(
 
     ttfts = [r["ttft_ms"] for r in rows if r["ttft_ms"] is not None]
     p50 = int(statistics.median(ttfts)) if ttfts else 0
+    # `pending_p2` items are the corpus answering a question two ways (KI-27).
+    # They are expected to fail until P2's prompt change, so counting them in
+    # today's headline would report a regression that is a known, recorded gap.
+    scored = [r for r in rows if not r["pending_p2"]]
+    pending = [r for r in rows if r["pending_p2"]]
     per_class: dict[str, list[int]] = {}
-    for r in rows:
+    for r in scored:
         per_class.setdefault(r["expect"], []).append(1 if r["pass"] else 0)
-    print(f"\npassed {sum(r['pass'] for r in rows)}/{len(rows)}; TTFT p50 {p50} ms")
+    print(
+        f"\npassed {sum(r['pass'] for r in scored)}/{len(scored)}; TTFT p50 {p50} ms"
+        + (f" ({len(pending)} pending_p2 reported separately)" if pending else "")
+    )
     for cls, flags in per_class.items():
         print(f"  {cls}: {sum(flags)}/{len(flags)}")
     per_language: dict[str, list[int]] = {}
-    for r in rows:
+    for r in scored:
         per_language.setdefault(str(r["q_language"]), []).append(1 if r["pass"] else 0)
     print("  by question language:")
     for lang, flags in sorted(per_language.items()):
         print(f"    {lang}: {sum(flags)}/{len(flags)}")
-    for reason in sorted({r["reason"] for r in rows if r["reason"]}):
-        print(f"  failed {reason}: {[r['id'] for r in rows if r['reason'] == reason]}")
+    for reason in sorted({r["reason"] for r in scored if r["reason"]}):
+        print(f"  failed {reason}: {[r['id'] for r in scored if r['reason'] == reason]}")
+    if pending:
+        # P2's input, not a defect: what the ambiguity items actually said.
+        print("\n  pending P2 (ambiguity items, KI-27 — corpus answers two ways):")
+        for r in pending:
+            print(
+                f"    {r['id']}: {'pass' if r['pass'] else 'FAIL'}"
+                f"{' — ' + str(r['reason']) if r['reason'] else ''}"
+            )
+            print(f"      said: {(r['answer'] or '')[:200]}")
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
@@ -325,6 +389,13 @@ if __name__ == "__main__":
         help="sleep this many seconds between items, for free-model rate "
         "limits (default: 0, no sleep)",
     )
+    parser.add_argument(
+        "--set",
+        type=Path,
+        default=None,
+        help="a different set file (e.g. ../../evals/counterfactual/items.json). "
+        "The scorer is shared; only the items and the corpus change.",
+    )
     args = parser.parse_args()
     only = args.only.split(",") if args.only else None
-    asyncio.run(run(only=only, pace=args.pace))
+    asyncio.run(run(only=only, pace=args.pace, set_file=args.set))

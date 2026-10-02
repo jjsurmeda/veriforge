@@ -988,6 +988,46 @@ be deleted are exactly the ones holding this corpus).
   against a fresh ephemeral database, the way `ci.yml` does, so a local
   baseline is measured on the corpus CI loads. Books belong to acceptance,
   which is still measured against the Shared library by design.
+- **Fixed (2026-10-02, P1b item 4): the eval-only corpora are out of Shared.**
+  The 7 AW-2000 documents and the new counterfactual corpus are now
+  `visibility='private'` collections owned by `evals@veriforge.local`. The
+  **books stay `visibility='shared'`** — they are the demo library every real
+  user sees, and measuring acceptance there is the realistic thing to do; only
+  the corpora that exist to be measured move. The P1b prompt's instruction to
+  move "the books used by acceptance" as well is **withdrawn**: following it
+  would have emptied the demo library that acceptance exists to exercise.
+
+  A private collection is in scope only for its owner, so **acceptance signs in
+  as that account** instead of calling `sign_up()` per run. Credential is
+  `EVAL_USER_EMAIL` / `EVAL_USER_PASSWORD` (`.env`, next to `ADMIN_*`;
+  `make seed-eval-user` creates the account and assigns the `internal-eval`
+  plan once, which replaces the per-run admin-API assignment of D4 item 1 —
+  with a persistent user that would be 48 mutations of one row). **Only the
+  identity persists: every run still creates a fresh chat per item.** No third
+  `collectionvisibility` value and no grant table; the general solution is not
+  needed by anything else yet.
+
+  One implementation note worth the record, because the premise "build_scope
+  already grants access via `col.owner_id`" is true but not sufficient on its
+  own: `build_scope` ANDs `d.collection_id = ANY(:scope_collections)` with the
+  ownership clause, and `chats/scope.py::resolve_scope` never returned a
+  private `library` collection — by design, since ADR-002 keeps them out of
+  every chat's scope. `resolve_scope` now takes optional
+  `extra_collection_ids`; only the eval runner passes it (it loaded the
+  corpora, so it knows the ids) and the HTTP chat path never does, which is
+  what keeps ADR-002 intact for real users.
+
+  **Not re-baselined, deliberately.** This changes acceptance's scope, so
+  `not_in_sources` results will move; Phase 1 forbids re-baselining and the
+  D8 gate owns `baseline_*.json`. Recorded here so Phase 2 re-measures rather
+  than comparing a pre-move number against a post-move run.
+
+  Ownership tests (`tests/evals/test_eval_corpus_ownership.py`, real SQL):
+  a normal user's retrieval never returns an eval-corpus chunk *even when the
+  collection id is handed to `resolve_scope` deliberately*; the eval user's
+  own does; and a private library still drops out of a chat's default scope.
+  The middle test is the one that would break first if the move regressed — it
+  is what makes the runners able to see the corpus at all.
 
 ## KI-26: `outside-study-in-scarlet` answers at 0.12 sufficient, above the 0.05 floor
 
@@ -2122,3 +2162,32 @@ was unanswerable before that, which is the point of the change.
 
 **Consequence for `fix/eval-baseline`: none.** Rule A applied, the branch's
 baseline is unchanged, and the gate passed all three CI runs.
+## KI-46: The label audit could not see a single number in any corpus
+
+Logged 2026-10-02, from P1b item 2. `scripts/audit_labels.py` tokenised with
+`[^\W\d_]+`, which matches letters but **not digits**, so every figure in every
+corpus was invisible to it: `passages_containing("512")` returned zero hits in
+a document whose Eiffel Tower is 512 m tall. The token filter then dropped
+anything under two characters, so a second independent reason no number could
+ever be a token. Together they meant `answer_not_in_corpus` fired on **every**
+item whose answer is a figure — which is most of a specification, and all of
+the new counterfactual set: 49 of 93 items flagged, every one of them a false
+positive. The corpus was fine; the instrument reading it was blind to the thing
+it was most needed to check. Numbers are now tokens (`_WORD_OR_DIGIT`, scanned
+in one pass with the words so a phrase like `1 640` matches in order), and the
+counterfactual set's 93 items audit with zero `answer_not_in_corpus`. The same
+class as KI-36, one level up: a check that is stricter than the corpus rejects
+a correct answer, and here it rejected a correct *corpus*.
+
+## KI-47: `library-count` had been asserting a count the demo library stopped having
+
+Logged 2026-10-02, from P1b item 3's label audit. The acceptance item
+`library-count` ("how many documents are in my sources?") carried `mention:
+["5", "five"]` from when the Shared library held five Gutenberg books. Round 2
+of the corpus (KI-12) widened it to eleven and the label was never updated, so
+the item demanded a figure no correct answer could produce — and, like KI-36,
+would have kept failing after any corpus growth. Now `["11", "eleven"]`, with
+the reason and the re-check trigger recorded in the item: **every book added to
+or removed from `seed_gutenberg.py::BOOKS` must re-check it.** The digit form is
+kept alongside the word because the corpus states the number of books nowhere in
+particular; only the product's own count answers it.
