@@ -92,72 +92,26 @@ jobs:
           BEFORE_SHA: ${{ github.event.before }}
           HEAD_SHA: ${{ github.sha }}
         run: |
-          # `reason` is empty only when the gate will really run. A skip is
-          # reported with its cause instead of passing silently: a green
-          # eval-gate job that never called OpenRouter is not evidence that
-          # the gate passed, and reading it as one is how the baseline went
-          # unrecorded for three runs (KI-6).
-          #
-          # Two different questions, one per event, and answering them with
-          # the same command is what skipped the gate on `main` (D8 item 1).
-          #
-          # On a PUSH the event carries the parent it moved from, so the diff
-          # that decides the scope is `before..sha`. `before` is not always
-          # available: it is empty on a `workflow_dispatch`, and all zeros when
-          # a branch is created. Neither case is a reason to skip, because a
-          # scope that cannot be decided must not read as "nothing gated
-          # changed" — that is the silent-skip failure KI-6 records, and it is
-          # exactly what a merge-base gives on a push to `main`, where HEAD *is*
-          # the new `origin/main`: the merge-base is HEAD, the diff is empty,
-          # and the push that TRD §15 gates on the merge reported
-          # `applies=false`. Run 36970934461 (the D1-D6 merge) skipped this way.
-          #
-          # Everywhere else — `workflow_dispatch` on a branch — the scope is the
-          # BRANCH, not the last commit. A dispatch checks out one commit, so
-          # `HEAD~1..HEAD` sees only that commit and reports "no gated paths"
-          # for a branch whose earlier commits changed them — the gate would
-          # skip on exactly the pushes it exists for. So diff against the
-          # merge-base with main, which is what the gate is actually protecting.
-          case "$EVENT_NAME" in
-            push)
-              if [ -z "$BEFORE_SHA" ] || printf '%s' "$BEFORE_SHA" | grep -Eq '^0+$'; then
-                echo "applies=true"
-                echo "reason=the push reports no parent commit (before is missing or all zeros); the gate runs rather than skips on an unknown diff"
-              else
-                base="$BEFORE_SHA"
-                echo "comparing against the pushed parent $base"
-              fi
-              ;;
-            *)
-              if ! git rev-parse --verify --quiet origin/main >/dev/null; then
-                echo "::error::origin/main not fetched; the gate's scope check cannot decide"
-                exit 1
-              fi
-              base=$(git merge-base "$HEAD_SHA" origin/main)
-              if [ -z "$base" ]; then
-                echo "::error::no merge-base with origin/main; the gate's scope check cannot decide"
-                exit 1
-              fi
-              echo "comparing against merge-base $base"
-              ;;
-          esac
-          # `evals/` and the baseline are in scope as well as the four product
-          # packages. A change to the gate's own limits, or to the file it
-          # compares against, is invisible to every unit test and invisible to a
-          # skipped gate: a tolerance widened to 0.5, or a baseline written from
-          # a favourable run, would both have gone green here. That is the same
-          # failure D6 found twice in this step — a green eval-gate job that
-          # never called OpenRouter read as a pass — one level up, on the branch
-          # whose whole subject is the gate.
-          if ! git diff --name-only "$base" HEAD | grep -Eq '^(apps/api/(graph|retrieval|decisions|prompts|evals)/|evals/seed/baseline)'; then
-            echo "applies=false" >> "$GITHUB_OUTPUT"
-            echo "reason=no graph/retrieval/decisions/prompts/evals or baseline change in this push" >> "$GITHUB_OUTPUT"
-          elif [ -z "${OPENROUTER_API_KEY:-}" ]; then
-            echo "applies=true" >> "$GITHUB_OUTPUT"
+          # The decision lives in scripts/eval_gate_scope.sh, not here, because
+          # a bug in this step cannot report itself: a scope check that wrongly
+          # says "applies=false" produces a green eval-gate job that measured
+          # nothing, which is indistinguishable from a pass. D6 fixed this step
+          # twice and D7 changed it a third time, with no test each time.
+          # tests/evals/test_gate_scope.py runs the same script against a
+          # temporary git repository.
+          set -euo pipefail
+          scope_out=$(../../scripts/eval_gate_scope.sh \
+            "$EVENT_NAME" "$BEFORE_SHA" "$HEAD_SHA")
+          echo "$scope_out"
+          echo "$scope_out" >> "$GITHUB_OUTPUT"
+          # The one input the script cannot see: whether a provider key exists.
+          # A duplicate key in $GITHUB_OUTPUT takes its last value, so writing
+          # `reason` again here is what makes the secret missing reported as
+          # unverified rather than as a silent skip. `applies` stays true, so
+          # the job still does not claim to have passed.
+          if printf '%s' "$scope_out" | grep -q '^applies=true$' \
+            && [ -z "${OPENROUTER_API_KEY:-}" ]; then
             echo "reason=the OPENROUTER_API_KEY secret is not set (owner action O1); nothing was measured" >> "$GITHUB_OUTPUT"
-          else
-            echo "applies=true" >> "$GITHUB_OUTPUT"
-            echo "reason=" >> "$GITHUB_OUTPUT"
           fi
       - if: steps.scope.outputs.applies == 'true' && env.OPENROUTER_API_KEY != ''
         run: uv sync --frozen
