@@ -1,6 +1,7 @@
 """Environment-driven app settings (TRD §6, §11)."""
 
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -23,6 +24,24 @@ class Settings(BaseSettings):
     web_origin: str = "http://localhost:5173"
     google_client_id: str = ""
     google_client_secret: str = ""
+
+    # Deployment environment. Read at startup: `production` is what makes the
+    # dev-only behaviour (the dev-log email transport) refuse to run, so it
+    # cannot be left at its default on a real deployment.
+    environment: Literal["development", "staging", "production"] = "development"
+
+    # Email (AC-1 password reset, KI-35). `dev_log` writes the message to the
+    # log instead of sending it, and is refused when ENVIRONMENT=production.
+    # `smtp` sends for real; AWS SES publishes an SMTP endpoint, so slice 9
+    # points these at SES with no code change.
+    email_transport: Literal["smtp", "dev_log"] = "dev_log"
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+    smtp_starttls: bool = True
+    smtp_timeout_seconds: float = 10.0
 
     # Observability (TRD §15). Empty keys disable the Langfuse callback.
     langfuse_public_key: str = ""

@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.cookies import clear_refresh_cookie, set_refresh_cookie
 from auth.deps import CurrentUser
-from auth.email import DevLogEmailTransport
+from auth.email import EmailDeliveryFailed, get_email_transport
 from auth.google import OAUTH_STATE_COOKIE, auth_url, exchange_code, make_pkce_pair
 from auth.passwords import hash_password, verify_password
 from auth.tokens import (
@@ -45,8 +45,6 @@ from schemas.auth import (
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["auth"])
 me_router = APIRouter(tags=["me"])
-
-_email_transport = DevLogEmailTransport()
 
 GOOGLE_STATE_TTL = 600
 
@@ -272,15 +270,21 @@ async def forgot_password(
     user = (
         await session.execute(select(User).where(User.email == body.email))
     ).scalar_one_or_none()
-    # Always 202: never reveal whether the address has an account.
+    # Always 202: never reveal whether the address has an account. That
+    # includes when delivery itself fails — a 502 here would tell an attacker
+    # which addresses have accounts, so a transport failure is logged and the
+    # response is unchanged.
     if user is not None and user.password_hash is not None:
         token = create_password_reset_token(user)
         link = f"{get_settings().web_origin}/reset-password?token={quote(token)}"
-        await _email_transport.send(
-            to=user.email,
-            subject="Reset your Veriforge password",
-            body=f"Reset your password: {link}",
-        )
+        try:
+            await get_email_transport().send(
+                to=user.email,
+                subject="Reset your Veriforge password",
+                body=f"Reset your password: {link}",
+            )
+        except EmailDeliveryFailed:
+            logger.exception("password reset email could not be delivered")
     return {"status": "accepted"}
 
 
