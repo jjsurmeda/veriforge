@@ -998,22 +998,39 @@ async def sweep_stale_runs(
     cutoff = datetime.now(UTC) - timedelta(seconds=get_settings().heartbeat_sweep_seconds)
 
     async def work(session: AsyncSession) -> list[tuple[UUID, UUID]]:
-        stale = (
+        candidates = (
             await session.execute(
-                select(Run.id, Run.message_id).where(
+                select(Run.id).where(
                     Run.status == "running",
                     Run.heartbeat_at.is_not(None),
                     Run.heartbeat_at < cutoff,
                 )
             )
+        ).scalars().all()
+        # The staleness predicate is repeated in the UPDATE, not trusted from
+        # the SELECT above: a run that heartbeats in between is alive, and
+        # matching on id alone failed it anyway — then settled its usage and
+        # published a false terminal failure (review S7). RETURNING names the
+        # rows this sweep actually took, so only those are touched below.
+        swept = (
+            await session.execute(
+                update(Run)
+                .where(
+                    Run.id.in_(candidates),
+                    Run.status == "running",
+                    Run.heartbeat_at.is_not(None),
+                    Run.heartbeat_at < cutoff,
+                )
+                .values(status="failed")
+                .returning(Run.id, Run.message_id)
+            )
         ).all()
-        for run_id, message_id in stale:
+        for run_id, message_id in swept:
             message = await session.get(Message, message_id)
             if message is not None and message.status is None:
                 message.status = "failed"
             await settle_run(session, run_id, None)
-            await session.execute(update(Run).where(Run.id == run_id).values(status="failed"))
-        return [(r[0], r[1]) for r in stale]
+        return [(row[0], row[1]) for row in swept]
 
     stale = await _with_session(session_factory, work)
     for run_id, _message_id in stale:
