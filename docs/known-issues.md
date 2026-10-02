@@ -1743,3 +1743,15 @@ with the label audit `testing.md` requires, plus
 `tests/evals/test_seed_items.py` so a fourth member cannot be added
 without a proof. Still open: the other 60 seed items carry no `proof`
 field at all, so only this class has been audited.
+
+**Fixed 2026-10-02 (P2).** `_DISTINCTIVE`, a table of characters and
+function words that occur in one Latin language's ordinary text and not
+another's, now scores `_MARKER_WEIGHT` (3) against a stop word's 1, and
+`detect_language` returns None on an exact tie between two non-English
+languages instead of taking the first key. `_LATIN_STOP_WORDS` is reordered
+and every short question re-tested to prove the result no longer depends on
+dict order. 25 short questions per language, all passing, none wrong. The
+Bovary question now detects `fr` (it was `es`). Note the two
+English-must-never-be-lost rules kept: English wins by default and a tie
+*below* English is English, not a tie — only a tie among non-English
+languages is a tie.

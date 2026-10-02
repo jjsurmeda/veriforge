@@ -7,7 +7,14 @@ product ships in must be found — rather than a full language grid.
 
 import pytest
 
-from textkit import DEFAULT_LANGUAGE, detect_language, language_name, target_language
+import textkit
+from textkit import (
+    _LATIN_STOP_WORDS,
+    DEFAULT_LANGUAGE,
+    detect_language,
+    language_name,
+    target_language,
+)
 
 # Every question in the 31-item acceptance set, with the language the run
 # actually answered in. Taken from evals/acceptance/books.json and
@@ -100,6 +107,100 @@ def test_text_with_no_language_signal_is_undetectable(text: str, expected: None)
     """None means "no signal", which is distinct from English: the renderer
     falls back to the English template rather than claiming to translate."""
     assert detect_language(text) is expected
+
+
+# KI-33: short questions, one captured set per language the detector claims
+# to know. Captured 2026-10-02 from the acceptance corpus questions and the
+# styles of question the product is actually asked, before the fix — not
+# invented to fit the new table. `None` is a legitimate expectation: a short
+# question whose only evidence is shared between two languages must come back
+# "no signal", never a wrong language. `expected` may be a set, in which case
+# None is always also allowed.
+#
+# The two at the top of the French block are the KI-33 cases: the Bovary
+# question detected as `es` ("tu" is in the es, fr, pt and pl tables alike, and
+# `es` was written first) and the Monte Cristo question as `fr` (only "il"
+# matched, and "il" is in the fr table alone). Both are wrong in the direction
+# that damages the product: TR-4 declines in the question's language, and the
+# acceptance scorer reads the same detector, so a correct French answer was
+# scored `language_mismatch`.
+SHORT_QUESTIONS: list[tuple[str, str, str | set[str | None] | None]] = [
+    ("en", "what books do we have?", "en"),
+    ("en", "tell me something about the adventures of sherlock holmes", "en"),
+    ("en", "What does the AW-2000 package contain?", "en"),
+    ("en", "In The Speckled Band, what killed Julia Stoner?", "en"),
+    ("fr", "Peux-tu résumer Madame Bovary ?", {"fr", None}),
+    ("fr", "Chi è il conte di montecristo?", {"it", None}),
+    ("fr", "Comment meurt Emma Bovary ?", "fr"),
+    ("fr", "Résume le roman en quelques phrases", "fr"),
+    ("es", "¿Cómo se llama el caballo de Don Quijote?", "es"),
+    ("es", "¿Quién escribió Cien años de soledad?", "es"),
+    ("de", "In was verwandelt sich Gregor Samsa?", "de"),
+    ("de", "Fasse den Roman in wenigen Sätzen zusammen", "de"),
+    ("tl", "Sino si Maria Clara?", "tl"),
+    ("tl", "Ano ang sinulat ng mga tauhan?", "tl"),
+    ("it", "Chi è Weena?", "it"),
+    ("pt", "Quem escreveu os maias?", "pt"),
+    ("pl", "Kto jest Pan Tadeusz?", "pl"),
+    ("nl", "Wie heet de vrouw in het zwart?", "nl"),
+    ("tr", "Fatih'te kim yaşar?", "tr"),
+    ("ru", "Кто такой Эола?", "ru"),
+    ("el", "Ποιος είναι ο Οδυσσέας;", "el"),
+    ("ja", "孫悟空の兵器は何か？", "ja"),
+    ("zh", "孫悟空的兵器是什麼？", "zh"),
+    ("none", "42", None),
+    ("none", "AW-2000", None),
+]
+
+
+@pytest.mark.parametrize(
+    ("language", "question", "expected"), SHORT_QUESTIONS, ids=[q for _, q, _ in SHORT_QUESTIONS]
+)
+def test_short_questions_detect_correctly_or_as_none(
+    language: str, question: str, expected: str | set[str | None] | None
+) -> None:
+    """KI-33: never a wrong language. A short question either detects as its
+    own language or comes back None; the detector is not allowed to pick a
+    language on a tie."""
+    got = detect_language(question)
+    allowed: set[str | None] = (
+        set(expected) | {None} if isinstance(expected, set) else {expected, None}
+    )
+    assert got in allowed, f"{question!r} ({language}): got {got!r}, allowed {allowed}"
+
+
+def test_a_tie_is_never_resolved_by_dict_order(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The mechanism, stated directly rather than through a symptom.
+
+    `_LATIN_STOP_WORDS` is a dict keyed by language, so an argmax that keeps
+    the first of several equal keys answers in whatever language happens to be
+    written first. Reordering the table must therefore change nothing: with the
+    old code, putting `es` first made "Peux-tu résumer Madame Bovary ?" detect
+    as `es`, and putting `fr` first made it detect as `fr` — the same function
+    returning a different language for the same string because a literal above
+    it was retyped. This checks every short question, not only the two that
+    were observed, so a new tie cannot hide.
+    """
+    queries = [question for _, question, _ in SHORT_QUESTIONS]
+    queries += [question for _, question, _ in ACCEPTANCE_QUESTIONS]
+    before = {query: detect_language(query) for query in queries}
+    reversed_table = dict(reversed(list(_LATIN_STOP_WORDS.items())))
+    monkeypatch.setattr(textkit, "_LATIN_STOP_WORDS", reversed_table)
+    after = {query: detect_language(query) for query in queries}
+    assert after == before
+
+
+def test_a_short_question_whose_words_are_all_shared_is_undetectable() -> None:
+    """"tu" is in the es, fr, pt and pl tables and nothing else in the
+    sentence distinguishes them, so this must not come back as a language."""
+    assert detect_language("tu") is None
+    assert detect_language("La mise en scène est belle ?") == "fr"
+
+
+def test_a_distinctive_marker_outranks_shared_vocabulary() -> None:
+    """The Bovary question differs from a bare "tu" only by "peux" and
+    "résumer", so the markers are what make it French rather than a tie."""
+    assert detect_language("Peux-tu résumer Madame Bovary ?") == "fr"
 
 
 def test_target_language_defaults_to_english() -> None:

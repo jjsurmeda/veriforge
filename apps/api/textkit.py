@@ -931,6 +931,96 @@ _LATIN_STOP_WORDS: dict[str, frozenset[str]] = {
 
 _WORD = re.compile(r"[^\W\d_]+", re.UNICODE)
 
+# Markers that belong to exactly one of the Latin-script languages above
+# (KI-33). A stop word alone is weak evidence on a short question: "tu" is in
+# the es, fr, pt and pl tables alike and "il" in the fr table alone, so a
+# question like "Peux-tu résumer Madame Bovary ?" or "Chi è il conte di
+# montecristo?" produced a four-way (or one-way, wrong) tie that `max()`
+# then resolved by dict order — `es` first, so French read as Spanish.
+#
+# These are the characters and function words that do not occur in ordinary
+# text of the other languages in the table, so a hit is decisive. They are
+# matched as substrings of the lower-cased text, which is what lets an
+# inflected form ("résumer", "verwandelt") count without listing every ending.
+# A language that wins on stop words alone has to clear the margin rule in
+# `detect_language` instead, so a missing marker costs precision, never
+# correctness.
+_DISTINCTIVE: dict[str, tuple[str, ...]] = {
+    "en": (
+        "the", "what", "who", "how", "why", "which", "whose", "whom",
+        "summarize", "summarise", "explain", "describe", "tell me",
+        "chapter", "according to", "how many", "does the",
+    ),
+    "es": (
+        "ñ", "¿", "¡", "cómo", "qué", "quién", "cuál", "cuándo", "dónde",
+        "porque", "pero", "también", "está", "están", "hay", "muy",
+        "cuántos", "cuántas", "dime", "explica", "libro", "mujer", "hombre",
+        "capítulo", "cuenta", "historia",
+    ),
+    "fr": (
+        "ç", "œ", "ë", "ï", "û", "ê", "â", "peux", "peut", "pourquoi",
+        "quelle", "quel", "où", "très", "même", "être", "résum", "aussi",
+        "nous", "vous", "elle", "leurs", "parce", "aujourd", "toujours",
+        "après", "avant", "chaque", "premier", "livre", "conte", "réponse",
+        "combien", "aujourd'hui",
+    ),
+    "de": (
+        "ß", "ä", "ö", "ü", "warum", "welche", "welcher", "welches",
+        "zusammen", "erkläre", "kapitel", "zwischen", "wurde", "wurden",
+        "einen", "einem", "seine", "ihrer", "gibt", "heißen", "geschichte",
+        "buch", "antwort", "dass", "doch", "über", "sowie", "durch",
+        "mehr", "eines", "einer",
+    ),
+    "it": (
+        "chi", "cosa", "quale", "sono", "perché", "perche", "dov'è", "dove",
+        "quando", "anche", "molto", "però", "della", "delle", "nel", "gli",
+        "questo", "questa", "racconta", "risposta", "libro", "uomo",
+        "donna", "quanti", "quante", "conte", "storia", "personaggio",
+    ),
+    "pt": (
+        "ã", "õ", "quem", "escreveu", "porque", "qual", "quando", "onde",
+        "resuma", "explique", "livro", "mulher", "homem", "também",
+        "muito", "porém", "está", "estão", "não", "são", "foi", "pelo",
+        "nossa", "nosso", "capítulo", "história", "obrigado", "obrigada",
+    ),
+    "nl": (
+        "waarom", "samenvatten", "uitleg", "boek", "waarin", "zijn",
+        "wordt", "heeft", "waar", "welke", "vrouw", "dame", "vertelt",
+        "hoofdstuk", "antwoord", "verhaal", "personage", "waarvan",
+    ),
+    "pl": (
+        "ą", "ę", "ł", "ź", "ż", "który", "która", "które", "jaki", "jakie",
+        "dlaczego", "podsumuj", "wyjaśnij", "książka", "kto", "ile",
+        "pani", "oraz", "przez", "między", "był", "była", "było", "się",
+        "jest", "że", "także", "wszystkich", "każdy", "pierwszy",
+        "historia", "postać", "odpowiedź", "rozdział", "czy", "więc",
+        "jednak", "gdyż", "również",
+    ),
+    "tr": (
+        "ı", "ğ", "ş", "nedir", "ne", "nasıl", "neden", "hangi",
+        "özetle", "açıkla", "kitap", "kaç", "bay", "değil", "için",
+        "hakkında", "göre", "var", "olan", "bölüm", "karakter", "cevap",
+        "anlat", "şey", "daha", "çok", "kadar", "sonra", "önce",
+    ),
+    "tl": (
+        "sino", "ano", "paano", "bakit", "alin", "buod", "ipaliwanag",
+        "aklat", "ilan", "kung", "mga", "ang", "ay", "ito", "iyon",
+        "hindi", "para", "may", "wala", "nang", "sapat", "bawat", "isa",
+        "dalawa", "tatlo", "bansa", "tauhan", "kabanata", "sagot",
+        "kuldang", "mismo", "natin", "ninyo", "kanila",
+    ),
+}
+
+# A marker is worth this many stop words. It has to be more than 1, or a
+# single shared word ("tu", "il") can outvote a language-exclusive hit on a
+# short question; it is deliberately not so large that one marker outranks a
+# long, clearly non-English sentence.
+_MARKER_WEIGHT = 3
+
+# A language must lead the runner-up by at least this much to be returned at
+# all. An exact tie is a tie, and is undetectable rather than a guess.
+_TIE_MARGIN = 1
+
 
 def _script_of(char: str) -> str | None:
     """The script bucket for one character, or None if it has no name."""
@@ -982,12 +1072,100 @@ def _is_japanese(text: str) -> bool:
     return any(_script_of(char) == "ja" for char in text)
 
 
+def _stop_word_scores(text: str) -> dict[str, int]:
+    scores: dict[str, int] = dict.fromkeys(_LATIN_STOP_WORDS, 0)
+    for word in _WORD.findall(text.lower()):
+        for code, stop_words in _LATIN_STOP_WORDS.items():
+            if word in stop_words:
+                scores[code] += 1
+    return scores
+
+
+def _marker_hit(marker: str, words: frozenset[str], text: str) -> bool:
+    """Does one distinctive marker occur in `text`?
+
+    A single-character marker is an orthographic clue and is matched anywhere
+    in the text (`ç`, `ß`, `ł`). A longer marker is matched against whole
+    words only, exact for short ones and as a prefix for long ones — that is
+    what lets an inflected form count ("résumer" for `résum`) without letting a
+    short fragment match inside an unrelated word, which is how a plain
+    substring test read French's `var` inside "Bovary" and answered `tr`.
+    """
+    if len(marker) == 1:
+        return marker in text
+    if marker in words:
+        return True
+    return len(marker) >= 4 and any(word.startswith(marker) for word in words)
+
+
+def _marker_hits(text: str) -> dict[str, int]:
+    """How many distinctive markers each Latin language finds in `text`.
+
+    A marker is a character or word that does not occur in ordinary text of
+    the other languages in the table, so one hit is worth more than any
+    number of shared stop words. Counted, not boolean, so a question with two
+    French markers outranks a single one.
+    """
+    lowered = text.lower()
+    words = frozenset(_WORD.findall(lowered))
+    hits: dict[str, int] = {}
+    for code, markers in _DISTINCTIVE.items():
+        count = sum(1 for marker in markers if _marker_hit(marker, words, lowered))
+        if count:
+            hits[code] = count
+    return hits
+
+
+def _latin_language(text: str) -> str | None:
+    """The Latin-script language of `text`, or None when it is not decidable.
+
+    One weighted score per language: a stop-word hit is 1, a distinctive
+    marker is `_MARKER_WEIGHT`, so language-exclusive evidence outranks the
+    shared vocabulary that produced KI-33's wrong answers. English is the
+    template's own language and wins by default — a non-English language has
+    to out-score it, never merely match it.
+
+    A tie is never resolved by dict order. The tables are keyed by language,
+    so first-wins would silently answer in whatever language happened to be
+    written first: that is exactly how "Peux-tu résumer Madame Bovary ?" came
+    back as `es` (only `tu` matched, in the es, fr, pt and pl tables alike) and
+    "Chi è il conte di montecristo?" as `fr` (only `il`). An exact tie is a
+    tie — the function returns None, which every caller already reads as "no
+    signal, do not act on it".
+    """
+    scores = _stop_word_scores(text)
+    for code, count in _marker_hits(text).items():
+        scores[code] += _MARKER_WEIGHT * count
+    english = scores[DEFAULT_LANGUAGE]
+    candidates = [code for code in scores if code != DEFAULT_LANGUAGE and scores[code]]
+    if not candidates:
+        # No non-English signal at all: English if it has any, else nothing.
+        return DEFAULT_LANGUAGE if english else None
+    top = max(scores[code] for code in candidates)
+    if top - english < _TIE_MARGIN:
+        # English leads or ties, so there is no evidence it is not English.
+        # A tie *below* English lands here too, and is English — not a
+        # non-English tie, which is a different question.
+        return DEFAULT_LANGUAGE
+    leaders = [code for code in candidates if scores[code] == top]
+    if len(leaders) > 1:
+        # A tie the markers could not break is a tie, not a coin flip.
+        return None
+    winner = leaders[0]
+    runner_up = max((scores[code] for code in candidates if code != winner), default=0)
+    if top - runner_up < _TIE_MARGIN:
+        return None
+    return winner
+
+
 def detect_language(text: str) -> str | None:
     """The ISO-639-1 code for `text`, or None if it carries no usable signal.
 
-    None means "don't act on it" — an empty question, or a bare number or
-    product code — not "English". A renderer must not offer to translate into
-    a language it guessed, so callers check for None before using the result.
+    None means "don't act on it" — an empty question, a bare number or
+    product code, or a short question whose only evidence is shared between
+    several languages (KI-33) — not "English". A renderer must not offer to
+    translate into a language it guessed, so callers check for None before
+    using the result.
     """
     if not text.strip():
         return None
@@ -996,19 +1174,7 @@ def detect_language(text: str) -> str | None:
     script = _dominant_script(text)
     if script is not None:
         return script
-    scores: dict[str, int] = dict.fromkeys(_LATIN_STOP_WORDS, 0)
-    for word in _WORD.findall(text.lower()):
-        for code, stop_words in _LATIN_STOP_WORDS.items():
-            if word in stop_words:
-                scores[code] += 1
-    # `>` keeps the earlier entry on a tie, and English is first: a language
-    # has to out-score it, never merely match it.
-    best = DEFAULT_LANGUAGE
-    best_score = 0
-    for code, score in scores.items():
-        if score > best_score:
-            best, best_score = code, score
-    return best if best_score else None
+    return _latin_language(text)
 
 
 def language_name(code: str | None) -> str:
