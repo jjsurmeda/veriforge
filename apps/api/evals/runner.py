@@ -527,6 +527,11 @@ def aggregate(results: list[tuple[EvalItem, EvalResult]]) -> dict[str, float | N
         "answer_rate": answer_rate,
         "should_abstain_correct": should_abstain_correct,
         "answerable_answered": answerable_answered,
+        # The denominators for the two counts above. Recorded so the gate can
+        # check that it is comparing the same item set on both sides: "7 of 8"
+        # and "7 of 6" are both `7`, and only the second is a regression.
+        "should_abstain_total": float(len(abstain_items)),
+        "answerable_total": float(len(answerable)),
         "p50_latency_ms": p50,
         "p50_our_overhead_ms": (float(statistics.median(overheads)) if overheads else None),
         "overhead_items_attributed": float(len(overheads)),

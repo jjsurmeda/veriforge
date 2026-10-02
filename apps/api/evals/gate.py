@@ -174,6 +174,57 @@ def _item_gate(
         )
 
 
+# The denominators of the two item counts the gate compares. Recorded in the
+# summary and the baseline so the gate can confirm both runs graded the SAME
+# set of items before it compares a count against a count.
+_TOTAL_KEYS: tuple[tuple[str, str], ...] = (
+    ("should_abstain_total", "abstention accuracy"),
+    ("answerable_total", "answer rate"),
+)
+
+
+def _totals_gate(
+    baseline: Mapping[str, float | None],
+    current: Mapping[str, float | None],
+    *,
+    failures: list[str],
+    warnings: list[str],
+) -> None:
+    """Refuse to compare counts taken over different item sets.
+
+    `should_abstain_correct` and `answerable_answered` are bare counts with no
+    denominator in the file, so "8 items correct" against a baseline of "8
+    items correct" is read as no change whether the run graded 8 of 8 or 8 of
+    11. That is the same class of failure as comparing a faithfulness number
+    across two different models: the numbers line up and the comparison is
+    meaningless, and the output looks like a pass. So the totals are stored and
+    checked first, and a mismatch is a refusal rather than a warning — the
+    gate cannot measure what it was asked to measure.
+
+    A baseline written before the totals existed records neither key. That is
+    unverifiable rather than passing, so it is a warning, exactly as a missing
+    count is: an old baseline is not a regression.
+    """
+    for key, label in _TOTAL_KEYS:
+        base_total, curr_total = baseline.get(key), current.get(key)
+        if base_total is None or curr_total is None:
+            warnings.append(
+                f"{label}: the baseline records no `{key}`, so the two runs cannot be "
+                "shown to have graded the same items and this gate is UNVERIFIED rather "
+                "than passing. Rewrite the baseline with "
+                "`python -m evals.runner --subset fast20 --baseline`."
+            )
+            continue
+        if float(base_total) == float(curr_total):
+            continue
+        failures.append(
+            f"{label}: this run graded {curr_total:.0f} items and the baseline graded "
+            f"{base_total:.0f}, so `{key}` is not comparable — a count over a different "
+            "item set is not a measurement of the same thing. The item set changed "
+            "between the two runs; re-measure the baseline on the current subset."
+        )
+
+
 def check(
     baseline: dict[str, float | None], current: dict[str, float | None]
 ) -> tuple[list[str], list[str]]:
@@ -192,6 +243,10 @@ def check(
     base_f, curr_f = baseline.get("faithfulness"), current.get("faithfulness")
     if base_f is not None and curr_f is not None and curr_f < base_f - FAITHFULNESS_DROP:
         failures.append(f"faithfulness {base_f:.3f} → {curr_f:.3f} (drop > {FAITHFULNESS_DROP})")
+    # Before the counts below, not after: they are denominators for those
+    # counts, so an item-set mismatch makes them meaningless and the gate has
+    # to say so rather than report a comparison it cannot make.
+    _totals_gate(baseline, current, failures=failures, warnings=warnings)
     # A should-abstain item that stopped abstaining is a flip; so is an
     # answerable item that started abstaining, and that one shows up here as a
     # rise in `answered`. Both are counted as the same failure — the gate does

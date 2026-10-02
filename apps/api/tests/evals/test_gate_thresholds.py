@@ -50,6 +50,8 @@ FAST20_BASELINE: dict[str, float | None] = {
     "answer_rate": 0.9166666666666666,
     "should_abstain_correct": 7.0,
     "answerable_answered": 11.0,
+    "should_abstain_total": 8.0,
+    "answerable_total": 12.0,
     "p50_latency_ms": 8548.5,
     "p50_our_overhead_ms": 2317.5,
     "items": 20.0,
@@ -251,6 +253,136 @@ def test_a_baseline_without_the_counts_is_unverifiable_not_passing() -> None:
     assert len(warnings) == 2
     assert "should_abstain_correct" in warnings[0] and "UNVERIFIED" in warnings[0]
     assert "answerable_answered" in warnings[1] and "UNVERIFIED" in warnings[1]
+
+
+# --- P9: the counts are only comparable over the same item set ------------
+
+
+def test_the_same_counts_over_a_different_item_set_are_refused() -> None:
+    """The defect this closes. `should_abstain_correct` is a bare count with no
+    denominator in the file, so 8 against 8 reads as "no change" whether the
+    run graded 8 of 8 should-abstain items or 8 of 11. The gate was comparing
+    two different measurements and reporting a pass — the same failure as
+    comparing faithfulness across two different models, which
+    `compare_models` already refuses."""
+    # 9 should-abstain items in the run against 8 in the baseline, and the
+    # count of correct ones unchanged at 8. On the old gate: no failure.
+    current = _run(should_abstain_total=9.0, answerable_total=11.0)
+
+    failures = compare(FAST20_BASELINE, current)
+
+    assert any("should_abstain_total" in failure for failure in failures)
+    assert any("answerable_total" in failure for failure in failures)
+
+
+def test_the_refusal_explains_itself() -> None:
+    """An operator reading CI has to be told what to do, not just that the
+    numbers are wrong: the item set changed, so the baseline is stale."""
+    failures = compare(FAST20_BASELINE, _run(should_abstain_total=9.0))
+
+    assert len(failures) == 1
+    message = failures[0]
+    assert "graded 9 items" in message
+    assert "graded 8" in message
+    assert "re-measure the baseline" in message
+
+
+def test_matching_totals_change_nothing() -> None:
+    """The complement: the same subset, so the gate behaves exactly as before
+    this check existed — the item-flip gates fire and nothing else does."""
+    one_flip = _run(should_abstain_correct=6.0)
+    assert compare(FAST20_BASELINE, one_flip) == []
+    assert any("1 item flipped" in w for w in notes(FAST20_BASELINE, one_flip))
+
+    two_flips = _run(should_abstain_correct=5.0)
+    assert [f for f in compare(FAST20_BASELINE, two_flips) if "flipped" in f]
+    assert not [f for f in compare(FAST20_BASELINE, two_flips) if "_total" in f]
+    assert compare(FAST20_BASELINE, _run()) == []
+
+
+def test_a_baseline_without_the_totals_is_unverifiable_not_passing() -> None:
+    """Consistent with how a missing count is already handled: a baseline
+    written before the totals existed is not a regression, but it is not a
+    pass either, and the warning names the key and the way out."""
+    baseline = dict(FAST20_BASELINE)
+    del baseline["should_abstain_total"]
+    del baseline["answerable_total"]
+
+    assert compare(baseline, _run()) == []
+    warnings = notes(baseline, _run())
+    assert len(warnings) == 2
+    assert "should_abstain_total" in warnings[0] and "UNVERIFIED" in warnings[0]
+    assert "answerable_total" in warnings[1] and "UNVERIFIED" in warnings[1]
+
+
+def test_aggregate_records_the_two_totals() -> None:
+    """The other half: the gate can only compare what the summary stores."""
+    summary = aggregate(
+        [
+            (_item(should_abstain=True), _scored_result(abstained=True)),
+            (_item(should_abstain=True), _scored_result(abstained=True)),
+            (_item(should_abstain=True), _scored_result(abstained=False)),
+            (_item(should_abstain=False), _scored_result(abstained=False)),
+            (_item(should_abstain=False), _scored_result(abstained=True)),
+        ]
+    )
+    assert summary["should_abstain_total"] == 3.0
+    assert summary["answerable_total"] == 2.0
+
+
+def test_an_errored_item_is_left_out_of_the_totals() -> None:
+    """An errored item was never measured, so it must not silently shrink the
+    denominator and turn a dropped item into a mismatch — or, worse, into a
+    clean comparison over a different set."""
+    failed = EvalResult(
+        eval_run_id=uuid4(),
+        item_id=uuid4(),
+        answer="",
+        latency_ms=0,
+        error="TimeoutError: boom",
+        stage_ms={},
+    )
+    summary = aggregate([(_item(should_abstain=True), failed)])
+
+    assert summary["should_abstain_total"] == 0.0
+    assert summary["answerable_total"] == 0.0
+
+
+def test_the_gate_exits_non_zero_on_a_totals_mismatch(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Driven through `gate.main` because the claim under test is about the
+    process exiting 1, not about a helper returning a list. A refusal the
+    process ignores is not a refusal."""
+    baseline_path = tmp_path / "baseline_fast20.json"
+    baseline_path.write_text(json.dumps(_file()), encoding="utf-8")
+    state = tmp_path / "state.json"
+    state.write_text("{}", encoding="utf-8")
+
+    # 9 should-abstain items where the baseline had 8, every count identical.
+    results: list[tuple[EvalItem, EvalResult]] = [
+        (_item(should_abstain=should_abstain), _scored_result(abstained=abstained))
+        for should_abstain, abstained in (
+            *((True, True),) * 9,
+            *((False, False),) * 11,
+        )
+    ]
+
+    async def fake_run_eval(**_: Any) -> tuple[Any, list[tuple[EvalItem, EvalResult]]]:
+        return SimpleNamespace(id=uuid4()), results
+
+    monkeypatch.setattr(gate, "run_eval", fake_run_eval)
+    monkeypatch.setattr(gate, "BASELINE_FAST20_FILE", baseline_path)
+    monkeypatch.setattr(gate, "STATE_FILE", state)
+
+    with pytest.raises(SystemExit) as exited:
+        asyncio.run(gate.main())
+
+    assert exited.value.code == 1
+    captured = capsys.readouterr()
+    assert "GATE FAIL" in captured.err
+    assert "should_abstain_total" in captured.err
+    assert "eval gate passed" not in captured.out
 
 
 # --- unchanged behaviour ---------------------------------------------------
