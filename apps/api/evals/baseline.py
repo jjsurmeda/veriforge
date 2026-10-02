@@ -23,7 +23,9 @@ per-item evidence `scripts/eval_dump_stages.py` writes beside it is what says
 """
 
 import argparse
+import inspect
 import json
+import re
 import statistics
 import sys
 from collections.abc import Mapping, Sequence
@@ -31,40 +33,58 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from evals.runner import BASELINE_FAST20_FILE
+from evals.runner import BASELINE_FAST20_FILE, aggregate
 
 # Where `evals.gate` records each run's summary. Gitignored, like the
 # per-item export next to it. `summary-` distinguishes these from
 # `eval_dump_stages.py`'s `<timestamp>-<sha>.json` files.
 SUMMARY_DIR = Path(__file__).resolve().parents[3] / ".data" / "evals"
 
-# The metrics averaged, per metric, across the runs. Every numeric key
-# `evals.runner.aggregate` emits except the four keys in INVARIANT_KEYS, which
-# are recorded as they are: a mean over two different item sets is not a
-# measurement of anything, so those runs are refused instead of averaged.
-MEAN_METRICS: tuple[str, ...] = (
-    "faithfulness",
-    "context_recall",
-    "abstention_accuracy",
-    "answer_rate",
-    "should_abstain_correct",
-    "answerable_answered",
-    "p50_latency_ms",
-    "p50_our_overhead_ms",
-    "overhead_items_attributed",
-    "p50_total_ms_unattributed_items",
-    "failed",
-)
-
 # Must be identical in every run, or the mean is a number over nothing. The two
 # totals are the denominators the gate compares item counts against (P9), and
 # `items`/`scored` say how much of the subset each run actually measured — a
 # run that lost an item has nothing to contribute to a mean of five.
+#
+# These are NOT averaged: they are the facts that make averaging valid, so
+# averaging them would discard the check. Two runs grading 8 of 8 and 8 of 11
+# both report `8`; the mean of those is `8`, and the disagreement has to be
+# caught rather than smoothed away.
 INVARIANT_KEYS: tuple[str, ...] = (
     "should_abstain_total",
     "answerable_total",
     "items",
     "scored",
+)
+
+
+def _aggregate_metric_keys() -> tuple[str, ...]:
+    """The keys `evals.runner.aggregate` emits, read from its own source.
+
+    Derived rather than restated, because a hand-maintained copy is a claim
+    about what `aggregate` returns rather than a check on it — and a metric
+    quietly missing from that list is a metric silently not averaged.
+    `evals.gate._mean_of` uses the same list, so a new metric reaches both the
+    baseline writer and the retry's verdict without a second place to remember.
+    """
+    source = inspect.getsource(aggregate)
+    body = source[source.index("return {") :]
+    keys = tuple(re.findall(r'^\s*"([a-z0-9_]+)":', body, re.M))
+    if not keys:
+        raise RuntimeError(
+            "could not read evals.runner.aggregate's metric keys out of its own source; "
+            "it may no longer return a plain dict literal"
+        )
+    return keys
+
+
+AGGREGATE_METRICS: tuple[str, ...] = _aggregate_metric_keys()
+
+# The metrics averaged, per metric, across the runs: every numeric key
+# `evals.runner.aggregate` emits EXCEPT the four keys in INVARIANT_KEYS, which
+# are recorded as they are — a mean over two different item sets is not a
+# measurement of anything, so those runs are refused instead of averaged.
+MEAN_METRICS: tuple[str, ...] = tuple(
+    key for key in AGGREGATE_METRICS if key not in INVARIANT_KEYS
 )
 
 

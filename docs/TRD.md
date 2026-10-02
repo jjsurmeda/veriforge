@@ -751,6 +751,38 @@ argument as the totals check above). A mean over either is not a measurement —
 and unlike a failed comparison, it would then be *stored* for every later run to
 be measured against.
 
+**The gate re-runs and judges the mean of 3 (owner decision, 2026-10-02).** One
+fast20 run is a single draw from a distribution wider than the limits it is
+measured against, so a single draw fails about as often as the tolerance says it
+should and for no other reason. **A run that passes is accepted immediately and
+costs one run.** A run that fails is repeated until **3** runs exist, and the
+verdict is then taken on the **per-metric mean of the 3**, against the same
+baseline and by the same rules: the 0.06 drop, the **0.90 floor applied to the
+mean**, the 2-item limits, the 1.35× overhead factor. None of those limits moves.
+This applies in CI and in `make eval-gate-local`, which run the same module.
+
+The mean is used rather than a re-roll-and-hope because the mean is the same
+statistic for all 3 runs, where a median **selects** — and selects the favourable
+subset, which is how the D6 baseline (the median of three) was written at
+0.98333 and then failed at 0.94375 on its own fourth run.
+
+Two honest limits on what the mean buys, both tested:
+
+* **Averaging cannot rescue the faithfulness drop.** If all 3 runs are below
+  `baseline − 0.06` then their mean is below it too. The retry's faithfulness
+  benefit comes from the **two extra draws**, not from the mean. The mean's real
+  rescue power is on the **item counts**, where individual runs can sit either
+  side of the two-item limit while their mean does not.
+* **A failure a re-run cannot fix is not retried.** A model mismatch or an
+  item-set mismatch is a property of the configuration: re-running the same
+  subset against the same baseline produces the same refusal, so those exit after
+  one run rather than spending two more.
+
+Every run's numbers and the final verdict go into the CI job summary, so a merge
+rescued by the retry is *visible as a retry*. A gate that quietly accepted one
+lucky draw would be indistinguishable from a gate with no retry, and would hide
+exactly the flapping that motivated it.
+
 **What the widening is not.** None of these changes is evidence that the
 product improved — every one was measured against a gate that flapped on noise.
 A wider tolerance says only that the measurement is noisier than the bar

@@ -37,9 +37,12 @@ import pytest
 
 WORKFLOW = Path(__file__).resolve().parents[4] / ".github" / "workflows" / "ci.yml"
 
+# The `job` fixture's value, aliased so the test signatures fit.
+Job = dict[str, object]
+
 
 @pytest.fixture(scope="module")
-def eval_gate_job() -> dict[str, object]:
+def job() -> Job:
     """The eval-gate job's steps, by name.
 
     Parsed with indentation rather than a YAML library: PyYAML has no type
@@ -74,21 +77,21 @@ def _steps(body: str) -> list[tuple[str | None, str]]:
     return steps
 
 
-def test_the_export_runs_in_the_eval_gate_job(eval_gate_job: dict[str, object]) -> None:
+def test_the_export_runs_in_the_eval_gate_job(job: Job) -> None:
     """`eval_dump_stages.py` reads `eval_results` back out of the database, so
     it has to be a step of the gate job — after the gate has run, and before
     the service container is torn down."""
-    body = str(eval_gate_job["body"])
+    body = str(job["body"])
     assert "scripts/eval_dump_stages.py" in body, (
         "the per-item export no longer runs in CI: a failing gate would again "
         "report only that the number moved, not which items moved (KI-42)"
     )
 
 
-def test_the_export_runs_after_the_gate_and_before_the_database_goes(eval_gate_job) -> None:
+def test_the_export_runs_after_the_gate_and_before_the_database_goes(job: Job) -> None:
     """Order is the whole mechanism. `eval_dump_stages.py` reads the rows the
     gate wrote, out of a database that exists only for the length of the job."""
-    steps = _steps(str(eval_gate_job["body"]))
+    steps = _steps(str(job["body"]))
     gate_at = next(
         (i for i, (_, text) in enumerate(steps) if "-m evals.gate" in text),
         None,
@@ -106,14 +109,14 @@ def test_the_export_runs_after_the_gate_and_before_the_database_goes(eval_gate_j
     )
 
 
-def test_the_export_is_not_conditional_on_the_gate_passing(eval_gate_job) -> None:
+def test_the_export_is_not_conditional_on_the_gate_passing(job: Job) -> None:
     """A gate that fails is the case worth keeping evidence for.
 
     `success()` is the default for a step whose predecessor failed, so a step
     with no `if:` of its own does not run after a red gate — and the evidence
     that would explain the red gate is exactly what would be missing.
     """
-    body = str(eval_gate_job["body"])
+    body = str(job["body"])
     export_step = next(
         text for _, text in _steps(body) if "eval_dump_stages.py" in text
     )
@@ -132,9 +135,9 @@ def test_the_export_is_not_conditional_on_the_gate_passing(eval_gate_job) -> Non
     )
 
 
-def test_the_evidence_is_uploaded_on_the_failure_path(eval_gate_job) -> None:
+def test_the_evidence_is_uploaded_on_the_failure_path(job: Job) -> None:
     """`always()` on the upload, which is what keeps a red run diagnosable."""
-    body = str(eval_gate_job["body"])
+    body = str(job["body"])
     upload_step = next(
         (text for _, text in _steps(body) if "actions/upload-artifact" in text), None
     )
@@ -146,11 +149,11 @@ def test_the_evidence_is_uploaded_on_the_failure_path(eval_gate_job) -> None:
     )
 
 
-def test_an_empty_upload_is_an_error_not_a_success(eval_gate_job) -> None:
+def test_an_empty_upload_is_an_error_not_a_success(job: Job) -> None:
     """An upload step that finds nothing reports success with nothing in it,
     which is KI-42's failure mode one level up: a green step that means there
     is no evidence."""
-    body = str(eval_gate_job["body"])
+    body = str(job["body"])
     upload_step = next(text for _, text in _steps(body) if "actions/upload-artifact" in text)
 
     assert re.search(r"^\s+if-no-files-found: error$", upload_step, re.M), (
@@ -158,11 +161,11 @@ def test_an_empty_upload_is_an_error_not_a_success(eval_gate_job) -> None:
     )
 
 
-def test_the_artifact_carries_both_the_export_and_the_gate_log(eval_gate_job) -> None:
+def test_the_artifact_carries_both_the_export_and_the_gate_log(job: Job) -> None:
     """The export is the per-item evidence; the log is the comparison itself —
     the baseline, the current numbers and every `GATE FAIL` line. Without the
     log the artifact says what the items were but not what the gate decided."""
-    body = str(eval_gate_job["body"])
+    body = str(job["body"])
     upload_step = next(text for _, text in _steps(body) if "actions/upload-artifact" in text)
     paths = re.findall(r"^\s+(\.data/evals/\S+)$", upload_step, re.M)
 
@@ -170,7 +173,7 @@ def test_the_artifact_carries_both_the_export_and_the_gate_log(eval_gate_job) ->
     assert any(path.endswith("gate.log") for path in paths), "the gate's own log is not uploaded"
 
 
-def test_the_gate_output_is_tee_d_to_the_log(eval_gate_job) -> None:
+def test_the_gate_output_is_tee_d_to_the_log(job: Job) -> None:
     """A log file that is never written is an artifact path that silently
     matches nothing, and the `GATE FAIL:` lines are the run's verdict.
 
@@ -179,7 +182,7 @@ def test_the_gate_output_is_tee_d_to_the_log(eval_gate_job) -> None:
     would report green on a red comparison — the one failure this whole job
     exists to prevent.
     """
-    body = str(eval_gate_job["body"])
+    body = str(job["body"])
     gate_step = next(text for _, text in _steps(body) if "-m evals.gate" in text)
 
     assert "pipefail" in gate_step, (
