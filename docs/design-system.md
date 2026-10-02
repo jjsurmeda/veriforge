@@ -180,4 +180,4 @@ Use plain, specific language: `Ask anything`, `Ask a follow-up`, `Sources`, `Rel
 - [x] Left-aligned answer prose; centring only for empty/auth states.
 - [x] Real type scale and tabular numeric data.
 - [x] 4px spacing rhythm and purposeful motion.
-- [x] Required screenshot and accessibility verification recorded in `docs/prompts/redesign-v3-audit.md`.
+- [x] Required screenshot and accessibility verification recorded in `docs/prompts/2026-09-26-0107-redesign-v3-audit.md`.

@@ -4,7 +4,7 @@ import { fetchEventSource } from '@microsoft/fetch-event-source'
 import { useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { getAccessToken } from '../../../lib/auth'
+import { authedFetch } from '../../../lib/auth'
 import { useChatRunStore } from '../store'
 import { TERMINAL_TYPES, type StreamEvent } from '../types'
 
@@ -50,7 +50,12 @@ export function useRunStream(
     fetchEventSource(url, {
       signal: controller.signal,
       credentials: 'include',
-      headers: { Authorization: `Bearer ${getAccessToken() ?? ''}` },
+      // The stream goes through the same authedFetch as every generated
+      // client call, so an expired access token is refreshed once and the
+      // reconnect retries with the renewed bearer (react.md: one owner for
+      // the connection). A static Authorization header here would stay stale
+      // across fetch-event-source's internal retries.
+      fetch: authedFetch,
       onopen: async (response) => {
         if (!response.ok) throw new Error(`stream open failed: ${response.status}`)
       },

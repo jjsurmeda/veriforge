@@ -14,14 +14,17 @@ from typing import Any
 import litellm
 from litellm.exceptions import (
     APIConnectionError,
+    AuthenticationError,
     BadRequestError,
     InternalServerError,
+    PermissionDeniedError,
     RateLimitError,
     ServiceUnavailableError,
     Timeout,
 )
 
 from config import get_settings
+from errors import AppError
 from quota.usage import get_usage_context
 
 logger = logging.getLogger(__name__)
@@ -42,6 +45,94 @@ _FAILOVER_ERRORS = (
 _slots: dict[tuple[int, str], asyncio.Semaphore] = {}
 
 _SENTENCE_END = re.compile(r"[.!?\n]")
+
+
+# --- terminal provider failures (KI-23) -----------------------------------
+#
+# A run's terminal failure used to collapse to one code, so a provider whose
+# key is invalid, a provider that is out of credit and a provider that is
+# merely down all reached the user as "the run could not finish. Try again."
+# For all three, retrying cannot help, and the third is an operator problem
+# wearing a user problem's clothes.
+#
+# The three codes are the whole vocabulary, and they are chosen by what the
+# person reading the message can do about it:
+#
+#   provider_key_invalid  the configured key is rejected (401/403). Operator
+#                         action: fix or replace the key.
+#   quota_exceeded        no credit to run on, from either side: the app's own
+#                         5h/month window (which carries `reset_at`) or the
+#                         provider's balance (which does not). Operator action:
+#                         top up, or wait for the window.
+#   provider_unavailable  the provider is down, timing out, or unreachable
+#                         after the one failover hop. Retry may work; nothing
+#                         needs fixing first.
+#
+# `_FAILOVER_ERRORS` above is the transient set that gets one retry. These are
+# classified only AFTER that retry has been used, so a provider that 429s once
+# and then answers never produces a failure code at all.
+_PROVIDER_KEY_ERRORS = (AuthenticationError, PermissionDeniedError)
+_PROVIDER_QUOTA_ERRORS = (litellm.exceptions.BudgetExceededError,)
+
+
+class ProviderKeyInvalid(AppError):
+    """The provider rejected the configured key. An operator has to fix it."""
+
+    status_code = 502
+
+
+class ProviderQuotaExhausted(AppError):
+    """The provider has no credit left for this key.
+
+    The same `quota_exceeded` code the app's own window uses, because it is the
+    same fact from the user's side — nothing will run until there is credit —
+    and it carries no `reset_at`, because a provider balance has no window to
+    reset at. The distinction an operator needs (which side ran out) is in the
+    `detail`, not in the code the UI keys its copy off.
+    """
+
+    status_code = 402
+
+
+class ProviderUnavailable(AppError):
+    """The provider is down or unreachable after the failover hop."""
+
+    status_code = 503
+
+
+def classify_provider_error(exc: BaseException) -> AppError | None:
+    """The domain error for a terminal provider failure, or None if `exc` is
+    not one this module can speak for.
+
+    Returns rather than raises so the caller keeps one `except` clause and
+    this stays a pure function of the exception: a mapping, not a control
+    flow. A RateLimitError that survived the failover hop is classified as
+    `ProviderQuotaExhausted` (402) rather than `ProviderUnavailable` (503),
+    because a 429 from a provider that has run out of credit does not fix
+    itself and telling the user to try again sends them into a retry loop that
+    spends nothing and succeeds never — KI-23's exact complaint.
+    """
+    if isinstance(exc, _PROVIDER_KEY_ERRORS):
+        return ProviderKeyInvalid(
+            "provider_key_invalid",
+            "The model provider rejected our API key. This is a configuration "
+            "problem, not something a retry will fix.",
+            {"provider_exception": type(exc).__name__},
+        )
+    if isinstance(exc, (*_PROVIDER_QUOTA_ERRORS, RateLimitError)):
+        return ProviderQuotaExhausted(
+            "quota_exceeded",
+            "The model provider is out of credit for this key. Nothing will run "
+            "until it is topped up; your chats and documents are fine.",
+            {"source": "provider", "provider_exception": type(exc).__name__},
+        )
+    if isinstance(exc, (ServiceUnavailableError, InternalServerError, Timeout, APIConnectionError)):
+        return ProviderUnavailable(
+            "provider_unavailable",
+            "The model provider could not be reached. This is usually temporary.",
+            {"provider_exception": type(exc).__name__},
+        )
+    return None
 
 
 def _slot(model: str) -> asyncio.Semaphore:
@@ -100,6 +191,7 @@ def _request_kwargs(
     inherited_key: str | None = None,
     *,
     reasoning: bool = False,
+    temperature: float | None = None,
 ) -> dict[str, Any]:
     settings = get_settings()
     role = metadata.get("role", "unknown")
@@ -114,6 +206,12 @@ def _request_kwargs(
             "role": role,
         },
     }
+    # Absent (None) means "send nothing", so the provider's own default applies
+    # and every caller that predates this parameter behaves exactly as before
+    # (KI-32). A pinned value is rebuilt here rather than carried in `extra` so
+    # the one-hop failover gets the same one.
+    if temperature is not None:
+        kwargs["temperature"] = temperature
     api_key = _api_key(model) or inherited_key
     if api_key is not None:
         kwargs["api_key"] = api_key
@@ -145,6 +243,7 @@ async def _open(
     metadata: dict[str, str],
     *,
     reasoning: bool = False,
+    temperature: float | None = None,
     **extra: Any,
 ) -> tuple[str, Any]:
     """Start one completion, capped per model; on a transient failure hop once
@@ -152,8 +251,10 @@ async def _open(
 
     The cap covers opening the call, not reading a stream: provider limits
     count requests started. A stream never fails over after its first token.
+    `temperature` is re-applied on the failover attempt: a request that
+    restarts on llm_fallback_model must not silently lose it (KI-32).
     """
-    kwargs = _request_kwargs(model, metadata, reasoning=reasoning)
+    kwargs = _request_kwargs(model, metadata, reasoning=reasoning, temperature=temperature)
     try:
         async with _slot(model):
             return model, await _acomplete(model, messages, kwargs, extra)
@@ -166,7 +267,9 @@ async def _open(
         )
         same_provider = model.split("/", 1)[0] == fallback.split("/", 1)[0]
         inherited = kwargs.get("api_key") if same_provider else None
-        fallback_kwargs = _request_kwargs(fallback, metadata, inherited, reasoning=reasoning)
+        fallback_kwargs = _request_kwargs(
+            fallback, metadata, inherited, reasoning=reasoning, temperature=temperature
+        )
         async with _slot(fallback):
             return fallback, await _acomplete(fallback, messages, fallback_kwargs, extra)
 
@@ -192,6 +295,7 @@ async def _stream_once(
     metadata: dict[str, str],
     *,
     on_reasoning: Callable[[str], Awaitable[None]] | None,
+    temperature: float | None = None,
 ) -> AsyncIterator[tuple[str, str]]:
     """One streamed attempt. Yields (model that answered, content delta). A
     provider error raised while iterating surfaces to the caller, which is what
@@ -202,6 +306,7 @@ async def _stream_once(
         metadata,
         # A caller that renders the thinking stream (Deep mode) needs it on.
         reasoning=on_reasoning is not None,
+        temperature=temperature,
         stream=True,
         stream_options={"include_usage": True},
     )
@@ -231,6 +336,7 @@ async def stream_completion(
     messages: list[dict[str, str]],
     metadata: dict[str, str],
     on_reasoning: Callable[[str], Awaitable[None]] | None = None,
+    temperature: float | None = None,
 ) -> AsyncIterator[str]:
     """Yield content deltas from one streamed chat completion.
 
@@ -239,6 +345,13 @@ async def stream_completion(
     (litellm normalises provider-specific chain-of-thought fields to
     `delta.reasoning_content`) — existing callers that don't pass it see
     no behaviour change.
+
+    `temperature` is `None` by default, which sends nothing at all and leaves
+    the provider's own default in place; a number is passed through unchanged,
+    including onto the restart after a mid-stream death (KI-32). Pinning it
+    where a call's output has to be reproducible — claim extraction, whose
+    claim list feeds the faithfulness mean — is a caller decision, not a
+    default here.
 
     A provider that dies after its first chunk restarts the whole request on
     llm_fallback_model rather than killing the run (KI-17). Partial output is
@@ -256,7 +369,13 @@ async def stream_completion(
         current = model
         try:
             async for answered, delta in _stream_once(
-                current, messages, metadata, on_reasoning=on_reasoning
+                current,
+                messages,
+                metadata,
+                on_reasoning=on_reasoning,
+                # Re-applied on every restart: the retry is a new request to a
+                # new model, so it carries the same pinned temperature (KI-32).
+                temperature=temperature,
             ):
                 current = answered
                 if held is None:
@@ -288,16 +407,23 @@ async def complete(
     litellm_model: str,
     messages: list[dict[str, str]],
     metadata: dict[str, str],
+    temperature: float | None = None,
 ) -> str:
     """One non-streamed completion; returns the assistant message content.
 
     For simple background LLM calls (e.g. starter-question regeneration,
     TRD §9.1 step 6) — routing/scoring/verification decisions go through
     DecisionEngine instead (CLAUDE.md non-negotiable, slice 4+).
+
+    `temperature` is `None` by default, which sends nothing and leaves the
+    provider's default in place; a number is pinned on both the first attempt
+    and the one-hop failover to llm_fallback_model (KI-32). Claim extraction
+    pins 0 because a parsing call whose claim list feeds a mean has no reason
+    to be stochastic; every other caller stays unpinned until measured.
     """
     _configure_langfuse()
     model = await _resolved_model(litellm_model, metadata)
-    model, response = await _open(model, messages, metadata)
+    model, response = await _open(model, messages, metadata, temperature=temperature)
     usage = _usage(response)
     if usage is not None:
         await _record_usage(model, metadata, *usage)
@@ -309,5 +435,10 @@ async def complete(
 async def embed_batch(*, texts: list[str]) -> list[list[float]]:
     """Embed a batch of texts with the configured embedding model (TRD §9.1)."""
     _configure_langfuse()
-    response = await litellm.aembedding(model=get_settings().embedding_model, input=texts)
+    settings = get_settings()
+    response = await litellm.aembedding(
+        model=settings.embedding_model,
+        input=texts,
+        dimensions=settings.embedding_dimensions,
+    )
     return [list(map(float, item["embedding"])) for item in response.data]

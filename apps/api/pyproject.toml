@@ -50,6 +50,20 @@ ignore = ["S101"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S"]
+# The multilingual chunker matches CJK punctuation literally — RUF001/2/3's
+# ambiguous-unicode checks false-positive on exactly the characters it handles.
+# Same for the CJK queries in the hybrid and migration evidence: the
+# fullwidth ？ is the test input, not an authoring slip.
+# textkit.py holds stop-word tables and Japanese/Chinese discrimination, so
+# the Turkish dotless ı and Han text are the data, not a typo.
+"ingest/chunk.py" = ["RUF001", "RUF002", "RUF003"]
+"textkit.py" = ["RUF001", "RUF002", "RUF003"]
+"tests/ingest/**" = ["RUF001", "RUF002", "RUF003"]
+"tests/retrieval/**" = ["RUF001", "RUF002", "RUF003"]
+"tests/test_textkit.py" = ["RUF001", "RUF002", "RUF003"]
+"tests/graph/test_abstain.py" = ["RUF001", "RUF002", "RUF003"]
+"tests/scripts/**" = ["RUF001", "RUF002", "RUF003"]
+"db/migrations/**" = ["RUF001", "RUF002", "RUF003"]
 
 [tool.mypy]
 strict = true

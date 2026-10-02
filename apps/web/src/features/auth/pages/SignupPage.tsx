@@ -26,6 +26,10 @@ export function SignupPage() {
       }
       setAccessToken(data.access_token)
       void navigate({ to: '/' })
+    } catch {
+      // No { error } on a rejected request; keep the entered values (the
+      // inputs are uncontrolled) and offer a plain retry.
+      setError('Could not reach the server. Check your connection and try again.')
     } finally {
       setBusy(false)
     }

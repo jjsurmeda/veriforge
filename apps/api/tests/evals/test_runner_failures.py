@@ -60,7 +60,7 @@ async def test_failed_item_is_persisted_and_excluded_from_p50(
         eval_run_id: UUID,
         item: EvalItem,
         mode: str = "auto",
-    ) -> EvalResult:
+    ) -> tuple[EvalResult, list[str]]:
         if item.question is not None and item.question == "raises":
             raise RuntimeError("boom")
         result = EvalResult(
@@ -73,7 +73,7 @@ async def test_failed_item_is_persisted_and_excluded_from_p50(
         )
         async with factory() as session, session.begin():
             session.add(result)
-        return result
+        return result, []
 
     monkeypatch.setattr(runner, "_run_item", fake_run_item)
 
@@ -127,7 +127,13 @@ async def test_a_run_that_abstains_on_everything_fails_the_gate(
 ) -> None:
     """An abstention scores faithfulness 1.0, so abstaining on all 20 items
     would report perfect faithfulness *and* perfect abstention accuracy. Only
-    answer rate separates that run from a working one (TRD §15)."""
+    answer rate separates that run from a working one (TRD §15).
+
+    The baseline carries `answerable_answered`, the count A7 gates on: a
+    baseline without it is reported UNVERIFIED rather than compared, so under
+    the item-based rule a baseline has to record the count for this run to be
+    caught at all. That is the cost of the change and it is deliberate — see
+    `test_gate_thresholds.py`."""
 
     plan_id = (await db.execute(select(Plan.id).where(Plan.name == "free"))).scalar_one()
     db.add(User(email=EVAL_USER_EMAIL, role="user", plan_id=plan_id, status="active"))
@@ -158,7 +164,7 @@ async def test_a_run_that_abstains_on_everything_fails_the_gate(
         eval_run_id: UUID,
         item: EvalItem,
         mode: str = "auto",
-    ) -> EvalResult:
+    ) -> tuple[EvalResult, list[str]]:
         result = EvalResult(
             eval_run_id=eval_run_id,
             item_id=item.id,
@@ -169,7 +175,7 @@ async def test_a_run_that_abstains_on_everything_fails_the_gate(
         )
         async with factory() as session, session.begin():
             session.add(result)
-        return result
+        return result, []
 
     monkeypatch.setattr(runner, "_run_item", fake_run_item)
 
@@ -184,6 +190,8 @@ async def test_a_run_that_abstains_on_everything_fails_the_gate(
         "faithfulness": 0.98,
         "abstention_accuracy": 0.75,
         "answer_rate": 0.94,
+        "should_abstain_correct": 2.0,
+        "answerable_answered": 3.0,
         "p50_latency_ms": 1000.0,
     }
     failures = compare(baseline, summary)

@@ -21,6 +21,7 @@ from db.models import (
 )
 from decisions.breaker import get_breaker
 from errors import AppError
+from netguard import BlockedAddress, assert_public_url
 from providers.credentials import decrypt_provider_key, encrypt_provider_key
 from runtime import RuntimeSettings
 from schemas.admin import (
@@ -59,6 +60,7 @@ _ALLOWED_SETTINGS = {
     "web_search_keys",
     "source_priority",
     "thresholds",
+    "generation",
 }
 
 
@@ -117,6 +119,23 @@ def _validate_settings(data: dict[str, Any]) -> None:
             raise AppError(
                 "invalid_settings", "Thresholds must be between 0 and 1", status_code=422
             )
+    generation = data.get("generation", {})
+    if not isinstance(generation, dict):
+        raise AppError("invalid_settings", "Generation settings must be an object", status_code=422)
+    temperature = generation.get("temperature")
+    # `None` is meaningful, not absent: it means "send no temperature", so it
+    # passes. A number must be in [0, 2], the range every provider we use
+    # accepts (gpt-4o-mini and the Nemotron models reject anything above 2).
+    if temperature is not None and (
+        not isinstance(temperature, (int, float))
+        or isinstance(temperature, bool)
+        or not 0 <= temperature <= 2
+    ):
+        raise AppError(
+            "invalid_settings",
+            "generation.temperature must be null or a number between 0 and 2",
+            status_code=422,
+        )
     deep = data.get("deep", {})
     if not isinstance(deep, dict) or (
         deep.get("per_run_credit_cap") is not None
@@ -280,22 +299,31 @@ async def list_providers(session: AsyncSession) -> list[ProviderOut]:
     return [_provider_out(row) for row in rows]
 
 
-def _validate_base_url(value: str | None) -> None:
+async def _validate_base_url(value: str | None) -> None:
+    """Reject a base URL we must never send a provider credential to.
+
+    A literal host name is not the check: an attacker-chosen name can resolve
+    to RFC1918, link-local or the cloud metadata address, and the same policy
+    the web fetcher uses is the one that has to hold here (review S4).
+    """
     if value is None:
         return
     parsed = urlparse(value)
-    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+    ):
         raise AppError(
             "invalid_provider_url", "Provider URL must be an HTTP(S) URL", status_code=422
         )
-    if (
-        parsed.username
-        or parsed.password
-        or parsed.hostname.lower() in {"localhost", "127.0.0.1", "::1"}
-    ):
+    try:
+        await assert_public_url(value)
+    except BlockedAddress as exc:
         raise AppError(
-            "invalid_provider_url", "Provider URL points to a forbidden host", status_code=422
-        )
+            "invalid_provider_url", f"Provider URL is not a public address: {exc}", status_code=422
+        ) from exc
 
 
 async def create_provider(
@@ -305,7 +333,7 @@ async def create_provider(
         await session.execute(select(LlmProvider).where(LlmProvider.name == body.name))
     ).scalar_one_or_none():
         raise AppError("provider_exists", "Provider already exists", status_code=409)
-    _validate_base_url(body.base_url or None)
+    await _validate_base_url(body.base_url or None)
     row = LlmProvider(
         name=body.name,
         kind=body.kind,
@@ -333,7 +361,7 @@ async def update_provider(
     if row is None:
         raise _not_found("provider")
     if "base_url" in body.model_fields_set:
-        _validate_base_url(body.base_url)
+        await _validate_base_url(body.base_url)
     before = _provider_out(row).model_dump(mode="json")
     for field in ("name", "kind", "base_url", "enabled"):
         if field in body.model_fields_set:
@@ -362,10 +390,20 @@ async def test_provider(session: AsyncSession, provider_id: UUID) -> dict[str, o
         raise AppError(
             "provider_not_configured", "Provider key and base URL are required", status_code=422
         )
+    url = f"{row.base_url.rstrip('/')}/models"
+    # Re-check the resolved address here, not only at write time: DNS can
+    # change under a stored base URL, and this is the request that carries the
+    # decrypted credential (review S4).
+    try:
+        await assert_public_url(url)
+    except BlockedAddress as exc:
+        raise AppError(
+            "invalid_provider_url", f"Provider URL is not a public address: {exc}", status_code=422
+        ) from exc
     headers = {"Authorization": f"Bearer {decrypt_provider_key(row.api_key_enc)}"}
     try:
         async with httpx.AsyncClient(timeout=5) as client:
-            response = await client.get(f"{row.base_url.rstrip('/')}/models", headers=headers)
+            response = await client.get(url, headers=headers)
             response.raise_for_status()
     except httpx.HTTPError as exc:
         raise AppError("provider_test_failed", "Provider test failed", status_code=502) from exc

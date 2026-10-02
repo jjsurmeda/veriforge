@@ -76,7 +76,15 @@ class DeepRun:
         ThinkingDelta event; this keeps DeepRun the only place that needs
         an interleaving queue (fast/auto stream plain content)."""
         if self.abstain_event is not None:
-            async for token in stream_abstention(self.abstain_event):
+            async for token in stream_abstention(
+                self.abstain_event,
+                litellm_model=self.params.litellm_model,
+                question=self.rewritten,
+                metadata={
+                    "run_id": str(self.params.run_id),
+                    "user_id": str(self.params.user_id),
+                },
+            ):
                 yield ("content", token)
             return
 
@@ -86,19 +94,25 @@ class DeepRun:
             await queue.put(("thinking", text))
 
         async def produce() -> None:
-            async for token in stream_grounded_answer(
-                litellm_model=self.params.litellm_model,
-                question=self.rewritten,
-                contexts=self.contexts,
-                history=self.history,
-                metadata={
-                    "run_id": str(self.params.run_id),
-                    "user_id": str(self.params.user_id),
-                },
-                on_reasoning=on_reasoning,
-            ):
-                await queue.put(("content", token))
-            await queue.put(None)
+            try:
+                async for token in stream_grounded_answer(
+                    litellm_model=self.params.litellm_model,
+                    question=self.rewritten,
+                    contexts=self.contexts,
+                    history=self.history,
+                    metadata={
+                        "run_id": str(self.params.run_id),
+                        "user_id": str(self.params.user_id),
+                    },
+                    on_reasoning=on_reasoning,
+                ):
+                    await queue.put(("content", token))
+            finally:
+                # In the finally, not after the loop: a provider failure
+                # mid-answer must end the consumer's wait. Queued only on the
+                # normal path, the consumer blocked on queue.get() forever and
+                # the run streamed until the stale-heartbeat sweeper (S5).
+                await queue.put(None)
 
         task = asyncio.create_task(produce())
         try:
@@ -108,6 +122,8 @@ class DeepRun:
                     break
                 yield item
         finally:
+            # Awaiting the task re-raises the producer's exception, so the
+            # failure that ended the stream reaches the runner.
             await task
 
 

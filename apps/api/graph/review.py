@@ -154,11 +154,20 @@ def _citation_only_claim(answer: str) -> ExtractedClaim | None:
 async def extract_claims(
     *, answer: str, small_model: str, complete_fn: Any = complete
 ) -> list[ExtractedClaim]:
+    """Read the claims out of a finished answer.
+
+    temperature=0 (KI-32): this parses an answer into claims, it does not
+    write prose, and the claim list is the denominator of the faithfulness
+    mean (TRD §10 step 3). Left at the provider default, 4 of 20 fast20 items
+    re-split their claims between runs — the same fact asserted with and
+    without a citation marker moves the score, not the judging.
+    """
     prompt = load_prompt("claim_extraction.md").replace("{answer}", answer)
     response = await complete_fn(
         litellm_model=small_model,
         messages=[{"role": "system", "content": prompt}, {"role": "user", "content": answer}],
         metadata={"job": "claim_extraction", "role": "claim_extractor"},
+        temperature=0,
     )
     return parse_claims(response)
 

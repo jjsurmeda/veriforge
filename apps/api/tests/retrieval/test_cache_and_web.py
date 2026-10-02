@@ -50,13 +50,21 @@ async def test_query_embedding_cache_expires(
     db: AsyncSession, embed_calls: list[list[str]]
 ) -> None:
     await get_query_embedding(db, "old query")
-    row = await db.get(QueryCache, query_hash("old query"))
+    key = query_hash("old query", namespace=f"{get_settings().embedding_model}\n")
+    row = await db.get(QueryCache, key)
     assert row is not None
     row.created_at = datetime.now(UTC) - timedelta(days=get_settings().query_cache_ttl_days + 1)
     await db.commit()
 
     await get_query_embedding(db, "old query")
     assert len(embed_calls) == 2
+
+
+def test_query_embedding_cache_key_includes_the_model() -> None:
+    # vectors from different models are incompatible; the web cache shares
+    # query_hash and stays un-namespaced
+    assert query_hash("q") != query_hash("q", namespace="model-a\n")
+    assert query_hash("q", namespace="model-a\n") != query_hash("q", namespace="model-b\n")
 
 
 def test_normalise_query_collapses_case_and_whitespace() -> None:
@@ -117,7 +125,11 @@ async def test_ensure_web_chunks_creates_chat_scoped_temp_rows(
 
 
 async def test_pin_copies_web_rows_into_owned_collection(
-    db: AsyncSession, user_a: User, user_b: User, fake_search: list[str]
+    db: AsyncSession,
+    user_a: User,
+    user_b: User,
+    embed_calls: list[list[str]],
+    fake_search: list[str],
 ) -> None:
     chat = await make_chat(db, user_a)
     await ensure_web_chunks(db, query="gadget warranty", chat_id=chat.id)

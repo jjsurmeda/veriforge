@@ -8,6 +8,7 @@ conflated).
 
 import uuid
 from datetime import datetime
+from typing import Any
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
@@ -571,10 +572,22 @@ class EvalResult(Base):
     abstained: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     latency_ms: Mapped[int] = mapped_column(Integer, nullable=False)
     # Per-stage breakdown of the same item (graph/timing.make_step_timer), so a
-    # red p50 can be attributed to a stage instead of guessed at (KI-6).
-    stage_ms: Mapped[dict[str, int] | None] = mapped_column(JSONB, nullable=True)
+    # red p50 can be attributed to a stage instead of guessed at (KI-6). Every
+    # value is a millisecond count except `unresolved_generation_ids`, a list of
+    # one-line descriptions of the generation ids that never resolved — KI-31
+    # needs the call site to diagnose them, and the run is dropped after the
+    # summary is printed. JSONB, so no migration: the Python type widens, not
+    # the column.
+    stage_ms: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     tokens_in: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     tokens_out: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # The reviewer's per-claim verdicts and the retrieved contexts they were
+    # judged against. Faithfulness is a mean over these, so a mean that moves
+    # between runs cannot say which claim moved or why — and `eval-gate-local`
+    # drops the database on exit, so without this column the per-item detail
+    # needed to name that source is gone before anyone can read it (item 3).
+    # `{"claims": [...], "contexts": [...]}`; null when the item never ran.
+    review_detail: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     # Non-null means the item raised: no score was measured. Such a row is
     # excluded from every aggregate and fails the gate (KI-6).
     error: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -1,5 +1,6 @@
-"""Output caps, reasoning toggle, failover and concurrency cap on every LLM
-call (known-issues KI-1, KI-2, KI-7, KI-17). LiteLLM is faked at its boundary."""
+"""Output caps, reasoning toggle, failover, concurrency cap and temperature
+threading on every LLM call (known-issues KI-1, KI-2, KI-7, KI-17, KI-32).
+LiteLLM is faked at its boundary."""
 
 import asyncio
 from collections.abc import AsyncIterator
@@ -334,3 +335,137 @@ async def test_a_dead_fallback_does_not_loop_forever(
     with pytest.raises(ServiceUnavailableError):
         await _stream_out()
     assert calls == [FREE, get_settings().llm_fallback_model]
+
+
+# Temperature threading (KI-32). `None` must mean "send nothing" so every
+# caller that predates the parameter keeps the provider default.
+
+
+async def test_no_temperature_is_sent_unless_a_caller_pins_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: list[dict[str, Any]] = []
+
+    async def fake(**kwargs: Any) -> dict[str, Any]:
+        seen.append(kwargs)
+        return OK
+
+    monkeypatch.setattr("providers.llm.litellm.acompletion", fake)
+    await complete(litellm_model=FREE, messages=[], metadata={"role": "generator"})
+
+    assert "temperature" not in seen[0]
+
+
+async def test_a_pinned_temperature_reaches_the_provider_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: list[dict[str, Any]] = []
+
+    async def fake(**kwargs: Any) -> dict[str, Any]:
+        seen.append(kwargs)
+        return OK
+
+    monkeypatch.setattr("providers.llm.litellm.acompletion", fake)
+    await complete(
+        litellm_model=FREE, messages=[], metadata={"role": "claim_extractor"}, temperature=0
+    )
+
+    assert seen[0]["temperature"] == 0
+
+
+async def test_a_pinned_temperature_survives_the_open_failover_hop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The failover leg rebuilds the kwargs from scratch, so a pinned
+    temperature has to be re-applied there or the retry silently runs at the
+    provider default — the answer would vary again, which is the KI-32 symptom."""
+    seen: list[dict[str, Any]] = []
+
+    async def fake(**kwargs: Any) -> dict[str, Any]:
+        seen.append(kwargs)
+        if kwargs["model"] == FREE:
+            raise _rate_limited(FREE)
+        return OK
+
+    monkeypatch.setattr("providers.llm.litellm.acompletion", fake)
+    assert (
+        await complete(
+            litellm_model=FREE, messages=[], metadata={"role": "claim_extractor"}, temperature=0
+        )
+        == "ok"
+    )
+
+    assert [call["model"] for call in seen] == [FREE, get_settings().llm_fallback_model]
+    assert [call.get("temperature") for call in seen] == [0, 0]
+
+
+async def test_a_pinned_temperature_survives_a_mid_stream_restart(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """KI-17's restart is a brand-new request to the fallback model, so it
+    carries the same pinned temperature (KI-32)."""
+    seen: list[dict[str, Any]] = []
+
+    async def fake(**kwargs: Any) -> Any:
+        seen.append(kwargs)
+        if kwargs["model"] == FREE:
+            return _stream(*FIRST_DYING, dies=kwargs["model"])
+        return _stream(*FIRST_SURVIVOR)
+
+    monkeypatch.setattr("providers.llm.litellm.acompletion", fake)
+    out = [
+        d
+        async for d in stream_completion(
+            litellm_model=FREE,
+            messages=[],
+            metadata={"role": "claim_extractor"},
+            temperature=0,
+        )
+    ]
+
+    assert out == list(FIRST_SURVIVOR)
+    assert [call["model"] for call in seen] == [FREE, get_settings().llm_fallback_model]
+    assert [call.get("temperature") for call in seen] == [0, 0]
+
+
+async def test_the_reasoning_retry_keeps_the_temperature(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The 400-retry drops extra_body and re-sends; the temperature has to
+    survive that rewrite too, or the second attempt is a different call."""
+
+    def _mandatory(model: str) -> BadRequestError:
+        return BadRequestError(
+            message='{"error":{"message":"Reasoning is mandatory for this endpoint and '
+            'cannot be disabled."}}',
+            llm_provider="openrouter",
+            model=model,
+        )
+
+    seen: list[dict[str, Any]] = []
+
+    async def fake(**kwargs: Any) -> dict[str, Any]:
+        seen.append(kwargs)
+        if "extra_body" in kwargs:
+            raise _mandatory(kwargs["model"])
+        return OK
+
+    monkeypatch.setattr("providers.llm.litellm.acompletion", fake)
+    await complete(litellm_model=FREE, messages=[], metadata={"role": "titler"}, temperature=0.3)
+
+    assert len(seen) == 2
+    assert [call.get("temperature") for call in seen] == [0.3, 0.3]
+
+
+async def test_a_stream_sends_no_temperature_unless_pinned(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: list[dict[str, Any]] = []
+
+    async def fake(**kwargs: Any) -> Any:
+        seen.append(kwargs)
+        return _stream("hi", " there.")
+
+    monkeypatch.setattr("providers.llm.litellm.acompletion", fake)
+    assert await _stream_out() == ["hi", " there."]
+    assert "temperature" not in seen[0]

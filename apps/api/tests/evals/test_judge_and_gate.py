@@ -5,9 +5,9 @@ from uuid import uuid4
 import pytest
 
 from db.models import EvalItem, EvalResult
-from evals.gate import compare
+from evals.gate import compare, compare_models
 from evals.judge import parse_judge_response
-from evals.runner import aggregate
+from evals.runner import aggregate, models_on_record
 
 GOOD = """```json
 {"context_precision": 0.6, "context_recall": 0.75, "answer_relevance": 0.9}
@@ -30,8 +30,79 @@ def test_parse_judge_response_strips_fence() -> None:
 
 def test_parse_judge_response_rejects_garbage() -> None:
     assert parse_judge_response("not json") is None
+    # One malformed field nulls only itself; if nothing parses, None.
     assert parse_judge_response('{"context_precision": "high"}') is None
-    assert parse_judge_response('{"context_precision": 1}') is None
+
+
+def test_parse_judge_response_reads_json_wrapped_in_prose() -> None:
+    """Captured raw Haiku 4.5 responses (2026-10-01, D2 item 2b): the fenced
+    JSON is followed by an explanation, which the whole-string fence match
+    could not parse — this was 17-19 of 20 items null per fast20 run."""
+    captured = (
+        '```json\n{\n  "context_precision": 1.0,\n  "context_recall": 1.0,\n'
+        '  "answer_relevance": 0.0\n}\n```\n\n'
+        "**Explanation:**\n- **context_precision: 1.0** - No passages were "
+        "retrieved, so there are no irrelevant passages."
+    )
+    scores = parse_judge_response(captured)
+    assert scores is not None
+    assert scores.context_precision == pytest.approx(1.0)
+    assert scores.context_recall == pytest.approx(1.0)
+    assert scores.answer_relevance == pytest.approx(0.0)
+
+
+def test_parse_judge_response_keeps_each_field_that_parses() -> None:
+    scores = parse_judge_response('{"context_precision": 1, "answer_relevance": 0.5}')
+    assert scores is not None
+    assert scores.context_precision == pytest.approx(1.0)
+    assert scores.context_recall is None
+    assert scores.answer_relevance == pytest.approx(0.5)
+
+
+def test_gate_passes_when_the_models_match() -> None:
+    baseline = {"models": models_on_record(), "faithfulness": 0.80}
+    current = {"models": models_on_record(), "faithfulness": 0.80}
+    assert compare_models(baseline, current) == []
+
+
+def test_gate_refuses_when_the_models_differ() -> None:
+    """A faithfulness or latency number is not comparable across models, so
+    the gate says so instead of reporting a regression that is a config
+    change (D3 item 2)."""
+    baseline = {
+        "models": {
+            "generator": "openrouter/openai/gpt-4o-mini",
+            "small": "openrouter/anthropic/claude-haiku-4.5",
+        },
+        "faithfulness": 0.80,
+    }
+    current = {"models": models_on_record(), "faithfulness": 0.80}
+    failures = compare_models(baseline, current)
+    assert len(failures) == 1
+    # The message has to name the role and both models, or the next reader
+    # cannot tell which of two pinned constants moved.
+    assert "small" in failures[0]
+    assert "claude-haiku-4.5" in failures[0]
+    assert models_on_record()["small"] in failures[0]
+    assert "gpt-4o-mini" in failures[0]
+
+
+def test_gate_refuses_a_baseline_that_records_no_models() -> None:
+    """A baseline written before models were on record cannot be compared;
+    saying nothing would let a stale baseline keep gating silently."""
+    failures = compare_models({"faithfulness": 0.80}, {"models": models_on_record()})
+    assert len(failures) == 1 and "no models" in failures[0]
+
+
+def test_the_harness_models_are_the_models_the_product_runs() -> None:
+    """`model_roles` puts gpt-4o-mini in every LLM role, with Haiku only as
+    the generator's and planner's fallback. Pinning Haiku for the small role
+    made the gate measure rewrite, query variants and claim extraction on a
+    model the product does not use there (O2; P7 picks the real ones)."""
+    assert models_on_record() == {
+        "generator": "openrouter/openai/gpt-4o-mini",
+        "small": "openrouter/openai/gpt-4o-mini",
+    }
 
 
 def test_gate_passes_within_thresholds() -> None:
@@ -158,12 +229,22 @@ def test_aggregate_never_fabricates_overhead_when_nothing_was_attributed() -> No
     assert summary["p50_latency_ms"] == 6000.0
 
 
-def test_aggregate_drops_overhead_when_only_some_items_were_attributed() -> None:
-    """A median over a subset would silently compare different populations."""
+def test_aggregate_medians_over_the_attributed_items_with_partial_attribution() -> None:
+    """TRD §15: an unattributable *item* records no figure, and the summary
+    is null only when *no* call was attributed. The median runs over the
+    attributed items; `overhead_items_attributed` reports the coverage."""
     summary = aggregate(
         [
             (_item(), _result(6000, {"our_overhead_ms": 300})),
-            (_item(), _result(7000, {})),
+            (_item(), _result(7000, {"our_overhead_ms": 500})),
+            (_item(), _result(8000, {})),
         ]
     )
+    assert summary["p50_our_overhead_ms"] == 400.0
+    assert summary["overhead_items_attributed"] == 2.0
+
+
+def test_aggregate_reports_zero_coverage_when_nothing_was_attributed() -> None:
+    summary = aggregate([(_item(), _result(6000, {"provider_ms": 0}))])
     assert summary["p50_our_overhead_ms"] is None
+    assert summary["overhead_items_attributed"] == 0.0

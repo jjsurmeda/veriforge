@@ -19,6 +19,7 @@ export function ChatIndexPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [deep, setDeep] = useState(false)
   const [web, setWeb] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const pendingFiles = useRef<File[]>([])
 
   useEffect(() => {
@@ -27,33 +28,48 @@ export function ChatIndexPage() {
     }
   }, [chats, isPending, navigate])
 
+  // A file leaves the queue only once its upload succeeded, so a failed
+  // upload is retried with the next question instead of being lost (P1).
   const uploadPendingInto = async (chatId: string) => {
-    for (const file of pendingFiles.current.splice(0)) {
-      await uploadChatDocumentChatsChatIdDocumentsPost({
+    for (const file of [...pendingFiles.current]) {
+      const { error: uploadError } = await uploadChatDocumentChatsChatIdDocumentsPost({
         path: { chat_id: chatId },
         body: { file },
       })
+      if (uploadError) throw uploadError
+      pendingFiles.current = pendingFiles.current.filter((queued) => queued !== file)
     }
   }
 
   const startRun = async (message: string, options: { mode: RunMode; source: RunSource }) => {
-    const chat = await createChat.mutateAsync()
-    const chatId = chat!.id
-    await uploadPendingInto(chatId)
-    await createRunChatsChatIdRunsPost({
-      path: { chat_id: chatId },
-      body: { message, mode: options.mode, source: options.source },
-    })
-    void navigate({ to: '/chat/$chatId', params: { chatId } })
+    setError(null)
+    try {
+      const chat = await createChat.mutateAsync()
+      const chatId = chat!.id
+      await uploadPendingInto(chatId)
+      const { error: runError } = await createRunChatsChatIdRunsPost({
+        path: { chat_id: chatId },
+        body: { message, mode: options.mode, source: options.source },
+      })
+      if (runError) throw runError
+      void navigate({ to: '/chat/$chatId', params: { chatId } })
+    } catch {
+      setError('That did not go through. Your files are still queued — try again.')
+    }
   }
 
   const onFiles = async (files: File[]) => {
     if (files.length === 0) return
+    setError(null)
     pendingFiles.current = [...pendingFiles.current, ...files]
-    const chat = await createChat.mutateAsync()
-    const chatId = chat!.id
-    await uploadPendingInto(chatId)
-    void navigate({ to: '/chat/$chatId', params: { chatId } })
+    try {
+      const chat = await createChat.mutateAsync()
+      const chatId = chat!.id
+      await uploadPendingInto(chatId)
+      void navigate({ to: '/chat/$chatId', params: { chatId } })
+    } catch {
+      setError('That upload did not finish. Your files are still queued — try again.')
+    }
   }
   return (
     <div className="flex h-full min-h-0 bg-main text-fg">
@@ -71,7 +87,7 @@ export function ChatIndexPage() {
               <h1 className="mt-3 text-3xl font-semibold tracking-tight text-fg sm:text-4xl">What do you want to know?</h1>
               <p className="mx-auto mt-3 max-w-[42ch] text-sm leading-6 text-fg-muted">Drop files to start, or just ask. Follow the evidence while the answer forms.</p>
             </div>
-            <ChatComposer streaming={false} modelId={null} quota={quota.data} emptyThread deep={deep} web={web} onFiles={(files) => void onFiles(files)} onModelChange={() => undefined} onToggleDeep={setDeep} onToggleWeb={setWeb} onSend={(message, options) => void startRun(message, options)} onStop={() => undefined} />
+            <ChatComposer streaming={false} modelId={null} quota={quota.data} emptyThread error={error} deep={deep} web={web} onFiles={(files) => void onFiles(files)} onModelChange={() => undefined} onToggleDeep={setDeep} onToggleWeb={setWeb} onSend={(message, options) => void startRun(message, options)} onStop={() => undefined} />
             <div className="mx-auto mt-6 max-w-[720px]">
               <StarterQuestions questions={library.data?.starter_questions ?? []} onSelect={(question) => void startRun(question, runOptions(deep, web))} />
             </div>

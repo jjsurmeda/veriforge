@@ -42,8 +42,8 @@ handles ingestion, evals, async scoring and starter questions.
 | Jobs | Procrastinate (Postgres queue) | No Redis |
 | Database | Postgres 17, ParadeDB image: pgvector + pg_search | pg_search is AGPL; used unmodified as a service |
 | Parsing | markitdown, pdfplumber fallback; OCR adapter slot | |
-| Embeddings | OpenAI text-embedding-3-small (1536 dims), pinned per deployment | Re-embed job on change |
-| Rerank | Cohere Rerank | Jev-score reranker is a v1.1 A/B |
+| Embeddings | OpenAI text-embedding-3-large with `dimensions=1536`, pinned per deployment *(amended 2026-09-29, round 2: multilingual corpus)* | Re-embed job on change |
+| Rerank | Jev relevance `Score` via DecisionEngine *(amended 2026-09-30, owner decision, KI-28)* | Provider fallback (Cohere, then NVIDIA) when no DecisionEngine is available (Fast mode); fused order on error. Runtime setting `retrieval.reranker` (`jev` \| `nvidia`) |
 | Web search | Tavily; Brave + fetch-and-clean fallback | Behind `WebSearchProvider` |
 | Observability | Langfuse Cloud; app metrics in Postgres | UI never reads Langfuse |
 | IaC and CI | AWS CDK (Python); GitHub Actions; ECR | arm64 images |
@@ -107,11 +107,11 @@ explicit abstention.
 flowchart TD
   A[Ingress<br/>1 Jev call] -->|blocked| X[Refusal]
   A --> B[Rewrite + summary]
-  B --> C{Complexity}
-  C -->|single| D[Multi-query retrieve<br/>sanitize + rerank]
+  B --> C{Mode}
+  C -->|Auto / Fast| D[Multi-query retrieve<br/>rerank + sanitize]
   D --> E{Sufficient?}
   E -->|no, retries left| D
-  C -->|multi| F[Plan sub-questions]
+  C -->|Deep| F[Plan sub-questions]
   F --> G[Parallel hop retrieve<br/>+ extract notes]
   G --> H{Controller}
   H -->|need more| G
@@ -126,17 +126,24 @@ flowchart TD
 Ingress also runs the rewrite in parallel, so the two top boxes cost one
 round trip.
 
+*(Amended 2026-10-02, PRD v3.)* **Auto is single-hop.** The multi-hop branch
+is Deep only; Auto's `complexity` decision affects query parts, not hops. The
+"Sufficient?" box is two evidence checks (sufficiency and relevance/
+answerability, below), with one rewrite + retry. Abstentions carry no
+citations (KI-25).
+
 | Node | Engine | Behaviour |
 | --- | --- | --- |
-| Ingress | Jev, one call | Questions: `guard_injection`, `guard_jailbreak`, `guard_pii`, `off_topic` (noul); `intent` (choice: chitchat, lookup, compare, summarize, multi-part, follow-up); `source` (choice, if source = Auto); `complexity` (choice, if mode = Auto); `lexical_weight` (score 0–1); `risk` (choice: low, high). `intent = chitchat` (and not `off_topic`) routes to a direct small-talk reply: no retrieval, no citations, no reviewer, no abstention. *(Amended 2026-09-28, batch A — greeting fast path: a raw message of ≤ 40 chars whose normalised form (NFKC, lowercase, letters/spaces only, ≤ 4 words) exactly matches the greeting allowlist skips ingress and retrieval; the generator receives the canonical phrase only.)* |
+| Ingress | Jev, one call | Questions: `guard_injection`, `guard_jailbreak`, `guard_pii`, `off_topic` (noul); `intent` (choice: chitchat, lookup, compare, summarize, multi-part, follow-up, library); `source` (choice, if source = Auto); `complexity` (choice, if mode = Auto); `lexical_weight` (score 0–1); `risk` (choice: low, high). `intent = chitchat` (and not `off_topic`) routes to a direct small-talk reply: no retrieval, no citations, no reviewer, no abstention. *(Amended 2026-09-28, batch A — greeting fast path: a raw message of ≤ 40 chars whose normalised form (NFKC, lowercase, letters/spaces only, ≤ 4 words) exactly matches the greeting allowlist skips ingress and retrieval; the generator receives the canonical phrase only.)* *(Amended 2026-09-30, C2 — `intent = library` answers "what books do we have" / "how many documents are in my sources" from the document list of the chat's own scope (its container plus Shared, the same ids retrieval is given), not from retrieval: no retrieval, no citations, no reviewer. Only documents in a searchable state are listed. Language per book is not reported — no document language is stored.)* |
 | Rewrite + summary | Small LLM | Condenses the question with history; refreshes the rolling chat summary every 10 turns. |
 | Multi-query retrieve | Small LLM + SQL | 3 query variants (Auto only), each through hybrid search; results fused. Fast uses the rewritten query only. |
-| Sufficient? | Jev | `sufficient` noul over question + top chunks. Answer-first *(amended 2026-09-28, batch A)*: at or above `sufficient_abstain`, generate; below it, rewrite and retry once, then abstain. |
+| Sufficient? | Jev | `sufficient` noul over question + top chunks *(amended 2026-10-02: the evidence lists every reranked child first, then parent context while the 9,000-char budget lasts; D2)*. Answer-first *(amended 2026-09-28, batch A)*: at or above `sufficient_abstain`, generate; below it, rewrite and retry once, then abstain. |
+| Relevance gate *(2026-10-02)* | Jev (via `JevRerank`) | Second evidence check: the max raw Jev rerank score over the post-sanitize winners must reach `rerank_abstain` (0.60); both checks must pass. Applies only when Jev reranked and at least one passage got a real score. Published as a `decision` named `relevance`. **P2 replaces it with an answerability `Noul` per passage** ("does this passage contain the answer?"; for summary intents, coverage of the subject). |
 | Plan | Planner LLM | Streams a plan; emits 2–5 sub-questions with dependencies. |
 | Hop retrieve | SQL + small LLM | Independent sub-questions run in parallel; notes extracted per hop with chunk ids kept. |
-| Controller | Jev | `sufficient` / `need_more` + next sub-question type. Stops at 4 hops or the credit budget. |
-| Abstain | Generator LLM | Fixed template: what was found (cited), what is missing, offers Web or Deep as buttons. |
-| Conflict check | Jev | `conflict` noul across top chunks from different documents or source types. If yes, the priority rule and both citations go into the prompt. |
+| Controller | Jev | `sufficient` / `need_more` + next sub-question type. Stops at 4 hops or the credit budget. *(OKF, planned O4: the Choice gains a `follow_link` option, through DecisionEngine, never the planner LLM; ADR-004.)* |
+| Abstain | Generator LLM | Fixed template: what was found (**plain text, no citations**, KI-25), what is missing, offers Web or Deep as buttons. English questions get the template with no model call; other languages get it translated, with the target language named (KI-29). |
+| Conflict check | Jev | `conflict` noul across top chunks from different documents or source types. If yes, the priority rule and both citations go into the prompt. *(2026-10-02: today's side assignment is a midpoint split of document ids and the call is untimed: KI-34.)* |
 | Generate | Generator LLM | Streams the answer with `[n]` markers; native reasoning streamed when the model exposes it. No tools. |
 | Review + deliver | Section 10 | Risk-based delivery; claim verdicts; optional single revision; output guardrail; suggestions in parallel. |
 
@@ -144,7 +151,7 @@ round trip.
 
 | Mode | Plan | Multi-query | Retry loop | Hops | Review |
 | --- | --- | --- | --- | --- | --- |
-| Auto | If multi | Yes | Up to 2 | If multi, up to 4 | Inline, risk-based |
+| Auto | No | Yes | 1 (rewrite + retry) | No (single-hop) | Inline, risk-based |
 | Fast | No | No | No | No | Async after delivery |
 | Deep | Yes | Per hop | Via controller | Up to 4 | Inline, always verified before delivery |
 
@@ -165,6 +172,29 @@ process can stream or cancel any run and Uvicorn can run several workers.
   by a worker sweep.
 - Adapters: `PostgresRunBus` (default) and `RedisRunBus` (Redis Streams
   plus pub/sub, Compose profile `redis`, slice 8).
+
+### 7.1 Latency budget *(amended 2026-10-02, PRD v3 CH-5, ADR-003)*
+
+Targets are client-side, from send, per reply path: answers, declines, held
+answers. `run_events` give the per-stage breakdown. Measured at D4 (fast20
+per-stage p50): ingress+rewrite 1.2–1.5 s, **retrieve 4.1–4.7 s**, rerank
+~0.4 s, sanitize ~0.4 s, sufficient ~0.4 s, generator first token ~0.5 s.
+Declines run the full retry, so they take about twice as long.
+
+Planned structural changes (P3, each measured against the baseline):
+- embed every query variant in **one** `embed_batch` call, and run the
+  hybrid searches in parallel (separate sessions)
+- skip query variants on simple single-hop lookups (`complexity = single`,
+  `intent = lookup`)
+- generate the rewrite and the variants in one LLM call
+- ask the post-rerank Jev questions in **one** `decide` call **only when
+  the sanitizer dropped nothing**; otherwise re-ask over the kept set
+- skip the retry when relevance is far below the gate
+- time the conflict call
+
+Progress: `prepare_auto_run` receives `publish=` so its steps stream live,
+and `retrieve` publishes a sub-step per query variant, so no gap exceeds
+2 s.
 
 ## 8. Decision layer: Jev and LLM fallback
 
@@ -214,7 +244,9 @@ also answers asynchronously. Disagreements are stored in
 | lexical_weight | Score 0–1 | Retrieval fusion | Used as weight |
 | chunk_injection | Noul | Sanitizer | Drop at ≥ 0.7 |
 | sufficient | Noul | Single-hop loop | Answer-first *(amended 2026-09-28, batch A)*: generate at or above `sufficient_abstain`; below it one rewrite + retry, then abstain. `sufficient_retry` is removed; default floor 0.05 |
-| controller | Choice | Deep loop | Argmax |
+| relevance *(2026-10-02)* | Score per passage (`JevRerank`), max taken | Single-hop evidence gate | `rerank_abstain` 0.60 (Jev; fallback cell unmeasured); raw score, never trust-weighted |
+| answerability *(planned, P2)* | Noul per passage | Replaces the relevance gate | Set from the eval sets at P2 |
+| controller | Choice | Deep loop | Argmax *(OKF O4: adds a `follow_link` option)* |
 | conflict | Noul | Conflict check | Disclose at ≥ 0.6 |
 | claim_verdict | Choice | Reviewer | See section 10 |
 | output_toxicity | Noul | Output guardrail | Block at ≥ 0.85 |
@@ -240,9 +272,23 @@ their surrounding context.
    `low_text` flag (likely scanned); table cells or pipe density above a
    threshold → `table_heavy` flag. Flags surface in the Sources UI (SR-4)
    and route to OCR in v1.1.
-4. **Chunk.** Split by heading hierarchy into sections (parents, ≤ 2,000
-   tokens), then into children of about 500 tokens with 15% overlap. Each
-   child stores `parent_id`, `ord`, `page`, `heading_path`.
+4. **Chunk** *(amended 2026-09-29, round 2: language-neutral,
+   sentence-aware)*. Split by heading hierarchy into sections (parents, ≤
+   2,000 tokens). Plain text and PDF-derived markdown carry no markup
+   headings, so chapter markers in several languages (`CHAPTER`,
+   `Capítulo`, `CHAPITRE`, `Kapitel`, `KABANATA`, `第…回`, `第…章`,
+   each followed by a number or numeral), standalone roman-numeral lines
+   and conservative short blank-surrounded title lines are promoted to
+   headings first. Children are cut recursively — paragraph boundaries
+   first, then sentence boundaries, never mid-sentence — at about 250–300
+   tokens with about 15% overlap on whole sentences. The sentence
+   splitter is language-neutral: `. ! ?` need following whitespace,
+   `。 ！ ？` do not, and closing quotes/brackets attach to their
+   sentence; a small abbreviation list is a refinement only. A single
+   oversized sentence falls back to word boundaries, then characters.
+   Overlap crosses section boundaries: a section's first child starts
+   with the previous section's tail sentences. Each child stores
+   `parent_id`, `ord`, `page`, `heading_path`.
 5. **Embed.** Children embedded as `heading_path + text` in batches of
    100.
 6. **Index.** Rows written in one transaction; document status set to
@@ -261,7 +307,7 @@ WITH vec AS (top 50 by cosine distance, filtered),
      lex AS (top 50 by pg_search BM25, same filter)
 fused  = Σ weight_i / (60 + rank_i)
          weight: vector = 1 − w, bm25 = w, w = lexical_weight from ingress
-→ top 40 → Cohere Rerank → top 8 → dedupe adjacent → expand
+→ top 40 → rerank (Jev Score; `retrieval.reranker`) → top 8 → dedupe adjacent → expand
 ```
 
 - **Filter.** `owner_id or shared` and `collection_id in (scope)` are
@@ -295,6 +341,39 @@ chat's collection.
 Query embeddings are cached in Postgres by hash of the normalised query
 text (30-day TTL). Tavily results are cached as above. Rerank results are
 not cached.
+
+### 9.5 OKF bundles *(amended 2026-10-02, PRD v3 §4.7, ADR-004)*
+
+- **Storage:** each concept is a `documents` row with `format = 'okf'` and
+  `okf_meta` (JSONB: type, title, tags, status, `sources`, `generated`,
+  `verified`, `stale_after`, `resource`, bundle id, bundle-relative path).
+  There's **no new `source_type`**, so `build_scope` and the ownership
+  filter apply unchanged. OKF documents are unique on
+  (collection, bundle, path), not `sha256`.
+- **Ingestion:** **one job per bundle**.
+  - Reject archive entries with absolute paths or `..`; enforce the
+    uncompressed size limit; skip spec-reserved files.
+  - Parse the YAML; **strip frontmatter before chunking**.
+  - Chunk with the existing chunker; batch embeddings across concepts; one
+    starter-question job per bundle.
+  - Re-upload syncs the bundle. Replaced and removed concepts become
+    **non-searchable versions that keep their chunks**, so historical
+    citations resolve.
+- **Edges:** an `okf_links` table (source concept, target bundle + path,
+  or `resource` id for cross-bundle links). Resolved at query time,
+  **inside scope only**.
+- **Expansion (Auto):** after both evidence gates pass, add passages from
+  directly linked, in-scope, non-excluded concepts, up to the admin limit.
+  They go through the sanitizer and are timed as `okf_expand`. A skipped
+  link is reported identically, whatever the reason, with no target title
+  (no existence oracle).
+- **Trust:** `deprecated` excluded by a server-side default; stale flagged;
+  optional trust ordering applied **after** the top-k cut and the gates.
+  Status and verification reach the generator only as attributes on the
+  `<source>` wrapper, never as passage text.
+- **Export:** a reviewed answer renders as an OKF concept. `verified`
+  records the actual verdict engine; human verification is an explicit
+  action, recorded with a pseudonymous id.
 
 ## 10. Reviewer and faithfulness
 
@@ -456,6 +535,13 @@ generated from it.
 | `heartbeat` | every 15 s |
 | `run.completed` / `run.cancelled` / `run.failed` | final status, error code |
 
+*(Amended 2026-10-02, PRD v3.)* No new event types.
+- `RetrievedChunk` gains optional fields `okf_status`, `verified_by`,
+  `stale` and `via_link` (OKF O3, then regenerate TS).
+- Skipped links and retrieval sub-steps are `step.started` /
+  `step.completed` labels.
+- Auto publishes its steps live.
+
 Events flow through the `RunBus` (section 7): the stream endpoint replays
 from `run_events`, then follows live notifications, so it works from any
 API process and resumes after a dropped connection with `?after_seq=`.
@@ -478,7 +564,7 @@ every table has `created_at`.
 | `documents` | collection_id, name, mime, sha256, s3_key, status, page_flags jsonb, error | status: queued → ready or failed |
 | `sections` | document_id, heading_path, text, tokens | Parents for small-to-big |
 | `chunks` | document_id, section_id, ord, page, text, embedding vector(1536), metadata jsonb, source_type, chat_id, expires_at | HNSW index on embedding; pg_search BM25 index on text; GIN on metadata |
-| `query_cache` | query_hash, embedding, created_at | 30-day TTL |
+| `query_cache` | query_hash, embedding, created_at | 30-day TTL; the hash is namespaced by embedding model *(amended 2026-09-29, round 2)* — a model switch invalidates the cache without a wipe |
 | `web_cache` | query_hash, results jsonb | 24 h TTL |
 | `chats` | user_id, title, pinned, model_id, include_library, summary | include_library: always true, no UI (ADR-002 addendum) |
 | `messages` | chat_id, role, content, status, revised_from | status: complete, cancelled, abstained, failed |
@@ -560,7 +646,9 @@ a chosen settings version and mode, then records faithfulness, minimum
 support, citation precision, context precision and recall, answer
 relevance (LLM judge), abstention correctness, latency and credits. Runs
 are compared against a baseline with per-item diffs, and pushed to
-Langfuse as experiments.
+Langfuse as experiments. Eval runs are documents-only
+(`source="upload"`, the same as the UI default), because the seed set is
+"over the demo corpus".
 
 **Dataset sources.** Hand-written; synthetic (an LLM drafts Q&A pairs from
 sampled chunks, an admin approves each); harvested from rated chats
@@ -568,24 +656,121 @@ sampled chunks, an admin approves each); harvested from rated chats
 
 **Gates in CI.** A 20-item fast subset runs on every merge to `main` that
 touches `graph`, `retrieval`, `decisions` or prompts. The merge fails if
-faithfulness drops by more than 0.03, abstention accuracy or answer rate
-by more than 5 points, or p50 latency rises by more than 20% against the
-stored baseline.
+faithfulness drops by more than 0.03, if the number of items classified
+correctly drops by 2 or more, or if the gated latency rises by more than its
+factor. Three of these limits are wider than the ones this section originally
+carried, and each was widened for a measured reason, not to make a run pass —
+see the two decisions below and KI-6.
+
+**Limits expressed in items, not points (owner decision A7, 2026-10-02).**
+Abstention accuracy and answer rate are compared as **item counts**, not as
+percentage points, and each fails when the count of items classified correctly
+drops by **2 or more**. A drop of exactly one item is printed as a warning and
+passes. The reason is arithmetic, not judgement: the fast20 subset holds **8
+should-abstain items and 12 answerable items**, so one item flipping moves the
+two rates by **12.5** and **8.3** points respectively. Both are more than twice
+the 5-point tolerance this section used to apply, which meant a single item —
+one coin toss in a 20-item run — failed the gate. One flip is noise; two flips
+are a regression, and that is the line the code now draws. The rates are still
+recorded in the run summary and the baseline; they are simply not what the gate
+compares, because on a subset this size the denominator is the measurement.
+
+*Reset:* at **P1b**, when per-corpus resolution adds items, these limits are
+replaced — with more items per corpus a rate moves by less than one item and
+percentage points become meaningful again.
+
+**Latency factors (owner decision A6, 2026-10-02).** Two factors, one per
+figure, and each is named in the failure it produces. `p50_our_overhead_ms`
+may rise by **1.35×** (35%); total `p50_latency_ms` — still recorded, still
+displayed, still compared only when neither run attributed a call, which is the
+no-attribution fallback — keeps **1.20×** (20%). The overhead factor was
+1.20 and the measured run-to-run noise on an unchanged commit already exceeds
+it: the three fast20 runs the baseline was written from measured **2317.5 /
+2632.5 / 2348.5 ms** of overhead (**+13.6%** from the lowest to the highest),
+and a fourth confirmation run measured **2848.0 ms** — **+22.9%** against the
+2317.5 median baseline, which failed the 20% factor and exited the gate on
+nothing but variance. 1.35 puts the limit outside the measured spread; the
+fallback keeps 1.20 because it exists to stop the check being silently
+disabled, not to express a measured tolerance.
+
+*Reset:* at **P3 exit**, re-measure **≥ 5 fast20 runs** after P3's latency work
+and set the overhead factor to `max(1.20, 1 + 2 × spread)`, where `spread` is
+the observed run-to-run spread of `p50_our_overhead_ms`. P3 is expected to move
+the number down; the widening buys the gate back its authority until then.
+
+**What the widening is not.** Neither change is evidence that the product
+improved — both were measured against a gate that flapped on noise. The
+faithfulness limit is untouched at 0.03, and it stays the gate's strictest
+condition.
 
 **Which latency is gated (owner decision, 2026-09-29, KI-18).** The strictly
 gated figure is `p50_our_overhead_ms`: the measured wall clock minus the
-generation time OpenRouter reports for the same calls
-(`GET /api/v1/generation?id=…` → `generation_time`). A slow provider is not a
-regression in this repo, and gating on it produced failures this codebase
-could not fix. Total wall-clock `p50_latency_ms` is still recorded in the run
+provider time OpenRouter reports for the same calls
+(`GET /api/v1/generation?id=…`). A slow provider is not a regression in this
+repo, and gating on it produced failures this codebase could not fix. Total
+wall-clock `p50_latency_ms` is still recorded in the run
 summary and still displayed — latency demonstrably matters, and the total is
 what the PRD's CH-5/TX-6 budgets are written against — but it does not by
 itself fail the gate. It is compared instead only when a run attributed no
 calls at all, which restores the pre-KI-18 behaviour rather than silently
 disabling the check. An item whose calls cannot be attributed records no
-overhead figure: the summary reports `null`, never a fabricated zero. Because
-`evals/seed/baseline_fast20.json` predates this change, the gate keeps
-comparing totals until the next `--baseline` run; the two are not comparable.
+overhead figure: the summary reports `null`, never a fabricated zero.
+
+**Which field holds the provider time (owner decision A3, 2026-10-01).** The
+stats record's field depends on the call. A chat completion reports
+`generation_time`, and that is the duration used. A **Jev** call
+(`api_type == "decisions"`) reports `generation_time` as **0** and carries its
+duration in `latency` instead — verified live on two probes (22 and 1590
+native tokens; `generation_time` 0 both times, `latency` 241 and 242 ms). Jev
+provider time is therefore read from `latency`; LLM generations keep
+`generation_time`. Reading `generation_time` for Jev credited it with 0 ms,
+which charged every Jev millisecond — rerank batches, sufficient, sanitize,
+conflict, ingress and review verification — to our own overhead in the one
+figure this section gates. A record with neither field is not attributed at
+all, which is a coverage gap the summary reports, never a fabricated zero.
+
+**Coverage must not bias the median (owner decision, 2026-10-02).** A
+generation's stats record lands asynchronously, and the wait has a long tail:
+measured over four consecutive calls, 0.4 s three times and 123.6 s once. An
+id that has not landed inside the lookup budget is therefore *unresolved*, not
+absent, and the item is **partially** attributed. Two rules follow, and they
+pull in opposite directions on purpose:
+
+- The provider time that **did** resolve is kept on the item, and the count of
+  ids that did not is recorded beside it. Discarding a real measurement because
+  a sibling lookup timed out loses information that was paid for.
+- `our_overhead_ms` is still withheld on a partially attributed item. Wall
+  clock minus a *partial* provider sum overstates our overhead, and the figure
+  this section gates must not be a guess in either direction.
+
+So the median runs over the fully attributed items, as before, and the summary
+reports `p50_total_ms_unattributed_items` — the median wall clock of exactly the
+items that median excludes. Without it the coverage number
+(`overhead_items_attributed`) reads as a footnote while the median it qualifies
+is quietly drawn from the faster, better-covered half. Every unresolved id is
+reported with its call site, its final HTTP status and how long after the call
+it was abandoned.
+
+Because `evals/seed/baseline_fast20.json` predates both this change and KI-18,
+the gate keeps comparing totals until the next `--baseline` run; the two are
+not comparable. The baseline also records the models it was measured with, and
+the gate refuses to compare runs whose models differ, because a faithfulness
+or latency number from one model says nothing about the same number from
+another.
+
+**Corpora and run tiers** *(amended 2026-10-02, PRD v3 §5)*.
+- **Corpora:** acceptance covers four: books, AW-2000 manuals, an OKF
+  bundle, and a counterfactual set (deliberately altered facts, so answers
+  must come from the documents). Each has ≥ 20 answerable and ≥ 20
+  should-abstain items, and every label is proven by a scripted hit or
+  zero-hit search.
+- **Run tiers:** each phase gates on fast20 plus a ~10-item stratified
+  subset per corpus (one run). Full sets run at milestones only (P2 exit,
+  OKF exit, P8), 2 runs, on isolated stacks.
+- **Summary fields:** the runner summarises `min_support` and reports
+  per-corpus results.
+- **Isolation:** eval corpora leave the Shared library in P5 (KI-24), and
+  books are re-baselined after the move.
 
 **Answer rate.** The share of items *not* labelled should-abstain that
 produced an answer rather than an abstention. It is a separate gate
@@ -595,7 +780,9 @@ report perfect faithfulness *and* perfect abstention accuracy and pass
 every metric above it. Answer rate is not defined in terms of the outcome
 it measures, which is what makes it a counterweight rather than a fourth
 view of the same number. It is stored in the run summary and in the
-baseline, and the gate fails if it drops more than 5 points.
+baseline, and the gate fails it in items, not points: a drop of **two or more**
+items is a regression, a drop of one is a warning (owner decision A7,
+2026-10-02, above).
 
 **Tracing.** The Langfuse LangGraph callback traces every run with node
 spans, model calls, tokens and cost; decision calls appear as spans with

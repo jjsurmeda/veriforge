@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from admin import router as admin_router
 from auth import router as auth_router
+from auth.email import build_email_transport
 from chats import router as chats_router
 from config import get_settings
 from db.session import SessionDep
@@ -32,6 +33,11 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
+    # First thing, before any connection is opened: refuse to serve traffic we
+    # cannot fulfil. KI-35's dev-log email transport passes every health check
+    # and silently breaks password recovery for every user, so it must not be
+    # reachable in production at all.
+    build_email_transport(settings)
     engine = create_async_engine(settings.database_url, pool_pre_ping=True)
     session_factory: async_sessionmaker[AsyncSession] = async_sessionmaker(
         engine, expire_on_commit=False

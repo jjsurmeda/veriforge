@@ -1,6 +1,7 @@
 """Environment-driven app settings (TRD §6, §11)."""
 
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -24,6 +25,24 @@ class Settings(BaseSettings):
     google_client_id: str = ""
     google_client_secret: str = ""
 
+    # Deployment environment. Read at startup: `production` is what makes the
+    # dev-only behaviour (the dev-log email transport) refuse to run, so it
+    # cannot be left at its default on a real deployment.
+    environment: Literal["development", "staging", "production"] = "development"
+
+    # Email (AC-1 password reset, KI-35). `dev_log` writes the message to the
+    # log instead of sending it, and is refused when ENVIRONMENT=production.
+    # `smtp` sends for real; AWS SES publishes an SMTP endpoint, so slice 9
+    # points these at SES with no code change.
+    email_transport: Literal["smtp", "dev_log"] = "dev_log"
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+    smtp_starttls: bool = True
+    smtp_timeout_seconds: float = 10.0
+
     # Observability (TRD §15). Empty keys disable the Langfuse callback.
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
@@ -37,7 +56,10 @@ class Settings(BaseSettings):
     # slice 9 points the same ObjectStore interface at S3.
     object_storage_dir: str = ".data/objects"
     max_upload_bytes: int = 20 * 1024 * 1024
-    embedding_model: str = "openrouter/openai/text-embedding-3-small"
+    embedding_model: str = "openrouter/openai/text-embedding-3-large"
+    # text-embedding-3-large defaults to 3072 dims; pin 1536 so the vector
+    # fits `chunks.embedding vector(1536)` unchanged (TRD §9.2, round 2).
+    embedding_dimensions: int = 1536
     embedding_batch_size: int = 100
     # New ingestion jobs pause (self-retry) while more chat runs are active.
     ingest_pause_active_runs: int = 3
@@ -98,6 +120,13 @@ class Settings(BaseSettings):
     breaker_window_seconds: float = 60.0
     breaker_cooldown_seconds: float = 60.0
     shadow_sample_rate: float = 0.02
+
+    # The generator's temperature is NOT here. It is the runtime setting
+    # `generation.temperature` (runtime.py DEFAULT_DATA), so an admin can
+    # change it from the admin API without a redeploy — it is a product-quality
+    # decision made on the full eval sets, like every other tunable
+    # (reranker, thresholds, top_k). `None` there means "send no temperature",
+    # so the provider default applies and generation is unchanged (KI-32).
 
     # Environment fallback; active runtime settings can override these values.
     deep_max_hops: int = 4

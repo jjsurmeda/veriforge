@@ -42,6 +42,14 @@ BOOKS: list[tuple[int, str]] = [
     (84, "Frankenstein"),
     (11, "Alice's Adventures in Wonderland"),
     (35, "The Time Machine"),
+    # Round 2 (KI-12): multilingual corpus. Document names must contain
+    # the acceptance set's `cite` substrings (evals/acceptance/books.json).
+    (2000, "Don Quijote"),
+    (14155, "Madame Bovary"),
+    (22367, "Die Verwandlung"),
+    (20228, "Noli Me Tangere"),
+    (23962, "西遊記"),
+    (1982, "羅生門"),
 ]
 
 _MARKER_FLAGS = re.IGNORECASE | re.DOTALL

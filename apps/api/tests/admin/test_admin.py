@@ -234,6 +234,39 @@ async def test_settings_recover_inactive_seed_and_allocate_unique_versions(
     assert sum(row["active"] for row in versions.json()) == 1
 
 
+async def test_the_generator_temperature_is_admin_tunable(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    """P5 (D5 review should-fix 1). The generator's temperature is a
+    product-quality decision made on the full eval sets, so an admin has to be
+    able to change it from the admin API. It lived in the env-only pydantic
+    `Settings`, which no admin route can reach, so changing it needed a
+    redeploy — unlike every other tunable (reranker, thresholds, top_k)."""
+    headers = await _admin_headers(client, db)
+
+    ok = await client.patch(
+        "/admin/settings",
+        headers=headers,
+        json={"generation": {"temperature": 0.35}},
+    )
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["data"]["generation"]["temperature"] == 0.35
+
+    # `null` is the default and is accepted: it means "send no temperature",
+    # so the provider default applies (KI-32).
+    cleared = await client.patch(
+        "/admin/settings", headers=headers, json={"generation": {"temperature": None}}
+    )
+    assert cleared.status_code == 200, cleared.text
+    assert cleared.json()["data"]["generation"]["temperature"] is None
+
+    for bad in (3, -1, "hot", True):
+        rejected = await client.patch(
+            "/admin/settings", headers=headers, json={"generation": {"temperature": bad}}
+        )
+        assert rejected.status_code == 422, (bad, rejected.text)
+
+
 async def test_non_admin_cannot_access_admin_settings(client: AsyncClient) -> None:
     auth = await signup(client, "not-admin@test.dev")
     response = await client.get(

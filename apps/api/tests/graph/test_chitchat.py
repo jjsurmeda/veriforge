@@ -4,6 +4,7 @@ live model."""
 
 from collections.abc import AsyncIterator
 from dataclasses import replace as dc_replace
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -11,13 +12,15 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.models import Chat, Chunk, Collection, Document, Message, Section, User
+from db.models import Chat, Chunk, Citation, Collection, Document, Message, Section, User
 from db.session import get_session_factory
 from decisions.engine import DecisionEngine
 from graph import auto as auto_module
 from graph.auto import (
+    AutoRun,
     AutoRunInput,
     _entity_queries,
+    _rerank_candidates,
     _sufficient_question,
     greeting_canonical,
     prepare_auto_run,
@@ -25,8 +28,10 @@ from graph.auto import (
 from retrieval.expand import ExpandedContext
 from retrieval.filters import ClientFilters
 from retrieval.hybrid import ScoredChunk
+from retrieval.rerank import JevRerank
 from runtime import RuntimeSettings, reset_runtime_settings, set_runtime_settings
 from schemas.decisions import Answer, Question
+from schemas.events import Decision
 from tests.retrieval.conftest import (
     add_chunk,
     make_collection,
@@ -148,6 +153,16 @@ def _engine(intent: str, off_topic: float = 0.01) -> DecisionEngine:
     return DecisionEngine(jev=_IngressJev(intent, off_topic), mode="jev_only")
 
 
+def test_answer_prompts_carry_the_language_rule() -> None:
+    from graph.generate import build_chitchat_messages, build_grounded_messages
+
+    grounded = build_grounded_messages("¿Qué dice Darcy?", [], [])[0]["content"]
+    chitchat = build_chitchat_messages("¿qué tal?", [])[0]["content"]
+
+    assert "same language" in grounded
+    assert "same language" in chitchat
+
+
 def test_sufficient_question_leads_with_the_matched_passage() -> None:
     chunk = ScoredChunk(
         chunk_id=UUID(int=1),
@@ -173,7 +188,7 @@ def test_sufficient_question_leads_with_the_matched_passage() -> None:
     assert "short retrieved chunk" in prompt
 
 
-def test_sufficient_question_spends_the_budget_per_source() -> None:
+def test_sufficient_question_spends_the_budget_across_sources() -> None:
     def context(i: int) -> ExpandedContext:
         chunk = ScoredChunk(
             chunk_id=UUID(int=i + 1),
@@ -193,10 +208,147 @@ def test_sufficient_question_spends_the_budget_per_source() -> None:
 
     prompt = _sufficient_question("What happened?", [context(i) for i in range(8)]).prompt
 
-    for i in range(8):
-        assert f"[{i + 1}]" in prompt
-        assert f"[source {i} matched]" in prompt
-    assert len(prompt) < 5_000
+    # children first (D2 item 3): the ~9,000-char budget holds ~4 whole
+    # children from four different sources, and no parent context at all;
+    # interleaving would have spent the budget on source 0's child+parent
+    # and source 1's child
+    assert "[source 0 matched] " + "m" * 2_000 in prompt
+    assert "[source 3 matched]" in prompt
+    assert "[parent context]" not in prompt
+    assert "[source 7 matched]" not in prompt
+    assert len(prompt) < 10_000
+
+
+def test_sufficient_question_children_first_then_parents_in_rank_order() -> None:
+    def context(i: int) -> ExpandedContext:
+        chunk = ScoredChunk(
+            chunk_id=UUID(int=i + 1),
+            document_id=None,
+            document_name=f"book-{i}.txt",
+            section_id=None,
+            ord=0,
+            page=None,
+            text=f"[child {i}]",
+            heading_path=None,
+            source_type="document",
+            vector_score=None,
+            bm25_score=None,
+            fused_score=0.0,
+        )
+        return ExpandedContext(chunk, f"[parent {i}]")
+
+    prompt = _sufficient_question("What?", [context(i) for i in range(3)]).prompt
+
+    # every child precedes every parent, and parents follow their own child
+    assert prompt.index("[child 0]") < prompt.index("[child 1]") < prompt.index("[child 2]")
+    assert prompt.index("[child 2]") < prompt.index("[parent 0]")
+    assert prompt.index("[parent 0]") < prompt.index("[parent 1]") < prompt.index("[parent 2]")
+
+
+def test_sufficient_question_shows_the_whole_child() -> None:
+    answer = "the answer is 42."
+    chunk = ScoredChunk(
+        chunk_id=UUID(int=1),
+        document_id=None,
+        document_name="book.txt",
+        section_id=None,
+        ord=0,
+        page=None,
+        text="filler " * 200 + answer,
+        heading_path=None,
+        source_type="document",
+        vector_score=None,
+        bm25_score=None,
+        fused_score=0.0,
+    )
+
+    prompt = _sufficient_question(
+        "What is the answer?", [ExpandedContext(chunk, chunk.text)]
+    ).prompt
+
+    assert answer in prompt
+
+
+def _chunk_for(uuid_int: int, text: str) -> ScoredChunk:
+    return ScoredChunk(
+        chunk_id=UUID(int=uuid_int),
+        document_id=None,
+        document_name="book.txt",
+        section_id=None,
+        ord=0,
+        page=None,
+        text=text,
+        heading_path=None,
+        source_type="document",
+        vector_score=None,
+        bm25_score=None,
+        fused_score=0.0,
+    )
+
+
+class _FixedScoreRerank:
+    """Answers each passage with a score looked up by its text marker."""
+
+    def __init__(self, scores: dict[str, float]) -> None:
+        self._scores = scores
+
+    async def rerank(
+        self, *, query: str, documents: list[str], top_n: int
+    ) -> list[tuple[int, float]]:
+        pairs = [
+            (i, self._scores[doc.split(":")[0]]) for i, doc in enumerate(documents)
+        ]
+        pairs.sort(key=lambda pair: pair[1], reverse=True)
+        return pairs[:top_n]
+
+
+class _PassThroughRerank:
+    """Identity reranker: fused order, score 1 - i/100. Pin get_reranker
+    with this in tests that aren't about rerank or the KI-26 relevance
+    gate (the gate applies only to JevRerank scores)."""
+
+    def __init__(self, *_args: object) -> None:
+        pass
+
+    async def rerank(
+        self, *, query: str, documents: list[str], top_n: int
+    ) -> list[tuple[int, float]]:
+        return [(i, 1.0 - i / 100) for i in range(min(top_n, len(documents)))]
+
+
+@pytest.mark.asyncio
+async def test_rerank_candidates_sorts_the_no_entity_share_last() -> None:
+    """D2 item 3: dict insertion order put the "" (no-entity) share first
+    whatever it scored, so a compare run's citations led with its weakest
+    passages. The shares stay; the order follows the rerank score."""
+    chunks = [
+        _chunk_for(1, "none: no-entity passage A"),
+        _chunk_for(2, "none: no-entity passage B"),
+        _chunk_for(3, "victor: Frankenstein passage"),
+        _chunk_for(4, "traveller: Time Machine passage"),
+    ]
+    provenance = {
+        UUID(int=1): "",
+        UUID(int=2): "",
+        UUID(int=3): "Victor Frankenstein",
+        UUID(int=4): "Time Traveller",
+    }
+    reranker = _FixedScoreRerank(
+        {"none": 0.01, "victor": 0.94, "traveller": 0.90}
+    )
+
+    picked = await _rerank_candidates(
+        reranker,
+        query="compare",
+        chunks=chunks,
+        provenance=provenance,
+        limit=4,
+    )
+
+    # every share keeps an equal count, but the entity passages lead
+    assert [c.text.split(":")[0] for c in picked] == ["victor", "traveller", "none", "none"]
+    assert picked[0].rerank_score == 0.94
+    assert picked[-1].rerank_score == 0.01
 
 
 def test_compare_queries_each_named_entity() -> None:
@@ -297,11 +449,24 @@ async def test_sanitize_asks_only_about_the_reranked_top_k(
 
     chunks = [scored(chunk, i) for i, chunk in enumerate(rows)]
 
+    # Pin the reranker: this test is about sanitize, not rerank. Since
+    # 1ba8f3f the default reranker is Jev, whose fake answers Score with
+    # 0.01, which broke the fused-order assertion below (1.0 = 1/(1+0)).
+    class _PassThroughRerank:
+        def __init__(self, *_args: object) -> None:
+            pass
+
+        async def rerank(
+            self, *, query: str, documents: list[str], top_n: int
+        ) -> list[tuple[int, float]]:
+            return [(i, 1.0 - i / 100) for i in range(min(top_n, len(documents)))]
+
     async def fake_search(*args: Any, **kwargs: Any) -> list[ScoredChunk]:
         no_llm["retrieval"].append(str(kwargs.get("query_text", "")))
         return list(chunks)
 
     monkeypatch.setattr(auto_module, "hybrid_search", fake_search)
+    monkeypatch.setattr(auto_module, "get_reranker", _PassThroughRerank)
 
     jev = _CountingJev()
     run = await prepare_auto_run(
@@ -640,6 +805,381 @@ async def test_below_floor_retries_once_then_abstains(
     assert len(no_llm["retrieval"]) == 2
 
 
+async def test_answerless_but_topical_evidence_abstains(
+    db: AsyncSession,
+    user_a: User,
+    no_llm: dict[str, list[str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """KI-26 repro: the captured `outside-study-in-scarlet` top-k never
+    states the answer — no chunk mentions Afghanistan — yet it reads as
+    sufficient, so the run must abstain, not answer."""
+
+    chat, assistant_message_id = await _seed_chat(db, user_a)
+
+    document = await make_document(
+        db,
+        (
+            await db.execute(
+                select(Collection).where(Collection.owner_id == user_a.id)
+            )
+        ).scalar_one(),
+        "The Adventures of Sherlock Holmes.txt",
+    )
+    section = await make_section(db, document)
+    chunk_texts = (
+        "“Wedlock suits you,” he remarked. “I think, Watson, that you have "
+        "put on seven and a half pounds since I saw you. And in practice "
+        "again, I observe.” “Then, how do you know?” “I see it, I deduce "
+        "it. How do I know that you have been getting yourself very wet "
+        "lately, and that you have a most clumsy and careless servant "
+        "girl?”",
+        "“Beyond the obvious facts that he has at some time done manual "
+        "labour, that he takes snuff, that he is a Freemason, that he has "
+        "been in China, and that he has done a considerable amount of "
+        "writing lately, I can deduce nothing else.”",
+    )
+    rows = [
+        await add_chunk(
+            db,
+            document=document,
+            section=section,
+            ord=i,
+            text_=text_,
+            embedding=vec(i + 2),
+        )
+        for i, text_ in enumerate(chunk_texts)
+    ]
+    await db.commit()
+
+    def scored(chunk: Chunk, i: int) -> ScoredChunk:
+        return ScoredChunk(
+            chunk_id=chunk.id,
+            document_id=document.id,
+            document_name=document.name,
+            section_id=section.id,
+            ord=i,
+            page=None,
+            text=chunk.text,
+            heading_path=section.heading_path,
+            source_type="document",
+            vector_score=1.0 - i * 0.01,
+            bm25_score=None,
+            fused_score=1.0 - i * 0.01,
+        )
+
+    chunks = [scored(chunk, i) for i, chunk in enumerate(rows)]
+
+    async def fake_search(*args: Any, **kwargs: Any) -> list[ScoredChunk]:
+        return list(chunks)
+
+    monkeypatch.setattr(auto_module, "hybrid_search", fake_search)
+
+    class _TopicalJev(_IngressJev):
+        """Sufficient at 0.10 and rerank relevance at 0.28 — the values live
+        Jev returns for the captured KI-26 evidence (`.data/ki26/
+        capture.json`): sufficient clears the 0.05 floor, but the max
+        rerank score sits under the 0.60 relevance gate."""
+
+        def __init__(self) -> None:
+            super().__init__("lookup")
+            self.relevance_questions = 0
+
+        async def decide(
+            self, *, state: dict[str, Any] | str, questions: dict[str, Question]
+        ) -> dict[str, Answer]:
+            answers = await super().decide(state=state, questions=questions)
+            for name in questions:
+                if name.startswith("passage_"):
+                    self.relevance_questions += 1
+                    answers[name] = Answer(
+                        engine="jev", latency_ms=1, value=0.28, probability=None
+                    )
+            if "sufficient" in answers:
+                answers["sufficient"] = Answer(
+                    engine="jev", latency_ms=1, value=0.1, probability=0.1
+                )
+            return answers
+
+    # The mechanism, pinned: the answer's key fact is in no chunk.
+    assert all("Afghanistan" not in chunk.text for chunk in chunks)
+
+    # Pin the real JevRerank so the relevance gate runs on the fake's
+    # captured 0.28 scores (the default factory would too, but ambient
+    # runtime settings must not decide which reranker a test exercises).
+    monkeypatch.setattr(
+        auto_module, "get_reranker", lambda engine=None, run_id="": JevRerank(engine, run_id)
+    )
+
+    run = await prepare_auto_run(
+        get_session_factory(),
+        await _params(db, chat, user_a, assistant_message_id),
+        DecisionEngine(jev=_TopicalJev(), mode="jev_only"),
+    )
+
+    assert run.abstain_event is not None
+
+
+class _RelevanceJev(_IngressJev):
+    """Sufficient pinned; rerank passages answered at `passage_score`, or
+    left unanswered when None (JevRerank then defaults them to 0.0)."""
+
+    def __init__(self, intent: str, sufficient: float, passage_score: float | None) -> None:
+        super().__init__(intent)
+        self._sufficient_value = sufficient
+        self._passage_score = passage_score
+
+    async def decide(
+        self, *, state: dict[str, Any] | str, questions: dict[str, Question]
+    ) -> dict[str, Answer]:
+        answers = await super().decide(state=state, questions=questions)
+        for name in questions:
+            if name.startswith("passage_"):
+                if self._passage_score is None:
+                    answers.pop(name, None)
+                else:
+                    answers[name] = Answer(
+                        engine="jev", latency_ms=1, value=self._passage_score, probability=None
+                    )
+        if "sufficient" in answers:
+            answers["sufficient"] = Answer(
+                engine="jev", latency_ms=1, value=self._sufficient_value,
+                probability=self._sufficient_value,
+            )
+        return answers
+
+
+async def _gate_params(
+    db: AsyncSession,
+    user_a: User,
+    no_llm: dict[str, list[str]],
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    reranker_factory: object | None = None,
+) -> AutoRunInput:
+    """Seed four answerable chunks and patch retrieval, with the reranker
+    pinned to the real JevRerank (so the KI-26 relevance gate runs) unless a
+    test overrides the factory. Reusable across prepare_auto_run calls."""
+    from db.models import Chunk
+
+    chat, assistant_message_id = await _seed_chat(db, user_a)
+    collection = (
+        await db.execute(select(Collection).where(Collection.owner_id == user_a.id))
+    ).scalar_one()
+    document = await make_document(db, collection)
+    section = await make_section(db, document)
+    rows: list[Chunk] = []
+    for i in range(4):
+        rows.append(
+            await add_chunk(
+                db,
+                document=document,
+                section=section,
+                ord=i,
+                text_=f"passage {i}: the AW-2000 blade warranty lasts {i} months",
+                embedding=vec(i + 2),
+            )
+        )
+    await db.commit()
+    chunks = [
+        ScoredChunk(
+            row.id, document.id, document.name, section.id, row.ord, None,
+            row.text, section.heading_path, "document", 1.0 - i * 0.01, None, 1.0 - i * 0.01,
+        )
+        for i, row in enumerate(rows)
+    ]
+
+    async def fake_search(*args: Any, **kwargs: Any) -> list[ScoredChunk]:
+        no_llm["retrieval"].append(str(kwargs.get("query_text", "")))
+        return list(chunks)
+
+    monkeypatch.setattr(auto_module, "hybrid_search", fake_search)
+    if reranker_factory is None:
+        reranker_factory = lambda engine=None, run_id="": JevRerank(engine, run_id)  # noqa: E731
+    monkeypatch.setattr(auto_module, "get_reranker", reranker_factory)
+    return await _params(db, chat, user_a, assistant_message_id)
+
+
+async def _gate_run(
+    params: AutoRunInput, *, sufficient: float, passage_score: float | None
+) -> AutoRun:
+    return await prepare_auto_run(
+        get_session_factory(),
+        params,
+        DecisionEngine(
+            jev=_RelevanceJev("lookup", sufficient, passage_score), mode="jev_only"
+        ),
+    )
+
+
+async def _run_gate_check(
+    db: AsyncSession,
+    user_a: User,
+    no_llm: dict[str, list[str]],
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    sufficient: float,
+    passage_score: float | None,
+    reranker_factory: object | None = None,
+) -> AutoRun:
+    params = await _gate_params(
+        db, user_a, no_llm, monkeypatch, reranker_factory=reranker_factory
+    )
+    return await _gate_run(params, sufficient=sufficient, passage_score=passage_score)
+
+
+def _relevance_decisions(run: AutoRun) -> list[Decision]:
+    return [d for d in run.decision_events if d.name == "relevance"]
+
+
+@pytest.mark.asyncio
+async def test_relevance_gate_abstains_below_the_rerank_floor(
+    db: AsyncSession,
+    user_a: User,
+    no_llm: dict[str, list[str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """KI-26 gate: sufficient 0.2 clears the 0.05 floor, but a max rerank
+    score of 0.3 sits under rerank_abstain 0.60 — topically adjacent,
+    answerless evidence must abstain. One retry, then abstain."""
+    run = await _run_gate_check(db, user_a, no_llm, monkeypatch, sufficient=0.2, passage_score=0.3)
+
+    assert run.abstain_event is not None
+    decisions = _relevance_decisions(run)
+    assert decisions, "the trace must show why the run abstained"
+    assert decisions[-1].value == pytest.approx(0.3)
+    assert decisions[-1].threshold == pytest.approx(0.6)
+    assert decisions[-1].engine == "jev"
+    # initial retrieve + the single rewrite-retry
+    assert len(no_llm["retrieval"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_relevance_gate_answers_above_the_rerank_floor(
+    db: AsyncSession,
+    user_a: User,
+    no_llm: dict[str, list[str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = await _run_gate_check(db, user_a, no_llm, monkeypatch, sufficient=0.2, passage_score=0.8)
+
+    assert run.abstain_event is None
+    assert run.contexts, "a gated-in run still generates from its contexts"
+    decisions = _relevance_decisions(run)
+    assert decisions[-1].value == pytest.approx(0.8)
+
+
+@pytest.mark.asyncio
+async def test_relevance_gate_skipped_for_a_non_jev_provider(
+    db: AsyncSession,
+    user_a: User,
+    no_llm: dict[str, list[str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """NVIDIA/Cohere/fused-order scores are on other scales (fused order's
+    top is always 1.0), so the gate must not read them: this provider
+    scores 0.3 — under the floor — and the run still answers."""
+
+    class _LowScoringProvider:
+        def __init__(self, *_args: object) -> None:
+            pass
+
+        async def rerank(
+            self, *, query: str, documents: list[str], top_n: int
+        ) -> list[tuple[int, float]]:
+            return [(i, 0.3) for i in range(min(top_n, len(documents)))]
+
+    run = await _run_gate_check(
+        db,
+        user_a,
+        no_llm,
+        monkeypatch,
+        sufficient=0.2,
+        passage_score=0.3,
+        reranker_factory=_LowScoringProvider,
+    )
+
+    assert run.abstain_event is None
+    assert _relevance_decisions(run) == []
+
+
+@pytest.mark.asyncio
+async def test_relevance_gate_skipped_when_no_passage_got_a_real_answer(
+    db: AsyncSession,
+    user_a: User,
+    no_llm: dict[str, list[str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An outage must not abstain: when every passage defaulted to 0.0
+    (nothing answered), the gate is skipped and sufficiency decides."""
+    run = await _run_gate_check(db, user_a, no_llm, monkeypatch, sufficient=0.2, passage_score=None)
+
+    assert run.abstain_event is None
+    assert _relevance_decisions(run) == []
+
+
+@pytest.mark.asyncio
+async def test_relevance_threshold_override_is_honoured(
+    db: AsyncSession,
+    user_a: User,
+    no_llm: dict[str, list[str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AD-4: 0.3 fails the default 0.60 gate but clears an admin override."""
+    params = await _gate_params(db, user_a, no_llm, monkeypatch)
+    blocked = await _gate_run(params, sufficient=0.2, passage_score=0.3)
+    assert blocked.abstain_event is not None
+
+    token = set_runtime_settings(
+        RuntimeSettings.from_data(11, {"thresholds": {"rerank_abstain": {"jev": 0.2}}})
+    )
+    try:
+        answered = await _gate_run(params, sufficient=0.2, passage_score=0.3)
+    finally:
+        reset_runtime_settings(token)
+    assert answered.abstain_event is None
+    assert _relevance_decisions(answered)[-1].threshold == pytest.approx(0.2)
+
+
+@pytest.mark.asyncio
+async def test_relevance_decision_is_published_to_the_trace(
+    db: AsyncSession,
+    user_a: User,
+    no_llm: dict[str, list[str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No engine.decide call makes the relevance decision, so the
+    DecisionEngine emitter never fires for it — graph/runner.py publishes
+    it from `auto_run.decision_events` instead. Pinned here on the run's own
+    decision list, which is what the runner iterates: one per attempt
+    (initial + the single retry)."""
+    params = await _gate_params(db, user_a, no_llm, monkeypatch)
+    run = await prepare_auto_run(
+        get_session_factory(),
+        params,
+        DecisionEngine(
+            jev=_RelevanceJev("lookup", 0.2, 0.3), mode="jev_only"
+        ),
+    )
+
+    relevance = _relevance_decisions(run)
+    assert run.abstain_event is not None
+    assert len(relevance) == 2
+    assert all(event.value == pytest.approx(0.3) for event in relevance)
+    assert all(event.threshold == pytest.approx(0.6) for event in relevance)
+    assert all(event.stage == "rerank" for event in relevance)
+
+
+def test_runner_publishes_the_relevance_decision() -> None:
+    """The runner is the only place with the bus; without this the gate's
+    decision never reaches run_events (found live: 8/8 items passed but the
+    trace had no `relevance` event)."""
+    from graph import runner as runner_module
+
+    source = Path(runner_module.__file__).read_text()
+    assert 'if decision.name == "relevance":' in source
+
+
 async def test_retry_count_never_exceeds_one(
     db: AsyncSession,
     user_a: User,
@@ -722,6 +1262,86 @@ async def test_abstention_follows_the_configured_sufficient_abstain_threshold(
     assert abstained.abstain_event is not None
 
 
+async def test_abstention_persists_no_citations(
+    db: AsyncSession,
+    user_a: User,
+    no_llm: dict[str, list[str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """KI-25: an abstention has nothing to support, so it must not attach
+    the chunks it failed to answer from. The old abstain tests all stubbed
+    retrieval to return zero candidates, so the rows the run *did* persist
+    went unasserted."""
+
+    class _PassThroughRerank:
+        def __init__(self, *_args: object) -> None:
+            pass
+
+        async def rerank(
+            self, *, query: str, documents: list[str], top_n: int
+        ) -> list[tuple[int, float]]:
+            return [(i, 1.0 - i / 100) for i in range(min(top_n, len(documents)))]
+
+    class _BelowFloorJev(_IngressJev):
+        async def decide(
+            self, *, state: dict[str, Any] | str, questions: dict[str, Question]
+        ) -> dict[str, Answer]:
+            answers = await super().decide(state=state, questions=questions)
+            if "sufficient" in answers:
+                answers["sufficient"] = Answer(
+                    engine="jev", latency_ms=1, value=0.02, probability=0.02
+                )
+            return answers
+
+    chat, assistant_message_id = await _seed_chat(db, user_a)
+    collection = (
+        await db.execute(select(Collection).where(Collection.owner_id == user_a.id))
+    ).scalar_one()
+    document = await make_document(db, collection, name="Pride and Prejudice")
+    section = await make_section(db, document)
+    rows = [
+        await add_chunk(
+            db,
+            document=document,
+            section=section,
+            ord=i,
+            text_=f"passage {i}.",
+            embedding=vec(i + 1),
+        )
+        for i in range(4)
+    ]
+    await db.commit()
+    candidates = [
+        ScoredChunk(
+            row.id, document.id, document.name, section.id, row.ord,
+            None, row.text, section.heading_path, "document", 1.0, None, 1.0,
+        )
+        for row in rows
+    ]
+
+    async def fake_search(*args: Any, **kwargs: Any) -> list[ScoredChunk]:
+        return list(candidates)
+
+    monkeypatch.setattr(auto_module, "hybrid_search", fake_search)
+    monkeypatch.setattr(auto_module, "get_reranker", _PassThroughRerank)
+
+    run = await prepare_auto_run(
+        get_session_factory(),
+        await _params(db, chat, user_a, assistant_message_id),
+        DecisionEngine(jev=_BelowFloorJev("lookup"), mode="jev_only"),
+    )
+
+    assert run.abstain_event is not None
+    assert run.contexts == []
+    assert run.abstain_event.found_summary != ""
+    persisted = (
+        await db.execute(
+            select(Citation).where(Citation.message_id == assistant_message_id)
+        )
+    ).scalars().all()
+    assert persisted == []
+
+
 async def test_compare_retrieves_chunks_for_each_named_entity(
     db: AsyncSession, user_a: User, no_llm: dict[str, list[str]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -780,6 +1400,7 @@ async def test_compare_retrieves_chunks_for_each_named_entity(
 
     monkeypatch.setattr(auto_module, "complete", fake_complete)
     monkeypatch.setattr(auto_module, "hybrid_search", fake_search)
+    monkeypatch.setattr(auto_module, "get_reranker", _PassThroughRerank)
     params = await _params(db, chat, user_a, assistant_message_id)
 
     class _RetryJev(_IngressJev):
@@ -804,7 +1425,7 @@ async def test_compare_retrieves_chunks_for_each_named_entity(
         ),
         DecisionEngine(jev=_RetryJev("compare"), mode="jev_only"),
     )
-
+    # not a rerank/gate test: identity reranker, gate skipped (non-Jev)
     assert {context.chunk.document_name for context in run.contexts} == {
         "Frankenstein",
         "The Time Machine",
@@ -822,6 +1443,9 @@ async def test_compare_keeps_both_books_when_the_reranker_prefers_one(
     equal share of the top-k instead."""
 
     class _FrankensteinBiasedRerank:
+        def __init__(self, *_args: object) -> None:
+            pass
+
         async def rerank(
             self, *, query: str, documents: list[str], top_n: int
         ) -> list[tuple[int, float]]:
@@ -954,7 +1578,7 @@ async def test_multi_part_retrieves_one_query_per_part(
 
     async def fake_complete(**kwargs: Any) -> str:
         system = kwargs["messages"][0]["content"]
-        if "one line per part" in system:
+        if "more than one part" in system:
             return "\n".join(parts)
         return str(kwargs["messages"][-1]["content"])
 
@@ -1009,6 +1633,7 @@ async def test_multi_part_retrieves_one_query_per_part(
 
     monkeypatch.setattr(auto_module, "complete", fake_complete)
     monkeypatch.setattr(auto_module, "hybrid_search", fake_search)
+    monkeypatch.setattr(auto_module, "get_reranker", _PassThroughRerank)
     params = await _params(db, chat, user_a, assistant_message_id)
 
     token = set_runtime_settings(RuntimeSettings.from_data(10, {"retrieval": {"top_k": 4}}))

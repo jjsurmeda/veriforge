@@ -14,6 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import Chat, Message, UsageLedger
 from db.session import get_session_factory
+from decisions.output_guard import OutputGuardResult
+from graph.review import ReviewResult
 from graph.runner import _background_tasks, _finalize, drain_background_tasks
 from quota.usage import get_usage_context
 from tests.conftest import make_run_row
@@ -58,10 +60,23 @@ def _patch_fast_seams(
     async def fake_embed(*, texts: list[str]) -> list[list[float]]:
         return [[0.01] * 1536 for _ in texts]
 
+    async def fake_review_answer(**kwargs: Any) -> Any:
+        return ReviewResult()
+
+    async def fake_suggestions(**kwargs: Any) -> list[str]:
+        return []
+
+    async def fake_guard_output(*args: Any, **kwargs: Any) -> Any:
+        return OutputGuardResult()
+
     monkeypatch.setattr("graph.fast.stream_grounded_answer", stream)
     monkeypatch.setattr("graph.fast.complete", fake_complete)
     monkeypatch.setattr("graph.chat_title.complete", fake_complete)
     monkeypatch.setattr("retrieval.cache.embed_batch", fake_embed)
+    # review/suggestions/guard run on the LLM after delivery; fake at the boundary
+    monkeypatch.setattr("graph.runner.review_answer", fake_review_answer)
+    monkeypatch.setattr("graph.runner.generate_suggestions", fake_suggestions)
+    monkeypatch.setattr("graph.runner.guard_output", fake_guard_output)
     return title_calls
 
 

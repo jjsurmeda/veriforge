@@ -48,6 +48,7 @@ from graph.review import (
 )
 from graph.suggestions import generate_suggestions
 from providers.credentials import decrypt_provider_key
+from providers.llm import classify_provider_error
 from quota.service import settle_run
 from quota.usage import UsageContext, get_usage_context, reset_usage_context, set_usage_context
 from retrieval.context import count_tokens
@@ -466,17 +467,26 @@ async def _finish_answer(
     chat_id: UUID,
     instant_title: str | None,
     chitchat: bool = False,
+    revert_title: bool = False,
 ) -> None:
     """Shared tail for every mode: review phase (skipped for abstentions —
     the fixed template has no claims to verify), event order per delivery
-    plan, runs.metrics persistence, fire-and-forget async scoring."""
+    plan, runs.metrics persistence, fire-and-forget async scoring.
+
+    `chitchat` means "a direct reply that cites nothing and asserts nothing
+    about the sources", which now covers a library listing as well as small
+    talk. It is deliberately one flag: a second one defaulting to False
+    would let a caller that sets one and not the other silently run the
+    reviewer and reach a live model. The title is reverted for small talk
+    only, so that is its own argument.
+    """
     final_text = text
     review: ReviewResult | None = None
     suggestions: list[str] = []
     guard: OutputGuardResult | None = None
     blocked = False
-    # Small talk skips the reviewer (no claims, no citations) but is NOT an
-    # abstention — its message status is complete (batch A item 3).
+    # A direct reply skips the reviewer (no claims, no citations) but is NOT
+    # an abstention — its message status is complete (batch A item 3).
     if not abstained and not chitchat:
         final_text, review, suggestions, guard = await _compute_review(
             bus=bus,
@@ -507,7 +517,7 @@ async def _finish_answer(
             question=question,
             answer=final_text,
             small_model=small_model,
-            chitchat=chitchat,
+            chitchat=revert_title,
         )
 
     await _with_session(session_factory, refine_title)
@@ -579,6 +589,23 @@ async def _finish_answer(
             status="abstained" if abstained else "completed",
         ),
     )
+
+
+def _reset_at(exc: AppError) -> str | None:
+    """The instant a credit window resets, when the failure carried one.
+
+    `quota/service.py` puts `reset_at` in `QuotaExceeded`'s detail as an
+    ISO-8601 string, and it is the only failure that has one: a provider-side
+    exhaustion has no window, so it publishes `reset_at: null` rather than a
+    guess. A detail of the wrong shape is treated as absent rather than
+    stringified, because "try again at <something>" is worse than no time at
+    all.
+    """
+    detail = exc.detail
+    if not isinstance(detail, dict):
+        return None
+    reset_at = detail.get("reset_at")
+    return reset_at if isinstance(reset_at, str) else None
 
 
 async def execute_run(
@@ -678,6 +705,10 @@ async def execute_run(
 
         if mode == "auto":
             engine.set_event_emitter(emit_decision)
+
+            async def _publish_step(rid: UUID, event: RunStreamEvent) -> None:
+                await bus.publish(rid, event)
+
             auto_run = await prepare_auto_run(
                 session_factory,
                 AutoRunInput(
@@ -694,9 +725,20 @@ async def execute_run(
                     collection_ids=collection_ids or [],
                 ),
                 engine,
+                # CH-5: Auto's steps used to be timed but never published, so
+                # the trace showed nothing until the run was already over.
+                # Deep has always passed this; Auto now does too.
+                publish=_publish_step,
             )
             for event in auto_run.retrieval_events:
                 await bus.publish(run_id, event)
+            # The relevance gate's Decision is computed in prepare_auto_run,
+            # not by an engine.decide call, so the DecisionEngine emitter
+            # never fires for it — publish it here or the trace can't show
+            # why the run abstained (KI-26, D2 item 4).
+            for decision in auto_run.decision_events:
+                if decision.name == "relevance":
+                    await bus.publish(run_id, decision)
             if auto_run.conflict_event is not None:
                 await bus.publish(run_id, auto_run.conflict_event)
             if auto_run.abstain_event is not None:
@@ -706,7 +748,9 @@ async def execute_run(
                 "stream"
                 # Small talk has no claims to review, so "hold" would park the
                 # reply in a branch that only publishes deltas after review.
-                if auto_run.abstain_event is not None or auto_run.chitchat
+                if auto_run.abstain_event is not None
+                or auto_run.chitchat
+                or auto_run.library_names is not None
                 else plan_delivery(
                     mode="auto",
                     risk=auto_run.ingress.risk,
@@ -764,7 +808,8 @@ async def execute_run(
                 tokens_in=prompt_tokens,
                 generate_ms=generate_ms,
                 abstained=auto_run.abstain_event is not None,
-                chitchat=auto_run.chitchat,
+                chitchat=auto_run.chitchat or auto_run.library_names is not None,
+                revert_title=auto_run.chitchat,
                 plan=plan,
                 chat_id=chat_id,
                 instant_title=instant_title,
@@ -948,10 +993,37 @@ async def execute_run(
         await _finalize(session_factory, run_id, message_id, status="failed", text=text)
         await bus.publish(
             run_id,
-            RunFailed(run_id=str(run_id), error_code=exc.error_code, message=exc.message),
+            RunFailed(
+                run_id=str(run_id),
+                error_code=exc.error_code,
+                message=exc.message,
+                reset_at=_reset_at(exc),
+            ),
         )
 
-    except Exception:
+    except Exception as exc:
+        # KI-23: a provider failure is not an unknown failure. An invalid key,
+        # an exhausted balance and an unreachable provider each get their own
+        # code, because for all three "try again" is the wrong instruction and
+        # for two of them it is also the wrong audience. Classified here, at
+        # the one place every terminal failure lands, from the exception itself
+        # rather than by wrapping it at each call site.
+        provider_error = classify_provider_error(exc)
+        if provider_error is not None:
+            logger.error(
+                "run failed at the provider",
+                extra={"run_id": str(run_id), "error_code": provider_error.error_code},
+            )
+            await _finalize(session_factory, run_id, message_id, status="failed", text=text)
+            await bus.publish(
+                run_id,
+                RunFailed(
+                    run_id=str(run_id),
+                    error_code=provider_error.error_code,
+                    message=provider_error.message,
+                ),
+            )
+            return
         logger.exception("run failed", extra={"run_id": str(run_id)})
         await _finalize(session_factory, run_id, message_id, status="failed", text=text)
         await bus.publish(
@@ -979,22 +1051,39 @@ async def sweep_stale_runs(
     cutoff = datetime.now(UTC) - timedelta(seconds=get_settings().heartbeat_sweep_seconds)
 
     async def work(session: AsyncSession) -> list[tuple[UUID, UUID]]:
-        stale = (
+        candidates = (
             await session.execute(
-                select(Run.id, Run.message_id).where(
+                select(Run.id).where(
                     Run.status == "running",
                     Run.heartbeat_at.is_not(None),
                     Run.heartbeat_at < cutoff,
                 )
             )
+        ).scalars().all()
+        # The staleness predicate is repeated in the UPDATE, not trusted from
+        # the SELECT above: a run that heartbeats in between is alive, and
+        # matching on id alone failed it anyway — then settled its usage and
+        # published a false terminal failure (review S7). RETURNING names the
+        # rows this sweep actually took, so only those are touched below.
+        swept = (
+            await session.execute(
+                update(Run)
+                .where(
+                    Run.id.in_(candidates),
+                    Run.status == "running",
+                    Run.heartbeat_at.is_not(None),
+                    Run.heartbeat_at < cutoff,
+                )
+                .values(status="failed")
+                .returning(Run.id, Run.message_id)
+            )
         ).all()
-        for run_id, message_id in stale:
+        for run_id, message_id in swept:
             message = await session.get(Message, message_id)
             if message is not None and message.status is None:
                 message.status = "failed"
             await settle_run(session, run_id, None)
-            await session.execute(update(Run).where(Run.id == run_id).values(status="failed"))
-        return [(r[0], r[1]) for r in stale]
+        return [(row[0], row[1]) for row in swept]
 
     stale = await _with_session(session_factory, work)
     for run_id, _message_id in stale:

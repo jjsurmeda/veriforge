@@ -13,20 +13,28 @@ import asyncio
 import logging
 import math
 import re
+import time
 import unicodedata
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from functools import partial
+from itertools import combinations
+from typing import TypeVar
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from chats.scope import list_scope_documents
 from db.models import Chat, Citation, Message
 from decisions import DecisionEngine, threshold
 from decisions.sanitize import sanitize_chunks
 from graph import rewrite as rewrite_node
 from graph.abstain import build_abstain_event, stream_abstention
-from graph.generate import stream_chitchat_reply, stream_grounded_answer
+from graph.generate import (
+    stream_chitchat_reply,
+    stream_grounded_answer,
+    stream_library_reply,
+)
 from graph.ingress import IngressOutcome, run_ingress
 from graph.rewrite import CompleteFn
 from graph.timing import EventPublisher, make_step_timer
@@ -36,19 +44,29 @@ from retrieval.context import count_tokens, trim_context
 from retrieval.expand import ExpandedContext, dedupe_adjacent, expand_context
 from retrieval.filters import ClientFilters, Ownership
 from retrieval.hybrid import ScoredChunk, hybrid_search
-from retrieval.rerank import RERANK_TOP_N, RerankProvider, apply_rerank, get_reranker
+from retrieval.rerank import (
+    RERANK_TOP_N,
+    JevRerank,
+    RerankProvider,
+    apply_rerank,
+    get_reranker,
+)
 from retrieval.web import ensure_web_chunks
 from runtime import runtime_value
-from schemas.decisions import Noul
+from schemas.decisions import Answer, Choice, Noul, Score
 from schemas.events import (
     Abstain,
     Conflict,
     Decision,
     Retrieval,
     RetrievedChunk,
+    StepCompleted,
+    StepStarted,
 )
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
 
 EXCERPT_CHARS = 240
 MULTI_QUERY_VARIANTS = 3
@@ -58,19 +76,31 @@ MULTI_QUERY_VARIANTS = 3
 # the Darcy turn in `make smoke` abstained (KI-12). One extra small-role call
 # lists the parts; each becomes its own retrieval and, through `provenance`,
 # its own equal share of the top-k in `_rerank_candidates`.
+# Parts-only instruction: the phrasings call above already produced the
+# compound rephrasings, so asking for them again here made compliant models
+# (gpt-4o-mini and the free Nemotron both do) emit phrasings first and parts
+# last — and the old parser stopped at the phrasings, so every "part" came
+# back compound (KI-12 item 1, proved by capture 2026-09-29).
 MULTI_PART_VARIANTS = 3
 MULTI_PARTS = (
-    "The question above has more than one part. Then, after the "
-    f"{MULTI_QUERY_VARIANTS} alternative phrasings, add one line per part of "
-    "the question, each restated as a standalone search query that keeps that "
-    "part's own subject. Do not answer them and do not merge them. No commentary."
+    "The question above has more than one part. List each part of the "
+    "question restated as a standalone search query that keeps that part's "
+    "own subject, one per line. Do not answer them and do not merge them. "
+    "No commentary."
 )
 # Answer-first (batch A, owner-approved): one retrieve, and below the
 # sufficient_abstain floor exactly one rewrite + retry before abstaining.
 # The retry loop in prepare_auto_run clamps any admin override to this.
 MAX_SUFFICIENT_RETRIES = 1
 TOP_CHUNKS_FOR_SUFFICIENT = 5
-SUFFICIENT_EVIDENCE_CHARS = 4_000
+SUFFICIENT_EVIDENCE_CHARS = 9_000
+
+# KI-34: the conflict check asks one question per candidate PAIR of passages,
+# batched into a single DecisionEngine call. With at most
+# TOP_CHUNKS_FOR_SUFFICIENT sides there are 10 pairs, which is the cap: it
+# bounds one call's prompt size without dropping a pair that could be the real
+# conflict.
+CONFLICT_MAX_PAIRS = 10
 
 # Greeting fast path (batch A, owner-approved carve-out from "all
 # classification through DecisionEngine"): a raw message of at most 40
@@ -114,14 +144,12 @@ def greeting_canonical(raw: str) -> str | None:
         return None
     candidate = " ".join(words)
     return candidate if candidate in GREETING_ALLOWLIST else None
-# 250 measured, not guessed (KI-6, batch 5). 3x fast20 at each value, 20/20
-# items scored in all six runs. p50 medians 24088 ms (500) vs 22822 ms (250) —
-# a 5.3% difference smaller than the within-variant spread, so the budget
-# does not drive latency. But 250 is equal or better on quality: faithfulness
-# 0.9958 vs 0.9917, and abstention accuracy 1.00 (3/3 runs) vs 0.58 (1/3).
-# More evidence per source makes the sufficiency Noul over-confident, so it
-# generates when it should have abstained.
-SUFFICIENT_EVIDENCE_CHARS_PER_SOURCE = 250
+# Round 2 (KI-12): the per-source head window is gone. It measured better
+# on faithfulness (2026-09-28, batch 5/6) only because the judge saw the
+# first 250 chars of a 500-token child and the Darcy proposal lives in a
+# child's last sentence — the head window hid the evidence. Children are
+# now ~300 tokens, so each source contributes its whole child; parent
+# context follows only if the ~9,000-character total has room.
 
 
 @dataclass(frozen=True)
@@ -156,12 +184,26 @@ class AutoRun:
     ingress: IngressOutcome
     chitchat: bool = False
     sufficiency_p: float = 0.0
+    library_names: list[str] | None = None
 
     async def stream_answer(self) -> AsyncIterator[str]:
         if self.chitchat:
             async for token in stream_chitchat_reply(
                 litellm_model=self.params.litellm_model,
                 message=self.rewritten,
+                history=self.history,
+                metadata={
+                    "run_id": str(self.params.run_id),
+                    "user_id": str(self.params.user_id),
+                },
+            ):
+                yield token
+            return
+        if self.library_names is not None:
+            async for token in stream_library_reply(
+                litellm_model=self.params.litellm_model,
+                question=self.rewritten,
+                names=self.library_names,
                 history=self.history,
                 metadata={
                     "run_id": str(self.params.run_id),
@@ -214,7 +256,8 @@ async def _generate_query_variants(
 ) -> list[str]:
     """Multi-query rewrite (TRD §7 mode table, Auto only). n variants in
     one LLM call; first variant is the rewritten query itself. With
-    `instruction` the call asks for that shape instead (see MULTI_PARTS)."""
+    `instruction` the call asks for that shape instead (see MULTI_PARTS),
+    so the parsed lines are returned as-is, without the question seeded."""
     if n <= 1 and instruction is None:
         return [question]
     from prompts.load import load_prompt
@@ -225,19 +268,20 @@ async def _generate_query_variants(
         history="(none)",
         question=question,
     )
-    prompt += (
-        f"\n\nProduce {n} alternative phrasings of the rewritten question, "
-        f"one per line. Each should target a different retrieval angle "
-        f"(synonyms, narrower scope, broader scope). No commentary."
-    )
-    if instruction is not None:
+    if instruction is None:
+        prompt += (
+            f"\n\nProduce {n} alternative phrasings of the rewritten question, "
+            f"one per line. Each should target a different retrieval angle "
+            f"(synonyms, narrower scope, broader scope). No commentary."
+        )
+    else:
         prompt += f"\n\n{instruction}"
     response = await complete_fn(
         litellm_model=small_model,
         messages=[{"role": "system", "content": prompt}, {"role": "user", "content": question}],
         metadata={"role": "rewriter"},
     )
-    variants = [question]
+    variants = [question] if instruction is None else []
     for line in response.strip().splitlines():
         line = line.strip().lstrip("0123456789.-) ")
         if line and line not in variants:
@@ -317,25 +361,42 @@ async def _rerank_candidates(
         picked.extend(
             await apply_rerank(reranker, query=label or query, chunks=group, top_n=share)
         )
+    # Order by rerank score, not group insertion order. Dict order put the
+    # "" (no-entity) share first whatever it scored, so a compare run's
+    # citations [1]-[3] could be the weakest passages (compare-inventors
+    # cited Noli Me Tangere at 0.01-0.02 ahead of Frankenstein and The
+    # Time Machine). The shares stay the same; only the order changes.
+    picked.sort(key=lambda chunk: chunk.rerank_score or 0.0, reverse=True)
     return picked
 
 
 def _sufficient_question(question: str, top_contexts: list[ExpandedContext]) -> Noul:
     remaining = SUFFICIENT_EVIDENCE_CHARS
     entries: list[str] = []
+    # Whole children first, in rank order; parent context follows only if
+    # the budget has room after every child that fits took its turn. The
+    # previous interleaving (each entry's parent before the next entry's
+    # child) let the first source's parent eat the budget, which is how
+    # compare-inventors' sufficiency judge saw only Noli Me Tangere (D2
+    # item 3): entry 1 child + ±1 neighbours ≈ 4,000 chars, so a
+    # 9,000-char budget held ~2 entries.
     for i, context in enumerate(top_contexts):
         if remaining <= 0:
             break
-        # Per source, not per run: a shared pool lets one long child eat the
-        # whole budget, so the judge sees a lone [1] and calls the evidence thin.
-        allowance = min(SUFFICIENT_EVIDENCE_CHARS_PER_SOURCE, remaining)
-        matched = context.chunk.text[:allowance]
+        text = context.chunk.text[:remaining]
+        remaining -= len(text)
+        entries.append(f"[{i + 1}] [matched passage]\n{text}")
+    parents: list[str] = []
+    for i, context in enumerate(top_contexts):
+        if remaining <= 0 or i >= len(entries):
+            break
         parent = context.context_text
-        if parent != context.chunk.text:
-            matched += f"\n[parent context]\n{parent[: allowance - len(matched)]}"
-        remaining -= len(matched)
-        entries.append(f"[{i + 1}] [matched passage]\n{matched}")
-    evidence = "\n\n".join(entries) or "(no evidence retrieved)"
+        if parent == context.chunk.text:
+            continue
+        excerpt = parent[:remaining]
+        parents.append(f"[{i + 1}] [parent context]\n{excerpt}")
+        remaining -= len(excerpt)
+    evidence = "\n\n".join([*entries, *parents]) or "(no evidence retrieved)"
     return Noul(
         prompt=(
             "Do the following retrieved chunks together contain enough "
@@ -346,18 +407,119 @@ def _sufficient_question(question: str, top_contexts: list[ExpandedContext]) -> 
     )
 
 
-def _conflict_question(top_chunks: list[ScoredChunk]) -> Noul:
-    evidence = "\n\n".join(
-        f"[{i + 1}] (doc: {chunk.document_name or chunk.source_type}) {chunk.text[:400]}"
-        for i, chunk in enumerate(top_chunks)
+async def _search_one_variant(
+    session: AsyncSession,
+    variant: str,
+    *,
+    params: AutoRunInput,
+    ingress: IngressOutcome,
+) -> list[ScoredChunk]:
+    """One variant's hybrid search, with the ownership filter injected here
+    (CLAUDE.md: every retrieval query gets its ownership filter server-side,
+    and `params.client_filters` may only narrow it)."""
+    embedding = await get_query_embedding(session, variant)
+    ownership = Ownership(
+        user_id=params.user_id,
+        collection_ids=list(params.collection_ids),
+        chat_id=params.chat_id,
     )
-    return Noul(
-        prompt=(
-            "Do any two of the following chunks disagree about a fact the "
-            "question depends on? Yes only if both chunks assert "
-            f"incompatible claims.\n\n{evidence}"
+    return await hybrid_search(
+        session,
+        query_text=variant,
+        query_embedding=embedding,
+        ownership=ownership,
+        filters=params.client_filters,
+        lexical_weight=ingress.lexical_weight,
+    )
+
+
+def _sub_step_timer(
+    publish: EventPublisher | None, *, node: str, run_id: UUID
+) -> Callable[[str, Callable[[], Awaitable[T]]], Awaitable[T]]:
+    """Like `make_step_timer`, but the duration is NOT added to `latency_ms`.
+
+    CH-5 (progress, live): the sub-steps inside one outer step exist so the
+    trace shows the work as it happens rather than after the fact. Their
+    labels name the query being run, and `latency_ms` is published as the
+    run's node metrics, so recording them there would put a query string
+    into a metric key and add one entry per variant per run. The outer
+    `retrieve` step still carries the total.
+    """
+
+    async def _sub_step(label: str, work: Callable[[], Awaitable[T]]) -> T:
+        if publish is None:
+            return await work()
+        await publish(run_id, StepStarted(node=node, label=label))
+        started = time.monotonic()
+        try:
+            result = await work()
+        finally:
+            duration = int((time.monotonic() - started) * 1000)
+            await publish(run_id, StepCompleted(node=node, label=label, duration_ms=duration))
+        return result
+
+    return _sub_step
+
+
+def _conflict_sides(winners: list[ScoredChunk]) -> list[ScoredChunk]:
+    """The top passages eligible to be a conflict side: at most
+    `TOP_CHUNKS_FOR_SUFFICIENT`, one per document.
+
+    One per document because a conflict is a disagreement *between sources*.
+    Two chunks of the same document are the same source, and pairing them
+    would let the checker report a document disagreeing with itself.
+    """
+    sides: list[ScoredChunk] = []
+    seen: set[object] = set()
+    for chunk in winners:
+        key = chunk.document_id or chunk.chunk_id
+        if key in seen:
+            continue
+        seen.add(key)
+        sides.append(chunk)
+        if len(sides) >= TOP_CHUNKS_FOR_SUFFICIENT:
+            break
+    return sides
+
+
+def _conflict_pair_questions(
+    sides: list[ScoredChunk], question: str
+) -> dict[str, Noul | Choice | Score]:
+    """One DecisionEngine question per candidate pair of sides, batched into
+    a single `decide` call (TRD §8 supports several questions per call).
+
+    KI-34: the old single question asked "do ANY two of these chunks
+    disagree?" and the code then split the document ids at the midpoint. The
+    "sides" it published were therefore not the passages that disagreed — just
+    a list cut in two, so the UI could show a conflict whose two sides agreed
+    with each other (TR-5 promises "cites both sides"). A question per PAIR is
+    what makes the answer attributable: the pair that fires names the two
+    passages, and those two are the sides.
+
+    At most `CONFLICT_MAX_PAIRS` pairs, so a long passage list cannot turn one
+    call into an unbounded question set.
+    """
+    budget = SUFFICIENT_EVIDENCE_CHARS // max(1, len(sides) * (len(sides) - 1) // 2)
+    questions: dict[str, Noul | Choice | Score] = {}
+    for index, (left, right) in enumerate(combinations(sides, 2)):
+        if index >= CONFLICT_MAX_PAIRS:
+            break
+        questions[f"conflict_{index}"] = Noul(
+            prompt=(
+                "Do these two passages assert INCOMPATIBLE values for the "
+                "same fact — two different values, where a reader could not "
+                "hold both? Say yes only for a direct factual contradiction "
+                "on a fact the question depends on. Say no if they agree, if "
+                "they are about different facts, or if one is merely more "
+                "detailed than the other.\n\n"
+                f"[question]\n{question}\n\n"
+                f"[passage A — {left.document_name or left.source_type}]\n"
+                f"{left.text[:budget]}\n\n"
+                f"[passage B — {right.document_name or right.source_type}]\n"
+                f"{right.text[:budget]}"
+            )
         )
-    )
+    return questions
 
 
 async def prepare_auto_run(
@@ -378,6 +540,9 @@ async def prepare_auto_run(
     _step = make_step_timer(
         node="auto", run_id=params.run_id, latency_ms=latency_ms, publish=publish
     )
+    # CH-5: the same publisher, minus the latency accounting (see
+    # `_sub_step_timer`), for the sub-steps inside one outer step.
+    _variant_step = _sub_step_timer(publish, node="auto", run_id=params.run_id)
 
     async with session_factory() as session, session.begin():
         chat = await session.get(Chat, params.chat_id)
@@ -474,6 +639,31 @@ async def prepare_auto_run(
                 chitchat=True,
             )
 
+        if ingress.intent == "library":
+            await _step("Library: skipped retrieval", _skip_retrieval)
+            names = [
+                document.name
+                for document in await list_scope_documents(
+                    session, list(params.collection_ids)
+                )
+            ]
+            return AutoRun(
+                params=params,
+                history=history,
+                contexts=[],
+                kept_chunks=[],
+                dropped_chunks=[],
+                rewritten=params.question,
+                retrieval_events=[],
+                decision_events=decision_events,
+                conflict_event=None,
+                abstain_event=None,
+                latency_ms=latency_ms,
+                context_used=0,
+                ingress=ingress,
+                library_names=names,
+            )
+
         if ingress.blocked:
             abstain = Abstain(
                 run_id=str(params.run_id),
@@ -540,19 +730,18 @@ async def prepare_auto_run(
             events: list[Retrieval] = []
             provenance: dict[UUID, str] = {}
             for variant in variants:
-                embedding = await get_query_embedding(session, variant)
-                ownership = Ownership(
-                    user_id=params.user_id,
-                    collection_ids=list(params.collection_ids),
-                    chat_id=params.chat_id,
-                )
-                fused = await hybrid_search(
-                    session,
-                    query_text=variant,
-                    query_embedding=embedding,
-                    ownership=ownership,
-                    filters=params.client_filters,
-                    lexical_weight=ingress.lexical_weight,
+                # One published sub-step per variant, so the trace shows the
+                # multi-query fan-out as it runs rather than one opaque
+                # `retrieve` that appears only when it is already over.
+                fused = await _variant_step(
+                    f"retrieve: {variant}",
+                    partial(
+                        _search_one_variant,
+                        session,
+                        variant,
+                        params=params,
+                        ingress=ingress,
+                    ),
                 )
                 result_sets.append(fused)
                 if variant in part_queries:
@@ -598,12 +787,16 @@ async def prepare_auto_run(
         dropped: list[ScoredChunk] = []
         expanded_contexts: list[ExpandedContext] = []
         abstain_threshold = 0.0
+        # One reranker for the whole run (KI-26, D2 item 4): the relevance
+        # gate reads which engine answered from it after the loop's retries.
+        reranker = get_reranker(engine, str(params.run_id))
+        relevance_ok = True
         while True:
             reranked = await _step(
                 "rerank",
                 partial(
                     _rerank_candidates,
-                    get_reranker(),
+                    reranker,
                     query=current_query,
                     chunks=fused,
                     provenance=provenance,
@@ -634,6 +827,40 @@ async def prepare_auto_run(
                     )
                 )
             dropped.extend(sanitize_dropped)
+            # KI-26 (D2 item 4): the second abstain signal. `sufficient`
+            # can't separate answerable from unanswerable evidence (margin
+            # -0.06 in both D1 acceptance runs), but the max rerank score of
+            # the post-sanitize winners can — see `rerank_abstain` in
+            # thresholds.py for the replay table. Gated only on scores
+            # JevRerank answered: NVIDIA/Cohere use other scales, and fused
+            # order's top score is always 1.0. An outage (no passage got a
+            # real answer) skips the gate so it can never abstain.
+            relevance_engine = (
+                reranker.relevance_engine() if isinstance(reranker, JevRerank) else None
+            )
+            relevance_ok = True
+            if relevance_engine is not None:
+                scores = [c.rerank_score for c in winners if c.rerank_score is not None]
+                if scores:
+                    relevance_max = max(scores)
+                    relevance_threshold = threshold("rerank_abstain", relevance_engine)
+                    relevance_ok = relevance_max >= relevance_threshold
+                    relevance_decision = Decision(
+                        run_id=str(params.run_id),
+                        name="relevance",
+                        value=relevance_max,
+                        probability=None,
+                        probabilities=None,
+                        engine=relevance_engine,
+                        latency_ms=0,
+                        stage="rerank",
+                        threshold=relevance_threshold,
+                        reasoning=(
+                            "max rerank score of the post-sanitize winners "
+                            f"({len(scores)} scored passages)"
+                        ),
+                    )
+                    decision_events.append(relevance_decision)
             expanded_contexts = await expand_context(session, winners)
             top_for_check = expanded_contexts[
                 : int(runtime_value("retrieval.top_k", TOP_CHUNKS_FOR_SUFFICIENT))
@@ -662,7 +889,8 @@ async def prepare_auto_run(
             )
             p_sufficient = float(sufficient.value)
             abstain_threshold = threshold("sufficient_abstain", sufficient.engine)
-            if p_sufficient >= abstain_threshold:
+            # One bar: both signals must clear, with the same single retry.
+            if p_sufficient >= abstain_threshold and relevance_ok:
                 break
             if retries_left > 0:
                 retries_left -= 1
@@ -696,40 +924,55 @@ async def prepare_auto_run(
         )
         abstain_event: Abstain | None = None
         conflict_event: Conflict | None = None
-        contexts = expanded_contexts
+        # KI-25: an abstention carries no contexts and persists no citations;
+        # what was found reaches the user as plain text in the abstain message.
+        contexts: list[ExpandedContext] = []
 
-        if p_sufficient_final < abstain_threshold:
+        if p_sufficient_final < abstain_threshold or not relevance_ok:
             abstain_event = build_abstain_event(
                 str(params.run_id), kept, offered_actions=["web", "deep"]
             )
+            # `relevance` is emitted before `sufficient` in the loop, so the
+            # last decision being `sufficient` still means the sufficiency
+            # floor was met; an abstention here with p_sufficient_final above
+            # the floor is the relevance gate (KI-26).
         else:
-            conflict_answer_map = await engine.decide(
-                state={"run_id": str(params.run_id), "kind": "conflict"},
-                questions={"conflict": _conflict_question(winners[:TOP_CHUNKS_FOR_SUFFICIENT])},
-            )
-            conflict_answer = conflict_answer_map["conflict"]
-            decision_events.append(
-                Decision(
-                    run_id=str(params.run_id),
-                    name="conflict",
-                    value=conflict_answer.value,
-                    probability=conflict_answer.probability,
-                    probabilities=conflict_answer.probabilities,
-                    engine=conflict_answer.engine,
-                    latency_ms=conflict_answer.latency_ms,
-                    reasoning=conflict_answer.reasoning,
+            contexts = expanded_contexts
+            # KI-34: timed (it was an untimed `await` between two timed
+            # steps, so its cost appeared in no latency figure), and asking
+            # about PAIRS rather than the whole evidence set, so the two
+            # passages that disagree are the two the event names.
+            sides = _conflict_sides(winners)
+            pair_questions = _conflict_pair_questions(sides, params.question)
+            conflict_answers = (
+                await _step(
+                    "conflict",
+                    partial(
+                        engine.decide,
+                        state={"run_id": str(params.run_id), "kind": "conflict"},
+                        questions=pair_questions,
+                    ),
                 )
+                if pair_questions
+                else {}
             )
-            if float(conflict_answer.value) >= threshold(
-                "conflict_disclose", conflict_answer.engine
+            best: tuple[ScoredChunk, ScoredChunk, Answer] | None = None
+            for index, (left, right) in enumerate(combinations(sides, 2)):
+                pair_answer: Answer | None = conflict_answers.get(f"conflict_{index}")
+                if pair_answer is None:
+                    continue
+                if float(pair_answer.value) > 0 and (
+                    best is None or float(pair_answer.value) > float(best[2].value)
+                ):
+                    best = (left, right, pair_answer)
+            if best is not None and float(best[2].value) >= threshold(
+                "conflict_disclose", best[2].engine
             ):
-                docs = {c.document_id or c.chunk_id for c in winners[:5]}
-                doc_list = list(docs)
-                midpoint = max(1, len(doc_list) // 2)
+                left, right, _ = best
                 conflict_event = Conflict(
                     run_id=str(params.run_id),
-                    citation_ids_left=[str(d) for d in doc_list[:midpoint]],
-                    citation_ids_right=[str(d) for d in doc_list[midpoint:]],
+                    citation_ids_left=[str(left.chunk_id)],
+                    citation_ids_right=[str(right.chunk_id)],
                     rule_applied=str(runtime_value("source_priority", "documents_first")),
                 )
 
@@ -771,7 +1014,12 @@ async def prepare_auto_run(
 async def _stream_abstention(run: AutoRun) -> AsyncIterator[str]:
     if run.abstain_event is None:
         return
-    async for token in stream_abstention(run.abstain_event):
+    async for token in stream_abstention(
+        run.abstain_event,
+        litellm_model=run.params.litellm_model,
+        question=run.rewritten,
+        metadata={"run_id": str(run.params.run_id), "user_id": str(run.params.user_id)},
+    ):
         yield token
 
 

@@ -22,6 +22,14 @@ _DEFAULTS: dict[str, dict[Engine, float]] = {
     "guard_pii_warn": {"jev": 0.70, "fallback": 0.70},
     "off_topic_warn": {"jev": 0.80, "fallback": 0.80},
     "choice_min_confidence": {"jev": 0.50, "fallback": 0.50},
+    # KI-37: `library` is the one intent that skips retrieval and answers from
+    # the document list, so a merely probable `library` is the expensive kind
+    # of wrong. "What does the AW-2000 package contain?" scored 0.6-0.95 as
+    # `library` across three fast20 runs and was answered with the corpus's
+    # internal filenames (faithfulness 0.000, no citations). 0.70 is the
+    # generic pick floor (0.50) plus a deliberate margin: below it, the
+    # question takes the retrieval path and the document is read, not listed.
+    "library_min_confidence": {"jev": 0.70, "fallback": 0.70},
     "chunk_injection_drop": {"jev": 0.70, "fallback": 0.70},
     # Answer-first (batch A, 2026-09-28): generate at or above the floor,
     # one rewrite + retry below it, then abstain. 0.05 measured on the
@@ -30,6 +38,25 @@ _DEFAULTS: dict[str, dict[Engine, float]] = {
     # (thin margin — rerank score is the fallback second signal if it
     # closes). sufficient_retry is removed: with one retry there is one bar.
     "sufficient_abstain": {"jev": 0.05, "fallback": 0.05},
+    # The second signal closed (KI-26, D2 item 4). `sufficient` alone can't
+    # separate answer from should-abstain (margin -0.06 in both D1
+    # acceptance runs), but the max Jev rerank score of the post-sanitize
+    # winners can. Offline replay of D1's two runs (max rerank score in the
+    # final retrieval event, per class):
+    #
+    # | run      | answer items (n=23) min | should-abstain (n=14) max |
+    # | 183311   | 0.70 (broad-frankenstein) | 0.49 (ml-fr-outside)    |
+    # | 184634   | 0.73 (broad-frankenstein) | 0.52 (ml-fr-outside)    |
+    #
+    # 0.60 clears both sides in both runs (0.10-0.13 above the answer min,
+    # 0.08-0.11 below the abstain max); 0.50 loses ml-fr-outside in 184634
+    # (0.52 answers). Offline replay: 40/41 at 0.50-0.65 in run 183311 and
+    # 0.55-0.65 in 184634, only xl-en-wukong-master (KI-27, content) left.
+    # The fallback cell is UNMEASURED — only Jev-answered scores were seen;
+    # it mirrors jev because Jev is the reference scale. Applies only to
+    # scores JevRerank answered (NVIDIA/Cohere use other scales; fused
+    # order is 1/(1+i), top always 1.0).
+    "rerank_abstain": {"jev": 0.60, "fallback": 0.60},
     "conflict_disclose": {"jev": 0.60, "fallback": 0.60},
     "output_toxicity_block": {"jev": 0.85, "fallback": 0.85},
     # Slice 6: 0.60 abstained Deep runs on corpus-answerable questions —
@@ -45,6 +72,7 @@ DISPLAY_THRESHOLDS: dict[str, str] = {
     "guard_pii": "guard_pii_warn",
     "off_topic": "off_topic_warn",
     "sufficient": "sufficient_abstain",
+    "relevance": "rerank_abstain",
     "conflict": "conflict_disclose",
     "controller": "controller_sufficient",
     "output_toxicity": "output_toxicity_block",

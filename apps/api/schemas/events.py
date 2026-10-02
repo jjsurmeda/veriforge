@@ -184,6 +184,12 @@ class RunFailed(RunEvent):
     type: Literal["run.failed"] = "run.failed"
     error_code: str
     message: str = ""
+    # When the failure was a credit limit with a window behind it, the instant
+    # that window resets, ISO-8601 (KI-23). Null for every other code and for a
+    # provider-side exhaustion, which has no window: "try at" would be a lie.
+    # Optional and additive, so every existing producer of this event and every
+    # existing consumer of its shape are unaffected.
+    reset_at: str | None = None
 
 
 RunStreamEvent = Annotated[

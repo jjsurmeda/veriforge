@@ -62,7 +62,8 @@ class Sample:
 async def _stats(generation_id: str) -> dict[str, Any] | None:
     from evals.attribution import _stats as fetch
 
-    return await fetch(generation_id)
+    record, _status, _attempts = await fetch(generation_id)
+    return record
 
 
 async def _once() -> Sample:
@@ -77,7 +78,7 @@ async def _once() -> Sample:
     total_ms = (time.perf_counter() - started) * 1000
     ttft_ms = (first - started) * 1000 if first is not None else None
 
-    data = await _stats(generation_ids[0]) if generation_ids else None
+    data = await _stats(generation_ids[0].as_id()) if generation_ids else None
     if data is None:
         return Sample(total_ms, ttft_ms, None, None, None)
     responses = data.get("provider_responses") or [{}]

@@ -20,12 +20,14 @@ def normalise_query(query: str) -> str:
     return " ".join(query.lower().split())
 
 
-def query_hash(query: str) -> str:
-    return hashlib.sha256(normalise_query(query).encode()).hexdigest()
+def query_hash(query: str, namespace: str = "") -> str:
+    return hashlib.sha256(f"{namespace}{normalise_query(query)}".encode()).hexdigest()
 
 
 async def get_query_embedding(session: AsyncSession, query: str) -> list[float]:
-    key = query_hash(query)
+    # Keyed by embedding model: vectors from different models are
+    # incompatible, so a model switch invalidates the cache without a wipe.
+    key = query_hash(query, namespace=f"{get_settings().embedding_model}\n")
     cached = await session.get(QueryCache, key)
     ttl = timedelta(days=get_settings().query_cache_ttl_days)
     if cached is not None and cached.created_at > datetime.now(UTC) - ttl:

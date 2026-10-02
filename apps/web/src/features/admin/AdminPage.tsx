@@ -55,6 +55,7 @@ import type {
 import { DecisionLayerPanel } from './DecisionLayerPanel'
 import { SharedLibraryPanel } from './SharedLibraryPanel'
 import { useMe } from '../auth/hooks/useMe'
+import { unwrap } from '../../lib/api'
 
 type Section =
   | 'decisions'
@@ -122,6 +123,33 @@ const inputClass =
 const buttonClass =
   'pressable inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg border border-border bg-raised px-2.5 text-xs font-medium text-fg hover:bg-raised-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:cursor-not-allowed disabled:opacity-50'
 
+/** A failed read is a visible failure with a retry, never an empty list
+ *  (review P2): an operator must not read "provider list is empty" when the
+ *  request actually failed. */
+function QueryError({
+  query,
+  label,
+}: {
+  query: { isError: boolean; isFetching: boolean; refetch: () => unknown }
+  label: string
+}) {
+  if (!query.isError) return null
+  return (
+    <div role="alert" className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-border/30 bg-raised px-3 py-2 text-sm text-danger">
+      <span>{label} could not be loaded.</span>
+      <button
+        type="button"
+        className={buttonClass}
+        disabled={query.isFetching}
+        onClick={() => void query.refetch()}
+      >
+        <RefreshCw size={13} aria-hidden="true" />
+        Retry
+      </button>
+    </div>
+  )
+}
+
 export function AdminPage() {
   const me = useMe()
   const client = useQueryClient()
@@ -158,37 +186,39 @@ export function AdminPage() {
     trace_sample_rate: 1,
   })
 
+  // Every admin read goes through unwrap: a failed request must reach
+  // React Query as an error, never as an empty operator-visible list.
   const providers = useQuery({
     queryKey: ['admin', 'providers'],
-    queryFn: async () => (await providersAdminProvidersGet()).data ?? [],
+    queryFn: async () => unwrap(await providersAdminProvidersGet()),
   })
   const models = useQuery({
     queryKey: ['admin', 'models'],
-    queryFn: async () => (await modelsAdminModelsGet()).data ?? [],
+    queryFn: async () => unwrap(await modelsAdminModelsGet()),
   })
   const roles = useQuery({
     queryKey: ['admin', 'roles'],
-    queryFn: async () => (await rolesAdminRolesGet()).data ?? [],
+    queryFn: async () => unwrap(await rolesAdminRolesGet()),
   })
   const settings = useQuery({
     queryKey: ['admin', 'settings'],
-    queryFn: async () => (await activeSettingsAdminSettingsGet()).data,
+    queryFn: async () => unwrap(await activeSettingsAdminSettingsGet()),
   })
   const versions = useQuery({
     queryKey: ['admin', 'settings', 'versions'],
-    queryFn: async () => (await settingsVersionsAdminSettingsVersionsGet()).data ?? [],
+    queryFn: async () => unwrap(await settingsVersionsAdminSettingsVersionsGet()),
   })
   const plans = useQuery({
     queryKey: ['admin', 'plans'],
-    queryFn: async () => (await plansAdminPlansGet()).data ?? [],
+    queryFn: async () => unwrap(await plansAdminPlansGet()),
   })
   const users = useQuery({
     queryKey: ['admin', 'users'],
-    queryFn: async () => (await usersAdminUsersGet()).data ?? [],
+    queryFn: async () => unwrap(await usersAdminUsersGet()),
   })
   const audit = useQuery({
     queryKey: ['admin', 'audit'],
-    queryFn: async () => (await auditAdminAuditGet()).data ?? [],
+    queryFn: async () => unwrap(await auditAdminAuditGet()),
   })
 
   const invalidate = (keys: string[][]) => {
@@ -391,6 +421,20 @@ export function AdminPage() {
         </nav>
         <div className="min-w-0 space-y-4">
           {notice && <p role="status" className="flex items-center gap-2 rounded-lg border border-border/30 bg-raised px-3 py-2 text-sm text-success"><CheckCircle2 size={15} aria-hidden="true" />{notice}</p>}
+          {(
+            [
+              ['Providers', providers],
+              ['Models', models],
+              ['Roles', roles],
+              ['Settings', settings],
+              ['Settings versions', versions],
+              ['Plans', plans],
+              ['Users', users],
+              ['Audit log', audit],
+            ] as const
+          ).map(([label, query]) => (
+            <QueryError key={label} label={label} query={query} />
+          ))}
           {section === 'decisions' && <DecisionLayerPanel />}
           {section === 'settings' && (
             <>

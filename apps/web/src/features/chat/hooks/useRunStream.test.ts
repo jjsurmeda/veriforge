@@ -8,7 +8,7 @@ import { createElement, type ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { readFileSync } from 'node:fs'
-import { setAccessToken } from '../../../lib/auth'
+import { getAccessToken, setAccessToken } from '../../../lib/auth'
 import { useChatRunStore } from '../store'
 import type { StreamEvent } from '../types'
 import { useRunStream } from './useRunStream'
@@ -116,6 +116,57 @@ describe('useRunStream', () => {
     await flush()
     expect(calls).toHaveLength(2)
     expect(useChatRunStore.getState().runs[RUN_ID].status).toBe('connecting')
+  })
+
+  it('refreshes an expired token on a 401 and resumes the stream', async () => {
+    // fetch-event-source reuses one headers object across its internal
+    // retries, so the transport itself has to run the shared refresh flow.
+    const queryClient = new QueryClient()
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/auth/refresh') {
+        return new Response(JSON.stringify({ access_token: 'fresh-token' }), {
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      const auth = new Headers(
+        init?.headers ?? (input instanceof Request ? input.headers : undefined),
+      ).get('Authorization')
+      if (auth === 'Bearer fresh-token') return new Response(null, { status: 200 })
+      return new Response(null, { status: 401 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { unmount } = renderHook(() => useRunStream(RUN_ID, CHAT_ID), {
+      wrapper: makeWrapper(queryClient),
+    })
+    await flush()
+
+    const handlers = calls[0].handlers
+    const transport = handlers.fetch
+    expect(transport).toBeTypeOf('function')
+
+    // First open with the stale token: 401, refresh, retry with the new one.
+    const retried = await (transport as (i: unknown, init: unknown) => Promise<Response>)(
+      calls[0].url,
+      { headers: {} },
+    )
+    expect(retried.status).toBe(200)
+    expect(getAccessToken()).toBe('fresh-token')
+    const streamCalls = fetchMock.mock.calls.filter(([url]) => String(url) !== '/auth/refresh')
+    expect(streamCalls).toHaveLength(2)
+    expect(
+      new Headers((streamCalls[1]![1] as RequestInit).headers).get('Authorization'),
+    ).toBe('Bearer fresh-token')
+
+    // The refreshed session still drives the run: events land in the store.
+    await act(async () => {
+      for (const event of events.slice(0, 3)) handlers.onmessage?.(message(event) as never)
+    })
+    expect(useChatRunStore.getState().runs[RUN_ID].status).toBe('streaming')
+
+    unmount()
+    vi.unstubAllGlobals()
   })
 
   it('resumes from the last seen sequence number', async () => {

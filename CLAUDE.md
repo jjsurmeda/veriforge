@@ -20,6 +20,9 @@ agentic RAG chatbot showcase. Read this before writing code, every slice.
    `react.md`, `python.md`, `testing.md`, `playwright.md`, `git.md`,
    `agents.md` (time boxes, prove-then-fix, commit early; read it before
    any unattended run or before writing a dispatch prompt).
+   `docs.md`: point-in-time docs (prompts, reviews, screenshots) are named
+   `YYYY-MM-DD-HHMM-<slug>`; living docs (PRD, TRD, conventions, ADRs)
+   keep stable names.
    Read the relevant one before adding a new component, package, test,
    e2e spec, or opening a branch.
 

@@ -9,7 +9,8 @@ import {
   uploadChatDocumentChatsChatIdDocumentsPost,
   uploadLibraryDocumentLibraryDocumentsPost,
 } from '../../../generated/sdk.gen'
-import type { DocumentOut, LibraryOut } from '../../../generated/types.gen'
+import type { DocumentOut } from '../../../generated/types.gen'
+import { unwrap } from '../../../lib/api'
 
 const LIVE_STATUSES = new Set(['queued', 'parsing', 'embedding'])
 
@@ -17,12 +18,13 @@ export function shouldPoll(documents: DocumentOut[] | undefined): boolean {
   return (documents ?? []).some((doc) => LIVE_STATUSES.has(doc.status))
 }
 
-const EMPTY_LIBRARY: LibraryOut = { documents: [], starter_questions: [] }
-
+// A failed read must reach React Query as an error, so the Library and the
+// Sources panel can tell "no documents yet" from "the request failed"
+// (review P2). Same unwrap the admin queries use (lib/api.ts).
 export function useLibrary() {
   return useQuery({
     queryKey: ['library'],
-    queryFn: async () => (await getLibraryLibraryGet()).data ?? EMPTY_LIBRARY,
+    queryFn: async () => unwrap(await getLibraryLibraryGet()),
     refetchInterval: (query) => (shouldPoll(query.state.data?.documents) ? 2000 : false),
   })
 }
@@ -32,7 +34,7 @@ export function useChatDocuments(chatId: string | null) {
     queryKey: ['chats', chatId, 'documents'],
     enabled: chatId !== null,
     queryFn: async () =>
-      (await listChatDocumentsChatsChatIdDocumentsGet({ path: { chat_id: chatId! } })).data ?? [],
+      unwrap(await listChatDocumentsChatsChatIdDocumentsGet({ path: { chat_id: chatId! } })),
     refetchInterval: (query) => (shouldPoll(query.state.data) ? 2000 : false),
   })
 }
