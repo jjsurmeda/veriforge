@@ -14,14 +14,17 @@ from typing import Any
 import litellm
 from litellm.exceptions import (
     APIConnectionError,
+    AuthenticationError,
     BadRequestError,
     InternalServerError,
+    PermissionDeniedError,
     RateLimitError,
     ServiceUnavailableError,
     Timeout,
 )
 
 from config import get_settings
+from errors import AppError
 from quota.usage import get_usage_context
 
 logger = logging.getLogger(__name__)
@@ -42,6 +45,94 @@ _FAILOVER_ERRORS = (
 _slots: dict[tuple[int, str], asyncio.Semaphore] = {}
 
 _SENTENCE_END = re.compile(r"[.!?\n]")
+
+
+# --- terminal provider failures (KI-23) -----------------------------------
+#
+# A run's terminal failure used to collapse to one code, so a provider whose
+# key is invalid, a provider that is out of credit and a provider that is
+# merely down all reached the user as "the run could not finish. Try again."
+# For all three, retrying cannot help, and the third is an operator problem
+# wearing a user problem's clothes.
+#
+# The three codes are the whole vocabulary, and they are chosen by what the
+# person reading the message can do about it:
+#
+#   provider_key_invalid  the configured key is rejected (401/403). Operator
+#                         action: fix or replace the key.
+#   quota_exceeded        no credit to run on, from either side: the app's own
+#                         5h/month window (which carries `reset_at`) or the
+#                         provider's balance (which does not). Operator action:
+#                         top up, or wait for the window.
+#   provider_unavailable  the provider is down, timing out, or unreachable
+#                         after the one failover hop. Retry may work; nothing
+#                         needs fixing first.
+#
+# `_FAILOVER_ERRORS` above is the transient set that gets one retry. These are
+# classified only AFTER that retry has been used, so a provider that 429s once
+# and then answers never produces a failure code at all.
+_PROVIDER_KEY_ERRORS = (AuthenticationError, PermissionDeniedError)
+_PROVIDER_QUOTA_ERRORS = (litellm.exceptions.BudgetExceededError,)
+
+
+class ProviderKeyInvalid(AppError):
+    """The provider rejected the configured key. An operator has to fix it."""
+
+    status_code = 502
+
+
+class ProviderQuotaExhausted(AppError):
+    """The provider has no credit left for this key.
+
+    The same `quota_exceeded` code the app's own window uses, because it is the
+    same fact from the user's side — nothing will run until there is credit —
+    and it carries no `reset_at`, because a provider balance has no window to
+    reset at. The distinction an operator needs (which side ran out) is in the
+    `detail`, not in the code the UI keys its copy off.
+    """
+
+    status_code = 402
+
+
+class ProviderUnavailable(AppError):
+    """The provider is down or unreachable after the failover hop."""
+
+    status_code = 503
+
+
+def classify_provider_error(exc: BaseException) -> AppError | None:
+    """The domain error for a terminal provider failure, or None if `exc` is
+    not one this module can speak for.
+
+    Returns rather than raises so the caller keeps one `except` clause and
+    this stays a pure function of the exception: a mapping, not a control
+    flow. A RateLimitError that survived the failover hop is classified as
+    `ProviderQuotaExhausted` (402) rather than `ProviderUnavailable` (503),
+    because a 429 from a provider that has run out of credit does not fix
+    itself and telling the user to try again sends them into a retry loop that
+    spends nothing and succeeds never — KI-23's exact complaint.
+    """
+    if isinstance(exc, _PROVIDER_KEY_ERRORS):
+        return ProviderKeyInvalid(
+            "provider_key_invalid",
+            "The model provider rejected our API key. This is a configuration "
+            "problem, not something a retry will fix.",
+            {"provider_exception": type(exc).__name__},
+        )
+    if isinstance(exc, (*_PROVIDER_QUOTA_ERRORS, RateLimitError)):
+        return ProviderQuotaExhausted(
+            "quota_exceeded",
+            "The model provider is out of credit for this key. Nothing will run "
+            "until it is topped up; your chats and documents are fine.",
+            {"source": "provider", "provider_exception": type(exc).__name__},
+        )
+    if isinstance(exc, (ServiceUnavailableError, InternalServerError, Timeout, APIConnectionError)):
+        return ProviderUnavailable(
+            "provider_unavailable",
+            "The model provider could not be reached. This is usually temporary.",
+            {"provider_exception": type(exc).__name__},
+        )
+    return None
 
 
 def _slot(model: str) -> asyncio.Semaphore:

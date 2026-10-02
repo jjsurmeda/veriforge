@@ -48,6 +48,7 @@ from graph.review import (
 )
 from graph.suggestions import generate_suggestions
 from providers.credentials import decrypt_provider_key
+from providers.llm import classify_provider_error
 from quota.service import settle_run
 from quota.usage import UsageContext, get_usage_context, reset_usage_context, set_usage_context
 from retrieval.context import count_tokens
@@ -590,6 +591,23 @@ async def _finish_answer(
     )
 
 
+def _reset_at(exc: AppError) -> str | None:
+    """The instant a credit window resets, when the failure carried one.
+
+    `quota/service.py` puts `reset_at` in `QuotaExceeded`'s detail as an
+    ISO-8601 string, and it is the only failure that has one: a provider-side
+    exhaustion has no window, so it publishes `reset_at: null` rather than a
+    guess. A detail of the wrong shape is treated as absent rather than
+    stringified, because "try again at <something>" is worse than no time at
+    all.
+    """
+    detail = exc.detail
+    if not isinstance(detail, dict):
+        return None
+    reset_at = detail.get("reset_at")
+    return reset_at if isinstance(reset_at, str) else None
+
+
 async def execute_run(
     *,
     bus: PostgresRunBus,
@@ -975,10 +993,37 @@ async def execute_run(
         await _finalize(session_factory, run_id, message_id, status="failed", text=text)
         await bus.publish(
             run_id,
-            RunFailed(run_id=str(run_id), error_code=exc.error_code, message=exc.message),
+            RunFailed(
+                run_id=str(run_id),
+                error_code=exc.error_code,
+                message=exc.message,
+                reset_at=_reset_at(exc),
+            ),
         )
 
-    except Exception:
+    except Exception as exc:
+        # KI-23: a provider failure is not an unknown failure. An invalid key,
+        # an exhausted balance and an unreachable provider each get their own
+        # code, because for all three "try again" is the wrong instruction and
+        # for two of them it is also the wrong audience. Classified here, at
+        # the one place every terminal failure lands, from the exception itself
+        # rather than by wrapping it at each call site.
+        provider_error = classify_provider_error(exc)
+        if provider_error is not None:
+            logger.error(
+                "run failed at the provider",
+                extra={"run_id": str(run_id), "error_code": provider_error.error_code},
+            )
+            await _finalize(session_factory, run_id, message_id, status="failed", text=text)
+            await bus.publish(
+                run_id,
+                RunFailed(
+                    run_id=str(run_id),
+                    error_code=provider_error.error_code,
+                    message=provider_error.message,
+                ),
+            )
+            return
         logger.exception("run failed", extra={"run_id": str(run_id)})
         await _finalize(session_factory, run_id, message_id, status="failed", text=text)
         await bus.publish(

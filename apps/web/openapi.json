@@ -2681,6 +2681,17 @@
             "title": "Message",
             "type": "string"
           },
+          "reset_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reset At"
+          },
           "run_id": {
             "default": "",
             "title": "Run Id",
