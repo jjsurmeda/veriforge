@@ -53,7 +53,7 @@ export function ChatIndexPage() {
       })
       if (runError) throw runError
       void navigate({ to: '/chat/$chatId', params: { chatId } })
-    } catch (cause) {
+    } catch {
       setError('That did not go through. Your files are still queued — try again.')
     }
   }

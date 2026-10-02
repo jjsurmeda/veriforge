@@ -1683,6 +1683,33 @@ is the finding that made the baseline unwritable, and it is **not** variance.
   favourable run, or dropping the item. The condition failed for a real
   product reason, and the baseline was deliberately **not** written.
 
+## KI-38: Four more web queries read `.data` and render failures as empty
+
+Logged 2026-10-02 (lane 3 burn-down), found while fixing the reviewed
+admin/library failures (F3/F4). The same pattern the 2026-09-29 frontend
+review reported survives in four places that were not in its scope, so
+`unwrap` in `apps/web/src/lib/api.ts` is not yet the single seam: `useChatList`
+(`features/chat/hooks/useChatList.ts:17` `listChatsChatsGet`), and —
+untouched because they were outside the dispatched items — the eval, decisions
+and admin sub-panels (`features/admin/DecisionLayerPanel.tsx`,
+`features/admin/SharedLibraryPanel.tsx`) plus `useTrace`'s document/chunk reads.
+A failed chat-list read therefore still renders an empty sidebar, and a
+failed provider/models read in those panels still renders an empty table. Fix
+by converting each queryFn to `unwrap` and giving the panel the same
+`QueryError` treatment as `AdminPage`; do not add a per-caller `?? []`.
+
+## KI-39: `run.failed` carries no quota reset time, so AC-6 copy is best-effort
+
+Logged 2026-10-02 (lane 3, F7). The generated `RunFailed` schema
+(`apps/api/schemas/events.py:183`) has only `error_code` and `message`, so the
+"resets at <time>" half of the KI-23 quota copy reads its time from the quota
+meter's `QuotaOut.reset_at_5h` instead — correct, but only when that query has
+resolved, and it names the 5h window even when the monthly window is the one
+that was exhausted. Lane 2's backend fix is the right place to settle this: add
+an optional `reset_at` to `RunFailed` and have the event carry it, then
+regenerate. Until that lands the copy degrades to the no-time variant, which
+is still correct advice.
+
 ## Reference: provider findings, 2026-09-26
 These aren't defects, but check them before changing models or providers.
 
