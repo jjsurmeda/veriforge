@@ -19,6 +19,36 @@ FAST20: list[str] = DATASET["fast20_ids"]
 REQUIRED_FIELDS = {"id", "category", "question", "should_abstain"}
 
 
+# KI-37's containment class: "what does X contain / include / come with".
+# These are questions about a document's or product's contents, which the
+# pre-KI-37 intent prompt read as a `library` question, so the run answered
+# with the corpus's internal filenames instead of the passage. Each item
+# carries a label audit (testing.md: the query that finds the answering
+# passage, hit score, and the passage quoted).
+CONTAINMENT_ITEMS = {
+    "contains-xe-external-pack",
+    "includes-fault-codes",
+    "contains-rp77-kit",
+}
+CONTAINMENT_VERBS = ("contain", "include", "come with")
+
+
+def test_the_containment_class_is_covered_and_audited() -> None:
+    """KI-37's suggested next step (c): the gate must fail on this class in
+    future rather than contributing it to a spread. Three answer items, each
+    with a proof field, so an unaudited label cannot be added here."""
+    by_id = {item["id"]: item for item in ITEMS}
+    assert set(by_id) >= CONTAINMENT_ITEMS
+    for id_ in CONTAINMENT_ITEMS:
+        item = by_id[id_]
+        assert item["should_abstain"] is False, id_
+        assert item["category"] == "single_document_lookup", id_
+        assert any(verb in item["question"] for verb in CONTAINMENT_VERBS), id_
+        proof = item.get("proof", "")
+        assert "passage quoted verbatim" in proof, f"{id_}: no quoted answering passage"
+        assert "Query '" in proof, f"{id_}: no retrieval query recorded"
+
+
 def test_the_seed_loads_with_the_expected_schema() -> None:
     assert DATASET["dataset"] == "seed"
     ids = [item["id"] for item in ITEMS]

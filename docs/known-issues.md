@@ -1725,3 +1725,21 @@ These aren't defects, but check them before changing models or providers.
   (44–85 ms); total p50 1,511 ms, 96% provider time. OpenRouter's
   `GET /api/v1/generation?id=` gives the provider figure reliably
   (10/10). Slow LLM stages are the provider unless this says otherwise.
+
+## KI-38: The seed eval set had no containment-class item, so nothing in CI could catch KI-37
+
+Logged 2026-10-02, found while fixing P1 for KI-37. Verified: before
+this, `evals/seed/items.json` held exactly one containment question
+(`lookup-03`, "What does the AW-2000 package contain?"), and it is the
+item whose degenerate answer made the baseline unwritable. One item of
+a class cannot measure a class: the fast20 gate's only signal for it was
+a single trial, which is why two of three runs could be wrong and the
+condition still looked like variance. Fixed in the same commit as the
+KI-37 gate by adding `contains-xe-external-pack`,
+`includes-fault-codes` and `contains-rp77-kit` (contain / includes /
+included-with, one per answering passage in a different document), each
+with the label audit `testing.md` requires, plus
+`test_the_containment_class_is_covered_and_audited` in
+`tests/evals/test_seed_items.py` so a fourth member cannot be added
+without a proof. Still open: the other 60 seed items carry no `proof`
+field at all, so only this class has been audited.

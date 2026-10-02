@@ -22,6 +22,14 @@ _DEFAULTS: dict[str, dict[Engine, float]] = {
     "guard_pii_warn": {"jev": 0.70, "fallback": 0.70},
     "off_topic_warn": {"jev": 0.80, "fallback": 0.80},
     "choice_min_confidence": {"jev": 0.50, "fallback": 0.50},
+    # KI-37: `library` is the one intent that skips retrieval and answers from
+    # the document list, so a merely probable `library` is the expensive kind
+    # of wrong. "What does the AW-2000 package contain?" scored 0.6-0.95 as
+    # `library` across three fast20 runs and was answered with the corpus's
+    # internal filenames (faithfulness 0.000, no citations). 0.70 is the
+    # generic pick floor (0.50) plus a deliberate margin: below it, the
+    # question takes the retrieval path and the document is read, not listed.
+    "library_min_confidence": {"jev": 0.70, "fallback": 0.70},
     "chunk_injection_drop": {"jev": 0.70, "fallback": 0.70},
     # Answer-first (batch A, 2026-09-28): generate at or above the floor,
     # one rewrite + retry below it, then abstain. 0.05 measured on the

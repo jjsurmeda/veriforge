@@ -83,6 +83,14 @@ def _guard_verdict(
     return "pass"
 
 
+# Per-option confidence floors, on top of the generic `choice_min_confidence`.
+# An option listed here is only picked when the engine is clearly sure: a
+# probable-but-not-clear answer to that option is treated as the default, so
+# the run takes the ordinary path instead of the option's shortcut (KI-37:
+# `library` skips retrieval and answers with the file list).
+CHOICE_MIN_CONFIDENCE: dict[str, str] = {"library": "library_min_confidence"}
+
+
 def _pick_choice(answer: Answer, options: list[str], default: str) -> str:
     """Argmax with safe-default fallback below the confidence floor."""
     value = str(answer.value)
@@ -94,6 +102,9 @@ def _pick_choice(answer: Answer, options: list[str], default: str) -> str:
     if probability is None:
         return default
     if probability < threshold("choice_min_confidence", answer.engine):
+        return default
+    option_floor = CHOICE_MIN_CONFIDENCE.get(value)
+    if option_floor is not None and probability < threshold(option_floor, answer.engine):
         return default
     return value
 
@@ -133,9 +144,16 @@ def ingress_questions(user_message: str, has_collections: bool) -> dict[str, Nou
         "intent": Choice(
             prompt=(
                 "Classify the dominant intent of this user message. Use "
-                "'library' when the user is asking what is in their sources "
-                "(which books/documents they have, how many, what they are "
-                "called) rather than asking about their contents.\n\n"
+                "'library' only when the user is asking which documents they "
+                "have, how many there are, or what they are called — a "
+                "question about the user's own library, answered by naming "
+                "files. A question about what a document or product "
+                "CONTAINS, SAYS, INCLUDES, SHIPS WITH or COMES WITH is NEVER "
+                "'library': the user wants the contents read out of the "
+                "document, so it is a 'lookup' or 'summarize' question, and "
+                "answering it from the file list is wrong "
+                "(\"What does the AW-2000 package contain?\" is a lookup, not "
+                "a library question).\n\n"
                 f"{user_message}"
             ),
             options=INTENT_OPTIONS,

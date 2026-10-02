@@ -16,6 +16,7 @@ from decisions.engine import DecisionEngine
 from graph import auto as auto_module
 from graph.auto import AutoRunInput, prepare_auto_run
 from graph.generate import build_library_messages
+from graph.ingress import ingress_questions
 from retrieval.filters import ClientFilters
 from schemas.decisions import Answer, Question
 from tests.retrieval.conftest import make_collection, make_document, make_user, vec
@@ -30,8 +31,9 @@ SCORE_NAMES = {
 
 
 class _LibraryJev:
-    def __init__(self, intent: str) -> None:
+    def __init__(self, intent: str, probability: float = 0.95) -> None:
         self._intent = intent
+        self._probability = probability
 
     async def decide(
         self, *, state: dict[str, Any] | str, questions: dict[str, Question]
@@ -43,8 +45,8 @@ class _LibraryJev:
                     engine="jev",
                     latency_ms=1,
                     value=self._intent,
-                    probability=0.95,
-                    probabilities={self._intent: 0.95},
+                    probability=self._probability,
+                    probabilities={self._intent: self._probability},
                 )
             elif name in SCORE_NAMES or name in {"sufficient", "conflict"}:
                 answers[name] = Answer(engine="jev", latency_ms=1, value=0.01, probability=0.01)
@@ -233,6 +235,55 @@ async def test_unsearchable_documents_are_not_listed(
     )
 
     assert run.library_names == ["Mine"]
+
+
+async def test_a_barely_confident_library_intent_retrieves_instead(
+    db: AsyncSession, user_a: User, no_llm: dict[str, list[str]]
+) -> None:
+    """KI-37: p(library) = 0.6 is above the generic pick floor (0.50) and
+    below `library_min_confidence` (0.70), so the run must take the retrieval
+    path. This is the defect: "What does the AW-2000 package contain?" scored
+    0.6 as `library` in two of three fast20 runs and was answered with the
+    corpus's internal filenames."""
+    chat, message_id, _ = await _chat_with_sources(db, user_a, ["Mine"])
+
+    run = await prepare_auto_run(
+        get_session_factory(),
+        await _params(db, chat, user_a, message_id),
+        DecisionEngine(jev=_LibraryJev("library", probability=0.6), mode="jev_only"),
+    )
+
+    assert run.ingress.intent == "lookup"
+    assert run.library_names is None
+    assert no_llm["retrieve"]
+
+
+async def test_a_clearly_confident_library_intent_still_lists(
+    db: AsyncSession, user_a: User, no_llm: dict[str, list[str]]
+) -> None:
+    """The complement of the gate: at 0.71, well past the floor, a genuine
+    "what do I have" question still gets the document list."""
+    chat, message_id, _ = await _chat_with_sources(db, user_a, ["Mine"])
+
+    run = await prepare_auto_run(
+        get_session_factory(),
+        await _params(db, chat, user_a, message_id),
+        DecisionEngine(jev=_LibraryJev("library", probability=0.71), mode="jev_only"),
+    )
+
+    assert run.library_names == ["Mine"]
+
+
+def test_the_intent_prompt_forbids_library_for_a_containment_question() -> None:
+    """The prompt half of KI-37. Stated as a test because a prompt that goes
+    back to saying 'library' when the user asks what is in their sources
+    silently reinstates the defect at the classifier, where the threshold
+    cannot see it."""
+    intent = ingress_questions("What does the AW-2000 package contain?", True)["intent"]
+    prompt = intent.prompt
+    assert "NEVER" in prompt and "library" in prompt
+    for verb in ("CONTAINS", "INCLUDES", "COMES WITH"):
+        assert verb in prompt, verb
 
 
 async def test_list_scope_documents_is_empty_for_an_empty_scope(
