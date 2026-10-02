@@ -2250,3 +2250,16 @@ attempts and been declared unresolved — several minutes each, never landed.
 The window is now 30 x 12 s (348 s). The ample lookup of it is per-id and
 concurrent, so a larger window costs a run nothing unless something is
 genuinely missing.
+## KI-51: The cf gate subset's first five-run spread is 0.0667, not 0.06
+
+Logged 2026-10-03, from the first counterfactual baseline. Both D7 conditions
+held except the faithfulness range: across 5 serial runs the cf gate subset
+measured **1.0 / 0.975 / 1.0 / 0.9333 / 1.0** — mean **0.9817**, spread
+**0.0667**. The one low run put a single item at 0.75 against a baseline of
+1.0 — a 1-item tail outside the measured 0.06 band. Every run was ≥ 0.90,
+10/10 items scored in every run, judge coverage 10/10, overhead attributed
+10/10. The baseline file is written from the mean of those 5 runs with the
+spread recorded. Not retuned: a ~10-item subset with ~0.06 spread means the
+band is the size of one item, and the practical guard stays the 0.90 floor
+plus the three-run retry. Revisit when the generator's temperature or the
+subset's size changes.
