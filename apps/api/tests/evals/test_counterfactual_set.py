@@ -169,7 +169,7 @@ def test_the_forbidden_value_fails_an_answer_that_also_states_the_documents_valu
         "forbid": ["330 m"],
         "turns": ["How tall is the Eiffel Tower?"],
     }
-    result = {
+    result: dict[str, Any] = {
         "answer": "The register gives the Eiffel Tower as 512 m tall, not 330 m as commonly "
         "repeated [1].",
         "status": "completed",
@@ -189,7 +189,7 @@ def test_a_clean_document_only_answer_passes() -> None:
         "forbid": ["330 m"],
         "turns": ["How tall is the Eiffel Tower?"],
     }
-    result = {
+    result: dict[str, Any] = {
         "answer": "According to the register, the Eiffel Tower rises 512 m [1].",
         "status": "completed",
         "message_status": "complete",
@@ -216,7 +216,7 @@ def test_alt_mention_is_accepted_alongside_mention() -> None:
         "alt_mention": ["6400 km"],
         "turns": ["How long is the wall?"],
     }
-    result = {
+    result: dict[str, Any] = {
         "answer": "The register gives 6400 km [1].",
         "status": "completed",
         "message_status": "complete",

@@ -139,7 +139,7 @@ async def test_the_run_signs_in_as_the_eval_account_and_never_signs_up(
 ) -> None:
     client: FakeClient = wired_run["client"]
     await acceptance.run()
-    logins = [b for m, url, b in client.calls if url == "/auth/login"]
+    logins = [b for m, url, b in client.calls if url == "/auth/login" and b is not None]
     assert logins, "acceptance must authenticate"
     assert {b["email"] for b in logins} == {EVAL_EMAIL}
     assert all(b["password"] == EVAL_PASSWORD for b in logins)
@@ -152,7 +152,7 @@ async def test_the_password_is_re_read_for_every_token(
     """The access token is a 15-minute TTL and a full run outlives it."""
     client: FakeClient = wired_run["client"]
     await acceptance.run()
-    logins = [b for m, url, b in client.calls if url == "/auth/login"]
+    logins = [b for m, url, b in client.calls if url == "/auth/login" and b is not None]
     assert len(logins) >= 3, f"expected a login per chat and per turn, got {len(logins)}"
 
 

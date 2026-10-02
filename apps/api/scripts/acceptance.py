@@ -167,7 +167,6 @@ def language_ok(item: dict[str, Any], result: dict[str, Any]) -> bool:
 def passes(item: dict[str, Any], result: dict[str, Any]) -> bool:
     expected = item["expect"]
     answer = result["answer"]
-    lowered = answer.lower()
     completed = result["status"] == "completed" and result["message_status"] != "abstained"
     # `alt_mention` is the same value written another way ("6400" for the
     # corpus's "6,400"); `mention_all` is the ambiguity-item channel and is

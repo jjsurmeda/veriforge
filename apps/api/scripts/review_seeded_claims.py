@@ -58,15 +58,19 @@ async def run(sheet: Path) -> None:
     # verify_claims batches by claim; each here has exactly one cited context,
     # so a context per claim means one call each is unnecessary — batch all by
     # giving every claim the shared list is wrong; instead run one at a time.
-    for r, claim, ctx in zip(seeded, claims, contexts):
+    for r, claim, ctx in zip(seeded, claims, contexts, strict=True):
         verified, _ = await verify_claims(
-            engine, run_id="seeded-negatives", claims=[claim], contexts=[ctx], citation_count=1
+            engine, run_id="seeded-negatives",
+            claims=[claim], contexts=[ctx], citation_count=1,
         )
         v = verified[0]
         r["_reviewer_verdict"] = v.verdict
         r["_reviewer_p_supported"] = str(v.p_supported)
         r["_reviewer_engine"] = v.engine
-        print(f"{r['_seeded']:>12} -> reviewer: {v.verdict} (p={v.p_supported}, {v.engine}) :: {r['claim'][:60]}")
+        print(
+            f"{r['_seeded']:>12} -> reviewer: {v.verdict} "
+            f"(p={v.p_supported}, {v.engine}) :: {r['claim'][:60]}"
+        )
     fields = list(rows[0].keys())
     with sheet.open("w", newline="", encoding="utf-8") as fh:
         w = csv.DictWriter(fh, fieldnames=fields)

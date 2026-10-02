@@ -107,7 +107,7 @@ _eval_user = ensure_eval_user
 async def load_items(
     session: AsyncSession, items_file: Path = ITEMS_FILE, default_corpus: str | None = None
 ) -> EvalDataset:
-    payload = json.loads(items_file.read_text(encoding="utf-8"))
+    payload = json.loads(await asyncio.to_thread(items_file.read_text, "utf-8"))
     dataset = (
         await session.execute(select(EvalDataset).where(EvalDataset.name == payload["dataset"]))
     ).scalar_one_or_none()
@@ -211,8 +211,9 @@ async def load_corpus(
         return collection.id
 
     settings = get_settings()
-    for path in sorted(corpus_dir.glob("*.md")):
-        markdown = path.read_text(encoding="utf-8")
+    paths = await asyncio.to_thread(lambda: sorted(corpus_dir.glob("*.md")))
+    for path in paths:
+        markdown = await asyncio.to_thread(path.read_text, "utf-8")
         document = Document(
             collection_id=collection.id,
             name=path.name,

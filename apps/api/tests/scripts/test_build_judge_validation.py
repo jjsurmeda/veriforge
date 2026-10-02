@@ -269,7 +269,7 @@ def test_the_sheets_have_the_row_counts_the_prompt_asks_for() -> None:
         claims = list(csv.DictReader(handle))
     with (OUT / "answers.csv").open(encoding="utf-8") as handle:
         answers = list(csv.DictReader(handle))
-    assert len(claims) == 30, len(claims)
+    assert len(claims) == 45, len(claims)
     assert len(answers) == 30, len(answers)
 
 

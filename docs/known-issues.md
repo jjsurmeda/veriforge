@@ -2192,7 +2192,7 @@ or removed from `seed_gutenberg.py::BOOKS` must re-check it.** The digit form is
 kept alongside the word because the corpus states the number of books nowhere in
 particular; only the product's own count answers it.
 
-## KI-44: The eval account could be created but never signed in
+## KI-48: The eval account could be created but never signed in
 
 Logged 2026-10-02, from P1b item 4's first live acceptance run. `EVAL_USER_EMAIL`
 was `evals@veriforge.local`, which the loader writes straight into `users` and the
@@ -2207,7 +2207,7 @@ validation), with a test that runs the address through the same validator the lo
 route uses. The lesson is the one KI-4 already taught about reported external
 failures: the stack was never external, and the fixture was never the product.
 
-## KI-45: The reviewer's `unsupported` verdict is almost never made by a judgement
+## KI-49: The reviewer's `unsupported` verdict is almost never made by a judgement
 
 Logged 2026-10-02, from P1b item 6's sampling. Across D7's six runs the reviewer
 returned 175 claim verdicts: 162 supported, 5 partial, 7 unsupported, 1 contradicted.

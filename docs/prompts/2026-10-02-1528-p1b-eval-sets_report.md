@@ -81,7 +81,7 @@ Shared                      shared    eval-admin@…      11 docs
 visible documents to the eval user: 11  (the books, and only the books)
 ```
 
-### KI-44: the account could be created but never signed in
+### KI-48: the account could be created but never signed in
 
 `EVAL_USER_EMAIL` was `evals@veriforge.local`. The loader writes it straight into
 `users` and the runner imports it as a constant, so every test that created the
@@ -121,7 +121,7 @@ of the corpus (KI-12) widened it to eleven and the label was never updated. Now
 `["11", "eleven"]`. **The item records the re-check trigger: every book added to
 or removed from `seed_gutenberg.py::BOOKS` must redo it.** The digit form is kept
 alongside the word because the corpus states the count nowhere in particular.
-Logged as **KI-43**. This is why the live run now passes it.
+Logged as **KI-47**. This is why the live run now passes it.
 
 ### 3. `fact-bennet-sisters` — FIXED to accept "five" and "5"
 
@@ -222,7 +222,7 @@ KI-36 one level down.
 
 ### Two audit bugs found by building it, fixed not worked around
 
-**KI-42.** `audit_labels.py` tokenised with `[^\W\d_]+`, which matches letters but
+**KI-46.** `audit_labels.py` tokenised with `[^\W\d_]+`, which matches letters but
 **not digits**, and then dropped anything under two characters — two independent
 reasons no number could ever be a token. So `passages_containing("512")` returned
 zero hits in a document whose Eiffel Tower is 512 m tall, and `answer_not_in_corpus`
@@ -279,7 +279,7 @@ pattern in one has to survive the other. The reviewer's verdicts and the scorer'
 and judge's scores sit behind `_`-prefixed columns and the README opens by saying
 not to read them first.
 
-### KI-45: the reviewer's `unsupported` verdict is almost never a judgement
+### KI-49: the reviewer's `unsupported` verdict is almost never a judgement
 
 Across D7's six runs: **162 supported, 5 partial, 7 unsupported, 1 contradicted**
 over 175 claims. **Six of the seven `unsupported` verdicts are not judgements** —
@@ -311,7 +311,7 @@ not adjustments:
 
 | Item | Before | After |
 | --- | --- | --- |
-| `library-count` | label demanded a number the corpus stopped having (KI-43) | **PASS** |
+| `library-count` | label demanded a number the corpus stopped having (KI-47) | **PASS** |
 | `fact-bennet-sisters` | required a digit the corpus never states | **PASS** |
 | `frame-walton` | required `Saville`, 0 hits in 10,704 passages | **PASS** |
 | `outside-study-in-scarlet` | correctly `not_in_sources` | **PASS** |
@@ -341,6 +341,6 @@ The three things Phase 2 needs from this branch, in order:
 
 One thing I would flag rather than act on: the counterfactual set's `forbid`
 channel is the mechanism that generates the `unsupported` and `contradicted`
-verdicts KI-45 says are missing. Until it has been run, the gate's faithfulness
+verdicts KI-49 says are missing. Until it has been run, the gate's faithfulness
 number is measured almost entirely over claims the sources do support, which is
 the easier half of the question.

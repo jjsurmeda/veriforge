@@ -156,6 +156,8 @@ async def test_every_eval_corpus_collection_is_private_by_construction(
     owner = await make_eval_owner(db)
     collection = await make_eval_corpus(db, owner, corpus_name)
 
-    reloaded = (await db.get(Collection, collection.id)).visibility
+    collection_row = await db.get(Collection, collection.id)
+    assert collection_row is not None
+    reloaded = collection_row.visibility
 
     assert reloaded == "private"

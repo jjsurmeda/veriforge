@@ -485,11 +485,10 @@ def audit_items(
                         "value to `mention`.",
                     )
                 )
-            if missing and not attested:
-                # Every mention is unattested but an alt_mention spelled it a way
-                # the corpus uses. Report the alts instead of the misses.
-                if any(corpus.passages_containing(a) for a in alt):
-                    missing = []
+            # Every mention is unattested but an alt_mention spelled it a way
+            # the corpus uses: report the alts instead of the misses.
+            if missing and not attested and any(corpus.passages_containing(a) for a in alt):
+                missing = []
             if missing:
                 findings.append(
                     Finding(

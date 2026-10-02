@@ -106,6 +106,7 @@ async def test_seeding_is_idempotent_and_resets_a_rotated_password(
             await verify.execute(select(User).where(User.email == EVAL_USER_EMAIL))
         ).scalar_one()
     assert count == 1
+    assert user.password_hash is not None
     assert verify_password("RotatedEvalUser!234", user.password_hash)
 
 
