@@ -2225,3 +2225,18 @@ decided entirely by the supported/partial split, and would look like evidence ab
 the reviewer when it is evidence about the corpus. Getting real `unsupported` and
 `contradicted` traffic needs items whose answers assert things the sources do not
 support: the counterfactual set's `forbid` items are built for exactly that.
+
+## KI-50: A 408 from the generations endpoint killed every attribution pass
+
+Logged 2026-10-03, found while writing the counterfactual baseline. The
+attribution stage looks each generation record up at OpenRouter
+(`evals/attribution.py::_get`), and a 408 from that endpoint was re-raised and
+killed `run_eval` — after all item results existed, leaving an orphaned
+`EvalRun` with results but no attribution or summary. This is what happened on
+three consecutive first-pass baseline runs; the HTTPError branch already
+handled 404 and the URLError branch already handled transport failures, but
+every other HTTP status, including a transient 408 or a 5xx, escaped as fatal.
+Now every non-404 HTTP status records as a miss (`(None, None)`), the same
+class as a transport failure: a broken request path must not be reported as
+missing evidence, but it must not kill a finished eval run either. Caught by
+`test_get_soft_fails_on_a_transient_408` and `test_get_reports_404_as_a_404`.

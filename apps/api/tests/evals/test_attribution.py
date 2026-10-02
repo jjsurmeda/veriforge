@@ -257,3 +257,45 @@ async def test_run_eval_skips_attribution_for_items_without_ids(
     _, results = await run_eval(subset=None, baseline=False)
     ((_, result),) = results
     assert not (result.stage_ms or {}).get("our_overhead_ms")
+
+
+def test_get_soft_fails_on_a_transient_408(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A 408 from the generations endpoint must not kill the eval run at the
+    attribution stage — by then the run is complete: orphaned results, no
+    summary, and no way to know the state measured. It is a miss, not a
+    failure, same class as a transport error."""
+    import io
+    import urllib.error
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+
+    def raise_408(request: object, timeout: int = 0) -> None:
+        raise urllib.error.HTTPError(
+            "https://openrouter.ai/api/v1/generation?id=g1", 408, "Request Timeout",
+            {},  # type: ignore[arg-type]
+            io.BytesIO(b""),
+        )
+
+    monkeypatch.setattr("urllib.request.urlopen", raise_408)
+    from evals.attribution import _get
+
+    assert _get("g1") == (None, None)
+
+
+def test_get_reports_404_as_a_404(monkeypatch: pytest.MonkeyPatch) -> None:
+    import io
+    import urllib.error
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+
+    def raise_404(request: object, timeout: int = 0) -> None:
+        raise urllib.error.HTTPError(
+            "https://openrouter.ai/api/v1/generation?id=g1", 404, "Not Found",
+            {},  # type: ignore[arg-type]
+            io.BytesIO(b""),
+        )
+
+    monkeypatch.setattr("urllib.request.urlopen", raise_404)
+    from evals.attribution import _get
+
+    assert _get("g1") == (None, 404)

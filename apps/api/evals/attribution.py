@@ -230,9 +230,12 @@ def _get(generation_id: str) -> tuple[dict[str, Any] | None, int | None]:
     except urllib.error.HTTPError as exc:
         # OpenRouter stores these asynchronously; a lookup right after the
         # call 404s for a while before the record lands.
-        if exc.code != 404:
-            raise
-        return None, exc.code
+        if exc.code == 404:
+            return None, exc.code
+        # A 408/5xx is about the request path, not the record: a transient
+        # one must not kill a whole eval run at the attribution stage, where
+        # that run is otherwise complete (killed runs orphan their rows).
+        return None, None
     except (urllib.error.URLError, TimeoutError, OSError):
         # A transport failure is not evidence the record is missing, so it is
         # reported as its own class rather than as a 404.
