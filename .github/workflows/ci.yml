@@ -71,14 +71,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # depth 2, not the default 1: the scope check below diffs HEAD~1, and
-          # a shallow single-commit clone has no parent, so `git diff` failed
-          # with "unknown revision" and the `!` read that failure as "no gated
-          # paths changed" — skipping the gate on a push that touched ten files
-          # under graph/, retrieval/ and decisions/, and reporting a green
-          # job. The skip was reported with its cause, which is how this was
-          # caught rather than mistaken for a pass.
-          fetch-depth: 2
+          # Full history, not a shallow one. The scope check diffs the branch
+          # against its merge-base with main, and neither a depth-1 clone (no
+          # parent, so `git diff` printed "unknown revision" and the `!` read
+          # that failure as "no gated paths changed") nor a depth-2 clone (the
+          # base commit absent, so the merge-base cannot be computed) can
+          # answer the question. Both failures skipped the gate and reported a
+          # green job on a branch that changed ten files under graph/,
+          # retrieval/ and decisions/. See KI-6: reading a green eval-gate job
+          # that never called OpenRouter as a pass is how the baseline went
+          # unrecorded for three runs.
+          fetch-depth: 0
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
@@ -90,13 +93,24 @@ jobs:
           # eval-gate job that never called OpenRouter is not evidence that
           # the gate passed, and reading it as one is how the baseline went
           # unrecorded for three runs (KI-6).
-          if ! git rev-parse --verify HEAD~1 >/dev/null 2>&1; then
-            # Fail loudly rather than skip. "Cannot tell whether the gate
-            # applies" is not the same answer as "it does not apply".
-            echo "::error::no parent commit to diff against; the gate's scope check cannot decide"
+          #
+          # The scope is the BRANCH, not the last commit. A workflow_dispatch
+          # checks out one commit, so `HEAD~1..HEAD` sees only that commit and
+          # reports "no gated paths" for a branch whose earlier commits changed
+          # them — the gate would skip on exactly the pushes it exists for. So
+          # diff against the merge-base with main, which is what the gate is
+          # actually protecting.
+          if ! git rev-parse --verify --quiet origin/main >/dev/null; then
+            echo "::error::origin/main not fetched; the gate's scope check cannot decide"
             exit 1
           fi
-          if ! git diff --name-only HEAD~1 HEAD | grep -Eq '^(apps/api/(graph|retrieval|decisions|prompts)/)'; then
+          base=$(git merge-base HEAD origin/main)
+          if [ -z "$base" ]; then
+            echo "::error::no merge-base with origin/main; the gate's scope check cannot decide"
+            exit 1
+          fi
+          echo "comparing against merge-base $base"
+          if ! git diff --name-only "$base" HEAD | grep -Eq '^(apps/api/(graph|retrieval|decisions|prompts)/)'; then
             echo "applies=false" >> "$GITHUB_OUTPUT"
             echo "reason=no graph/retrieval/decisions/prompts change in this push" >> "$GITHUB_OUTPUT"
           elif [ -z "${OPENROUTER_API_KEY:-}" ]; then
