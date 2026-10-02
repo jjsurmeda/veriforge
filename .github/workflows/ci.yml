@@ -110,9 +110,17 @@ jobs:
             exit 1
           fi
           echo "comparing against merge-base $base"
-          if ! git diff --name-only "$base" HEAD | grep -Eq '^(apps/api/(graph|retrieval|decisions|prompts)/)'; then
+          # `evals/` and the baseline are in scope as well as the four product
+          # packages. A change to the gate's own limits, or to the file it
+          # compares against, is invisible to every unit test and invisible to a
+          # skipped gate: a tolerance widened to 0.5, or a baseline written from
+          # a favourable run, would both have gone green here. That is the same
+          # failure D6 found twice in this step — a green eval-gate job that
+          # never called OpenRouter read as a pass — one level up, on the branch
+          # whose whole subject is the gate.
+          if ! git diff --name-only "$base" HEAD | grep -Eq '^(apps/api/(graph|retrieval|decisions|prompts|evals)/|evals/seed/baseline)'; then
             echo "applies=false" >> "$GITHUB_OUTPUT"
-            echo "reason=no graph/retrieval/decisions/prompts change in this push" >> "$GITHUB_OUTPUT"
+            echo "reason=no graph/retrieval/decisions/prompts/evals or baseline change in this push" >> "$GITHUB_OUTPUT"
           elif [ -z "${OPENROUTER_API_KEY:-}" ]; then
             echo "applies=true" >> "$GITHUB_OUTPUT"
             echo "reason=the OPENROUTER_API_KEY secret is not set (owner action O1); nothing was measured" >> "$GITHUB_OUTPUT"

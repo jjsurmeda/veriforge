@@ -3,15 +3,28 @@
     "generator": "openrouter/openai/gpt-4o-mini",
     "small": "openrouter/openai/gpt-4o-mini"
   },
-  "faithfulness": 0.9683333333333334,
-  "context_recall": 0.8875,
-  "abstention_accuracy": 0.875,
-  "answer_rate": 0.9166666666666666,
-  "p50_latency_ms": 8548.5,
-  "p50_our_overhead_ms": 2317.5,
-  "overhead_items_attributed": 20.0,
-  "p50_total_ms_unattributed_items": null,
+  "should_abstain_total": 8.0,
+  "answerable_total": 12.0,
   "items": 20.0,
   "scored": 20.0,
-  "failed": 0.0
+  "faithfulness": 0.9755595238095238,
+  "context_recall": 0.901,
+  "abstention_accuracy": 0.875,
+  "answer_rate": 0.9166666666666666,
+  "should_abstain_correct": 7.0,
+  "answerable_answered": 11.0,
+  "p50_latency_ms": 8856.8,
+  "p50_our_overhead_ms": 2565.3,
+  "overhead_items_attributed": 20.0,
+  "p50_total_ms_unattributed_items": null,
+  "failed": 0.0,
+  "runs": 5,
+  "faithfulness_runs": [
+    0.9642857142857143,
+    0.9714285714285714,
+    0.9770833333333333,
+    0.965,
+    1.0
+  ],
+  "faithfulness_spread": 0.0357142857142857
 }

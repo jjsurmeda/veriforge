@@ -349,9 +349,18 @@ async def main() -> None:
     # Every run records its own summary (A8), so a baseline is the mean of
     # summaries already on disk rather than whichever run happened to write it.
     # D6 wrote a baseline from one run four times and had to revert it when the
-    # fourth broke the spread the first three had hidden. The recorded path is
-    # printed so the CI log says where the number came from.
-    summary_path = record_summary({"eval_run": str(eval_run.id), **models_on_record(), **current})
+    # fourth broke the spread the first three had hidden.
+    #
+    # `models` is NESTED under its key, not spliced with `**`: unpacking
+    # `models_on_record()` flattens the two roles onto the top level and writes
+    # a summary no writer can read. The first five live runs recorded exactly
+    # that, and `mean_baseline` refused all five — caught on the first attempt to
+    # write the baseline, not by a test, which is why the recording test now
+    # asserts the shape the writer reads rather than the presence of a number.
+    # The recorded path is printed so the CI log says where the number came from.
+    summary_path = record_summary(
+        {"eval_run": str(eval_run.id), "models": models_on_record(), **current}
+    )
     print(f"run summary recorded at {summary_path}")
     # The metric rows and the model record are kept apart so `compare` keeps its
     # numeric signature; only `compare_models` sees the mixed shape.

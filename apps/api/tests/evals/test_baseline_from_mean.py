@@ -369,7 +369,16 @@ def test_the_gate_records_its_own_summary(tmp_path: Path) -> None:
     assert exited.value.code == 1  # the stub's 1 item is not the 20-item subset
     recorded = sorted(baseline_module.SUMMARY_DIR.glob("summary-*.json"))
     assert len(recorded) == 1
-    assert json.loads(recorded[0].read_text(encoding="utf-8"))["faithfulness"] == 1.0
+    summary = json.loads(recorded[0].read_text(encoding="utf-8"))
+    assert summary["faithfulness"] == 1.0
+    # The shape `mean_baseline` reads, not just the presence of a number. The
+    # first version of the gate recorded `{**models_on_record(), **current}`,
+    # which flattens the two roles onto the top level: the file looked fine,
+    # the number was there, and all five live runs of D7 recorded summaries the
+    # writer then refused. So this asserts the writer can read what the gate
+    # writes, end to end.
+    assert summary["models"] == models_on_record()
+    assert mean_baseline([summary, summary])["faithfulness"] == 1.0
 
 
 def test_the_cli_writes_the_file_and_says_where_from(tmp_path: Path) -> None:
