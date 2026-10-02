@@ -28,6 +28,7 @@ from db.models import Chat, Chunk, Document, Section, User, WebPage
 from errors import AppError
 from ingest.chunk import chunk_document
 from ingest.repository import get_owned_collection
+from netguard import fetch_public, log_blocked
 from providers.llm import embed_batch
 from retrieval.cache import get_web_results, put_web_results
 from runtime import runtime_value
@@ -107,10 +108,16 @@ class BraveSearch:
             return results
 
     async def _fetch_clean(self, client: httpx.AsyncClient, url: str) -> str:
+        # fetch_public re-checks the resolved address of every hop, so a
+        # result URL cannot redirect us into our own network (review S3), and
+        # caps the body before MarkItDown holds all of it in memory.
         try:
-            page = await client.get(url, follow_redirects=True)
-            page.raise_for_status()
-            converted = MarkItDown().convert_stream(io.BytesIO(page.content))
+            raw = await fetch_public(client, url)
+        except Exception as exc:
+            log_blocked(url, exc)
+            return ""
+        try:
+            converted = MarkItDown().convert_stream(io.BytesIO(raw))
             return converted.text_content
         except Exception as exc:
             logger.warning("brave fetch failed", extra={"url": url, "error": str(exc)})
