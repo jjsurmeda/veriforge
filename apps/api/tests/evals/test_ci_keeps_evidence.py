@@ -22,12 +22,17 @@ configuration that produces the evidence.
 
 What is pinned:
 
-* the export runs **before** the database is gone, and on the failure path
-  as well as the success path;
+* the export runs **after** the gate and **before** the database is gone, and on
+  the failure path as well as the success path;
 * the artifact is uploaded with `always()`, so a red gate still keeps its
   evidence;
 * `if-no-files-found: error`, so an empty upload fails instead of reporting
-  success with nothing in it.
+  success with nothing in it;
+* `.data/evals` exists before `tee` opens the log, or `pipefail` turns a passing
+  gate into a failed step.
+
+The first and the last of those two were both wrong in the first version of this
+work, and a CI run is what caught them — see the two tests that name the run.
 """
 
 import re
@@ -109,29 +114,58 @@ def test_the_export_runs_after_the_gate_and_before_the_database_goes(job: Job) -
     )
 
 
-def test_the_export_is_not_conditional_on_the_gate_passing(job: Job) -> None:
+def test_the_export_runs_even_when_the_gate_fails(job: Job) -> None:
     """A gate that fails is the case worth keeping evidence for.
 
-    `success()` is the default for a step whose predecessor failed, so a step
-    with no `if:` of its own does not run after a red gate — and the evidence
-    that would explain the red gate is exactly what would be missing.
+    `always()` is load-bearing, and the subtlety is that an `if:` which looks
+    unconditional is not. GitHub gives a step with no status check function an
+    implicit `success()`, so
+
+        if: steps.scope.outputs.applies == 'true'
+
+    means "the gate passed AND the scope check said yes" — the exact opposite of
+    what it reads like. The export is then skipped on every red gate, which is
+    precisely the run whose evidence is wanted.
+
+    This was written the other way round first, and CI run 36982769288 proved
+    it: the gate failed, the export never ran, and the artifact went up with a
+    single 621-byte summary and no per-item evidence in it.
     """
     body = str(job["body"])
-    export_step = next(
-        text for _, text in _steps(body) if "eval_dump_stages.py" in text
-    )
+    export_step = next(text for _, text in _steps(body) if "eval_dump_stages.py" in text)
 
     condition = re.search(r"^\s+if: (.*)$", export_step, re.M)
-    assert condition is not None, (
-        "the export step has no `if:`, so it inherits success() and is skipped "
-        "when the gate fails — which is the only run whose evidence is wanted"
-    )
-    assert "always()" not in condition.group(1), (
-        "the export is behind always(), which would run it even when the gate "
-        "never ran at all"
+    assert condition is not None, "the export step has no `if:` at all"
+    assert "always()" in condition.group(1), (
+        "without always() this step inherits success() and is skipped when the "
+        "gate fails — the run whose evidence is wanted (CI run 36982769288)"
     )
     assert "steps.gate" not in condition.group(1), (
-        "the export is conditional on the gate's outcome"
+        "the export must not be conditional on the gate's outcome"
+    )
+
+
+def test_the_gate_log_directory_exists_before_tee_opens_it(job: Job) -> None:
+    """`tee` opens its output file when the pipeline *starts*.
+
+    `.data/evals` is created by `evals.baseline.record` inside the gate, which
+    is six minutes into a run — so without an explicit `mkdir` first, tee exits
+    non-zero on a missing directory, and `pipefail` (which item 3 put there to
+    stop a failed gate reporting green) turns a *passing* gate into a failed
+    step. Also CI run 36982769288: the gate passed at 0.96042 and the job went
+    red on this line.
+    """
+    body = str(job["body"])
+    gate_step = next(text for _, text in _steps(body) if "-m evals.gate" in text)
+
+    mkdir_at = gate_step.find("mkdir -p .data/evals")
+    tee_at = gate_step.find("| tee .data/evals/gate.log")
+
+    assert mkdir_at != -1, "the gate step never creates .data/evals, so tee cannot open its log"
+    assert tee_at != -1, "the gate output is not tee'd"
+    assert mkdir_at < tee_at, (
+        "the mkdir must come before the tee; tee opens the file as the pipeline starts, "
+        "not when the gate finishes"
     )
 
 
@@ -177,18 +211,24 @@ def test_the_gate_output_is_tee_d_to_the_log(job: Job) -> None:
     """A log file that is never written is an artifact path that silently
     matches nothing, and the `GATE FAIL:` lines are the run's verdict.
 
-    `pipefail` is what keeps the tee from swallowing the gate's exit status:
-    without it the pipeline succeeds whenever `tee` succeeds, and the gate
-    would report green on a red comparison — the one failure this whole job
+    `set -o pipefail` is what keeps the tee from swallowing the gate's exit
+    status: without it the pipeline succeeds whenever `tee` succeeds, and the
+    gate would report green on a red comparison — the one failure this whole job
     exists to prevent.
+
+    Both are matched as whole lines rather than as substrings. A substring match
+    is satisfied by the comment above them explaining why they are there, which
+    is exactly what happened when this test was first written: deleting
+    `set -o pipefail` left it green, because the comment naming it survived.
     """
     body = str(job["body"])
     gate_step = next(text for _, text in _steps(body) if "-m evals.gate" in text)
 
-    assert "pipefail" in gate_step, (
-        "without pipefail the tee pipeline's exit status is tee's, and a failed "
-        "gate reports success"
+    assert re.search(r"^\s*set -o pipefail\s*$", gate_step, re.M), (
+        "without `set -o pipefail` the tee pipeline's exit status is tee's, and a "
+        "failed gate reports success"
     )
-    assert re.search(r"-m evals\.gate .*\| tee \.data/evals/gate\.log", gate_step, re.S), (
+    tee = r"^\s*uv run python -m evals\.gate 2>&1 \| tee \.data/evals/gate\.log\s*$"
+    assert re.search(tee, gate_step, re.M), (
         "the gate's stdout and stderr are not captured to the log"
     )

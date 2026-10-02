@@ -124,6 +124,13 @@ jobs:
         if: steps.scope.outputs.applies == 'true' && env.OPENROUTER_API_KEY != ''
         run: |
           set -o pipefail
+          # Before the tee, not after: `tee` opens its file when the pipeline
+          # starts, and `.data/evals` is created by `evals.baseline.record`
+          # *inside* the gate — i.e. six minutes later. Without this, tee exits
+          # non-zero on a missing directory and pipefail turns a *passing* gate
+          # into a failed step. Found on CI run 36982769288: the gate passed at
+          # 0.96042 and the job still went red.
+          mkdir -p .data/evals
           DATABASE_URL=postgresql+asyncpg://veriforge:veriforge@localhost:5432/veriforge \
             uv run python -m evals.gate 2>&1 | tee .data/evals/gate.log
       # The per-item export (answers, claims with their verdicts, the retrieved
@@ -132,14 +139,22 @@ jobs:
       # run is exactly when the breakdown matters, and it is the only thing that
       # can say WHICH items moved rather than only that the number did.
       #
-      # KI-42 is the cost of not doing this: CI scored 0.90833 against a 0.97556
+      # `always()` is load-bearing here, and not as a nicety. A step whose `if:`
+      # contains no status check function inherits `success()` from the step
+      # before it, so `if: steps.scope.outputs.applies == 'true'` is really
+      # "if the gate passed AND the scope check said yes". On CI run
+      # 36982769288 the gate failed and this step was skipped without running —
+      # the export missing on exactly the run it exists for, and the artifact
+      # uploaded with one 621-byte summary in it.
+      #
+      # KI-42 is the cost of not having it: CI scored 0.90833 against a 0.97556
       # local baseline and nothing on the run could say whether that was the tail
-      # of the distribution or a different distribution, because the export does
-      # not run in CI and the claims and verdicts were discarded with the runner.
-      # The same blindness cost D3, D4, D5 and D7 a CI run each — the question
-      # could be re-argued but never decomposed.
+      # of the distribution or a different distribution, because the claims and
+      # verdicts were discarded with the runner. The same blindness cost D3, D4,
+      # D5 and D7 a CI run each — the question could be re-argued but never
+      # decomposed.
       - name: Per-item export (answers, claims, verdicts, stage_ms)
-        if: steps.scope.outputs.applies == 'true' && env.OPENROUTER_API_KEY != ''
+        if: always() && steps.scope.outputs.applies == 'true' && env.OPENROUTER_API_KEY != ''
         run: |
           set -euo pipefail
           mkdir -p .data/evals
