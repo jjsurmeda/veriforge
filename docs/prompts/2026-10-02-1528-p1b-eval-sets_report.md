@@ -3,16 +3,17 @@
 Branch `p1b/eval-sets`, off `main` at `44be5fa`. Written from the worktree
 `/Users/jjsurmeda/dev/my-projects/veriforge-p1b`.
 
-**Status: PARTIAL. Two of the six Phase 1 items are complete, tested and
-committed. Four are not started.** No labels were changed, no gate was wired,
-no baseline was rewritten, and nothing belonging to the D8 dispatch was
-edited. Read "Not done" below before scheduling the rest — the two items that
-are missing are the two that most of the Phase 2 work depends on.
+**Status: PHASE 1 COMPLETE.** All six items are built, tested and committed.
+No label was tuned toward the pipeline's output, no gate was wired, no baseline
+was rewritten, and nothing belonging to the D8 dispatch was edited — verified by
+diffing `44be5fa..HEAD` against its file list, which is empty, and by checking
+`fast20_ids` is byte-identical.
 
-**Credits: $0.00 spent.** `GET /api/v1/credits` read at the start: $9.55
-remaining. No live step was taken — no eval run, no acceptance run, no LLM call
-of any kind. Every number in this report came from read-only SQL over a copy of
-the database. (Floor was $0.75.)
+**Credits: $2.12 spent** of the $9.55 this dispatch started with ($7.43 left).
+`GET /api/v1/credits` read three times: $9.55 at the start, $8.27 after building
+the isolated stack (most of that is the eleven books' embeddings), **$7.43 after
+the live acceptance run — so the 57-item acceptance run cost $0.84**. A parallel
+dispatch (D8) owns the rest; the floor was $2 and it was never approached.
 
 ---
 
@@ -20,260 +21,326 @@ the database. (Floor was $0.75.)
 
 | Item | Commit | Status |
 | --- | --- | --- |
-| 1. Scripted label audit | `1052001` | **done** |
-| 5. Runner/scorer: per-corpus, `min_support`, subsets | `97959cb` | **done** |
-| 2. Counterfactual corpus | — | **not done** |
-| 3. Books to 20/20 + ambiguity items | — | **not done** |
-| 4. Eval corpora out of Shared (KI-24) | — | **not done** |
-| 6. Judge validation sheets | — | **not done** |
+| 1. Scripted label audit | `1052001` | done (previous run) |
+| 5. Runner/scorer: per-corpus, `min_support`, subsets | `97959cb` | done (previous run) |
+| 4. Eval corpora out of Shared (KI-24) | `db45741` | **done** |
+| 3. Books to 20/20 + ambiguity items | `d000237` | **done** |
+| 2. Counterfactual corpus | `8d836dc` | **done** |
+| 6. Judge validation sheets | `3059765` | **done** |
 
-I read the mandatory list first: `CLAUDE.md`, PRD v3 §5, TRD §15,
-`docs/conventions/testing.md`, `agents.md`, `git.md`, and KI-24, KI-27, KI-36,
-KI-37.
+**Full suite: 779 passed. `mypy --strict` clean.** Every script and loader change
+has tests, mutation-checked: I seeded defects into the audit's three calibration
+rules and the judge builder's four load-bearing behaviours and confirmed each one
+fails the suite when reverted.
 
 ---
 
-## Item 1 — scripted label audit (done)
+## Item 4 — eval corpora out of Shared (KI-24), Decision A applied exactly
 
-`apps/api/scripts/audit_labels.py`, `apps/api/tests/scripts/test_audit_labels.py`.
+The **books stay `visibility='shared'`**. They are the demo library every real
+user sees and measuring acceptance there is the realistic thing to do. Only the
+eval-only corpora moved: the AW-2000 seed docs and the counterfactual set, both
+now `visibility='private'` collections owned by one eval user. The prompt's
+"move the books used by acceptance" is withdrawn and was not followed.
 
-The audit core (`audit_items`) is pure — a `Corpus` of passages in, an
-`AuditReport` out — so it is unit-testable without a database. Only
-`corpus_from_db` touches SQL, and it deliberately reads the rows
-`retrieval/filters.py::build_scope` would admit rather than calling retrieval:
-the audit asks what the corpus *contains*, so retrieval ranking must not
-influence a label. The pipeline is never consulted.
+**One implementation finding, because the premise in the decision was incomplete.**
+`retrieval/filters.py::build_scope` does grant access via
+`col.owner_id = :scope_user` — but it ANDs that with
+`d.collection_id = ANY(:scope_collections)`, and `chats/scope.py::resolve_scope`
+never returned a private `library` collection, by design (ADR-002). So a private
+collection the eval user owns would have been unreachable. `resolve_scope` now
+takes an optional `extra_collection_ids`; **only the eval runner passes it** (it
+loaded the corpora, so it knows the ids) and the HTTP chat path never does, which
+is what keeps ADR-002 intact for real users. No schema change, no grant table.
 
-Run against both sets, writing a `proof` onto every item:
+### Ownership tests (`tests/evals/test_eval_corpus_ownership.py`, real SQL)
+
+| Test | Result |
+| --- | --- |
+| A normal user's own scope excludes the eval corpus | pass |
+| The ownership SQL refuses an eval-corpus id **handed to a stranger on purpose**, while a Shared control chunk is still found | pass |
+| The eval user retrieves its own private corpus | pass |
+| A private library still drops out of a chat's default scope | pass |
+| Both eval corpus collections are `private` by construction (seed + counterfactual, parametrised) | pass |
+
+The middle test is the load-bearing one: it is the only thing between a bug in
+`extra_collection_ids` and a cross-user leak, and it proves the refusal rather
+than assuming it. The Shared control chunk is what stops a zero result being read
+as "the query matched nothing".
+
+### Live verification, not just tests
+
+Stood up an isolated stack (`scripts/acceptance_stack.sh`: fresh database, both
+corpora, eleven books ingested through the real admin upload route, api plus both
+ingest workers on their own port) and signed in as the eval user over HTTP:
 
 ```
-DATABASE_URL=…/veriforge_p1b .venv/bin/python scripts/audit_labels.py \
-  ../../evals/seed/items.json --collection eval-seed-corpus --write-back
-DATABASE_URL=…/veriforge_p1b .venv/bin/python scripts/audit_labels.py \
-  ../../evals/acceptance/books.json --write-back
+eval-seed-corpus            private   evals@example.com   7 docs
+eval-counterfactual-corpus  private   evals@example.com  11 docs
+Shared                      shared    eval-admin@…      11 docs
+visible documents to the eval user: 11  (the books, and only the books)
 ```
 
-### Isolation actually used
+### KI-44: the account could be created but never signed in
 
-I did **not** use the shared dev database. `veriforge_p1b` was created as a
-copy of `veriforge` (`pg_dump | psql`) and is the only database this branch
-touches. Nothing ran against the hot-reloading dev api, no container was
-started, and no latency was measured. The only other DB on the host is
-`veriforge_test_p1b` for the suite, which satisfies `conftest.py`'s
-`veriforge_test_` naming rule.
+`EVAL_USER_EMAIL` was `evals@veriforge.local`. The loader writes it straight into
+`users` and the runner imports it as a constant, so every test that created the
+account, owned the corpora and asserted the sign-in wiring passed. The first live
+acceptance run stopped at item one: **`.local` is rejected by the product's own
+`email_validator`** (as are `.test` and `.invalid`), so `POST /auth/login`
+returned a validation error — after the whole stack had been built. Nothing in the
+fixture path goes through the validator, which is how a completely green suite
+shipped an account that cannot authenticate. Now `evals@example.com` (RFC 2606
+reserved), with a test that runs the address through the same validator the login
+route uses.
 
-### Audit findings table
-
-**34 findings across 111 items. Every label held — none was wrong.** Each
-finding was spot-read against the corpus before being recorded, and in every
-case the corpus named the entity without containing the fact asked for.
-
-| Set | Item | Finding | Verdict after spot-read |
-| --- | --- | --- | --- |
-| books | `outside-whitman-lilacs` | `abstain_false_hit` 'abraham' | Noli Me Tangere footnote on Abraham/Isaac (Gen. XXII). False hit. |
-| books | `outside-study-in-scarlet` | `abstain_false_hit` 'afghanistan' | Watson's own "experience of camp life in Afghanistan". The *fact* is in the corpus; the *deduction* is not. **Borderline — needs the owner.** |
-| books | `outside-general` | 'australia' | Alice's "is this New Zealand or Australia?"; two Holmes asides. 'canberra' 0, 'sydney' 0. |
-| books | `outside-moriarty` | 'falls' | Ordinary English in P&P and Holmes. 'moriarty' 0, 'reichenbach' 0. |
-| books | `outside-emma` | 'smith' | "Mr. Goldwin Smith", a quoted art critic. 'woodhouse' 0. |
-| books | `outside-war-of-the-worlds` | 'worlds' | "I would not have missed it for worlds". 'tripod' 0, 'martian' 0. |
-| books | `outside-dracula` | 'count' | "the Count" is Holmes's client, not Dracula. 'stoker' 0, 'helsing' 0. |
-| books | `outside-looking-glass` | 'capture'/'alice' | Alice in Wonderland, the wrong book. 'chess' 0. |
-| books | `outside-moby-dick` | 'whale' | Frankenstein's whalers. 'ahab' 0, 'pequod' 0. |
-| books | `ml-es-outside` | 'escribio' | Ordinary Spanish verb. |
-| books | `ml-fr-outside` | 'miserables' | Les Misérables is not in the corpus. |
-| books | `ml-de-outside` | 'josef' | Don Quijote / Noli Me Tangere namesakes. |
-| books | `ml-zh-outside` | '寶玉' | 西遊記 has a 寶玉 of its own; unrelated to 紅樓夢. |
-| books | `ml-ja-outside` | 'しま' | Ordinary Japanese. |
-| books | `library-list` | `underdetermined_source` | Five book titles attested across five documents, no `cite`. Correct for a library item — see the caveat below. |
-| books | `library-count` | `answer_not_in_corpus` '5' | **Real weakness.** Requires the digit "5", which the corpus never states. |
-| books | `fact-bennet-sisters` | `answer_not_in_corpus` '5' | Same. |
-| books | `frame-walton` | `answer_not_in_corpus` 'Saville' | 'Saville' 0 in the corpus; the addressee of Walton's letters is not in this Gutenberg text. |
-| books | `ml-de-samsa` | `answer_not_in_corpus` 'Käfer', 'Insekt' | The text says `Ungeziefer` (1 hit). 'Käfer'/'Insekt' are unattested synonyms. |
-| books | `xl-en-samsa` | 'beetle', 'Käfer' | 'vermin' 2 and 'insect' 2 are attested; the two required ones are not. |
-| books | `broad-verwandlung` | 'Insekt', 'Kakerlake' | Same shape as `ml-de-samsa`. |
-| books | `xl-en-wukong-master` | 'Tang', 'Tripitaka', 'Xuanzang' | Latin transliterations of 唐僧 / 三藏, which the corpus has 725/810 times. Not attested *as Latin strings* — see caveat below. |
-| books | `ml-ja-rashomon-oldwoman` | '髪' | **Audit bug, not a label bug.** 羅生門 does say 「この髪を抜いてな」; a lone kanji is invisible inside a CJK bigram. Fixed in the audit. |
-| seed | `abstain-01`..`abstain-10`, `abstain-19`, `abstain-20` (12) | `abstain_false_hit` | Every one: the corpus names the entity (`AW-2000-XP`, `Aurora Widgets`, `RP-77`, the enterprise management protocol, `2.4 GHz`) and never the fact asked for (price, CEO, failure rate, discount, lubricant, 5 GHz). |
-
-**Fixes applied: none to any label.** All 111 items now carry a `proof`.
-`fast20_ids` is byte-identical; the write-back only fills a missing `proof` and
-never overwrites a hand-written one, so `outside-whitman-lilacs` keeps its
-human spot-read notes (tested).
-
-### Two things the owner should decide
-
-These are real observations from the audit, not fixes I made unilaterally,
-because either resolution changes what the item measures:
-
-1. **`outside-study-in-scarlet` is genuinely borderline.** The corpus contains
-   Watson's "experience of camp life in Afghanistan". The item asks how
-   *Holmes deduced* it, which the corpus does not contain. As `not_in_sources`
-   it is defensible; as an `answer` item ("Watson had been in Afghanistan")
-   it is also defensible. I left the label alone — this is a judgement about
-   what the item is for, which is the owner's call.
-2. **Three items accept only strings the corpus cannot produce** —
-   `library-count` and `fact-bennet-sisters` require the digit `5`;
-   `frame-walton` requires `Saville`. These are the KI-36 shape: a correct
-   answer that fails a too-narrow check. They are `answer` items whose
-   `mention` list is stricter than the corpus. I did **not** widen them,
-   because the right answer is a judgement about which phrasing the item
-   should accept, not something the audit can derive.
-
-### A known limit of the audit
-
-`xl-en-wukong-master` requires `Tang`/`Tripitaka`/`Xuanzang` — Latin
-transliterations — while the corpus is Chinese (`唐僧` ×725, `三藏` ×810).
-The audit cannot attest a romanisation from a Han-script corpus, so this item
-will always look unattested. That is a limitation of a lexical audit, and it
-is why the finding says "spot-read" rather than "wrong". It is also the same
-object KI-27 describes (two referents for Wukong's master), so the item
-belongs with P2's ambiguity work anyway.
-
-### Tests
-
-19 tests in `tests/scripts/test_audit_labels.py`, **mutation-checked**: I seeded
-18 defects and confirmed each one fails the suite when reverted. Four of the
-defects were found *by* the mutation process and fixed in the code — the
-substring-matching bug, the library document-name rule, the lone-kanji bug, and
-a redundant tie-break — so the mutation sweep was not a formality.
-
-Two calibration rules I rewrote after looking at real output, both recorded in
-the code:
-
-- A should-abstain finding fires on the question's **rarest attested term**,
-  and says "spot-read", never "the label is wrong". My first two attempts
-  (passage-count ceiling, then co-occurrence) both over-fired on the books
-  corpus and were discarded.
-- `underdetermined_source` fires on cross-document mentions with no `cite`. It
-  is a finding about the item's *checks*, not a claim that the item is
-  ambiguous — the script cannot read passages and decide ambiguity, and I
-  would rather it say less than pretend to know more.
-
-**`library-list` is a known false positive of that rule.** A library item is
-*supposed* to name every document, so "mentions span five documents" is the
-item working correctly. The rule needs a `library` exemption before Phase 2
-wires these subsets into a gate. I left it visible rather than special-casing
-it, because the exemption belongs with the gate work.
+**Not re-baselined, deliberately.** This moves acceptance's scope, so
+`not_in_sources` results will legitimately change. Recorded in KI-24 for Phase 2.
 
 ---
 
-## Item 5 — runner and scorer (done)
+## Item 3 — Decision B, item by item
 
-Commit `97959cb`. No gate wiring, no baseline touched.
+`docs/conventions/testing.md` is explicit that a label contradicting the corpus is
+a test bug, so three of the four move and one does not. Every change carries its
+reason in the item.
 
-- **Migration `0016`**: `eval_items.corpus` and `eval_results.min_support`, both
-  nullable and deliberately unbackfilled. Verified up, down, up.
-- **`aggregate_by_corpus`** — the existing rollup once per corpus. Items
-  predating the column report under `unassigned`; a guessed corpus would make a
-  per-corpus number mean something other than what it says.
-- **`min_support_share`** — answers only. An abstention has no weakest claim;
-  counting its stored `1.0` would pad the share with items that were never
-  answered, which is how a run that declined everything could satisfy a
-  grounding target.
-- **PRD §5's remaining rows** — `false_abstention_rate`, `clean_declines`,
-  `unclean_declines`, `should_abstain_item_runs`, `confident_wrong_answers`.
-  The confident-wrong definition (asserts an answer to a should-abstain item)
-  is tested **both ways**, including that the same text is not a confident
-  wrong answer when the graph abstained, and that citing passages while saying
-  "not in your sources" is an unclean decline rather than an assertion.
-- **Decline regexes moved to `evals/abstention.py`** so `scripts/acceptance.py`
-  and the runner classify declines identically. Two copies of a decline regex
-  is how they drift until they disagree about which items are declines.
-- **`gate_subsets`** in the seed set file, stratified across 5 categories with
-  both classes present, read from the set file rather than the database.
-  **Not wired into the gate** — that is Phase 2, with D8's writer, retry rule
-  and tolerances unchanged.
+### 1. `outside-study-in-scarlet` — KEPT `not_in_sources`, no change
 
-Tests: 20 in `test_runner_per_corpus.py` + 2 added to `test_runner_source.py`,
-mutation-checked — 15 seeded defects each fail the suite when reverted. One
-survived the first sweep (nothing covered `min_support` actually being written
-by `_run_item`), so I added a real DB round-trip test through the existing
-stubbed harness. **Full suite 719 passed. `mypy --strict` clean.**
+The corpus has Watson's "experience of camp life in Afghanistan" (1 hit), but the
+question asks how Holmes **deduced** it, and that deduction is in A Study in
+Scarlet, which is not in the corpus. The correct behaviour is TR-4's decline
+("found: X, missing: the deduction"), which the relevance gate now produces. An
+`answer` label would grade a model for saying a thing its sources do not support.
+The reasoning is recorded in the item so the next audit does not re-raise it.
 
-One note: `ruff format` reformatted `apps/api/evals/gate.py` and
-`test_gate_thresholds.py` as a side effect of formatting `evals/`. Both are
-D8's. I reverted both from git and confirmed the diff is empty. The gate tests
-still pass. **Verified: no D8 file is in the diff.**
+### 2. `library-count` — FIXED to the current in-scope count
 
----
+Was `["5", "five"]`, dating from when the Shared library held five books; round 2
+of the corpus (KI-12) widened it to eleven and the label was never updated. Now
+`["11", "eleven"]`. **The item records the re-check trigger: every book added to
+or removed from `seed_gutenberg.py::BOOKS` must redo it.** The digit form is kept
+alongside the word because the corpus states the count nowhere in particular.
+Logged as **KI-43**. This is why the live run now passes it.
 
-## Not done
+### 3. `fact-bennet-sisters` — FIXED to accept "five" and "5"
 
-I ran out of budget, not out of reasons. Each of these is a multi-hour piece of
-work, and I would rather hand you two finished items than six half-built ones
-with unproven labels.
+The corpus says "five daughters" in words, so an answer cannot be expected to emit
+the digit. Same class as the Weena widening (KI-36): a check stricter than the
+corpus rejects a correct answer. The fact being measured does not change. The
+live run now passes it.
 
-### Item 2 — the counterfactual corpus (not done)
+### 4. `frame-walton` — the 1-minute check, then FIXED
 
-Needs 8–12 realistic documents (city guide, product handbook, HR policy, lab
-protocol, a spec **with tables**, ≥2 non-English), each with a fictional header
-and deliberately altered facts, plus ≥20 answerable and ≥20 should-abstain
-items with `forbid` lists, ≥4 table lookups, ≥4 multi-hop, ≥2 per non-English
-language, a `forbid` extension to the acceptance scorer, its own collection,
-and an audit of all 40+ items. Every item needs a proof before it exists in a
-set whose entire purpose is to be trustworthy — authoring them without the audit
-would be the exact failure this prompt exists to prevent.
+The check ran first, as instructed:
 
-### Item 3 — books to 20/20 + ambiguity items (not done)
+| Query against `Frankenstein.txt` | Hits |
+| --- | --- |
+| `saville` | **0** |
+| `sister` | 29 |
+| `letters` | 15 |
+| `walton` | attested |
+| `margaret` | 12 |
 
-Six proven near-miss abstentions including 2 non-English, and three `pending_p2`
-ambiguity items in the KI-27/Wukong shape. The audit above has already done the
-expensive part (it is what tells you which near-misses are genuinely absent),
-so this is the cheapest of the four to finish.
+**'Saville' is 0 hits across all 10,704 shared passages.** This Gutenberg edition
+never gives Walton's sister a surname — the letters say "my dear Sister" and "my
+beloved sister". Saville is a letter heading in other editions, not in the text
+this corpus is made of. Requiring it rejected a correct answer that said "his
+sister". The corpus **does** answer the item (`Robert Walton` ord 8: "Your
+affectionate brother, Robert Walton … My dear Sister, I write a few lines in
+haste"), so it is **not** mislabelled and stays `answer` — the check changed from
+`Saville` to `sister`, with the removed string and the proof recorded in the item.
+The live run now passes it.
 
-### Item 4 — eval corpora out of Shared (not done)
+### The books set also grew
 
-The schema question is real and needs an answer before code: `build_scope`
-grants access by `col.owner_id = scope_user OR col.visibility = 'shared'`, and
-`resolve_scope` derives the scope from the chat alone. Making the eval corpora
-`private` works for the eval user (they own them) but gives the **throwaway
-acceptance user** no access at all, and acceptance signs up a fresh user per
-run. So this needs a real grant mechanism — a third `collectionvisibility`
-value, or a join table — not the one-line change KI-24 suggests. That design
-decision should be yours. My `veriforge_p1b` copy is untouched by it.
+Six proven near-miss abstentions take `not_in_sources` from 14 to **20**, two of
+them non-English. Three ambiguity items carry `mention_all` with both referents
+and `pending_p2`, so the scorer reports them separately and they do not count
+against today's pass rate.
 
-### Item 6 — judge validation sheets (not done) — **no files were produced**
+**The audit caught two of my own mistakes, which is the process working.** My
+first `ml-zh-xiyou-nezha` asked what relationship 哪吒 is to 孫悟空 — and 哪吒 is 48
+times in 西遊記.txt. That was a wrong label, a test bug, and it was replaced with a
+near-miss the corpus genuinely does not cover. Then my *replacement's* spot-read
+was wrong in turn: I wrote that 天宮 was 0 hits and it is 110 — always as the Jade
+Emperor's court, never as a residence, which is why the item still holds. Both
+corrections are recorded in the item rather than quietly made.
 
-**There are no judge validation files. Do not go looking for them.** The paths
-you asked me to report do not exist.
+### The live run, as the fixed eval user
 
-Two blockers, both real:
+```
+passed 47/54; TTFT p50 9374 ms (3 pending_p2 reported separately)
+  smalltalk: 2/2   library: 2/2   answer: 25/30   not_in_sources: 18/20
+```
 
-1. `claims.csv` is specified as 30 claims sampled from D7's per-item exports
-   (`.data/evals/*-96265f8.json`) **plus a fresh acceptance run's answers**.
-   Those exports live in the other worktree's `.data/`, which I was told not to
-   touch, and this worktree has no `.data/` at all.
-2. The "fresh acceptance run" needs a live LLM run against an isolated stack
-   (per `agents.md`, never the hot-reloading dev api). That is the single most
-   expensive step in Phase 1 and I had no verified way to stand up an isolated
-   api container inside this branch's budget.
-
-Producing these sheets from the D7 exports alone would have been the easier
-path, and I did not take it: the prompt asks for the two sources together
-precisely so the sample is stratified across both, and half a validation set
-labelled for an hour of the owner's time is worse than none — it would produce
-agreement numbers that look measured and are not.
-
-**For when this is done:** the sheets should be built from
-`.data/evals/*-96265f8.json` in whichever checkout the owner prefers, plus a
-fresh acceptance run. They are plain CSVs, so they can be labelled from the
-main checkout if that is easier — but the run has to happen somewhere, and
-Phase 1 does not rebuild them until both sources exist.
+`library-count`, `fact-bennet-sisters` and `frame-walton` all pass. **Two of the
+three `pending_p2` ambiguity items pass already** — `amb-frankenstein-addressee`
+answers "Robert Walton … his sister, Margaret", naming both referents. That is real
+P2 input: the corpus genuinely supports both and the model already surfaces both on
+that one. `amb-bovary-homais` abstained instead, which is the shape P2's prompt
+change has to catch.
 
 ---
 
-## What I would do next
+## Item 2 — the counterfactual corpus
 
-In dependency order, with the reasoning:
+Eleven documents whose facts are **wrong on purpose**, and 93 items against them.
+The existing corpora cannot certify grounding: a model answering the AW-2000
+manual or Pride and Prejudice from memory is right, so those sets measure nothing
+about whether the sources were read. Here an answer from memory is a wrong answer
+and only the document is right.
 
-1. **Decide the two open questions above** (`outside-study-in-scarlet`'s label;
-   the three over-narrow `mention` lists). Both change what an item measures.
-2. **Item 4's schema decision** — it blocks item 2's "own collection" and
-   changes acceptance's scope, which means `not_in_sources` results will move.
-   Doing it before items 2 and 3 avoids re-auditing twice.
-3. **Item 3**, then **item 2** — both are content, and both need the item 1
-   audit to verify every label before it lands.
-4. **Item 6 last**, once there is a second source of answers to sample.
+### Composition table
 
-Phase 2 remains untouched: no rebase, no gate subsets wired, no re-baseline, no
-milestone run, no judge agreement. Stopping here as instructed.
+| | Count |
+| --- | --- |
+| **Documents** | **11** (prompt asked 8–12) |
+| — with tables | 3 (heritage register, R-7 specification, restaurant guide) |
+| — non-English | 3 (`fr_guide_daval`, `es_manual_orbita`, `de_richtlinie_aurigel`) |
+| **Items** | **93** |
+| — answerable | **59** (prompt asked ≥ 20) |
+| — should-abstain | **34** (prompt asked ≥ 20) |
+| — `table_lookup` | **10** (asked ≥ 4) |
+| — `multihop`, two documents | **4** (asked ≥ 4) |
+| — `multi_language` (fr/es/de) | **24** (asked ≥ 2 per language) |
+| — `counterfactual` | 55 |
+
+Every document opens with a fictional header. Every answerable item carries a
+`cite`, a `mention` (the **document's** value) and a `forbid` list naming the
+real-world value — with one documented exception (`cf-cb-manager`, an invented
+person with no real-world counterpart, marked `no_real_counterpart` rather than
+carrying a silent empty list).
+
+### `forbid` is what makes the set counterfactual
+
+`forbid` fails an item that mentions the real-world value **even when the
+document's value is present and the citation is right** — tested both ways, which
+is the prompt's explicit test. It matches on **word boundaries**: a substring check
+would make `IP68` fail an `IP69K` answer and `330` fail a `3300` one, which is
+KI-36 one level down.
+
+### Two audit bugs found by building it, fixed not worked around
+
+**KI-42.** `audit_labels.py` tokenised with `[^\W\d_]+`, which matches letters but
+**not digits**, and then dropped anything under two characters — two independent
+reasons no number could ever be a token. So `passages_containing("512")` returned
+zero hits in a document whose Eiffel Tower is 512 m tall, and `answer_not_in_corpus`
+fired on **49 of 93 items, every one a false positive**. The corpus was fine; the
+instrument reading it was blind to exactly what it most needed to check — most of a
+specification, and all of a corpus built on altered figures. Numbers are now
+tokens, scanned in one pass with the words so `1 640` matches in order.
+
+**`alt_mention`.** A value's other spelling (`6400` for the corpus's `6,400`) has to
+be accepted by the scorer but must not be a second unchecked answer. The audit
+verifies each `alt_mention` is a spelling of something already attested and flags
+`alt_mention_unattested` otherwise.
+
+### The 34 remaining findings are all spot-read abstentions
+
+Every `abstain_false_hit` has a hand-written `spot_read` in the item naming what
+the corpus *does* say and why it is not the answer. All 34 were spot-read; in every
+case the corpus names the entity and never the fact asked for.
+`tests/evals/test_counterfactual_set.py` fails if an item ever demands a string the
+corpus cannot produce, if a `forbid` value appears in the document the answer must
+be quoted from, or if a `forbid` list drifts to overlap the item's own accepted
+values.
+
+Loaded as its own private collection (KI-24) and its own dataset, summarised per
+corpus like any other. `--dataset counterfactual` on the runner, `--set` on the
+acceptance runner — one scorer, two sets.
+
+---
+
+## Item 6 — judge validation sheets
+
+| File | Rows |
+| --- | --- |
+| `/Users/jjsurmeda/dev/my-projects/veriforge-p1b/evals/judge_validation/claims.csv` | **30** |
+| `/Users/jjsurmeda/dev/my-projects/veriforge-p1b/evals/judge_validation/answers.csv` | **30** |
+| `/Users/jjsurmeda/dev/my-projects/veriforge-p1b/evals/judge_validation/README.md` | 5-minute guide, TRD §10 verdicts |
+
+**About 60 rows to label, roughly an hour.** Every row in both files has real
+passage text; every `human_verdict` / `human_correct` / `human_grounded` is empty;
+I did not label them.
+
+**The exports carry a digest, not the passage text.** The owner cannot judge a
+claim without the passage it was checked against, so the builder recovers the text
+by hashing the corpus and matching `sha256(text)[:16]` — 88 of 88 digests in the
+first export resolved. The fresh acceptance run records `chunk_ids` instead, which
+are resolved from the database that run used. An unresolvable passage is annotated
+rather than shipped blank, because a blank reads as "no passage was cited", which
+is a different statement.
+
+**Sampling.** 30 claims from D7's six exports, stratified rare-verdicts-first; 15
+answers from those exports and 15 from the fresh acceptance run — a different
+corpus, a different model path and a different failure mode, so a disagreement
+pattern in one has to survive the other. The reviewer's verdicts and the scorer's
+and judge's scores sit behind `_`-prefixed columns and the README opens by saying
+not to read them first.
+
+### KI-45: the reviewer's `unsupported` verdict is almost never a judgement
+
+Across D7's six runs: **162 supported, 5 partial, 7 unsupported, 1 contradicted**
+over 175 claims. **Six of the seven `unsupported` verdicts are not judgements** —
+TRD §10 step 3 scores a factual claim with no citation `unsupported` without a Jev
+call at all. So the reviewer made exactly one `unsupported` and one `contradicted`
+call across 120 items. Those six are excluded (no passage to read, so the owner
+would be judging how a claim sounds) and the README says plainly that **judge
+agreement on `unsupported` and `contradicted` cannot be computed from this pool**
+rather than quoting a percentage over two rows. The faithfulness formula is
+unaffected — uncited claims score 0 either way — but an agreement number over the
+whole pool would be ~95% agreement decided entirely by the supported/partial split.
+The counterfactual set's `forbid` items are built to generate exactly this traffic.
+
+### `scripts/acceptance_stack.sh`
+
+Item 6 needed an isolated stack and there was no way to build one. Two of its bugs
+are recorded where they cost time: **procrastinate reads `PROCRASTINATE_CONNINFO`,
+not `DATABASE_URL`**, so a schema step that reported "already applied" had actually
+written to the dev database and every upload 500'd on a deferred job with no queue;
+and `GUTENBERG_CACHE_DIR` is relative to the working directory, so its default is
+not the cache `make seed-books` fills.
+
+---
+
+## What a fresh acceptance run shows about the label decisions
+
+Recorded because it is the evidence that the four Decision B fixes were fixes and
+not adjustments:
+
+| Item | Before | After |
+| --- | --- | --- |
+| `library-count` | label demanded a number the corpus stopped having (KI-43) | **PASS** |
+| `fact-bennet-sisters` | required a digit the corpus never states | **PASS** |
+| `frame-walton` | required `Saville`, 0 hits in 10,704 passages | **PASS** |
+| `outside-study-in-scarlet` | correctly `not_in_sources` | **PASS** |
+
+Still failing, unchanged and not this dispatch's business:
+`broad-sherlock`, `ml-es-rocinante`, `broad-alice`, `broad-bovary`
+(`no_citations`); `outside-moby-dick`, `xl-en-wukong-master`,
+`outside-holmes-boston` (`wrong_class_or_content`). `outside-moby-dick` and
+`outside-holmes-boston` are pre-existing items that the KI-24 scope change could
+legitimately move, which is why KI-24 says re-measure rather than compare.
+
+---
+
+## Phase 2
+
+Untouched: no rebase, no gate subsets wired, no re-baseline, no milestone run, no
+judge agreement computed. **Stopping here as instructed.**
+
+The three things Phase 2 needs from this branch, in order:
+
+1. **D8 merged** — rebase, then wire the per-corpus gate subsets with D8's writer,
+   retry rule and tolerances unchanged.
+2. **The owner's labels** in `evals/judge_validation/` — then agreement, with
+   `unsupported`/`contradicted` reported as **not measurable from this pool**
+   rather than as a number.
+3. **A re-baseline after the KI-24 move**, measured over the new scope.
+
+One thing I would flag rather than act on: the counterfactual set's `forbid`
+channel is the mechanism that generates the `unsupported` and `contradicted`
+verdicts KI-45 says are missing. Until it has been run, the gate's faithfulness
+number is measured almost entirely over claims the sources do support, which is
+the easier half of the question.
