@@ -24,7 +24,7 @@ Conventions are in `docs/conventions/` (agents, testing).
 ## Phases
 
 ```
-D5 → P1b → P2 → O1 → O2 → O3 → O4 → O5 → P3 → P7 → P8
+D5 → D6 burn-down → P1b → P2 → O1 → O2 → O3 → O4 → O5 → P3 → P7 → P8
       ↘ P4 ∥, P6 ∥ (any time after D5)      P5 after O3
 ```
 
@@ -34,7 +34,7 @@ worktree.
 | Phase | Content | Exit |
 | --- | --- | --- |
 | **D5** | **Gate stability and merge.** Pin temperature 0 for claim extraction, and measure the generator at about 0.3 (KI-32). Decide the overhead gate per its measured noise (owner). KI-36 label fixes. The conventions update. The first real CI gate run. Merge `fix/darcy` → `main`. | Gate passes in CI; `main` green |
-| **P1b** | **Eval sets.** The counterfactual corpus (20/20). The books set raised to 20 should-abstain. Scripted label audit for every item (KI-36). Per-corpus ~10-item gate subsets. `min_support` and per-corpus summaries in the runner. Parallel isolated-stack runs. Eval corpora out of Shared (KI-24), with a re-baseline. About 2 dispatches, about $3. | Every label proven; tiers runnable |
+| **P1b** | **Eval sets.** The counterfactual corpus (20/20). The books set raised to 20 should-abstain. Scripted label audit for every item (KI-36). Per-corpus ~10-item gate subsets. `min_support` and per-corpus summaries in the runner. Parallel isolated-stack runs. Eval corpora out of Shared (KI-24), with a re-baseline. **Judge validation:** about 30 claims labelled by a human (supported or not) against the reviewer's verdicts, and about 30 answers against the acceptance scorer and the eval judge, with agreement ≥ 90% each; disagreements become fixes or documented limits. About 2–3 dispatches, about $3, plus about 1 h of owner labelling. | Every label proven; graders validated; tiers runnable |
 | **P2** | **Answerability (ADR).** An answerability `Noul` per passage (summary intents judged on coverage) replaces the rerank floor. A post-generation decline is recorded as an abstention and its citations are dropped. TR-8 ambiguity disclosure (≥ 3 ambiguity items first). KI-33 language detector. | **Milestone:** full sets ×2. Decline accuracy ≥ 90%; confident wrong answers ≤ 1/100; false abstention ≤ 5% including broad |
 | **O1** | OKF items before code (answer, near-miss abstain, multi-hop, link-borne injection), its own collection, flag `okf.enabled`, ADR-004 details | Items proven |
 | **O2** | Bundle ingestion job, migration, OK-0 rules (tests first). **Isolation run**: OKF ingested out of scope must match the baseline. Measure the ingestion rate (provisional ≤ 10 min / 500). | K1 isolation |
