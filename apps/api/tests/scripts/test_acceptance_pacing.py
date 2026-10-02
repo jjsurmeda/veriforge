@@ -116,7 +116,7 @@ def paced_run(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> PacedRun:
     # The eval-user sign-in is KI-24 and has its own tests
     # (test_acceptance_eval_user.py); pacing is not where it belongs.
     async def eval_sign_in(_client: Any) -> tuple[str, str]:
-        return "evals@veriforge.local", "EvalUser!234"
+        return "evals@example.com", "EvalUser!234"
 
     monkeypatch.setattr(acceptance, "eval_sign_in", eval_sign_in)
 

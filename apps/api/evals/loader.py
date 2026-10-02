@@ -44,7 +44,17 @@ SEED_DIR = Path(__file__).resolve().parents[3] / "evals" / "seed"
 ITEMS_FILE = SEED_DIR / "items.json"
 CORPUS_DIR = SEED_DIR / "corpus"
 STATE_FILE = SEED_DIR / ".loaded.json"
-EVAL_USER_EMAIL = "evals@veriforge.local"
+# The account that owns the eval corpora, and the identity the eval and
+# acceptance runners authenticate as (KI-24).
+#
+# `example.com`, not a `.local` or `.test` address: the product's own email
+# validator (email_validator, via auth/router.py) rejects special-use and
+# reserved domains, so an account at `evals@veriforge.local` can be created in
+# the database but can never complete `/auth/login` — which is exactly what
+# acceptance does. `example.com` is reserved by RFC 2606 for this purpose and
+# passes validation. The runner imports this constant rather than reading an env
+# var, so there is exactly one place that decides who owns the corpora.
+EVAL_USER_EMAIL = "evals@example.com"
 CORPUS_NAME = "eval-seed-corpus"
 
 # The counterfactual set (P1b item 2). Its own directory, its own collection,

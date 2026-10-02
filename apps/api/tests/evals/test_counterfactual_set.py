@@ -37,6 +37,9 @@ NON_ENGLISH_LANGUAGES = {"fr", "es", "de"}
 def test_the_set_loads_with_unique_ids_and_required_fields() -> None:
     ids = [item["id"] for item in ITEMS]
     assert len(set(ids)) == len(ids), "duplicate ids"
+    # The loader keys the EvalDataset on this, so its absence is a load failure
+    # rather than a naming preference.
+    assert PAYLOAD["dataset"] == "counterfactual", PAYLOAD.get("dataset")
     for item in ITEMS:
         assert item["expect"] in {"answer", "not_in_sources"}, item["id"]
         assert isinstance(item["turns"], list) and item["turns"], item["id"]

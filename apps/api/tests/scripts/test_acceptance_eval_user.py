@@ -1,7 +1,7 @@
 """Acceptance signs in as the fixed eval account (KI-24), never signs up.
 
 The AW-2000 seed corpus and the counterfactual corpus are `visibility='private'`
-collections owned by `evals@veriforge.local`. A private collection is in scope
+collections owned by `evals@example.com`. A private collection is in scope
 only for its owner, so a throwaway signup cannot see the corpus it is being
 scored against — which is precisely the leak KI-24 recorded: the fixture was
 reachable by every user because it sat in Shared. Acceptance therefore
@@ -28,7 +28,7 @@ import pytest
 from scripts import acceptance
 
 RUN_USER_ID = "44444444-4444-4444-4444-444444444444"
-EVAL_EMAIL = "evals@veriforge.local"
+EVAL_EMAIL = "evals@example.com"
 EVAL_PASSWORD = "EvalUser!234"
 
 

@@ -2,7 +2,7 @@
 `internal-eval` plan once (KI-24).
 
 The AW-2000 and counterfactual corpora are private collections owned by
-`evals@veriforge.local`, so acceptance signs in as that account. The account has
+`evals@example.com`, so acceptance signs in as that account. The account has
 no HTTP path to its own creation — signup always mints a new address — so this
 script is how the credential exists at all, exactly as `seed_admin.py` is how
 the local admin does.
@@ -139,3 +139,21 @@ async def test_seeding_writes_no_credit_limits(db: AsyncSession) -> None:
         p.name: (p.credits_5h, p.credits_month) for p in (await db.execute(select(Plan))).scalars()
     }
     assert after == before
+
+
+def test_the_eval_user_address_can_actually_be_signed_in_with() -> None:
+    """The account's address must pass the product's own email validation.
+
+    `evals@veriforge.local` did not: `email_validator` rejects special-use and
+    reserved domains, so the account was creatable in the database but could
+    never complete `/auth/login`, which is precisely what acceptance does. The
+    failure surfaced only on the first live acceptance run, after the whole
+    stack was standing — a fixture that looks fine until the one call that
+    matters.
+    """
+    from email_validator import EmailNotValidError, validate_email
+
+    try:
+        validate_email(EVAL_USER_EMAIL, check_deliverability=False)
+    except EmailNotValidError as exc:  # pragma: no cover - the failure itself
+        pytest.fail(f"{EVAL_USER_EMAIL} cannot be signed in with: {exc}")

@@ -1,4 +1,5 @@
 {
+  "dataset": "counterfactual",
   "about": "Counterfactual corpus set (P1b item 2): grounding on text the models cannot know. Every document is marked fictional and states altered facts that contradict real-world knowledge. An `answer` item passes only if the answer states the DOCUMENT's value; the `forbid` list names the real-world value, and mentioning it fails the item even when the document's value is also stated. Category counts the special shapes: `table_lookup` reads a figure out of a table, `multihop` needs two documents, `multi_language` is asked in the document's own language, `counterfactual` is everything else. Proven by scripts/audit_labels.py; see README.md for how the set is meant to be run.",
   "corpus": [
     "Meridian Register of Monumental Landmarks",

@@ -1,7 +1,7 @@
 """Critical tier: the eval corpora are invisible to real users (KI-24).
 
 The AW-2000 seed corpus and the counterfactual corpus are
-`visibility='private'` collections owned by `evals@veriforge.local`. Before
+`visibility='private'` collections owned by `evals@example.com`. Before
 this move they were `visibility='shared'`, which put a benchmark fixture in
 every user's retrieval scope for every question in every mode — and meant a
 `not_in_sources` item could pass only because the out-of-scope answer was

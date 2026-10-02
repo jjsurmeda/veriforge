@@ -942,7 +942,7 @@ Logged 2026-09-30, measured twice this round (the KI-20 key cap, and the
 Logged 2026-09-30, from the item-2 cleanup (the accounts that must never
 be deleted are exactly the ones holding this corpus).
 
-- **What:** the 7 eval-corpus documents owned by `evals@veriforge.local`
+- **What:** the 7 eval-corpus documents owned by `evals@example.com`
   — `faq.md`, `field_service_note.md`, `manual.md`, `returns.md`,
   `spec_sheet.md`, `warranty_2025.md`, `warranty_legacy.md` — live in a
   `visibility='shared'` collection, so `build_scope`'s
@@ -969,7 +969,7 @@ be deleted are exactly the ones holding this corpus).
   > being user-visible product content, and `outside-general` behaving as
   > described — is untouched.
 - **Fix:** before any AWS slice, decide the eval corpus's home. Cheapest
-  honest option: keep it owned by `evals@veriforge.local` but make its
+  honest option: keep it owned by `evals@example.com` but make its
   collection `visibility='private'`, and have the eval runner create its
   own signed-in user that includes it explicitly (the eval set already
   signs up a throwaway user per run). Then re-baseline — the
@@ -990,7 +990,7 @@ be deleted are exactly the ones holding this corpus).
   which is still measured against the Shared library by design.
 - **Fixed (2026-10-02, P1b item 4): the eval-only corpora are out of Shared.**
   The 7 AW-2000 documents and the new counterfactual corpus are now
-  `visibility='private'` collections owned by `evals@veriforge.local`. The
+  `visibility='private'` collections owned by `evals@example.com`. The
   **books stay `visibility='shared'`** — they are the demo library every real
   user sees, and measuring acceptance there is the realistic thing to do; only
   the corpora that exist to be measured move. The P1b prompt's instruction to
@@ -2191,3 +2191,37 @@ the reason and the re-check trigger recorded in the item: **every book added to
 or removed from `seed_gutenberg.py::BOOKS` must re-check it.** The digit form is
 kept alongside the word because the corpus states the number of books nowhere in
 particular; only the product's own count answers it.
+
+## KI-44: The eval account could be created but never signed in
+
+Logged 2026-10-02, from P1b item 4's first live acceptance run. `EVAL_USER_EMAIL`
+was `evals@veriforge.local`, which the loader writes straight into `users` and the
+eval runner imports as a constant — so every test that created the account, owned
+the corpora and asserted the sign-in wiring passed. The address is rejected by the
+product's own `email_validator`: `.local` is a special-use name, as are `.test` and
+`.invalid`, so `POST /auth/login` returned a validation error and the run stopped at
+item one, after the whole isolated stack had been built. Nothing in the fixture path
+goes through the validator, which is why a completely green suite shipped an account
+that cannot authenticate. Now `evals@example.com` (RFC 2606 reserved, passes
+validation), with a test that runs the address through the same validator the login
+route uses. The lesson is the one KI-4 already taught about reported external
+failures: the stack was never external, and the fixture was never the product.
+
+## KI-45: The reviewer's `unsupported` verdict is almost never made by a judgement
+
+Logged 2026-10-02, from P1b item 6's sampling. Across D7's six runs the reviewer
+returned 175 claim verdicts: 162 supported, 5 partial, 7 unsupported, 1 contradicted.
+Six of the seven `unsupported` verdicts are not judgements at all — TRD §10 step 3
+scores a factual claim with **no citation** `unsupported` without a Jev call. So the
+reviewer made exactly one `unsupported` call and one `contradicted` call across 120
+items, and those two are the only rows available to check either verdict against. The
+judge-validation sheet excludes the six uncited claims (they have no passage to read,
+so the owner would be judging how a claim sounds rather than whether the reviewer is
+right) and says in its README that agreement on `unsupported` and `contradicted`
+**cannot be computed from this pool**. The gate's faithfulness formula
+(`supported + 0.5 × partial`) is not affected — the uncited claims score 0 either way
+— but a claim-verdict agreement number over the whole pool would be ~95% agreement
+decided entirely by the supported/partial split, and would look like evidence about
+the reviewer when it is evidence about the corpus. Getting real `unsupported` and
+`contradicted` traffic needs items whose answers assert things the sources do not
+support: the counterfactual set's `forbid` items are built for exactly that.
