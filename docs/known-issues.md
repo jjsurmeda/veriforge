@@ -603,6 +603,40 @@ later run is compared against.
   explained and not reproduced. If it returns, the drain is no longer a
   candidate — look at what else is pending when it stalls, and dump it.
 
+- **2026-10-02, lane 1 (S8): still not reproduced, and the two remaining
+  mechanisms are now ruled out by measurement rather than by argument.** The
+  file passed 8 consecutive runs (~4.5 s each) and `tests/chats/`,
+  `tests/graph/`, `tests/evals/` together (233 tests) with
+  `-o faulthandler_timeout=40`, which dumps every thread's stack if a test
+  exceeds 40 s — no dump, no timeout. Two temporary pytest plugins (since
+  deleted) probed the two things that could actually stall the next test, and
+  both came back empty after every test in the file: `asyncio.all_tasks()`
+  showed no pending task beyond the running one, and a second connection
+  reading `pg_stat_activity` showed no session in a non-idle state and none
+  waiting on a lock, so nothing was holding a row against the next test's
+  `TRUNCATE ... CASCADE`. That is consistent with the drain working and does
+  not explain the original report, which means the trigger is something this
+  machine does not do. No code changed for S8. Next time it stalls, the
+  decisive evidence is `faulthandler_timeout` plus the two probes above, in
+  that order: a stack dump names the await, and the probes say whether it was
+  a task or a lock.
+
+- **Two harness hazards found while doing S8, both of which look like
+  application bugs and are not.** (1) Two `pytest` processes sharing one
+  `TEST_DATABASE_URL` corrupt each other: running `tests/chats` and
+  `tests/runs` at the same time produced
+  `ERROR tests/runs/test_sweep.py::test_sweep_marks_stale_run_failed`, and
+  three consecutive full-suite runs reported 8, 0 and 4 errors purely from
+  overlapping with my own probe runs; the same suite is 593 passed with
+  nothing else touching the database. `conftest.py`'s per-test
+  `TRUNCATE ... CASCADE` makes concurrent sessions against one database
+  unsafe, so a worktree's test database must not be shared — which is what
+  the per-lane `_test_lane1` names are for. (2) The `gitleaks` pre-commit hook
+  rejects a literal assigned to a name containing `key` or `secret` once it
+  passes its entropy floor, even in a test fixture: an HS256 id_token fixture
+  needed `_HMAC_SECRET = "aaaa" * 8` before the commit went through. Neither
+  is a code defect, and neither is fixed here.
+
 - **Not the cause of the red `ci` (2026-10-01, D3 item 1).** The `ci` run
   that was red on `main` (`36723227681`) failed
   `test_chats_runs.py` three times and
