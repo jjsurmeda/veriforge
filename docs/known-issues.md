@@ -1767,3 +1767,16 @@ highest-probability pair, published only above the existing
 appeared in no latency figure. `citation_ids_left`/`right` now carry
 `chunk_id`s of the two disagreeing passages, where before they carried
 document ids cut at the midpoint.
+
+## KI-39: The web-chunk sweep's return value undercounts what it deleted
+
+Logged 2026-10-02, found while scheduling the sweep (P6).
+`retrieval/web.py`'s `sweep_expired_web_chunks` returns
+`len(pages) + orphaned_chunk_rowcount`. The chunks that belong to an expired
+`web_pages` row are deleted by the per-page `delete(Chunk)` statement and are
+never counted, so a sweep that removes 6 rows by that path reports 2. Nothing
+read the return value until P6 put it in an hourly log line, where an operator
+comparing it against table counts will see a mismatch. Not fixed here: it is a
+reporting nit in code this item did not otherwise touch, and the test asserts
+the weaker true contract (rows gone, count non-zero) with the reason recorded.
+The fix would be to accumulate the rowcount of the per-page deletes.
