@@ -1,7 +1,7 @@
 # Local task entry points. Apps run in Docker Compose; the scripts talk to the
 # same Postgres through DATABASE_URL in .env.
 
-.PHONY: seed-models seed-books seed-admin smoke acceptance eval-gate-local
+.PHONY: seed-models seed-books seed-admin seed-eval-user smoke acceptance eval-gate-local
 
 seed-models:
 	cd apps/api && .venv/bin/python scripts/seed_models.py
@@ -13,6 +13,12 @@ seed-books:
 # ADMIN_PASSWORD in .env; idempotent, so it is also the password reset.
 seed-admin:
 	cd apps/api && .venv/bin/python scripts/seed_admin.py
+
+# The fixed eval account `make acceptance` signs in as, which owns the eval-only
+# corpora (KI-24). Needs EVAL_USER_PASSWORD in .env; idempotent. Assigns the
+# seeded internal-eval plan once, here, rather than on every run (KI-20).
+seed-eval-user:
+	cd apps/api && .venv/bin/python scripts/seed_eval_user.py
 
 smoke:
 	cd apps/api && .venv/bin/python scripts/smoke_chat.py

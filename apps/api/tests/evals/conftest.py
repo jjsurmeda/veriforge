@@ -1,4 +1,4 @@
-"""Isolation for the eval-gate tests.
+"""Isolation for the eval-gate tests, plus eval-corpus ownership fixtures.
 
 `evals.gate` records every run's summary to `.data/evals/summary-*.json` so a
 baseline can later be written from the mean of N runs (A8). A test that drives
@@ -9,12 +9,15 @@ committed baseline without anyone noticing. So the recording directory is
 redirected for every test in this package, whether or not the test asks for it.
 """
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from db.models import User
 from evals import baseline
+from tests.retrieval.conftest import make_user
 
 
 @pytest.fixture(autouse=True)
@@ -30,3 +33,21 @@ def recorded_summaries_go_to_tmp(
     out = tmp_path / "summaries"
     monkeypatch.setattr(baseline, "SUMMARY_DIR", out)
     yield out
+
+
+@pytest.fixture
+async def user_a(db: AsyncSession) -> User:
+    return await make_user(db, "corpus-a@test.dev")
+
+
+@pytest.fixture
+async def user_b(db: AsyncSession) -> User:
+    return await make_user(db, "corpus-b@test.dev")
+
+
+@pytest.fixture
+def user_factory(db: AsyncSession) -> Callable[..., object]:
+    async def make(email: str) -> User:
+        return await make_user(db, email)
+
+    return make

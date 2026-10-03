@@ -23,11 +23,13 @@ import json
 import statistics
 import sys
 from collections.abc import Mapping
+from pathlib import Path
 
 from evals.baseline import AGGREGATE_METRICS
 from evals.baseline import record as record_summary
 from evals.loader import STATE_FILE
 from evals.runner import (
+    BASELINE_CF_GATE_FILE,
     BASELINE_FAST20_FILE,
     BASELINE_FILE,
     aggregate,
@@ -431,93 +433,58 @@ def _judge(
     return failures, notes(baseline, current)
 
 
-async def main() -> None:
+async def _run_subset_gate(
+    *,
+    label: str,
+    subset: str,
+    dataset_name: str,
+    baseline_path: Path,
+    baseline_hint: str,
+) -> bool:
+    """The D8 gate loop, once per subset: one run, retry to a mean of three on
+    failure, the same tolerances either way. `main` calls it for fast20 and
+    for the counterfactual subset alongside it."""
     if not STATE_FILE.exists():
-        print("eval gate skipped: seed corpus not loaded (run evals.loader first)")
-        return
-    baseline_path = BASELINE_FAST20_FILE
-    if not baseline_path.exists():
-        baseline_path = BASELINE_FILE
-    if not baseline_path.exists():
-        print("eval gate skipped: no baseline (run evals.runner --baseline first)")
-        return
-    baseline = json.loads(baseline_path.read_text())
+        print(f"eval gate ({label}) skipped: seed corpus not loaded (run evals.loader first)")
+        return True
+    if not await asyncio.to_thread(baseline_path.exists):
+        print(f"eval gate ({label}) skipped: no baseline ({baseline_hint})")
+        return True
+    baseline = json.loads(await asyncio.to_thread(baseline_path.read_text))
 
-    # Retry on failure (owner decision, 2026-10-02, D8 item 4). One run is a
-    # single draw from a distribution whose measured spread (0.05625 across
-    # four runs on an unchanged commit, 0.09167 across two machines) is wider
-    # than the gate's own limits, so a single draw fails the gate about as often
-    # as it should and for no other reason. Re-running separates "this run was
-    # unlucky" from "this change made the product worse", which is the only
-    # distinction a merge gate can act on.
-    #
-    # It does that in two distinct ways, and they are not equally strong, so
-    # both are named here rather than left to be discovered:
-    #
-    #   1. Two more draws. A later run that lands inside the tolerance decides
-    #      the merge, so one unlucky draw no longer fails it. This is the
-    #      benefit that matters, and it applies to every metric.
-    #   2. The mean, when no single run passed. Averaging can only cross a
-    #      threshold that the individual runs sit either side of — so this
-    #      rescues the *item counts* (one run at 5 of 8, two at 7 of 8, mean
-    #      6.33, no item "flipped by two") and not the faithfulness drop: if
-    #      all three runs are below `base - 0.06` then their mean is below it
-    #      too, so the mean never rescues a faithfulness failure on its own.
-    #
-    # A first-run pass costs nothing extra: the loop returns immediately, so a
-    # healthy tree still spends exactly one run.
     runs: list[dict[str, float | None]] = []
     verdicts: list[tuple[list[str], list[str]]] = []
     for attempt in range(1, GATE_ATTEMPTS + 1):
-        eval_run, results = await run_eval(subset="fast20", baseline=False)
+        eval_run, results = await run_eval(subset=subset, baseline=False, dataset_name=dataset_name)
         current = aggregate(results)
-        # Every run records its own summary (A8), so a baseline is the mean of
-        # summaries already on disk rather than whichever run happened to write
-        # it. D6 wrote a baseline from one run four times and had to revert it
-        # when the fourth broke the spread the first three had hidden.
-        #
-        # `models` is NESTED under its key, not spliced with `**`: unpacking
-        # `models_on_record()` flattens the two roles onto the top level and
-        # writes a summary no writer can read. The first five live runs recorded
-        # exactly that, and `mean_baseline` refused all five — caught on the
-        # first attempt to write the baseline, not by a test, which is why the
-        # recording test now asserts the shape the writer reads rather than the
-        # presence of a number. The recorded path is printed so the CI log says
-        # where the number came from.
         summary_path = record_summary(
             {"eval_run": str(eval_run.id), "models": models_on_record(), **current}
         )
-        print(f"run {attempt}/{GATE_ATTEMPTS} recorded at {summary_path}")
+        print(f"run {attempt}/{GATE_ATTEMPTS} ({label}) recorded at {summary_path}")
         failures, warnings = _judge(baseline, current)
         for warning in warnings:
-            print(f"GATE WARN: run {attempt}: {warning}", file=sys.stderr)
+            print(f"GATE WARN: run {attempt} ({label}): {warning}", file=sys.stderr)
         if failures:
             for failure in failures:
-                print(f"GATE FAIL: run {attempt}: {failure}", file=sys.stderr)
+                print(f"GATE FAIL: run {attempt} ({label}): {failure}", file=sys.stderr)
         runs.append(current)
         verdicts.append((failures, warnings))
         if not failures:
             break
-        # A configuration failure does not become a measurement failure by
-        # running again, and the retry is not the place to spend the money.
         stuck = blockers(baseline, current)
         if stuck:
             print(
-                f"run {attempt} failed on something a re-run cannot change, so no retry: "
-                f"{stuck[0]}",
+                f"run {attempt} ({label}) failed on something a re-run cannot change, "
+                f"so no retry: {stuck[0]}",
                 file=sys.stderr,
             )
             break
         print(
-            f"run {attempt} of {GATE_ATTEMPTS} failed; re-running the fast20 subset to "
+            f"run {attempt} of {GATE_ATTEMPTS} ({label}) failed; re-running to "
             "judge the mean of 3 rather than one draw from a noisy distribution",
             file=sys.stderr,
         )
 
-    # The judged numbers: the run that passed, or — when none passed — the
-    # per-metric mean of all GATE_ATTEMPTS runs. Every run's own numbers are
-    # reported whether or not it passed, so a retry that rescued the merge is
-    # visible as a retry rather than invisible as a pass.
     passed = not verdicts[-1][0]
     judged = runs[-1] if passed else _mean_of(runs)
     judged_failures, judged_warnings = ([], []) if passed else _judge(baseline, judged)
@@ -525,6 +492,7 @@ async def main() -> None:
     print(
         json.dumps(
             {
+                "subset": label,
                 "baseline_file": baseline_path.name,
                 "models": models_on_record(),
                 "baseline": baseline,
@@ -535,19 +503,41 @@ async def main() -> None:
             indent=2,
         )
     )
-    # Warnings from the mean are already printed per-run above; only add the
-    # mean's own, and skip the duplicate when a single run was judged.
     if not passed:
         for warning in judged_warnings:
-            print(f"GATE WARN: mean of {len(runs)}: {warning}", file=sys.stderr)
+            print(f"GATE WARN: mean of {len(runs)} ({label}): {warning}", file=sys.stderr)
         for failure in judged_failures:
-            print(f"GATE FAIL: mean of {len(runs)}: {failure}", file=sys.stderr)
+            print(f"GATE FAIL: mean of {len(runs)} ({label}): {failure}", file=sys.stderr)
     if judged_failures:
-        sys.exit(1)
+        return False
     print(
-        f"eval gate passed on run {len(runs)}"
+        f"eval gate ({label}) passed on run {len(runs)}"
         + ("" if len(runs) == 1 else f" of {GATE_ATTEMPTS}; judged on the mean")
     )
+    return True
+
+
+async def main() -> None:
+    """Both subsets, the D8 verdict each: seed fast20 and the counterfactual
+    gate subset (P1b item 2) run with the same writer, retry and tolerances,
+    and either one failing fails the merge. Books is defined but runs at
+    milestones only, never here."""
+    ok_fast20 = await _run_subset_gate(
+        label="fast20",
+        subset="fast20",
+        dataset_name="seed",
+        baseline_path=BASELINE_FAST20_FILE if BASELINE_FAST20_FILE.exists() else BASELINE_FILE,
+        baseline_hint="run evals.runner --baseline first",
+    )
+    ok_cf = await _run_subset_gate(
+        label="counterfactual",
+        subset="counterfactual_gate",
+        dataset_name="counterfactual",
+        baseline_path=BASELINE_CF_GATE_FILE,
+        baseline_hint="run evals.runner --subset counterfactual_gate --baseline first",
+    )
+    if not (ok_fast20 and ok_cf):
+        sys.exit(1)
 
 
 if __name__ == "__main__":

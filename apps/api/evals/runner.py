@@ -23,7 +23,7 @@ import json
 import logging
 import statistics
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from functools import partial
 from pathlib import Path
 from typing import Any
@@ -43,6 +43,7 @@ from config import get_settings
 from db.ids import uuid7
 from db.models import Chat, EvalDataset, EvalItem, EvalResult, EvalRun, Message, User
 from decisions import DecisionEngine
+from evals.abstention import is_confident_wrong
 from evals.attribution import GenerationRef, attribute, record_generation_ids
 from evals.judge import judge_answer
 from evals.loader import EVAL_USER_EMAIL, STATE_FILE
@@ -58,6 +59,10 @@ logger = logging.getLogger(__name__)
 SEED_DIR = Path(__file__).resolve().parents[3] / "evals" / "seed"
 BASELINE_FILE = SEED_DIR / "baseline.json"
 BASELINE_FAST20_FILE = SEED_DIR / "baseline_fast20.json"
+# The counterfactual gate subset baseline (P1b item 2 wiring).
+BASELINE_CF_GATE_FILE = (
+    Path(__file__).resolve().parents[3] / "evals" / "counterfactual" / "baseline_gate.json"
+)
 # Both roles are gpt-4o-mini because that is what the product runs today, not
 # because it is the better model: `model_roles` has gpt-4o-mini in every LLM
 # role with claude-haiku-4.5 only as the generator's and planner's *fallback*.
@@ -74,6 +79,12 @@ CONTEXT_WINDOW = 128_000
 # connection budget; db/session.py's server defaults (5+10) are sized for a
 # web process, not a batch job. ponytail: one item at a time — raise this and
 # give the pool matching headroom if a run ever needs to overlap items.
+# PRD §5's floor for the minimum-claim-support row: "≥ 0.6 on ≥ 95% of
+# answers". The share is reported by `aggregate`; this is only the line one
+# answer is measured against, and it lives here so the row's two numbers
+# cannot be read from two different files.
+MIN_SUPPORT_FLOOR = 0.6
+
 EVAL_POOL_SIZE = 2
 EVAL_MAX_OVERFLOW = 2
 # A ParadeDB backend crash takes every client connection with it and refuses
@@ -128,6 +139,7 @@ async def _run_item(
     eval_run_id: UUID,
     item: EvalItem,
     mode: str = "auto",
+    corpus_collection_ids: Sequence[UUID] = (),
 ) -> tuple[EvalResult, list[GenerationRef]]:
     async with factory() as session, session.begin():
         chat = Chat(
@@ -137,7 +149,7 @@ async def _run_item(
         session.add(chat)
         await session.flush()
         chat_id = chat.id
-        scope = await resolve_scope(session, chat)
+        scope = await resolve_scope(session, chat, corpus_collection_ids)
         user_message = Message(
             chat_id=chat_id, role="user", content=item.question, status="complete"
         )
@@ -243,6 +255,11 @@ async def _run_item(
     # the two mechanisms separate). Abstentions assert nothing: 1.0.
     faithfulness: float | None = None
     citation_precision: float | None = None
+    # PRD §5's "minimum claim support ≥ 0.6 on ≥ 95% of answers". The
+    # reviewer's weakest *factual* claim, not the mean: the gate exists to
+    # catch the one claim nothing in the sources supports, and a mean over
+    # five claims is exactly what hides it.
+    min_support: float | None = None
     # The claims and their verdicts, kept per item. Faithfulness is a mean over
     # them, so when it moves between two runs the mean alone cannot say which
     # claim moved or why — a different answer, a different extraction, the same
@@ -279,6 +296,7 @@ async def _run_item(
         if review.scores is not None:
             faithfulness = review.scores.faithfulness
             citation_precision = review.scores.citation_precision
+            min_support = review.scores.min_support
         claim_detail = [
             {
                 "id": verified.claim.claim_id,
@@ -295,6 +313,12 @@ async def _run_item(
     else:
         faithfulness = 1.0
         citation_precision = 1.0
+        # An abstention asserts nothing, so its claims all score 1.0 — the
+        # reviewer does the same (graph/review.py::score_review returns
+        # min_support 1.0 when there are no factual claims). It is set here so
+        # the column is never `null` for a result the harness measured, which
+        # would otherwise be indistinguishable from a review that never ran.
+        min_support = 1.0
     scores = await judge_answer(
         question=item.question,
         reference_answer=item.reference_answer,
@@ -308,6 +332,7 @@ async def _run_item(
         answer=answer,
         faithfulness=faithfulness,
         citation_precision=citation_precision,
+        min_support=min_support,
         context_precision=scores.context_precision if scores else None,
         context_recall=scores.context_recall if scores else None,
         abstained=abstained,
@@ -323,15 +348,41 @@ async def _run_item(
 
 
 async def run_eval(
-    *, subset: str | None, baseline: bool, mode: str = "auto", category: str | None = None
+    *,
+    subset: str | None,
+    baseline: bool,
+    mode: str = "auto",
+    category: str | None = None,
+    dataset_name: str = "seed",
 ) -> tuple[EvalRun, list[tuple[EvalItem, EvalResult]]]:
     if not STATE_FILE.exists():
         raise SystemExit("run `uv run python -m evals.loader` first")
-    if not json.loads(STATE_FILE.read_text()).get("corpus_collection_id"):
+    state = json.loads(STATE_FILE.read_text())
+    if not state.get("corpus_collection_id"):
         raise SystemExit("seed corpus missing: run `uv run python -m evals.loader` first")
-    payload = json.loads((SEED_DIR / "items.json").read_text(encoding="utf-8"))
-    fast20 = set(payload.get("fast20_ids", []))
-    seed_ids = _seed_ids(payload)
+
+    # KI-24: both eval corpora are private collections owned by the eval user,
+    # so neither is in a chat's default scope and both have to be handed to
+    # `resolve_scope` by id. `build_scope` still checks ownership in SQL, so a
+    # wrong id here retrieves nothing rather than leaking.
+    corpus_ids: list[UUID] = []
+    for key in ("corpus_collection_id", "counterfactual_collection_id"):
+        raw = state.get(key)
+        if raw:
+            corpus_ids.append(UUID(raw))
+
+    if subset == "counterfactual_gate":
+        dataset_name = "counterfactual"
+    if dataset_name == "seed":
+        payload = json.loads((SEED_DIR / "items.json").read_text(encoding="utf-8"))
+        fast20 = set(payload.get("fast20_ids", []))
+        seed_ids = _seed_ids(payload)
+    else:
+        from evals.loader import COUNTERFACTUAL_ITEMS
+
+        payload = json.loads(COUNTERFACTUAL_ITEMS.read_text(encoding="utf-8"))
+        fast20 = set()
+        seed_ids = _seed_ids(payload)
 
     factory = _eval_factory()
     async with factory() as session, session.begin():
@@ -339,7 +390,7 @@ async def run_eval(
             await session.execute(select(User).where(User.email == EVAL_USER_EMAIL))
         ).scalar_one()
         dataset = (
-            await session.execute(select(EvalDataset).where(EvalDataset.name == "seed"))
+            await session.execute(select(EvalDataset).where(EvalDataset.name == dataset_name))
         ).scalar_one()
         items = (
             (
@@ -354,6 +405,9 @@ async def run_eval(
         )
         if subset == "fast20":
             items = [i for i in items if seed_ids.get(i.question) in fast20]
+        elif subset == "counterfactual_gate":
+            subset_ids = set(item_ids_for_gate_subset(payload, "counterfactual"))
+            items = [i for i in items if seed_ids.get(i.question) in subset_ids]
         if category is not None:
             items = [i for i in items if i.category == category]
         eval_run = EvalRun(dataset_id=dataset.id, mode=mode, is_baseline=baseline)
@@ -376,6 +430,7 @@ async def run_eval(
                     eval_run_id=eval_run_id,
                     item=item,
                     mode=mode,
+                    corpus_collection_ids=corpus_ids,
                 ),
                 what=seed_ids.get(item.question, str(item.id)),
             )
@@ -463,9 +518,78 @@ def models_on_record() -> dict[str, str]:
 
 
 def _seed_ids(payload: dict[str, object]) -> dict[str, str]:
+    """id → question lookup keyed on the question, across both set shapes.
+
+    The seed set spells its items `question`; the counterfactual set spells
+    them `turns` (the acceptance shape). Keying on one of them would make the
+    report label every counterfactual item by its raw turn text.
+    """
     rows = payload["items"]
     assert isinstance(rows, list)
-    return {str(row["question"]): str(row["id"]) for row in rows}
+    out: dict[str, str] = {}
+    for row in rows:
+        assert isinstance(row, dict)
+        question = row.get("question")
+        if question is None:
+            turns = row.get("turns")
+            assert isinstance(turns, list) and turns
+            question = turns[-1]
+        out[str(question)] = str(row["id"])
+    return out
+
+
+CORPUS_ANSWER_STATES = frozenset({"abstained", "completed", "failed"})
+
+
+def aggregate_by_corpus(
+    results: list[tuple[EvalItem, EvalResult]],
+) -> dict[str, dict[str, float | None]]:
+    """The same rollup, once per corpus (PRD §5, TRD §15).
+
+    Per-corpus is not a nicety: the four acceptance corpora are different
+    kinds of text (novels, manuals, a counterfactual bundle, an OKF set) and a
+    run-wide mean of their faithfulness is a number that describes none of
+    them. This is what makes "faithfulness ≥ 0.90 **per corpus**" measurable.
+
+    The whole-run summary is deliberately NOT folded in here, and the two are
+    not expected to agree on any single figure — an item set split four ways
+    has four different denominators. Callers that need the run-level number
+    call `aggregate`; callers that need a corpus call this.
+    """
+    grouped: dict[str, list[tuple[EvalItem, EvalResult]]] = {}
+    for item, result in results:
+        grouped.setdefault(corpus_key(item), []).append((item, result))
+    return {corpus: aggregate(rows) for corpus, rows in sorted(grouped.items())}
+
+
+def item_ids_for_gate_subset(payload: dict[str, object], corpus: str) -> list[str]:
+    """The ~10-item stratified subset for one corpus, as ids.
+
+    Read from the set file's `gate_subsets`, not from the database: the subset
+    is a property of the *set*, it is chosen by hand for stratification, and
+    reading it back out of whatever the loader happened to load would make
+    the gate depend on load order. An unset corpus is an error rather than an
+    empty list, because "no subset" and "a subset of nothing" must not look
+    the same to whatever wires this into the gate in P1b Phase 2.
+    """
+    subsets = payload.get("gate_subsets")
+    if not isinstance(subsets, dict):
+        raise SystemExit(f"{corpus!r} has no gate_subsets in the set file")
+    ids = subsets.get(corpus)
+    if not isinstance(ids, list) or not ids:
+        raise SystemExit(f"gate_subsets[{corpus!r}] is empty in the set file")
+    return [str(item_id) for item_id in ids]
+
+
+def corpus_key(item: EvalItem) -> str:
+    """The corpus an item belongs to, as a summary key.
+
+    Items that predate the `corpus` column report under `unassigned` rather
+    than being folded into a real corpus. A guessed corpus would make a
+    per-corpus number mean something other than what it says, which is the
+    failure mode the whole per-corpus split exists to prevent.
+    """
+    return item.corpus or "unassigned"
 
 
 def aggregate(results: list[tuple[EvalItem, EvalResult]]) -> dict[str, float | None]:
@@ -520,13 +644,57 @@ def aggregate(results: list[tuple[EvalItem, EvalResult]]) -> dict[str, float | N
         for _, r in scored
         if r.stage_ms and r.stage_ms.get("generations_unattributed")
     ]
+    # PRD §5's three remaining rows, each defined over the run rather than
+    # over a mean, because each is a rate of *events* and the event is the
+    # thing being counted.
+    # Only ANSWERS carry a minimum claim support: an abstention asserts
+    # nothing, so it has no weakest claim and is not part of the share. It
+    # scores 1.0 in the column for uniformity with faithfulness, and counting
+    # that 1.0 here would pad the share with items that were never answered.
+    support_eligible = [(_, r) for _, r in scored if not r.abstained and r.min_support is not None]
+    supports = [float(value) for _, r in support_eligible if (value := r.min_support) is not None]
+    min_support_share = (
+        sum(1 for value in supports if value >= MIN_SUPPORT_FLOOR) / len(supports)
+        if supports
+        else None
+    )
+    # "False abstention" counts answerable items that abstained. An abstention
+    # is never wrong on a should-abstain item, so the two rates cannot stand in
+    # for each other (TRD §15, on answer rate).
+    false_abstentions = sum(1 for _, r in answerable if r.abstained)
+    false_abstention_rate = false_abstentions / len(answerable) if answerable else None
+    # "Confident wrong answer" (PRD §5): a reply to a should-abstain item that
+    # ASSERTS an answer rather than saying the sources lack it. A prose "not
+    # in the sources" reply with citations is an unclean decline and is counted
+    # as such below — it is not a confident wrong answer, and conflating the
+    # two would report a decline as the failure the row exists to catch.
+    confident_wrong = sum(
+        1
+        for _, r in abstain_items
+        if is_confident_wrong(abstained=bool(r.abstained), answer=r.answer, citation_count=0)
+    )
+    clean_declines = sum(1 for _, r in abstain_items if r.abstained)
+    unclean_declines = len(abstain_items) - clean_declines
     return {
         "faithfulness": faithfulness,
         "context_recall": context_recall,
+        # PRD §5: "minimum claim support ≥ 0.6 on ≥ 95% of answers". A share
+        # of the answers that were *measured*, not of every item — an item
+        # whose review never ran has no support figure to count, and counting
+        # it as a failure would make a run of unanswered items look like a
+        # grounding regression. The denominator travels with the share.
+        "min_support_share": min_support_share,
+        "answers_with_min_support": float(len(supports)),
+        "answers_total": float(len(support_eligible)),
         "abstention_accuracy": abstention_accuracy,
         "answer_rate": answer_rate,
+        "false_abstention_rate": false_abstention_rate,
+        "confident_wrong_answers": float(confident_wrong),
         "should_abstain_correct": should_abstain_correct,
         "answerable_answered": answerable_answered,
+        "clean_declines": float(clean_declines),
+        "unclean_declines": float(unclean_declines),
+        "should_abstain_item_runs": float(len(abstain_items)),
         # The denominators for the two counts above. Recorded so the gate can
         # check that it is comparing the same item set on both sides: "7 of 8"
         # and "7 of 6" are both `7`, and only the second is a regression.
@@ -546,14 +714,25 @@ def aggregate(results: list[tuple[EvalItem, EvalResult]]) -> dict[str, float | N
 
 async def main() -> None:
     parser = argparse.ArgumentParser(description="Veriforge eval runner")
-    parser.add_argument("--subset", choices=["fast20"], default=None)
+    parser.add_argument("--subset", choices=["fast20", "counterfactual_gate"], default=None)
     parser.add_argument("--baseline", action="store_true")
     parser.add_argument("--mode", choices=["auto", "deep"], default="auto")
     parser.add_argument("--category", default=None)
+    parser.add_argument(
+        "--dataset",
+        choices=["seed", "counterfactual"],
+        default="seed",
+        help="which dataset to run. 'counterfactual' is the P1b item-2 set, whose "
+        "corpus states deliberately altered facts.",
+    )
     args = parser.parse_args()
 
     eval_run, results = await run_eval(
-        subset=args.subset, baseline=args.baseline, mode=args.mode, category=args.category
+        subset=args.subset,
+        baseline=args.baseline,
+        mode=args.mode,
+        category=args.category,
+        dataset_name=args.dataset,
     )
     summary = aggregate(results)
     models = models_on_record()
@@ -561,19 +740,25 @@ async def main() -> None:
     if args.baseline:
         # `models` rides along in the baseline so evals.gate can refuse a
         # comparison against a run that used different models.
-        BASELINE_FILE.write_text(json.dumps({"models": models, **summary}, indent=2) + "\n")
-        print(f"baseline written to {BASELINE_FILE}")
-        # The gate runs the fast20 subset; comparing it against a full-50
-        # baseline fails on sampling noise (abstention is ~6 Bernoulli
-        # trials in the subset). Store a like-for-like subset baseline too.
-        fast20 = set(json.loads((SEED_DIR / "items.json").read_text()).get("fast20_ids", []))
-        seed_ids = _seed_ids(json.loads((SEED_DIR / "items.json").read_text()))
-        subset = [(i, r) for i, r in results if seed_ids.get(i.question) in fast20]
-        subset_summary = aggregate(subset)
-        BASELINE_FAST20_FILE.write_text(
-            json.dumps({"models": models, **subset_summary}, indent=2) + "\n"
-        )
-        print(f"fast20 baseline written to {BASELINE_FAST20_FILE}")
+        if args.subset == "counterfactual_gate":
+            BASELINE_CF_GATE_FILE.write_text(
+                json.dumps({"models": models, **summary}, indent=2) + "\n"
+            )
+            print(f"counterfactual gate baseline written to {BASELINE_CF_GATE_FILE}")
+        else:
+            BASELINE_FILE.write_text(json.dumps({"models": models, **summary}, indent=2) + "\n")
+            print(f"baseline written to {BASELINE_FILE}")
+            # The gate runs the fast20 subset; comparing it against a full-50
+            # baseline fails on sampling noise (abstention is ~6 Bernoulli
+            # trials in the subset). Store a like-for-like subset baseline too.
+            fast20 = set(json.loads((SEED_DIR / "items.json").read_text()).get("fast20_ids", []))
+            seed_ids = _seed_ids(json.loads((SEED_DIR / "items.json").read_text()))
+            subset_rows = [(i, r) for i, r in results if seed_ids.get(i.question) in fast20]
+            subset_summary = aggregate(subset_rows)
+            BASELINE_FAST20_FILE.write_text(
+                json.dumps({"models": models, **subset_summary}, indent=2) + "\n"
+            )
+            print(f"fast20 baseline written to {BASELINE_FAST20_FILE}")
 
 
 if __name__ == "__main__":

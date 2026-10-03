@@ -5,7 +5,7 @@ collection ids. This is the only place that decides which documents a chat
 can see, so every rule about who is in scope lives here.
 """
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from uuid import UUID
 
 from sqlalchemy import and_, or_, select
@@ -19,12 +19,22 @@ from db.models import Chat, Collection, Document
 SEARCHABLE_STATUSES = ("ready",)
 
 
-async def resolve_scope(session: AsyncSession, chat: Chat) -> list[UUID]:
+async def resolve_scope(
+    session: AsyncSession, chat: Chat, extra_collection_ids: Sequence[UUID] = ()
+) -> list[UUID]:
     """The chat's own container plus every shared container (ADR-002 addendum).
 
     A private `library` container is never in scope: with no UI it would be an
     invisible source quietly changing answers. `chats.include_library` stays in
     the schema but is no longer read.
+
+    `extra_collection_ids` is the one caller-side exception, and it exists for
+    KI-24: the eval corpora are private collections owned by the eval user, so
+    only a caller that already knows their ids can reach them — the eval runner,
+    which loaded them. The HTTP chat path never passes it, which is what keeps
+    the ADR-002 rule intact for real users. `build_scope` re-checks ownership in
+    SQL for every id handed in here (`owner_id = scope_user OR visibility =
+    'shared'`, ANDed with the collection-id list), so a wrong id widens nothing.
     """
     rows = await session.execute(
         select(Collection.id).where(
@@ -34,12 +44,14 @@ async def resolve_scope(session: AsyncSession, chat: Chat) -> list[UUID]:
             )
         )
     )
-    return list(rows.scalars())
+    ids = list(rows.scalars())
+    for extra in extra_collection_ids:
+        if extra not in ids:
+            ids.append(extra)
+    return ids
 
 
-async def list_scope_documents(
-    session: AsyncSession, collection_ids: list[UUID]
-) -> list[Document]:
+async def list_scope_documents(session: AsyncSession, collection_ids: list[UUID]) -> list[Document]:
     """The searchable documents in an already-resolved scope.
 
     Takes collection ids rather than a Chat so it cannot be handed a scope

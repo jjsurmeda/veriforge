@@ -82,6 +82,14 @@ def run(
         "answerable_answered": answerable_answered,
         "should_abstain_total": 8.0,
         "answerable_total": 12.0,
+        "min_support_share": 0.95,
+        "answers_with_min_support": 12.0,
+        "answers_total": 12.0,
+        "false_abstention_rate": 0.0,
+        "confident_wrong_answers": 0.0,
+        "clean_declines": 7.0,
+        "unclean_declines": 1.0,
+        "should_abstain_item_runs": 8.0,
         "p50_latency_ms": 8856.8,
         "p50_our_overhead_ms": p50_our_overhead_ms,
         "overhead_items_attributed": 20.0,
@@ -187,6 +195,10 @@ def gate(
         # baseline off disk; neither exists on a test machine.
         monkeypatch.setattr(gate_module, "STATE_FILE", Path(__file__))
         monkeypatch.setattr(gate_module, "BASELINE_FAST20_FILE", baseline_file)
+        # Only the fast20 gate runs against the scripted queue: with no cf
+        # baseline in the tree, `main()` skips the counterfactual gate rather
+        # than drawing from the same scripted budget of runs.
+        monkeypatch.setattr(gate_module, "BASELINE_CF_GATE_FILE", tmp_path / "no_cf_baseline.json")
 
         out, err = io.StringIO(), io.StringIO()
         with redirect_stdout(out), redirect_stderr(err):

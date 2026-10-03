@@ -33,12 +33,20 @@ class Sleeper:
 
 
 class _FakeResponse:
+    def __init__(self, payload: dict[str, Any], status_code: int = 200) -> None:
+        self._payload = payload
+        self.status_code = status_code
+
     def json(self) -> dict[str, Any]:
-        return {"id": "chat-1"}
+        return self._payload
+
+    @property
+    def text(self) -> str:
+        return json.dumps(self._payload)
 
 
 class _FakeAsyncClient:
-    """Same surface run() touches: async context manager plus POST /chats."""
+    """Same surface run() touches: async context manager, login, POST /chats."""
 
     def __init__(self, **_kwargs: Any) -> None:
         pass
@@ -49,8 +57,10 @@ class _FakeAsyncClient:
     async def __aexit__(self, *_exc: Any) -> bool:
         return False
 
-    async def post(self, _url: str, **_kwargs: Any) -> _FakeResponse:
-        return _FakeResponse()
+    async def post(self, url: str, **_kwargs: Any) -> _FakeResponse:
+        if url == "/auth/login":
+            return _FakeResponse({"access_token": "token"})
+        return _FakeResponse({"id": "chat-1"})
 
 
 def _smalltalk_item(item_id: str) -> dict[str, Any]:
@@ -95,10 +105,7 @@ def paced_run(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> PacedRun:
     set_file = tmp_path / "books.json"
     set_file.write_text(json.dumps({"items": items}))
 
-    async def sign_up(_client: Any) -> str:
-        return "smoke@example.com"
-
-    async def sign_in(_client: Any, _email: str) -> str:
+    async def sign_in(_client: Any, _email: str, _password: str) -> str:
         return "token"
 
     async def run_turn(_client: Any, _token: str, _chat_id: str, turn: str) -> dict[str, Any]:
@@ -106,17 +113,15 @@ def paced_run(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> PacedRun:
         item = next(i for i in items if i["turns"] == [turn])
         return _result_for(item)
 
-    # The plan assignment is D4 item 1 and has its own tests
-    # (test_acceptance_plan.py); pacing is not where it belongs.
-    async def assign_eval_plan(_client: Any, _email: str) -> str:
-        return "internal-eval"
+    # The eval-user sign-in is KI-24 and has its own tests
+    # (test_acceptance_eval_user.py); pacing is not where it belongs.
+    async def eval_sign_in(_client: Any) -> tuple[str, str]:
+        return "evals@example.com", "EvalUser!234"
 
-    monkeypatch.setattr(acceptance, "assign_eval_plan", assign_eval_plan)
+    monkeypatch.setattr(acceptance, "eval_sign_in", eval_sign_in)
 
     monkeypatch.setattr(acceptance, "SET_FILE", set_file)
     monkeypatch.setattr(acceptance, "OUT_DIR", tmp_path / "out")
-    monkeypatch.setattr(acceptance.smoke_chat, "sign_up", sign_up)
-    monkeypatch.setattr(acceptance.smoke_chat, "sign_in", sign_in)
     monkeypatch.setattr(acceptance.smoke_chat, "run_turn", run_turn)
     monkeypatch.setattr(
         acceptance, "httpx", SimpleNamespace(AsyncClient=_FakeAsyncClient, Timeout=httpx.Timeout)

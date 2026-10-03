@@ -942,7 +942,7 @@ Logged 2026-09-30, measured twice this round (the KI-20 key cap, and the
 Logged 2026-09-30, from the item-2 cleanup (the accounts that must never
 be deleted are exactly the ones holding this corpus).
 
-- **What:** the 7 eval-corpus documents owned by `evals@veriforge.local`
+- **What:** the 7 eval-corpus documents owned by `evals@example.com`
   — `faq.md`, `field_service_note.md`, `manual.md`, `returns.md`,
   `spec_sheet.md`, `warranty_2025.md`, `warranty_legacy.md` — live in a
   `visibility='shared'` collection, so `build_scope`'s
@@ -969,7 +969,7 @@ be deleted are exactly the ones holding this corpus).
   > being user-visible product content, and `outside-general` behaving as
   > described — is untouched.
 - **Fix:** before any AWS slice, decide the eval corpus's home. Cheapest
-  honest option: keep it owned by `evals@veriforge.local` but make its
+  honest option: keep it owned by `evals@example.com` but make its
   collection `visibility='private'`, and have the eval runner create its
   own signed-in user that includes it explicitly (the eval set already
   signs up a throwaway user per run). Then re-baseline — the
@@ -988,6 +988,46 @@ be deleted are exactly the ones holding this corpus).
   against a fresh ephemeral database, the way `ci.yml` does, so a local
   baseline is measured on the corpus CI loads. Books belong to acceptance,
   which is still measured against the Shared library by design.
+- **Fixed (2026-10-02, P1b item 4): the eval-only corpora are out of Shared.**
+  The 7 AW-2000 documents and the new counterfactual corpus are now
+  `visibility='private'` collections owned by `evals@example.com`. The
+  **books stay `visibility='shared'`** — they are the demo library every real
+  user sees, and measuring acceptance there is the realistic thing to do; only
+  the corpora that exist to be measured move. The P1b prompt's instruction to
+  move "the books used by acceptance" as well is **withdrawn**: following it
+  would have emptied the demo library that acceptance exists to exercise.
+
+  A private collection is in scope only for its owner, so **acceptance signs in
+  as that account** instead of calling `sign_up()` per run. Credential is
+  `EVAL_USER_EMAIL` / `EVAL_USER_PASSWORD` (`.env`, next to `ADMIN_*`;
+  `make seed-eval-user` creates the account and assigns the `internal-eval`
+  plan once, which replaces the per-run admin-API assignment of D4 item 1 —
+  with a persistent user that would be 48 mutations of one row). **Only the
+  identity persists: every run still creates a fresh chat per item.** No third
+  `collectionvisibility` value and no grant table; the general solution is not
+  needed by anything else yet.
+
+  One implementation note worth the record, because the premise "build_scope
+  already grants access via `col.owner_id`" is true but not sufficient on its
+  own: `build_scope` ANDs `d.collection_id = ANY(:scope_collections)` with the
+  ownership clause, and `chats/scope.py::resolve_scope` never returned a
+  private `library` collection — by design, since ADR-002 keeps them out of
+  every chat's scope. `resolve_scope` now takes optional
+  `extra_collection_ids`; only the eval runner passes it (it loaded the
+  corpora, so it knows the ids) and the HTTP chat path never does, which is
+  what keeps ADR-002 intact for real users.
+
+  **Not re-baselined, deliberately.** This changes acceptance's scope, so
+  `not_in_sources` results will move; Phase 1 forbids re-baselining and the
+  D8 gate owns `baseline_*.json`. Recorded here so Phase 2 re-measures rather
+  than comparing a pre-move number against a post-move run.
+
+  Ownership tests (`tests/evals/test_eval_corpus_ownership.py`, real SQL):
+  a normal user's retrieval never returns an eval-corpus chunk *even when the
+  collection id is handed to `resolve_scope` deliberately*; the eval user's
+  own does; and a private library still drops out of a chat's default scope.
+  The middle test is the one that would break first if the move regressed — it
+  is what makes the runners able to see the corpus at all.
 
 ## KI-26: `outside-study-in-scarlet` answers at 0.12 sufficient, above the 0.05 floor
 
@@ -2122,3 +2162,171 @@ was unanswerable before that, which is the point of the change.
 
 **Consequence for `fix/eval-baseline`: none.** Rule A applied, the branch's
 baseline is unchanged, and the gate passed all three CI runs.
+## KI-46: The label audit could not see a single number in any corpus
+
+Logged 2026-10-02, from P1b item 2. `scripts/audit_labels.py` tokenised with
+`[^\W\d_]+`, which matches letters but **not digits**, so every figure in every
+corpus was invisible to it: `passages_containing("512")` returned zero hits in
+a document whose Eiffel Tower is 512 m tall. The token filter then dropped
+anything under two characters, so a second independent reason no number could
+ever be a token. Together they meant `answer_not_in_corpus` fired on **every**
+item whose answer is a figure — which is most of a specification, and all of
+the new counterfactual set: 49 of 93 items flagged, every one of them a false
+positive. The corpus was fine; the instrument reading it was blind to the thing
+it was most needed to check. Numbers are now tokens (`_WORD_OR_DIGIT`, scanned
+in one pass with the words so a phrase like `1 640` matches in order), and the
+counterfactual set's 93 items audit with zero `answer_not_in_corpus`. The same
+class as KI-36, one level up: a check that is stricter than the corpus rejects
+a correct answer, and here it rejected a correct *corpus*.
+
+## KI-47: `library-count` had been asserting a count the demo library stopped having
+
+Logged 2026-10-02, from P1b item 3's label audit. The acceptance item
+`library-count` ("how many documents are in my sources?") carried `mention:
+["5", "five"]` from when the Shared library held five Gutenberg books. Round 2
+of the corpus (KI-12) widened it to eleven and the label was never updated, so
+the item demanded a figure no correct answer could produce — and, like KI-36,
+would have kept failing after any corpus growth. Now `["11", "eleven"]`, with
+the reason and the re-check trigger recorded in the item: **every book added to
+or removed from `seed_gutenberg.py::BOOKS` must re-check it.** The digit form is
+kept alongside the word because the corpus states the number of books nowhere in
+particular; only the product's own count answers it.
+
+## KI-48: The eval account could be created but never signed in
+
+Logged 2026-10-02, from P1b item 4's first live acceptance run. `EVAL_USER_EMAIL`
+was `evals@veriforge.local`, which the loader writes straight into `users` and the
+eval runner imports as a constant — so every test that created the account, owned
+the corpora and asserted the sign-in wiring passed. The address is rejected by the
+product's own `email_validator`: `.local` is a special-use name, as are `.test` and
+`.invalid`, so `POST /auth/login` returned a validation error and the run stopped at
+item one, after the whole isolated stack had been built. Nothing in the fixture path
+goes through the validator, which is why a completely green suite shipped an account
+that cannot authenticate. Now `evals@example.com` (RFC 2606 reserved, passes
+validation), with a test that runs the address through the same validator the login
+route uses. The lesson is the one KI-4 already taught about reported external
+failures: the stack was never external, and the fixture was never the product.
+
+## KI-49: The reviewer's `unsupported` verdict is almost never made by a judgement
+
+Logged 2026-10-02, from P1b item 6's sampling. Across D7's six runs the reviewer
+returned 175 claim verdicts: 162 supported, 5 partial, 7 unsupported, 1 contradicted.
+Six of the seven `unsupported` verdicts are not judgements at all — TRD §10 step 3
+scores a factual claim with **no citation** `unsupported` without a Jev call. So the
+reviewer made exactly one `unsupported` call and one `contradicted` call across 120
+items, and those two are the only rows available to check either verdict against. The
+judge-validation sheet excludes the six uncited claims (they have no passage to read,
+so the owner would be judging how a claim sounds rather than whether the reviewer is
+right) and says in its README that agreement on `unsupported` and `contradicted`
+**cannot be computed from this pool**. The gate's faithfulness formula
+(`supported + 0.5 × partial`) is not affected — the uncited claims score 0 either way
+— but a claim-verdict agreement number over the whole pool would be ~95% agreement
+decided entirely by the supported/partial split, and would look like evidence about
+the reviewer when it is evidence about the corpus. Getting real `unsupported` and
+`contradicted` traffic needs items whose answers assert things the sources do not
+support: the counterfactual set's `forbid` items are built for exactly that.
+
+## KI-50: A 408 from the generations endpoint killed every attribution pass
+
+Logged 2026-10-03, found while writing the counterfactual baseline. The
+attribution stage looks each generation record up at OpenRouter
+(`evals/attribution.py::_get`), and a 408 from that endpoint was re-raised and
+killed `run_eval` — after all item results existed, leaving an orphaned
+`EvalRun` with results but no attribution or summary. This is what happened on
+three consecutive first-pass baseline runs; the HTTPError branch already
+handled 404 and the URLError branch already handled transport failures, but
+every other HTTP status, including a transient 408 or a 5xx, escaped as fatal.
+Now every non-404 HTTP status records as a miss (`(None, None)`), the same
+class as a transport failure: a broken request path must not be reported as
+missing evidence, but it must not kill a finished eval run either. Caught by
+`test_get_soft_fails_on_a_transient_408` and `test_get_reports_404_as_a_404`.
+
+
+Also 2026-10-03, from the same baseline runs: the remaining half of the
+attribution pipeline was too impatient. A direct one-call probe that night
+showed generation records landing only after ~140 s, on 2026-10-03, while
+every call in the driving runs had already exhausted its 174 s console of
+attempts and been declared unresolved — several minutes each, never landed.
+The window is now 30 x 12 s (348 s). The ample lookup of it is per-id and
+concurrent, so a larger window costs a run nothing unless something is
+genuinely missing.
+## KI-51: The cf gate subset's first five-run spread is 0.0667, not 0.06
+
+Logged 2026-10-03, from the first counterfactual baseline. Both D7 conditions
+held except the faithfulness range: across 5 serial runs the cf gate subset
+measured **1.0 / 0.975 / 1.0 / 0.9333 / 1.0** — mean **0.9817**, spread
+**0.0667**. The one low run put a single item at 0.75 against a baseline of
+1.0 — a 1-item tail outside the measured 0.06 band. Every run was ≥ 0.90,
+10/10 items scored in every run, judge coverage 10/10, overhead attributed
+10/10. The baseline file is written from the mean of those 5 runs with the
+spread recorded. Not retuned: a ~10-item subset with ~0.06 spread means the
+band is the size of one item, and the practical guard stays the 0.90 floor
+plus the three-run retry. Revisit when the generator's temperature or the
+subset's size changes.
+
+## KI-52: The reviewer partially credits claims that mix a true fact with an invented addition
+
+Logged 2026-10-03, from the P1b Phase 2 item-5 seeding: proxy-labeled
+(Opus, blind to the hidden `_` columns) consent rule on `claims.csv`. Of 15
+seeded negatives, the reviewer **caught 11/15**. All four misses are the
+same shape: a true real claim welded to an invented aloneness that the
+cited passage does not support. The reviewer returned `partial` (p = 0.5) on
+all four instead of `unsupported`.
+
+This is the name of a structural bug in the reviewer's labelling pass, not
+*the* metathesis of one claim. Each seeded case here asserts a ≥ 90% support
+number in a way that is not in the cited passage; the reviewer's prompt
+counted the partial supporting substance as a 50 % pass.
+
+P2 input: **atomic claim extraction** before the judgement pass — split a
+multi-clause answer into single assertion units and judge each independently,
+so a true core cannot pull an unsupported bare-addition through the ≥ 0.5
+credit.
+
+Target check: the same item-5 proxy judgment had **35/45 = 77.8 %**
+reviewer/proxy agreement overall — below the 90 % target — and the seeded
+detection number 11/15 (below the 13/15 target) is the same four rows
+masking one pattern, above. The reviewer is currently too generous on
+partial credit when a passage mentions the subject but not the asserted
+numerical modifier.
+
+## KI-53: Absence claims are asserted but never checked, and the reviewer scores them 1.0
+
+Logged 2026-10-03, from the P1b Phase 2 item-6 proxy answers over `answers.csv`
+(Opus, blind to `_` columns): 24/30 `proxy_correct=yes`, 13/30 `proxy_grounded=yes`.
+The 30-row answer sheet was marked scorer faithfulness 1.0 / 0.5 by the
+reviewer on the export rows it owns. Both the scorer numerics and proxy
+claim there are *partially*: an absence-type sentence ("…the sources do
+not provide …") within an otherwise supported answer is awarded semantic
+points as if it were a true bare-answer claim.
+
+What the proxy file flags:
+
+- **6/30 answers** (rows A13, A16, A17, A20, A25, A26) assert that the
+  sources lack something that the passages actually contain, and the
+  reviewer scores those full (or half) sentences 1.0 alongside approved.
+  A row with the same explicitness also sits in *A10* ("false 'no plot
+  details' claim") and *A19* ("'…returning used units' is false: the
+  passage requires the opposite — unused"). So the "absence claim" failure
+  is not a one-off; it is planted FAQ length.
+- **Two answers contain true-but-unstated conclusions** about 5 GHz: they
+  state it as fact without any source supporting it, and the reviewer also
+  scores them 1.0 (A27 and A29, aw-2000-x, no 5 GHz mention in the passage).
+  Same class: an underevidenced assertion rides above a 1.0 score because
+  the passage could partially support something from a neighbouring claim.
+
+P2 inputs (two):
+
+1. **Grounded-answer prompt audit** — `apps/api/prompts/grounded_answer.md`
+   currently encourages "state what the sources do cover, then state
+   plainly which part they do not cover." Under that template the generator
+   may write poetic claims about absences whose falsity is only revealed if
+   someone verifies them. P2 should check or remove the "state what's
+   missing" instruction and require the generator to cite the passage
+   behind the absence claim (negative evidence is still evidence).
+2. **Reviewer verifies absence claims against the passages** — a vague
+   "the sources don't state X" within an answer should be scored
+   `unsupported` (or failed) unless the cited passage directly shows
+   that it does not state X. The claim-verifier should treat any
+   assertion about source-material as the credential to disprove rather
+   than an exemption.

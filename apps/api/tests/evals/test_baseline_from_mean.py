@@ -361,6 +361,7 @@ def test_the_gate_records_its_own_summary(tmp_path: Path) -> None:
     with (
         patch.object(gate, "run_eval", fake_run_eval),
         patch.object(gate, "BASELINE_FAST20_FILE", baseline_path),
+        patch.object(gate, "BASELINE_CF_GATE_FILE", tmp_path / "no_cf_baseline.json"),
         patch.object(gate, "STATE_FILE", state),
         pytest.raises(SystemExit) as exited,
     ):
