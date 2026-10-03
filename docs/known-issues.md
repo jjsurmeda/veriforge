@@ -2289,3 +2289,44 @@ detection number 11/15 (below the 13/15 target) is the same four rows
 masking one pattern, above. The reviewer is currently too generous on
 partial credit when a passage mentions the subject but not the asserted
 numerical modifier.
+
+## KI-53: Absence claims are asserted but never checked, and the reviewer scores them 1.0
+
+Logged 2026-10-03, from the P1b Phase 2 item-6 proxy answers over `answers.csv`
+(Opus, blind to `_` columns): 24/30 `proxy_correct=yes`, 13/30 `proxy_grounded=yes`.
+The 30-row answer sheet was marked scorer faithfulness 1.0 / 0.5 by the
+reviewer on the export rows it owns. Both the scorer numerics and proxy
+claim there are *partially*: an absence-type sentence ("…the sources do
+not provide …") within an otherwise supported answer is awarded semantic
+points as if it were a true bare-answer claim.
+
+What the proxy file flags:
+
+- **6/30 answers** (rows A13, A16, A17, A20, A25, A26) assert that the
+  sources lack something that the passages actually contain, and the
+  reviewer scores those full (or half) sentences 1.0 alongside approved.
+  A row with the same explicitness also sits in *A10* ("false 'no plot
+  details' claim") and *A19* ("'…returning used units' is false: the
+  passage requires the opposite — unused"). So the "absence claim" failure
+  is not a one-off; it is planted FAQ length.
+- **Two answers contain true-but-unstated conclusions** about 5 GHz: they
+  state it as fact without any source supporting it, and the reviewer also
+  scores them 1.0 (A27 and A29, aw-2000-x, no 5 GHz mention in the passage).
+  Same class: an underevidenced assertion rides above a 1.0 score because
+  the passage could partially support something from a neighbouring claim.
+
+P2 inputs (two):
+
+1. **Grounded-answer prompt audit** — `apps/api/prompts/grounded_answer.md`
+   currently encourages "state what the sources do cover, then state
+   plainly which part they do not cover." Under that template the generator
+   may write poetic claims about absences whose falsity is only revealed if
+   someone verifies them. P2 should check or remove the "state what's
+   missing" instruction and require the generator to cite the passage
+   behind the absence claim (negative evidence is still evidence).
+2. **Reviewer verifies absence claims against the passages** — a vague
+   "the sources don't state X" within an answer should be scored
+   `unsupported` (or failed) unless the cited passage directly shows
+   that it does not state X. The claim-verifier should treat any
+   assertion about source-material as the credential to disprove rather
+   than an exemption.
