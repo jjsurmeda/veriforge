@@ -26,7 +26,7 @@ from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from config import get_settings
@@ -61,7 +61,7 @@ from runtime import (
     set_runtime_settings,
 )
 from schemas.chats import RunFilters
-from schemas.decisions import Answer
+from schemas.decisions import Answer, Noul
 from schemas.events import (
     AnswerDelta,
     AnswerHold,
@@ -381,6 +381,39 @@ async def _publish_review(
         await bus.publish(run_id, Suggestions(run_id=str(run_id), questions=suggestions))
 
 
+def _prose_decline_question(question: str, reply: str) -> Noul:
+    """P2a item 3: does the reply itself say the sources cannot answer?
+
+    Yes only for a whole-question decline (the `says_not_in_sources` shape in
+    `evals/abstention.py`); no for a partial answer that states what is
+    missing (TR-4 allows that) and for chitchat or library replies.
+    """
+    return Noul(
+        prompt=(
+            "Does the following reply decline to answer the question because "
+            "the sources do not contain the answer? Answer yes ONLY if the "
+            "reply as a whole says the sources cannot answer the question and "
+            "gives no substantive answer to it. Answer no if the reply gives "
+            "a partial or full answer and merely notes which part the sources "
+            "do not cover, or if the reply is small talk, a list of documents, "
+            "or otherwise not a source-grounded answer.\n\n"
+            f"[question]\n{question}\n\n[reply]\n{reply[:6000]}"
+        )
+    )
+
+
+async def _drop_citations(
+    session_factory: async_sessionmaker[AsyncSession], message_id: UUID
+) -> None:
+    """P2a item 3 (KI-25 shape): a prose decline is recorded as an
+    abstention, and an abstention carries no citations."""
+
+    async def work(session: AsyncSession) -> None:
+        await session.execute(delete(Citation).where(Citation.message_id == message_id))
+
+    await _with_session(session_factory, work)
+
+
 def start_run(
     *,
     bus: PostgresRunBus,
@@ -468,6 +501,7 @@ async def _finish_answer(
     instant_title: str | None,
     chitchat: bool = False,
     revert_title: bool = False,
+    mode: str = "auto",
 ) -> None:
     """Shared tail for every mode: review phase (skipped for abstentions —
     the fixed template has no claims to verify), event order per delivery
@@ -479,16 +513,39 @@ async def _finish_answer(
     would let a caller that sets one and not the other silently run the
     reviewer and reach a live model. The title is reverted for small talk
     only, so that is its own argument.
+
+    `mode` exists for P2a item 3 only: the prose-decline Noul runs in auto
+    mode, where the three broad-question declines were observed.
     """
     final_text = text
     review: ReviewResult | None = None
     suggestions: list[str] = []
     guard: OutputGuardResult | None = None
     blocked = False
+    prose_declined = False
     # A direct reply skips the reviewer (no claims, no citations) but is NOT
     # an abstention — its message status is complete (batch A item 3).
     if not abstained and not chitchat:
-        final_text, review, suggestions, guard = await _compute_review(
+        # P2a item 3: a reply that says the sources cannot answer becomes an
+        # abstention. The Noul rides alongside the review, so it adds no
+        # latency post-delivery; a failure classifies as "not declined" —
+        # the reply is already on the way, and a classification error must
+        # not fail the run.
+        decline_task: asyncio.Task[dict[str, Answer] | None] | None = None
+        if mode == "auto":
+
+            async def _safe_decline() -> dict[str, Answer] | None:
+                try:
+                    return await engine.decide(
+                        state={"run_id": str(run_id), "kind": "prose_decline"},
+                        questions={"prose_decline": _prose_decline_question(question, text)},
+                    )
+                except Exception:
+                    logger.exception("prose-decline Noul failed; keeping the answer as-is")
+                    return None
+
+            decline_task = asyncio.create_task(_safe_decline())
+        review_coro = _compute_review(
             bus=bus,
             session_factory=session_factory,
             engine=engine,
@@ -501,13 +558,31 @@ async def _finish_answer(
             litellm_model=litellm_model,
             small_model=small_model,
         )
+        if decline_task is None:
+            final_text, review, suggestions, guard = await review_coro
+        else:
+            (final_text, review, suggestions, guard), decline_answers = await asyncio.gather(
+                review_coro, decline_task
+            )
+            if decline_answers is not None:
+                decline_answer = decline_answers["prose_decline"]
+                prose_declined = float(decline_answer.value) >= threshold(
+                    "prose_decline", decline_answer.engine
+                )
         blocked = guard is not None and guard.blocked
         if plan == "hold":
             await bus.publish(run_id, AnswerDelta(run_id=str(run_id), text=final_text))
-        await _publish_review(bus, run_id, review=review, suggestions=suggestions, blocked=blocked)
+        # A prose decline is an abstention: the reply text still lands (above
+        # for hold plans), but an abstention shows no claim chips.
+        if not prose_declined:
+            await _publish_review(
+                bus, run_id, review=review, suggestions=suggestions, blocked=blocked
+            )
         # plan == "stream" + blocked: the answer already streamed; the
         # blocked verdict replaces the persisted content, which is what a
         # reload shows (TRD §11 "output toxicity (block)").
+    if prose_declined:
+        await _drop_citations(session_factory, message_id)
 
     async def refine_title(session: AsyncSession) -> None:
         await refine_chat_title(
@@ -533,6 +608,10 @@ async def _finish_answer(
         credits = context.credits
     latency = {**latency_ms, "generate": generate_ms}
     scores = review.scores if review is not None else None
+    # P2a item 3: an abstention carries no review scores, whatever the
+    # parallel review computed.
+    if prose_declined:
+        scores = None
     await bus.publish(
         run_id,
         Metrics(
@@ -560,10 +639,13 @@ async def _finish_answer(
         "revision_diff": review.diff if review is not None else None,
         "suggestions": suggestions,
     }
-    status = "abstained" if abstained else "complete"
+    # P2a item 3: a prose decline ends the run as an abstention too — no
+    # scoring task, no "complete" status.
+    is_abstained = abstained or prose_declined
+    status = "abstained" if is_abstained else "complete"
     scoring_task = (
         None
-        if abstained or chitchat
+        if is_abstained or chitchat
         else asyncio.create_task(
             score_run_async(run_id=run_id, question=question, answer=final_text, contexts=contexts)
         )
@@ -586,7 +668,7 @@ async def _finish_answer(
         RunCompleted(
             run_id=str(run_id),
             message_id=str(message_id),
-            status="abstained" if abstained else "completed",
+            status="abstained" if is_abstained else "completed",
         ),
     )
 
@@ -813,6 +895,7 @@ async def execute_run(
                 plan=plan,
                 chat_id=chat_id,
                 instant_title=instant_title,
+                mode=mode,
             )
             return
 
@@ -903,6 +986,7 @@ async def execute_run(
                 plan=plan,
                 chat_id=chat_id,
                 instant_title=instant_title,
+                mode=mode,
             )
             return
 
@@ -979,6 +1063,7 @@ async def execute_run(
             plan="stream",
             chat_id=chat_id,
             instant_title=instant_title,
+            mode=mode,
         )
 
     except asyncio.CancelledError:

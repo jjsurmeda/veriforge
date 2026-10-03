@@ -63,6 +63,13 @@ _DEFAULTS: dict[str, dict[Engine, float]] = {
     # live smoke showed Jev "sufficient" at p=0.57 killed by the gate.
     # Aligned with choice_min_confidence (the generic pick floor).
     "controller_sufficient": {"jev": 0.50, "fallback": 0.50},
+    # P2a item 3: a reply that says the sources cannot answer (the
+    # `says_not_in_sources` shape) is recorded as an abstention
+    # post-delivery. 0.70 is the generic 0.50 pick floor plus a deliberate
+    # margin: a false flip strips the citations from a real answer, while
+    # partial answers that state what is missing (TR-4) answer "no" and
+    # never reach the bar.
+    "prose_decline": {"jev": 0.70, "fallback": 0.70},
 }
 
 
@@ -77,6 +84,7 @@ DISPLAY_THRESHOLDS: dict[str, str] = {
     "controller": "controller_sufficient",
     "output_toxicity": "output_toxicity_block",
     "output_secrets": "guard_pii_warn",
+    "prose_decline": "prose_decline",
 }
 
 
