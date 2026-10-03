@@ -195,6 +195,10 @@ def gate(
         # baseline off disk; neither exists on a test machine.
         monkeypatch.setattr(gate_module, "STATE_FILE", Path(__file__))
         monkeypatch.setattr(gate_module, "BASELINE_FAST20_FILE", baseline_file)
+        # Only the fast20 gate runs against the scripted queue: with no cf
+        # baseline in the tree, `main()` skips the counterfactual gate rather
+        # than drawing from the same scripted budget of runs.
+        monkeypatch.setattr(gate_module, "BASELINE_CF_GATE_FILE", tmp_path / "no_cf_baseline.json")
 
         out, err = io.StringIO(), io.StringIO()
         with redirect_stdout(out), redirect_stderr(err):

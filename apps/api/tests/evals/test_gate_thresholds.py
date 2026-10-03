@@ -239,6 +239,9 @@ def test_the_warning_is_printed_and_the_gate_still_exits_zero(
 
     monkeypatch.setattr(gate, "run_eval", fake_run_eval)
     monkeypatch.setattr(gate, "BASELINE_FAST20_FILE", baseline_path)
+    # Only fast20 runs against the scripted queue: with no cf baseline in the
+    # tree, `main()` skips the counterfactual gate rather than drawing from it.
+    monkeypatch.setattr(gate, "BASELINE_CF_GATE_FILE", tmp_path / "no_cf_baseline.json")
     monkeypatch.setattr(gate, "STATE_FILE", state)
     asyncio.run(gate.main())
     captured = capsys.readouterr()
@@ -381,6 +384,9 @@ def test_the_gate_exits_non_zero_on_a_totals_mismatch(
 
     monkeypatch.setattr(gate, "run_eval", fake_run_eval)
     monkeypatch.setattr(gate, "BASELINE_FAST20_FILE", baseline_path)
+    # Only fast20 runs against the scripted queue: with no cf baseline in the
+    # tree, `main()` skips the counterfactual gate rather than drawing from it.
+    monkeypatch.setattr(gate, "BASELINE_CF_GATE_FILE", tmp_path / "no_cf_baseline.json")
     monkeypatch.setattr(gate, "STATE_FILE", state)
 
     with pytest.raises(SystemExit) as exited:
