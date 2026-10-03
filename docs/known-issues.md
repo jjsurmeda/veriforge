@@ -1949,12 +1949,21 @@ evidence gates.
     does not name; **do not** rely on it alone
   - the bake-off (PRD plan P2) shows how much a stronger generator removes by
     itself
-- **Still open (data):** the dev databases `veriforge` and `veriforge_p1b` each
-  still hold 4 Shared copies of the AW-2000 documents (`manual.md`,
-  `spec_sheet.md`, `warranty_2025.md`, `faq.md`, owner `evals@veriforge.local`),
-  next to the private copies. New setups no longer create them (KI-24). Remove
-  them in dev when the owner agrees; it is the reason a real dev user can
-  still be answered from eval documents.
+- **Data cleanup (2026-10-03, owner-approved):** in the dev database `veriforge`
+  the **7** Shared AW-2000 copies (`faq.md`, `field_service_note.md`,
+  `manual.md`, `returns.md`, `spec_sheet.md`, `warranty_2025.md`,
+  `warranty_legacy.md`; an earlier note said 4) were deleted in one
+  transaction after checking that all 7 private copies hold identical
+  content (same `sha256`). Shared now holds only the 11 books. The delete
+  cascaded to those documents' sections and chunks, and set 781 historical
+  eval-chat citations to a null chunk (`ON DELETE SET NULL`); those chats
+  can no longer open their citation targets. The empty shared collection
+  owned by `evals@veriforge.local` remains, harmless.
+- **Left alone:** `veriforge_p1b` (the database of the P1b API stack, now
+  merged) still holds the 7 Shared copies and has **no private copies**;
+  deleting them would leave it without an AW-2000 corpus. Drop the database
+  or reload it with `make seed-eval-user` + the loader when that stack is
+  next needed.
 
 ## KI-55: Corrections to the P1b Phase 2 result
 
