@@ -2263,3 +2263,29 @@ spread recorded. Not retuned: a ~10-item subset with ~0.06 spread means the
 band is the size of one item, and the practical guard stays the 0.90 floor
 plus the three-run retry. Revisit when the generator's temperature or the
 subset's size changes.
+
+## KI-52: The reviewer partially credits claims that mix a true fact with an invented addition
+
+Logged 2026-10-03, from the P1b Phase 2 item-5 seeding: proxy-labeled
+(Opus, blind to the hidden `_` columns) consent rule on `claims.csv`. Of 15
+seeded negatives, the reviewer **caught 11/15**. All four misses are the
+same shape: a true real claim welded to an invented aloneness that the
+cited passage does not support. The reviewer returned `partial` (p = 0.5) on
+all four instead of `unsupported`.
+
+This is the name of a structural bug in the reviewer's labelling pass, not
+*the* metathesis of one claim. Each seeded case here asserts a ≥ 90% support
+number in a way that is not in the cited passage; the reviewer's prompt
+counted the partial supporting substance as a 50 % pass.
+
+P2 input: **atomic claim extraction** before the judgement pass — split a
+multi-clause answer into single assertion units and judge each independently,
+so a true core cannot pull an unsupported bare-addition through the ≥ 0.5
+credit.
+
+Target check: the same item-5 proxy judgment had **35/45 = 77.8 %**
+reviewer/proxy agreement overall — below the 90 % target — and the seeded
+detection number 11/15 (below the 13/15 target) is the same four rows
+masking one pattern, above. The reviewer is currently too generous on
+partial credit when a passage mentions the subject but not the asserted
+numerical modifier.
