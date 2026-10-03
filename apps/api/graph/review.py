@@ -33,6 +33,29 @@ _CHUNK_CAP = 2000
 
 _FENCE_RE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
 _CITATION_RE = re.compile(r"\[(\d{1,2})\]")
+# KI-53: a claim that asserts the sources LACK something ("the sources do
+# not say X", "no mention of X in the sources"). Such a claim is verified
+# the other way round — the passages are the evidence, and any passage that
+# states X contradicts the claim. English phrasings only: the proxy-labelled
+# answer sheet is English, and a multilingual absence regex is a separate
+# piece of work (the reviewer still flags these via the normal verdict when
+# the extractor cites them).
+_ABSENCE_CLAIM_RE = re.compile(
+    r"""
+    (?:
+        (?:the\s+)?(?:sources?|passages?|cited\s+sources?|documents?|texts?|
+                    provided\s+sources?|retrieved\s+sources?)\s+
+        (?:do\s+not|does\s+not|don'?t|did\s+not|didn'?t|fail(?:s)?\s+to|
+            lack(?:s)?|omit(?:s)?)
+      |
+        (?:no|not\s+any|there\s+is\s+no)\s+(?:any\s+)?
+        (?:mention|reference|information|details?|data|guidance)\s+
+        (?:of|about|regarding|for|on|in|covering|concerning|specific\s+to|
+            beyond)
+    )
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
 
 
 @dataclass(frozen=True)
@@ -191,17 +214,59 @@ def _claim_question(claim: ExtractedClaim, contexts: list[ExpandedContext]) -> C
     )
 
 
+def is_absence_claim(claim: ExtractedClaim) -> bool:
+    """Does this claim assert that the sources lack something (KI-53)?"""
+    return bool(_ABSENCE_CLAIM_RE.search(claim.text))
+
+
+def _absence_question(claim: ExtractedClaim, contexts: list[ExpandedContext]) -> Choice:
+    """KI-53: verify an absence claim against ALL the passages, not just the
+    cited ones — the claimed absence is about the whole evidence, and the
+    citation marker on such a sentence is unreliable (the false absences in
+    the P1b sheet all cited the passage they summarised, while the missing
+    fact sat in a different one). The verdict runs the other way round: a
+    passage that states the claimed-missing thing contradicts the claim."""
+    passages = _sources_block(contexts) or "(no sources retrieved)"
+    return Choice(
+        prompt=(
+            "Verify one absence claim against the sources. The claim asserts "
+            "that the sources do NOT say or contain something. Judge ONLY "
+            "that asserted absence: if any source states or contains that "
+            "something, the claim is contradicted. If no source states or "
+            "contains it, the claim is supported. A source that mentions the "
+            "subject while staying silent on the specific thing does not "
+            "contradict the claim.\n\n"
+            f"[Claim]\n{claim.text}\n\n"
+            "[Sources]\n" + passages
+        ),
+        options=VERDICT_OPTIONS,
+        criteria="evidence support",
+    )
+
+
+def _verdict_question(claim: ExtractedClaim, contexts: list[ExpandedContext]) -> Choice:
+    """The claim-verdict question for one claim: the absence question when
+    the claim asserts a source absence (KI-53), the standard support
+    question otherwise. Same call, same options — only the framing and the
+    evidence block change."""
+    if is_absence_claim(claim):
+        return _absence_question(claim, contexts)
+    return _claim_question(claim, contexts)
+
+
 def batch_claims(
-    factual_cited: list[ExtractedClaim], contexts: list[ExpandedContext]
+    to_verify: list[ExtractedClaim], contexts: list[ExpandedContext]
 ) -> list[list[ExtractedClaim]]:
     """Split into batches whose question text fits one Jev call (<28K
     tokens, TRD §10 step 2). A single claim larger than the budget gets
-    its own batch — truncation already caps each chunk."""
+    its own batch — truncation already caps each chunk. Token counts are
+    measured on the question that will actually be sent (KI-53: an
+    absence claim carries every passage, not just the cited ones)."""
     batches: list[list[ExtractedClaim]] = []
     current: list[ExtractedClaim] = []
     current_tokens = 0
-    for claim in factual_cited:
-        tokens = count_tokens(_claim_question(claim, contexts).prompt)
+    for claim in to_verify:
+        tokens = count_tokens(_verdict_question(claim, contexts).prompt)
         if current and current_tokens + tokens > BATCH_TOKEN_BUDGET:
             batches.append(current)
             current, current_tokens = [], 0
@@ -222,19 +287,27 @@ async def verify_claims(
 ) -> tuple[list[VerifiedClaim], list[Answer]]:
     """Uncited factual claims score unsupported with no Jev call (TRD §10
     step 3); cited factual claims go through batched `claim_verdict`
-    Choices. Non-factual claims pass through unscored."""
+    Choices. Non-factual claims pass through unscored.
+
+    KI-53: an absence claim ("the sources do not say X") is the one factual
+    claim that is checked even without a citation — the passages are its
+    evidence, and a false absence is exactly what the citation cannot
+    surface. It rides the same batched `decide` call, so an answer without
+    absence claims makes exactly the calls it always made."""
     verified: list[VerifiedClaim] = []
     answers: list[Answer] = []
     for claim in claims:
         if not claim.is_factual:
             verified.append(VerifiedClaim(claim, "skipped", 0.0, "n/a"))
-        elif not claim.citation_ids:
+        elif not claim.citation_ids and not is_absence_claim(claim):
             verified.append(VerifiedClaim(claim, "unsupported", 0.0, "n/a"))
 
-    factual_cited = [c for c in claims if c.is_factual and c.citation_ids]
-    for batch in batch_claims(factual_cited, contexts):
+    to_verify = [
+        c for c in claims if c.is_factual and (c.citation_ids or is_absence_claim(c))
+    ]
+    for batch in batch_claims(to_verify, contexts):
         questions: dict[str, Question] = {
-            claim.claim_id: _claim_question(claim, contexts) for claim in batch
+            claim.claim_id: _verdict_question(claim, contexts) for claim in batch
         }
         batch_answers = await engine.decide(
             state={"run_id": run_id, "kind": "claim_verdict"}, questions=questions

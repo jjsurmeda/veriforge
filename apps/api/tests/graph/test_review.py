@@ -8,6 +8,9 @@ the revision loop) follow the Standard LangGraph node-test rule: engine
 and `complete_fn` are fakes, no live calls.
 """
 
+import json
+import re
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -20,6 +23,7 @@ from graph.review import (
     _p_for_verdict,
     batch_claims,
     extract_claims,
+    is_absence_claim,
     make_diff,
     parse_claims,
     plan_delivery,
@@ -465,3 +469,276 @@ class TestClaimExtractionTemperature:
 
         extraction = [t for job, t in seen if job == "claim_extraction"]
         assert extraction and set(extraction) == {0}
+
+
+class TestAbsenceClaimDetection:
+    """KI-53: recognise the claim shape "the sources do not say X" so it is
+    verified against the passages instead of passing through unscored."""
+
+    def test_flagged_shapes(self) -> None:
+        flagged = [
+            "The sources do not provide any further details about the sisters' names.",
+            "The sources do not specify which firmware version introduced this feature.",
+            "The sources do not cover the character development in detail.",
+            "No mention of 5 GHz Wi-Fi capability in any of the provided sources.",
+            "There is no mention of a spare battery in the sources.",
+            "The sources do not indicate any additional information about the AW-2000.",
+        ]
+        for text in flagged:
+            assert is_absence_claim(ExtractedClaim("c", text, [], True)), text
+
+    def test_normal_claims_are_not_flagged(self) -> None:
+        normal = [
+            "The AW-2000 battery lasts up to 10 hours on a full charge.",
+            "The warranty does not cover damage from submersion.",
+            "All models operate on 2.4 GHz with AES-256 encryption.",
+            "There are five Bennet sisters as mentioned in the text.",
+            "Firmware version 3.2.1 or later is required for the protocol.",
+        ]
+        for text in normal:
+            assert not is_absence_claim(ExtractedClaim("c", text, [1], True)), text
+
+
+class _CapturingEngine:
+    """decide() that records every question verbatim and scripts verdicts
+    per claim id (default `supported`)."""
+
+    def __init__(self, verdicts: dict[str, str] | None = None) -> None:
+        self.questions: dict[str, str] = {}
+        self.call_count = 0
+        self.verdicts = verdicts or {}
+
+    async def decide(self, *, state, questions):  # type: ignore[no-untyped-def]
+        self.call_count += 1
+        self.questions.update({name: str(question.prompt) for name, question in questions.items()})
+        return {
+            name: Answer(
+                engine="jev",
+                latency_ms=1,
+                value=self.verdicts.get(name, "supported"),
+                probability=0.9,
+                probabilities={"supported": 0.9},
+            )
+            for name in questions
+        }
+
+
+def _two_ctx() -> list[ExpandedContext]:
+    from uuid import uuid4
+
+    chunks = [
+        ScoredChunk(
+            chunk_id=uuid4(),
+            document_id=None,
+            document_name=None,
+            section_id=None,
+            ord=0,
+            page=None,
+            text="The AW-2000 battery lasts ten hours on a full charge.",
+            heading_path=None,
+            source_type="document",
+            vector_score=0.5,
+            bm25_score=0.5,
+            fused_score=0.5,
+        ),
+        ScoredChunk(
+            chunk_id=uuid4(),
+            document_id=None,
+            document_name=None,
+            section_id=None,
+            ord=0,
+            page=None,
+            text="The device ships with a spare battery and a USB-C cable.",
+            heading_path=None,
+            source_type="document",
+            vector_score=0.5,
+            bm25_score=0.5,
+            fused_score=0.5,
+        ),
+    ]
+    return [ExpandedContext(chunk, chunk.text) for chunk in chunks]
+
+
+class TestAbsenceVerification:
+    async def test_absence_claim_rides_the_same_batch_and_sees_all_passages(self) -> None:
+        engine = _CapturingEngine()
+        claims = [
+            ExtractedClaim("c1", "The battery lasts ten hours.", [1], True),
+            # Uncited, like every recorded false absence in the P1b sheet.
+            ExtractedClaim(
+                "c2",
+                "The sources do not state that the device ships with a spare battery.",
+                [],
+                True,
+            ),
+        ]
+        _verified, _ = await verify_claims(
+            engine, run_id="r", claims=claims, contexts=_two_ctx(), citation_count=1
+        )
+        assert engine.call_count == 1
+        assert "Verify one claim against its cited sources" in engine.questions["c1"]
+        assert "Verify one absence claim" in engine.questions["c2"]
+        # The false absence lives in the SECOND passage, not the cited one:
+        # the question must carry every passage to be checkable at all.
+        assert "spare battery" in engine.questions["c2"]
+        assert "lasts ten hours" in engine.questions["c2"]
+
+    async def test_false_absence_is_contradicted_and_lowers_faithfulness(self) -> None:
+        engine = _CapturingEngine(verdicts={"c2": "contradicted"})
+        claims = [
+            ExtractedClaim("c1", "The battery lasts ten hours.", [1], True),
+            ExtractedClaim(
+                "c2",
+                "The sources do not state that the device ships with a spare battery.",
+                [],
+                True,
+            ),
+        ]
+        verified, _ = await verify_claims(
+            engine, run_id="r", claims=claims, contexts=_two_ctx(), citation_count=1
+        )
+        by_id = {v.claim.claim_id: v for v in verified}
+        assert by_id["c2"].verdict == "contradicted"
+        assert by_id["c2"].p_supported == 0.0
+        scores = score_review(verified, citation_count=1)
+        assert scores.faithfulness == pytest.approx(0.5)
+        assert scores.min_support == 0.0
+        assert _needs_revision(verified) is True
+
+    async def test_true_absence_is_supported(self) -> None:
+        engine = _CapturingEngine()
+        claims = [
+            ExtractedClaim("c1", "The battery lasts ten hours.", [1], True),
+            ExtractedClaim(
+                "c2", "The sources do not mention a leather carrying case.", [], True
+            ),
+        ]
+        verified, _ = await verify_claims(
+            engine, run_id="r", claims=claims, contexts=_two_ctx(), citation_count=1
+        )
+        by_id = {v.claim.claim_id: v for v in verified}
+        assert by_id["c2"].verdict == "supported"
+        scores = score_review(verified, citation_count=1)
+        assert scores.faithfulness == pytest.approx(1.0)
+
+    async def test_answer_without_absence_claim_makes_no_extra_call(self) -> None:
+        """The KI-53 routing must be invisible to clean answers: same number
+        of decide calls and the same standard question text as before the
+        fix (one batched question per cited factual claim)."""
+        engine = _CapturingEngine()
+        claims = [
+            ExtractedClaim("c1", "The battery lasts ten hours.", [1], True),
+            ExtractedClaim("c2", "It ships with a USB-C cable.", [2], True),
+        ]
+        verified, _ = await verify_claims(
+            engine, run_id="r", claims=claims, contexts=_two_ctx(), citation_count=2
+        )
+        assert engine.call_count == 1
+        assert set(engine.questions) == {"c1", "c2"}
+        for prompt in engine.questions.values():
+            assert "absence" not in prompt
+            assert prompt.count("[Sources]") == 0
+        assert [v.verdict for v in verified] == ["supported", "supported"]
+
+    async def test_uncited_normal_claim_still_scores_unsupported_without_a_call(self) -> None:
+        engine = _CapturingEngine()
+        claims = [ExtractedClaim("c1", "an uncited fact", [], True)]
+        verified, _ = await verify_claims(
+            engine, run_id="r", claims=claims, contexts=_two_ctx(), citation_count=0
+        )
+        assert engine.call_count == 0
+        assert verified[0].verdict == "unsupported"
+
+    async def test_absence_questions_batch_by_their_own_token_weight(self, monkeypatch):
+        """An absence question carries every passage, so its token count —
+        not the standard claim question's — must drive the batch split."""
+        from graph import review as review_module
+
+        engine = _CapturingEngine()
+        monkeypatch.setattr(review_module, "BATCH_TOKEN_BUDGET", 60)
+        long_passage = "word " * 400
+        from uuid import uuid4
+
+        big = ScoredChunk(
+            chunk_id=uuid4(),
+            document_id=None,
+            document_name=None,
+            section_id=None,
+            ord=0,
+            page=None,
+            text=long_passage,
+            heading_path=None,
+            source_type="document",
+            vector_score=0.5,
+            bm25_score=0.5,
+            fused_score=0.5,
+        )
+        contexts = [
+            ExpandedContext(big, big.text),
+            *_two_ctx(),
+        ]
+        claims = [
+            ExtractedClaim("c1", "The sources do not state anything about the battery.", [], True),
+            ExtractedClaim("c2", "The sources do not mention a warranty.", [], True),
+        ]
+        verified, _ = await verify_claims(
+            engine, run_id="r", claims=claims, contexts=contexts, citation_count=0
+        )
+        # Each absence question exceeds the 60-token budget on its own, so
+        # they cannot share a batch: two calls, one question each.
+        assert engine.call_count == 2
+        assert [v.claim.claim_id for v in verified] == ["c1", "c2"]
+
+
+class TestGroundedAnswerV4Captures:
+    """KI-53, mechanism proof (live capture 2026-10-04, gpt-4o-mini, the
+    exact P1b passages): grounded_answer.md v3 still emits the false
+    absence on at least one flagged row, v4 does not emit an unconditional
+    absence sentence on any single-part row, and the 5 GHz rows may only
+    name the 5 GHz part as the uncovered part — never conclude the product
+    lacks 5 GHz. Captured in scripts/p2a_item1_mechanism.py; the test reads
+    the checked-in fixture, it never calls a live model."""
+
+    _CAPTURES = json.loads(
+        (Path(__file__).resolve().parents[1] / "fixtures" / "p2a_item1_captures.json").read_text()
+    )
+
+    def _sentences(self, text: str) -> list[str]:
+        return [s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if s.strip()]
+
+    def test_v3_capture_still_shows_the_defect(self) -> None:
+        # Row 13: the recorded false absence — the names ARE in the
+        # passages, the v3 answer claims they are not.
+        v3 = self._CAPTURES["acceptance:fact-bennet-sisters"]["v3_answer"]
+        assert any(is_absence_claim(ExtractedClaim("c", s, [], True)) for s in self._sentences(v3))
+
+    def test_v4_single_part_rows_have_no_absence_sentence(self) -> None:
+        single_part = [
+            "acceptance:fact-bennet-sisters",
+            "export:20261002-061544:10",
+            "export:20261002-061544:11",
+            "export:20261002-061544:14",
+            "export:20261002-061544:19",
+            "export:20261002-061544:5",
+        ]
+        for answer_id in single_part:
+            v4 = self._CAPTURES[answer_id]["v4_answer"]
+            offending = [
+                s
+                for s in self._sentences(v4)
+                if is_absence_claim(ExtractedClaim("c", s, [], True))
+            ]
+            assert not offending, f"{answer_id}: v4 answer still carries {offending!r}"
+
+    def test_v4_five_ghz_rows_only_name_the_five_ghz_part(self) -> None:
+        for answer_id in (
+            "export:20261002-061544:8",
+            "export:20261002-062146:12",
+        ):
+            v4 = self._CAPTURES[answer_id]["v4_answer"]
+            for sentence in self._sentences(v4):
+                if is_absence_claim(ExtractedClaim("c", sentence, [], True)):
+                    assert "5 GHz" in sentence, f"{answer_id}: {sentence!r}"
+            # The recorded defect: a conclusion the sources do not state.
+            assert "does not support" not in v4.lower(), v4
+            assert "cannot run" not in v4.lower(), v4

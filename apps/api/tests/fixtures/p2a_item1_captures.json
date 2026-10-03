@@ -1,0 +1,50 @@
+{
+  "acceptance:fact-bennet-sisters": {
+    "row": 13,
+    "question": "How many Bennet sisters are there?",
+    "v3_answer": "There are five Bennet sisters mentioned in the sources. This is confirmed when Elizabeth states, “Yes, my youngest is not sixteen” and refers to having “three younger sisters grown up” [4]. Additionally, the quote “five daughters successively entered the world” implies the total number of sisters as well [1]. The sources do not provide any further details about the individual sisters' characteristics or names.",
+    "v4_answer": "The sources state that there are five Bennet sisters in total [1][2]."
+  },
+  "export:20261002-061544:10": {
+    "row": 16,
+    "question": "How long does the AW-2000 battery last on a full charge?",
+    "v3_answer": "The AW-2000 battery provides up to 10 hours of continuous operation on a full charge [1].",
+    "v4_answer": "The AW-2000 provides up to 10 hours of continuous operation on a full charge [1]."
+  },
+  "export:20261002-061544:11": {
+    "row": 17,
+    "question": "How long does the AW-2000-X take to fully charge?",
+    "v3_answer": "The AW-2000-X takes 1.5 hours to fully charge when using a 30 W USB-C adapter [1].",
+    "v4_answer": "The AW-2000-X takes 1.5 hours to fully charge when using a 30 W USB-C adapter [1]."
+  },
+  "export:20261002-061544:14": {
+    "row": 20,
+    "question": "How long is the warranty on an AW-2000?",
+    "v3_answer": "The warranty on an AW-2000 product family is for 24 months from the date of purchase [1].",
+    "v4_answer": "The warranty on an AW-2000 product family is for 24 months from the date of purchase [1]."
+  },
+  "export:20261002-061544:19": {
+    "row": 25,
+    "question": "How much does the AW-2000 weigh with the mounting bracket?",
+    "v3_answer": "The AW-2000 weighs 250 g with the mounting bracket attached [1].",
+    "v4_answer": "The AW-2000 weighs 250 g with the mounting bracket attached [1]."
+  },
+  "export:20261002-061544:5": {
+    "row": 26,
+    "question": "Which firmware version added the enterprise management protocol requir",
+    "v3_answer": "The sources indicate that firmware version 3.2.1 or later is required for the enterprise management protocol [1]. However, they do not specify which specific firmware version introduced this feature. Thus, the sources do not directly answer the question regarding the exact version that added the enterprise management protocol.",
+    "v4_answer": "The enterprise management protocol requires firmware version 3.2.1 or later to be used [1]."
+  },
+  "export:20261002-061544:8": {
+    "row": 27,
+    "question": "Can the AW-2000-XE run the enterprise management protocol over 5 GHz W",
+    "v3_answer": "The sources indicate that all models, including the AW-2000-XE, operate on 2.4 GHz with AES-256 encryption and require firmware version 3.2.1 or later for the enterprise management protocol [1]. The sources do not cover the capability of running on 5 GHz, thus I cannot provide an answer regarding that part of your question.",
+    "v4_answer": "The sources indicate that all models operate on 2.4 GHz with AES-256 encryption and note that firmware version 3.2.1 or later is required for the enterprise management protocol [1]. However, they do not state whether the AW-2000-XE can run the enterprise management protocol over 5 GHz or not."
+  },
+  "export:20261002-062146:12": {
+    "row": 29,
+    "question": "Can the AW-2000-XE run the enterprise management protocol over 5 GHz W",
+    "v3_answer": "The sources indicate that all models, including the AW-2000-XE, operate on 2.4 GHz with AES-256 encryption and that a firmware version of 3.2.1 or later is required for the enterprise management protocol [1]. However, they do not mention whether the AW-2000-XE can run the enterprise management protocol over 5 GHz, nor do they state anything about 5 GHz capabilities. Therefore, the sources do not answer your question regarding 5 GHz operation.",
+    "v4_answer": "The sources indicate that all models, including the AW-2000-XE, operate on 2.4 GHz with AES-256 encryption and require firmware version 3.2.1 or later for the enterprise management protocol [1]. However, they do not provide any information about the AW-2000-XE running the enterprise management protocol over 5 GHz."
+  }
+}
