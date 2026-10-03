@@ -1906,6 +1906,76 @@ new problems are recorded and moved on, not fixed in passing).
 Until then the copy is directionally right and never wrong about the important
 thing — it names a window and never says "try again".
 
+## KI-54: Facts about one product are answered, with citations, for a different product
+
+Logged 2026-10-03 after P1b's first PRD §5 milestone. **P2 must-fix.** It is a
+confident wrong answer, the worst failure class (PRD v3 §5), and it passes both
+evidence gates.
+
+- **What:** a question names entity A (a Kestrel handset). The retrieved
+  passages are about a similar entity B (the AW-2000 family). The generator
+  writes B's facts as A's, with citations, and nothing downstream objects.
+- **Evidence (both quoted from run files):**
+  - `cf-k9-ingress`, "What ingress protection rating does every Kestrel model
+    carry?": *"The Kestrel enclosure is rated IP54 ... [1]"*, citing the
+    AW-2000 `manual.md`. `sufficient` 0.10. The counterfactual document says
+    something else, so this was the milestone's only grounding miss
+    (57/58, run 1).
+  - `cf-k9-charge`, "How long does a flat-to-full charge take on the Kestrel
+    K9?": *"... 1.5 hours when using a 30 W USB-C adapter [1]"*, citing the
+    AW-2000 `spec_sheet.md`. `sufficient` 0.46.
+    (`.data/acceptance/20261003-085727.json`)
+- **Mechanism (from the code and data, not yet proven by an intervention):**
+  - The relevance gate and the sufficiency judge ask "is this passage relevant
+    to the question's topic?", not "is it about the entity asked about?".
+  - The AW-2000 manuals are in the Shared library, so they are in scope for
+    every question.
+  - The generator (gpt-4o-mini) carries the product name over from the
+    question into the answer.
+  - The reviewer verifies the claim against the cited passage, which does
+    state the value, so it scores the claim supported. It never asks whether
+    the passage is about the named entity.
+- **Why the corpus cannot be blamed:** the counterfactual corpus is private and
+  was in scope for the eval-runner run, which still produced one miss. In dev,
+  the HTTP path is worse: the Kestrel documents are not in scope at all, so
+  the only available passages belong to the wrong product.
+- **Fix direction (P2b, to be measured):**
+  - an entity-match check in the answerability decision (a per-passage Noul:
+    "is this passage about <named entity>?", batched with the other Jev
+    checks)
+  - add entity-mismatch items to the eval sets: a question about entity A
+    while only entity B's documents are in scope must decline
+  - a generator instruction not to attribute a fact to an entity the passage
+    does not name; **do not** rely on it alone
+  - the bake-off (PRD plan P2) shows how much a stronger generator removes by
+    itself
+- **Still open (data):** the dev databases `veriforge` and `veriforge_p1b` each
+  still hold 4 Shared copies of the AW-2000 documents (`manual.md`,
+  `spec_sheet.md`, `warranty_2025.md`, `faq.md`, owner `evals@veriforge.local`),
+  next to the private copies. New setups no longer create them (KI-24). Remove
+  them in dev when the owner agrees; it is the reason a real dev user can
+  still be answered from eval documents.
+
+## KI-55: Corrections to the P1b Phase 2 result
+
+Logged 2026-10-03. The result file
+(`docs/prompts/2026-10-03-2120-p1b-phase2_result.md`, git-ignored) has four
+errors. This entry carries the corrected figures; the squash commit `9d8294f`
+quotes them. Recomputed from `.data/acceptance/20261003-053218.json` and
+`...-082340.json`:
+
+| Row | Result file said | Recomputed |
+| --- | --- | --- |
+| Books false abstention | 0 broad answer rows abstained | **1 of 30 answerable (3.3%)**, `broad-alice`, both runs |
+| Books confident wrong | "none are absence-class" | **1 of 20 should-abstain (5 per 100)**, `outside-holmes-boston`, both runs; target is <= 1 per 100 |
+| Seed confident wrong | "at boundary" | **1 of 20 (5 per 100)**, `abstain-10`; same target miss |
+| Counterfactual grounding, run 1 | "57/58 followed" | correct, and the miss is KI-54 |
+
+So the confident-wrong row misses on **books and seed**, and sits at 0-1 on
+counterfactual. Minimum claim support (79-81% seed, 93-95% counterfactual
+against >= 95%) is a miss everywhere, and it cannot be met while a single
+partial claim scores 0.5 (KI-52, TRD section 10).
+
 ## Reference: provider findings, 2026-09-26
 These aren't defects, but check them before changing models or providers.
 
