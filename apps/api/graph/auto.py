@@ -407,6 +407,75 @@ def _sufficient_question(question: str, top_contexts: list[ExpandedContext]) -> 
     )
 
 
+# KI-54 (P2a item 4): the entity the question names, so a passage about a
+# DIFFERENT product cannot answer it. Model codes (AW-2000, R-7, K9) and
+# capitalised names ("Kestrel", "Ridgeline", "Montbriv"), conservatively:
+# a wrong extraction costs one extra "no" the other passages can still
+# offset, and an empty list skips the check — which never abstains.
+_MODEL_CODE_RE = re.compile(r"\b[A-Z]{1,4}-?\d{1,4}(?:[-/]\d{1,4})*\b")
+_CAPITALISED_NAME_RE = re.compile(r"\b[A-Z][a-z]+(?:\s+(?:[A-Z][a-z]+|the))*(?=\b)")
+_ENTITY_STOP = {
+    "Compare", "How", "What", "Why", "When", "Where", "Who", "Which", "Does",
+    "Did", "Can", "Could", "Should", "Shall", "May", "Might", "The", "A", "An",
+    "This", "That", "These", "Those", "There", "Here", "It", "I", "You", "We",
+    "They", "He", "She", "My", "Your", "Our", "Their", "In", "On", "At", "For",
+    "With", "From", "About", "Into", "Over", "Under", "Per", "Also", "Please",
+    "Note", "Hi", "Hello", "Thanks", "Thank", "Yes", "No",
+    # FR/DE/ES openers that the ASCII-range regex still matches
+    "Quel", "Quels", "Qui", "Quand", "Comment", "Pourquoi",
+    "Wer", "Was", "Wie", "Wann", "Wo", "Warum", "Welche", "Welcher", "Welches",
+}
+
+
+def named_entities(question: str) -> list[str]:
+    """The entities a question names, conservatively (KI-54).
+
+    Empty means "no named entity — skip the check". A name at the very
+    start of the question is excluded: it may be a sentence opener, and
+    the safe direction is to skip (skipping never abstains), not to guess.
+    ponytail: the capitalised-name regex still misses ALL-CAPS titles and
+    quoted names, and keeps a mid-question sentence opener ("Note: ...").
+    """
+    entities: list[str] = []
+    for match in _MODEL_CODE_RE.finditer(question):
+        entities.append(match.group(0))
+    for match in _CAPITALISED_NAME_RE.finditer(question):
+        entity = match.group(0)
+        if entity.split(" ")[0] in _ENTITY_STOP:
+            continue
+        if match.start() == 0:
+            continue
+        entities.append(entity)
+    return list(dict.fromkeys(entities))
+
+
+def _entity_passage_questions(
+    question: str, entities: list[str], top_contexts: list[ExpandedContext]
+) -> dict[str, Noul]:
+    """KI-54 (P2a item 4): one Noul per top-k passage, "is this passage
+    about the entity the question names?", batched into the existing
+    post-sanitize sufficiency call — no extra round trip. Skipped when the
+    question names no entity or nothing survived to the top-k."""
+    if not entities or not top_contexts:
+        return {}
+    entity_list = " and ".join(f"'{entity}'" for entity in entities)
+    return {
+        f"entity_{index}": Noul(
+            prompt=(
+                f"The question below names the entity or entities {entity_list}. "
+                "Does this passage concern that same entity or entities — the "
+                "same product or model family, the same organisation, or the "
+                "same named place or person? Answer yes only if the passage is "
+                "about the named entity; a passage about a different product, "
+                "even in the same category, is not about it.\n\n"
+                f"[question]\n{question}\n\n"
+                f"[passage]\n{top_contexts[index].chunk.text[:1500]}"
+            )
+        )
+        for index in range(len(top_contexts))
+    }
+
+
 async def _search_one_variant(
     session: AsyncSession,
     variant: str,
@@ -791,6 +860,9 @@ async def prepare_auto_run(
         # gate reads which engine answered from it after the loop's retries.
         reranker = get_reranker(engine, str(params.run_id))
         relevance_ok = True
+        # KI-54: per-passage entity gate; True when the check is skipped
+        # (no named entity) or a passage matched the last iteration.
+        entity_ok = True
         while True:
             reranked = await _step(
                 "rerank",
@@ -866,12 +938,18 @@ async def prepare_auto_run(
                 : int(runtime_value("retrieval.top_k", TOP_CHUNKS_FOR_SUFFICIENT))
             ]
             sufficient_question = _sufficient_question(current_query, top_for_check)
+            # KI-54 (P2a item 4): the per-passage entity Noul rides this
+            # same post-sanitize call (TRD §7.1) — no sequential round trip.
+            # Empty when the question names no entity: the check is skipped.
+            entity_questions = _entity_passage_questions(
+                current_query, named_entities(current_query), top_for_check
+            )
             sufficient_answer = await _step(
                 "sufficient",
                 partial(
                     engine.decide,
                     state={"run_id": str(params.run_id), "kind": "sufficient"},
-                    questions={"sufficient": sufficient_question},
+                    questions={"sufficient": sufficient_question, **entity_questions},
                 ),
             )
             sufficient = sufficient_answer["sufficient"]
@@ -889,8 +967,17 @@ async def prepare_auto_run(
             )
             p_sufficient = float(sufficient.value)
             abstain_threshold = threshold("sufficient_abstain", sufficient.engine)
-            # One bar: both signals must clear, with the same single retry.
-            if p_sufficient >= abstain_threshold and relevance_ok:
+            entity_ok = True
+            if entity_questions:
+                # Every passage in the top-k is about a DIFFERENT entity when
+                # none of the per-passage Nouls clears the floor.
+                entity_threshold = threshold("entity_match", sufficient.engine)
+                entity_ok = any(
+                    float(sufficient_answer[name].value) >= entity_threshold
+                    for name in entity_questions
+                )
+            # One bar: every signal must clear, with the same single retry.
+            if p_sufficient >= abstain_threshold and relevance_ok and entity_ok:
                 break
             if retries_left > 0:
                 retries_left -= 1
@@ -928,7 +1015,7 @@ async def prepare_auto_run(
         # what was found reaches the user as plain text in the abstain message.
         contexts: list[ExpandedContext] = []
 
-        if p_sufficient_final < abstain_threshold or not relevance_ok:
+        if p_sufficient_final < abstain_threshold or not relevance_ok or not entity_ok:
             abstain_event = build_abstain_event(
                 str(params.run_id), kept, offered_actions=["web", "deep"]
             )

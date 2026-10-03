@@ -70,6 +70,13 @@ _DEFAULTS: dict[str, dict[Engine, float]] = {
     # partial answers that state what is missing (TR-4) answer "no" and
     # never reach the bar.
     "prose_decline": {"jev": 0.70, "fallback": 0.70},
+    # P2a item 4 (KI-54): a per-passage Noul asks "is this passage about the
+    # entity the question names?", batched into the post-sanitize
+    # sufficiency call. 0.50 is the generic pick floor: a passage matches
+    # the entity when the judge is at least as likely to say yes as no, and
+    # the run abstains only when NO top-k passage matches. The question
+    # names no entity -> the check is skipped, never an abstention.
+    "entity_match": {"jev": 0.50, "fallback": 0.50},
 }
 
 
@@ -85,6 +92,7 @@ DISPLAY_THRESHOLDS: dict[str, str] = {
     "output_toxicity": "output_toxicity_block",
     "output_secrets": "guard_pii_warn",
     "prose_decline": "prose_decline",
+    "entity": "entity_match",
 }
 
 
@@ -109,6 +117,9 @@ def display_threshold(name: str, engine: Engine) -> float | None:
     threshold_name = DISPLAY_THRESHOLDS.get(name)
     if threshold_name is None and name.startswith("chunk_injection_"):
         threshold_name = "chunk_injection_drop"
+    # P2a item 4: one Noul per passage, named entity_<i>.
+    if threshold_name is None and name.startswith("entity_"):
+        threshold_name = "entity_match"
     if threshold_name is None:
         return None
     try:
