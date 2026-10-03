@@ -573,7 +573,12 @@ class TestAbsenceVerification:
             ),
         ]
         _verified, _ = await verify_claims(
-            engine, run_id="r", claims=claims, contexts=_two_ctx(), citation_count=1
+            engine,
+            run_id="r",
+            claims=claims,
+            contexts=_two_ctx(),
+            citation_count=1,
+            answer="The battery lasts ten hours [1].",
         )
         assert engine.call_count == 1
         assert "Verify one claim against its cited sources" in engine.questions["c1"]
@@ -582,6 +587,65 @@ class TestAbsenceVerification:
         # the question must carry every passage to be checkable at all.
         assert "spare battery" in engine.questions["c2"]
         assert "lasts ten hours" in engine.questions["c2"]
+        # P2a item 1: the answer itself rides along — the hedge's referent.
+        assert "The battery lasts ten hours [1]." in engine.questions["c2"]
+
+    async def test_absence_question_carries_the_answer_it_hedges_against(self) -> None:
+        """P2a item 1, measure rows 17/20 vs 24: absence claims hedge the
+        missing thing ('beyond this time frame', 'other components') and the
+        hedge refers to what the answer already states. The judge can only
+        separate 'nothing more to say about the subject' from 'the sources
+        say more' when it sees the answer, so the question must carry it."""
+        engine = _CapturingEngine()
+        answer_text = "The AW-2000-X charges in 90 minutes on a 30 W adapter [1]."
+        claims = [
+            ExtractedClaim(
+                "c1",
+                "The sources do not provide additional details about charging "
+                "beyond this time frame.",
+                [],
+                True,
+            )
+        ]
+        _verified, _ = await verify_claims(
+            engine,
+            run_id="r",
+            claims=claims,
+            contexts=_two_ctx(),
+            citation_count=1,
+            answer=answer_text,
+        )
+        prompt = engine.questions["c1"]
+        assert answer_text in prompt
+        assert "the answer does not already state" in prompt
+
+    async def test_answer_does_not_reach_standard_claim_questions(self) -> None:
+        engine = _CapturingEngine()
+        claims = [ExtractedClaim("c1", "The battery lasts ten hours.", [1], True)]
+        _verified, _ = await verify_claims(
+            engine,
+            run_id="r",
+            claims=claims,
+            contexts=_two_ctx(),
+            citation_count=1,
+            answer="The battery lasts ten hours [1]. SENTINEL-DO-NOT-LEAK.",
+        )
+        prompt = engine.questions["c1"]
+        assert "SENTINEL-DO-NOT-LEAK" not in prompt
+        assert "Verify one claim against its cited sources" in prompt
+
+    async def test_absence_question_without_answer_keeps_the_legacy_rules(self) -> None:
+        """The item-2 and seeded-claims scripts verify individual claims
+        without the reply; their absence questions keep the original framing
+        (no [Answer] block), so their baselines stay unperturbed."""
+        engine = _CapturingEngine()
+        claims = [ExtractedClaim("c1", "The sources do not mention a warranty.", [], True)]
+        _verified, _ = await verify_claims(
+            engine, run_id="r", claims=claims, contexts=_two_ctx(), citation_count=0
+        )
+        prompt = engine.questions["c1"]
+        assert "[Answer]" not in prompt
+        assert "if any source states or contains that something" in prompt
 
     async def test_false_absence_is_contradicted_and_lowers_faithfulness(self) -> None:
         engine = _CapturingEngine(verdicts={"c2": "contradicted"})
@@ -614,7 +678,12 @@ class TestAbsenceVerification:
             ),
         ]
         verified, _ = await verify_claims(
-            engine, run_id="r", claims=claims, contexts=_two_ctx(), citation_count=1
+            engine,
+            run_id="r",
+            claims=claims,
+            contexts=_two_ctx(),
+            citation_count=1,
+            answer="The battery lasts ten hours [1].",
         )
         by_id = {v.claim.claim_id: v for v in verified}
         assert by_id["c2"].verdict == "supported"

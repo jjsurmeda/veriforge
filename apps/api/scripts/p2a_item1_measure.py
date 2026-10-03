@@ -104,6 +104,7 @@ async def main() -> None:
             claims=claims,
             contexts=contexts,
             citation_count=len(contexts),
+            answer=row["answer"],
         )
         scores = score_review(verified, citation_count=len(contexts))
         grounded_proxy = proxy.get(answer_id, "?")
