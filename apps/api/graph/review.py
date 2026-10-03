@@ -143,9 +143,16 @@ def plan_delivery(
     return "stream"
 
 
+# KI-52: with the v2 extraction prompt's worked example, gpt-4o-mini
+# sometimes echoes the "[JSON claims]" completion marker from the template
+# ahead of the list. That prefix silently parsed to zero claims — an empty
+# extraction scores a perfect 1.0 faithfulness, so the label is stripped.
+_JSON_CLAIMS_LABEL = re.compile(r"^\s*\[JSON claims\]\s*")
+
+
 def parse_claims(response: str) -> list[ExtractedClaim]:
     try:
-        data = json.loads(_strip_fence(response))
+        data = json.loads(_JSON_CLAIMS_LABEL.sub("", _strip_fence(response), count=1))
     except json.JSONDecodeError:
         return []
     if not isinstance(data, list):

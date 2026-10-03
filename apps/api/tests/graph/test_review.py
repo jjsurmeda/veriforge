@@ -170,6 +170,18 @@ class TestParseClaims:
         assert parse_claims('{"claim": "single object"}') == []
         assert parse_claims('[{"no_claim": true}]') == []
 
+    def test_echoed_json_claims_label_does_not_zero_the_extraction(self) -> None:
+        """KI-52: gpt-4o-mini with the v2 prompt sometimes echoes the
+        '[JSON claims]' template marker before the list. That must parse
+        like the bare list — an empty parse would score a perfect
+        faithfulness for an answer the extractor never read."""
+        response = (
+            '[JSON claims]\n[{"claim": "The AW-2000-XP is rated IP68.", '
+            '"citation_ids": [], "is_factual": true}]'
+        )
+        claims = parse_claims(response)
+        assert [claim.text for claim in claims] == ["The AW-2000-XP is rated IP68."]
+
 
 class _RecordingEngine:
     """decide() that answers every question `supported` and records calls."""
@@ -811,3 +823,60 @@ class TestGroundedAnswerV4Captures:
             # The recorded defect: a conclusion the sources do not state.
             assert "does not support" not in v4.lower(), v4
             assert "cannot run" not in v4.lower(), v4
+
+
+class TestClaimExtractionV2Captures:
+    """KI-52, mechanism proof (live capture 2026-10-04, gpt-4o-mini,
+    claim_extraction.md v2): each of the four P1b-miss seeded compound
+    claims extracts >= 2 claims with the invented addition split out as
+    its own claim. Captured in scripts/p2a_item2_capture.py; the test
+    reads the checked-in fixture, it never calls a live model."""
+
+    _CAPTURES = json.loads(
+        (Path(__file__).resolve().parents[1] / "fixtures" / "p2a_item2_captures.json").read_text()
+    )
+
+    def _claims(self, seed_id: str) -> list[str]:
+        return [c["claim"] for c in self._CAPTURES[seed_id]["extracted"]]
+
+    def test_c5_splits_the_invented_comparison(self) -> None:
+        claims = self._claims("20261003-seeded:c5")
+        assert len(claims) >= 2
+        # The true fact and the invented "faster than any competitor" are
+        # separate, checkable claims.
+        assert any("1.5 hours" in c and "competitor" not in c for c in claims)
+        assert any("competitor" in c and "1.5 hours" not in c for c in claims)
+
+    def test_c3_splits_the_invented_spare_battery(self) -> None:
+        claims = self._claims("20261003-seeded:c3")
+        assert len(claims) >= 2
+        assert any("spare battery" in c and "firmware" not in c for c in claims)
+        assert any("firmware" in c and "spare battery" not in c for c in claims)
+
+    def test_c8_splits_the_rating_from_its_interpretation(self) -> None:
+        claims = self._claims("20261003-seeded:c8")
+        assert len(claims) >= 2
+        # "X means Y" is two claims: the rating and the interpretation.
+        assert any("IP67" in c and "certified" not in c for c in claims)
+        assert any("certified" in c and "IP67" not in c for c in claims)
+
+    def test_c2_splits_the_invented_carrying_case(self) -> None:
+        claims = self._claims("20261003-seeded:c2")
+        assert len(claims) >= 2
+        assert any("carrying case" in c and "AES-256" not in c for c in claims)
+        assert any("AES-256" in c and "carrying case" not in c for c in claims)
+
+    def test_captures_stay_atomic_one_fact_per_claim(self) -> None:
+        """Every extracted claim must be a single checkable statement: no
+        claim welds two facts with a coordinating ' and ' or ' which
+        also '. (A split conjunct may itself contain 'faster than' or
+        'ship with' — that is the weld already cut.)"""
+        welds = re.compile(r"(?:^|\s)and\s|which also", re.IGNORECASE)
+        for seed_id in (
+            "20261003-seeded:c5",
+            "20261003-seeded:c3",
+            "20261003-seeded:c8",
+            "20261003-seeded:c2",
+        ):
+            for claim in self._claims(seed_id):
+                assert not welds.search(claim), f"{seed_id}: {claim!r} is not atomic"
