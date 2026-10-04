@@ -85,6 +85,11 @@ class _IngressJev:
                     probability=probabilities[value],
                     probabilities=probabilities,
                 )
+            elif name.startswith("entity_"):
+                # P2a item 4: the per-passage entity Noul. Every fixture
+                # corpus that reaches the check carries passages about the
+                # question's named entity, so the judge says yes.
+                answers[name] = Answer(engine="jev", latency_ms=1, value=0.9, probability=0.9)
             else:
                 answers[name] = Answer(engine="jev", latency_ms=1, value=0.01, probability=0.01)
         return answers
@@ -295,9 +300,7 @@ class _FixedScoreRerank:
     async def rerank(
         self, *, query: str, documents: list[str], top_n: int
     ) -> list[tuple[int, float]]:
-        pairs = [
-            (i, self._scores[doc.split(":")[0]]) for i, doc in enumerate(documents)
-        ]
+        pairs = [(i, self._scores[doc.split(":")[0]]) for i, doc in enumerate(documents)]
         pairs.sort(key=lambda pair: pair[1], reverse=True)
         return pairs[:top_n]
 
@@ -333,9 +336,7 @@ async def test_rerank_candidates_sorts_the_no_entity_share_last() -> None:
         UUID(int=3): "Victor Frankenstein",
         UUID(int=4): "Time Traveller",
     }
-    reranker = _FixedScoreRerank(
-        {"none": 0.01, "victor": 0.94, "traveller": 0.90}
-    )
+    reranker = _FixedScoreRerank({"none": 0.01, "victor": 0.94, "traveller": 0.90})
 
     picked = await _rerank_candidates(
         reranker,
@@ -359,9 +360,7 @@ def test_compare_queries_each_named_entity() -> None:
 
 def test_only_compare_questions_get_per_entity_queries() -> None:
     assert (
-        _entity_queries(
-            "What did Victor Frankenstein and the Time Traveller each build?", "lookup"
-        )
+        _entity_queries("What did Victor Frankenstein and the Time Traveller each build?", "lookup")
         == []
     )
 
@@ -819,11 +818,7 @@ async def test_answerless_but_topical_evidence_abstains(
 
     document = await make_document(
         db,
-        (
-            await db.execute(
-                select(Collection).where(Collection.owner_id == user_a.id)
-            )
-        ).scalar_one(),
+        (await db.execute(select(Collection).where(Collection.owner_id == user_a.id))).scalar_one(),
         "The Adventures of Sherlock Holmes.txt",
     )
     section = await make_section(db, document)
@@ -892,9 +887,7 @@ async def test_answerless_but_topical_evidence_abstains(
             for name in questions:
                 if name.startswith("passage_"):
                     self.relevance_questions += 1
-                    answers[name] = Answer(
-                        engine="jev", latency_ms=1, value=0.28, probability=None
-                    )
+                    answers[name] = Answer(engine="jev", latency_ms=1, value=0.28, probability=None)
             if "sufficient" in answers:
                 answers["sufficient"] = Answer(
                     engine="jev", latency_ms=1, value=0.1, probability=0.1
@@ -943,7 +936,9 @@ class _RelevanceJev(_IngressJev):
                     )
         if "sufficient" in answers:
             answers["sufficient"] = Answer(
-                engine="jev", latency_ms=1, value=self._sufficient_value,
+                engine="jev",
+                latency_ms=1,
+                value=self._sufficient_value,
                 probability=self._sufficient_value,
             )
         return answers
@@ -983,8 +978,18 @@ async def _gate_params(
     await db.commit()
     chunks = [
         ScoredChunk(
-            row.id, document.id, document.name, section.id, row.ord, None,
-            row.text, section.heading_path, "document", 1.0 - i * 0.01, None, 1.0 - i * 0.01,
+            row.id,
+            document.id,
+            document.name,
+            section.id,
+            row.ord,
+            None,
+            row.text,
+            section.heading_path,
+            "document",
+            1.0 - i * 0.01,
+            None,
+            1.0 - i * 0.01,
         )
         for i, row in enumerate(rows)
     ]
@@ -1006,9 +1011,7 @@ async def _gate_run(
     return await prepare_auto_run(
         get_session_factory(),
         params,
-        DecisionEngine(
-            jev=_RelevanceJev("lookup", sufficient, passage_score), mode="jev_only"
-        ),
+        DecisionEngine(jev=_RelevanceJev("lookup", sufficient, passage_score), mode="jev_only"),
     )
 
 
@@ -1022,9 +1025,7 @@ async def _run_gate_check(
     passage_score: float | None,
     reranker_factory: object | None = None,
 ) -> AutoRun:
-    params = await _gate_params(
-        db, user_a, no_llm, monkeypatch, reranker_factory=reranker_factory
-    )
+    params = await _gate_params(db, user_a, no_llm, monkeypatch, reranker_factory=reranker_factory)
     return await _gate_run(params, sufficient=sufficient, passage_score=passage_score)
 
 
@@ -1157,9 +1158,7 @@ async def test_relevance_decision_is_published_to_the_trace(
     run = await prepare_auto_run(
         get_session_factory(),
         params,
-        DecisionEngine(
-            jev=_RelevanceJev("lookup", 0.2, 0.3), mode="jev_only"
-        ),
+        DecisionEngine(jev=_RelevanceJev("lookup", 0.2, 0.3), mode="jev_only"),
     )
 
     relevance = _relevance_decisions(run)
@@ -1313,8 +1312,18 @@ async def test_abstention_persists_no_citations(
     await db.commit()
     candidates = [
         ScoredChunk(
-            row.id, document.id, document.name, section.id, row.ord,
-            None, row.text, section.heading_path, "document", 1.0, None, 1.0,
+            row.id,
+            document.id,
+            document.name,
+            section.id,
+            row.ord,
+            None,
+            row.text,
+            section.heading_path,
+            "document",
+            1.0,
+            None,
+            1.0,
         )
         for row in rows
     ]
@@ -1335,10 +1344,10 @@ async def test_abstention_persists_no_citations(
     assert run.contexts == []
     assert run.abstain_event.found_summary != ""
     persisted = (
-        await db.execute(
-            select(Citation).where(Citation.message_id == assistant_message_id)
-        )
-    ).scalars().all()
+        (await db.execute(select(Citation).where(Citation.message_id == assistant_message_id)))
+        .scalars()
+        .all()
+    )
     assert persisted == []
 
 

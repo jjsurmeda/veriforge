@@ -21,6 +21,24 @@ Conventions are in `docs/conventions/` (agents, testing).
     > 20%)
   - broad-question false declines
 
+## Where we are (2026-10-05, after P2a, branch `p2a/answer-quality`)
+
+P2a (answer quality) landed: no false absence sentences (KI-53),
+one-checkable-fact claim extraction (KI-52), prose decline recorded as an
+abstention, and the entity-match gate (KI-54) — 12/12 clean declines on
+the new entity-mismatch set, 0 confident wrong, D7 5-run baseline
+zero-spread. **Generator decision (P2 input, item-5 bake-off):** the
+control `openai/gpt-4o-mini` **stays** — candidates gemini-3.8-flash and
+claude-haiku-4.5 failed the pre-approved rule's first condition (0
+confident wrong in every arm on every set; grounding tied: cf min support
+1.0, 0/10 forbid hits); both score better proxy30 faithfulness (0.9462 /
+0.9633 vs 0.8993 clean control arm) without a quality axis the control
+misses, gemini TTFT +1.55 s and per-answer cost ≈2.7–3.5× / ≈2.8–3.1×.
+KI-57 (fallback decide cap) fixed. Open for the owner: the 5 GHz
+`abstain-10` label, adopting the entity-mismatch baseline, KI-56
+(injection-bearing chunk swallows the RP-77 fact). Result doc:
+`docs/prompts/2026-10-03-2338-p2a-answer-quality_result.md`.
+
 ## Phases
 
 ```

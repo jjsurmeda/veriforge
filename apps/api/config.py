@@ -111,6 +111,14 @@ class Settings(BaseSettings):
         "claim_extractor": 2048,
         "planner": 1024,
         "async_judge": 1024,
+        # The fallback engine answers the WHOLE batched decide call in one
+        # JSON object. The largest batch is the post-sanitize sufficiency
+        # call with its per-passage entity questions (8-12 Noul answers,
+        # each with reasoning), whose response exceeds the 512 default:
+        # when jev was degraded, every such batch truncated mid-JSON at
+        # the same offset and failed the item (KI-57). 4096 leaves wide
+        # headroom over the largest observed response.
+        "decision_fallback": 4096,
     }
     # OpenRouter reasoning models think by default: seconds of latency, and
     # under a tight cap the reasoning spills into the answer. Only these

@@ -70,6 +70,17 @@ COUNTERFACTUAL_DATASET = "counterfactual"
 # runner summarises per corpus (PRD v3 §5).
 COUNTERFACTUAL_CORPUS_KEY = "counterfactual"
 
+# The entity-mismatch set (P2a item 0, KI-54): items only — its two corpora
+# are the seed and counterfactual corpora above, and each item's
+# `scope_corpus` field says which one is in scope for that item (the runner
+# reads the mapping from the set file, not the database). Items are loaded so
+# the dataset exists in the database the runner runs against; nothing here
+# ingests a corpus, so CI pays nothing for it.
+ENTITY_MISMATCH_ITEMS = (
+    Path(__file__).resolve().parents[3] / "evals" / "entity_mismatch" / "items.json"
+)
+ENTITY_MISMATCH_CORPUS_KEY = "entity_mismatch"
+
 
 async def ensure_eval_user(session: AsyncSession, *, password: str | None = None) -> User:
     """The one account that owns the eval corpora. Created on `free`.
@@ -278,6 +289,13 @@ async def main() -> None:
                 corpus_dir=COUNTERFACTUAL_CORPUS_DIR,
                 tag="eval-counterfactual",
             )
+        entity_mismatch_dataset = None
+        if ENTITY_MISMATCH_ITEMS.exists():
+            entity_mismatch_dataset = await load_items(
+                session,
+                ENTITY_MISMATCH_ITEMS,
+                default_corpus=ENTITY_MISMATCH_CORPUS_KEY,
+            )
     STATE_FILE.write_text(
         json.dumps(
             {
@@ -292,6 +310,8 @@ async def main() -> None:
     print(f"dataset={dataset.id} corpus_collection={collection_id}")
     if cf_dataset is not None:
         print(f"counterfactual_dataset={cf_dataset.name} corpus_collection={cf_collection_id}")
+    if entity_mismatch_dataset is not None:
+        print(f"entity_mismatch_dataset={entity_mismatch_dataset.name}")
 
 
 if __name__ == "__main__":

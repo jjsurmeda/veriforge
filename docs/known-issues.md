@@ -1964,6 +1964,51 @@ evidence gates.
   deleting them would leave it without an AW-2000 corpus. Drop the database
   or reload it with `make seed-eval-user` + the loader when that stack is
   next needed.
+- **Note (2026-10-04, P2a item 4, fixed in `5036b64`):** the entity-match
+  gate. A `named_entities` heuristic plus one Noul per top-k passage
+  ("is this passage about <the entity the question names>?", 1500-char
+  passage cap, questions named `entity_{i}`) batched into the existing
+  post-sanitize `sufficient` decide call (no added sequential call);
+  abstain when sufficient AND relevant AND no passage matches the named
+  entity (`entity_match` threshold 0.50, admin-overridable); skipped — and
+  never abstains — when the question names no entity. Measured on the
+  fixed gates (code @ `5036b64`): the 12-item entity-mismatch set went
+  from 10/12 clean declines + 2 confident wrong (before, code @ `f3a1521`)
+  to **12/12 clean declines, 0 confident wrong**; both P1b
+  confident-wrongs (`cf-k9-charge`, `cf-k9-ingress`) now decline cleanly.
+  The no-answerable-item-starts-abstaining rule holds: fast20 11/12
+  answered (the same items as the P1b baseline), abstention 8/8, 0
+  confident wrong; the counterfactual gate subset 6/6 answered + 4/4
+  clean. D7 baseline question: 5 serial runs of the set give 12/12 in
+  every run, zero spread — the set is stable enough to baseline, and the
+  question goes to the owner, not the gate, in this dispatch. Quoted
+  before/after answers: result doc
+  `docs/prompts/2026-10-03-2338-p2a-answer-quality_result.md` §1.4.
+- **Note (2026-10-05, P2a item 5, generator bake-off complete):** the
+  generator role was baked off — control `openai/gpt-4o-mini` against
+  candidates `google/gemini-3.8-flash` and `anthropic/claude-haiku-4.5`
+  (rewriter/variants/extraction/decisions/judge unchanged, via the
+  `--generator` flag, commit `b3c0f2d`) — on four sets × 2 runs each
+  (proxy30 30, fast20 20, cf gate subset 10, entity-mismatch 12) plus the
+  D7 5-run entity baseline. Pre-approved rule: switch only if a candidate
+  **beats the control on confident wrong answers or grounding, matches it
+  on faithfulness (within 0.02), costs ≤ 3× per answer, and doesn't
+  lengthen TTFT by > 1 s**. Outcome: confident wrong answers 0 in every
+  arm on every set; grounding tied (cf min support 1.0 and 0/10 forbid
+  hits in all arms) → the first condition is unmet for both candidates →
+  **the control stays; the production default is unchanged**. For the
+  record: gemini proxy30 faith 0.9462 / haiku 0.9633 vs the control's
+  clean arm 0.8993 (better, but outside the 0.02 band and not justified by
+  any quality axis the control misses — both candidates still leave the
+  RP-77 injection-01 false abstention, KI-56, and the 5 GHz label question
+  open); TTFT gemini +1.55 s (breach), haiku −0.76 s; per-answer cost on
+  proxy30 gemini ≈2.7–3.5×, haiku ≈2.8–3.1× (control estimate — result
+  doc §2, cost table). Engine mix: every decision in every comparable arm
+  was answered by jev except 2 small batches that fell to the fallback
+  engine and completed. Item 5 also fixed KI-57 (the fallback decide's
+  512-token cap truncated the batched JSON; `d9d15bb`). Full numbers,
+  quoted evidence and per-run SHAs:
+  `docs/prompts/2026-10-03-2338-p2a-answer-quality_result.md` §2.
 
 ## KI-55: Corrections to the P1b Phase 2 result
 
@@ -2369,6 +2414,20 @@ masking one pattern, above. The reviewer is currently too generous on
 partial credit when a passage mentions the subject but not the asserted
 numerical modifier.
 
+- **Note (2026-10-04, P2a item 2, fixed in `7fcb93f`):** atomic claim
+  extraction — `claim_extraction.md` v2 (one checkable fact per claim;
+  compounds split at "and", "which also", "faster than…", "ships with…";
+  a few-shot from the 4 seeded misses) and `parse_claims` now strips the
+  echoed `[JSON claims]` label (before, it silently parsed to zero claims,
+  and an empty extraction scored a perfect 1.0). Measured against the proxy
+  ruler (`claims_proxy.csv`, proxy — not human): seeded negatives 11/15 →
+  **14/15** (target ≥ 13/15; the one residual is c8 — "certified for
+  outdoor use in all weather" now splits from the true IP67 rating and
+  takes the half-credit partial the proxy labels unsupported); real-claim
+  agreement 24/30 → **25/30** (target: no drop below 24/30). All four P1b
+  misses caught. Quoted residuals: result doc
+  `docs/prompts/2026-10-03-2338-p2a-answer-quality_result.md` §1.2.
+
 ## KI-53: Absence claims are asserted but never checked, and the reviewer scores them 1.0
 
 Logged 2026-10-03, from the P1b Phase 2 item-6 proxy answers over `answers.csv`
@@ -2409,3 +2468,87 @@ P2 inputs (two):
    that it does not state X. The claim-verifier should treat any
    assertion about source-material as the credential to disprove rather
    than an exemption.
+
+- **Note (2026-10-04, P2a item 1, fixed in `fa9a403` + `40fd235`):** both
+  P2 inputs landed. (1) `grounded_answer.md` v4 (version header bumped):
+  the "what is not covered" sentence appears only when a named part of the
+  question is unanswered, and then names that part; no generic closing
+  disclaimer; no inference language. (2) The reviewer verifies absence
+  claims against the passages through the existing batched claim-verdict
+  decide call — a passage that states X makes the absence claim
+  `contradicted`; an answer with no absence claim makes no extra call.
+  Live mechanism proof (captured in
+  `tests/fixtures/p2a_item1_captures.json`): on the same 6 P1b inputs,
+  v3 still emitted the false absence on `fact-bennet-sisters` ("The
+  sources do not provide any further details about the individual
+  sisters' characteristics or names" — the names are in passages [6][8]);
+  v4 emitted no unconditional absence sentence on any single-part row.
+  Measured against the proxy ruler (`answers_proxy.csv`, proxy — not
+  human): the 15 scored export rows re-scored by the new reviewer went
+  7/15 → **13/15** agreement (target ≥ 13/15). The two residuals are
+  quoted in the result doc §1.1 — row 18 (the recorded P1b answer itself
+  states "up to 5 devices can be paired", faithfulness 0.5) and row 22
+  (a recorded false absence sentence, faithfulness 0.75): in both the
+  recorded answer carries the error, and the new reviewer now scores it
+  as such.
+
+## KI-56: The only chunk carrying the RP-77 answer embeds an injection block, so the sanitizer drops the answer with it
+
+Logged 2026-10-04, P2a item 4, from a per-item probe (fix, don't analyse —
+one paragraph, not a detour). "What torque should the RP-77 retaining
+screw be tightened to?" false-abstains on fast20 and in the
+counterfactual runs. Root cause: the only chunk carrying the 4 Nm figure
+(`field_service_note.md`) embeds a prompt-injection block; the sanitizer
+scores it `chunk_injection_0` 0.96 ≥ `chunk_injection_drop` 0.70 and drops
+the chunk before the sufficiency judge ever sees it, so the judge scores
+`sufficient` 0.02 and the run declines. Proven pre-existing, not caused by
+the item-4 entity gate: a probe that spied on `DecisionEngine.decide`
+shows the item-4 gate passing (entity values 0.74/0.67) with
+`sufficient: 0.02` → abstain, and the identical probe on pre-item-4 code
+(HEAD `8a5a622` swapped in temporarily) reproduces the same
+`sufficient: 0.02` → abstain. Fix direction for a later dispatch: judge
+sufficiency before the sanitizer drops a flagged chunk, let the generator
+see flagged-but-not-dropped chunks, or re-chunk the corpus so the
+injection block does not swallow the fact. Not fixed in P2a.
+
+## KI-57: The decision fallback's output cap (512) truncates the batched decision JSON, failing the whole item whenever jev degrades
+
+Logged 2026-10-04, P2a item 5 (the generator bake-off), from the control
+runs. During an OpenRouter degradation window (raw
+`Cannot connect to host openrouter.ai:443` errors on ordinary generator
+calls), the batched decide calls failed on the jev endpoint and fell to
+the OpenRouter fallback model; the fallback's decision JSON came back
+truncated (`FallbackError: fallback returned non-JSON: Unterminated
+string` at ~1.7–2.1 K chars in every case) and the item failed. One
+cf-gate run lost 5/10 items, one entity-mismatch run lost 10/12, while
+healthy-window runs of the same sets lost 0/10 and 1/12. The
+entity-mismatch set is the most exposed: its batched post-sanitize decide
+carries 6–8 Noul questions — the largest decision JSON the system asks
+for. Whether the truncation is mid-stream connection loss or the fallback
+model's output cap does not fit the batched decision JSON is not
+distinguishable from the error text; the affected control runs were
+re-run on a healthy network and the bake-off numbers use those re-runs.
+Reliability of the fallback path under degradation (truncate-or-fail,
+and whether a cap check is warranted) is a question for a later
+dispatch — not fixed in P2a.
+
+- **Note (2026-10-05, cause found and fixed, P2a item 5):** re-runs of the
+  affected sets truncated at the **same character offsets** (1859/1901/
+  2044), which rules out mid-stream connection loss and identifies the
+  deterministic cause: the `decision_fallback` role had no entry in
+  `llm_max_tokens`, so the fallback call ran under the 512-token default.
+  The batched decide response (sufficient + relevance + one Noul per
+  top-k passage; 8–12 answers with reasoning) exceeds 512 completion
+  tokens, so whenever jev degraded and the batch fell to the fallback
+  engine, the JSON came back cut mid-string and the item failed —
+  deterministically, on every re-run. Fix: `config.py` gives the
+  `decision_fallback` role its own cap (`decision_fallback: 4096`, wide
+  headroom over the largest observed response). Tests: a 12-question
+  batch round-trips through `FallbackEngine.decide`
+  (`tests/decisions/test_fallback.py`), and the 12-answer fixture
+  response is asserted to exceed the old default cap while fitting the
+  new one; `tests/providers/test_llm_limits.py` asserts the role's cap
+  reaches the provider request (mutation: dropping the entry fails both).
+  The affected control sets are being re-run on the fixed tree; the
+  remaining open question is the degrade-to-fail behaviour itself
+  (a fallback failure still fails the item) — later dispatch.

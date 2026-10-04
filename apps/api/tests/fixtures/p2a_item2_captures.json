@@ -1,0 +1,67 @@
+{
+  "20261003-seeded:c5": {
+    "compound_claim": "The AW-2000-X takes 1.5 hours to fully charge when using a 30 W USB-C adapter, faster than any competitor.",
+    "extracted": [
+      {
+        "claim": "The AW-2000-X takes 1.5 hours to fully charge when using a 30 W USB-C adapter.",
+        "citation_ids": [],
+        "is_factual": true
+      },
+      {
+        "claim": "The AW-2000-X charges faster than any competitor.",
+        "citation_ids": [],
+        "is_factual": true
+      }
+    ]
+  },
+  "20261003-seeded:c3": {
+    "compound_claim": "All models require firmware version 3.2.1 or later for the enterprise management protocol and ship with a spare battery.",
+    "extracted": [
+      {
+        "claim": "All models require firmware version 3.2.1 or later for the enterprise management protocol.",
+        "citation_ids": [],
+        "is_factual": true
+      },
+      {
+        "claim": "All models ship with a spare battery.",
+        "citation_ids": [],
+        "is_factual": true
+      }
+    ]
+  },
+  "20261003-seeded:c8": {
+    "compound_claim": "IP67 means the device is certified for outdoor use in all weather.",
+    "extracted": [
+      {
+        "claim": "The device is rated IP67.",
+        "citation_ids": [],
+        "is_factual": true
+      },
+      {
+        "claim": "The device is certified for outdoor use in all weather.",
+        "citation_ids": [],
+        "is_factual": true
+      }
+    ]
+  },
+  "20261003-seeded:c2": {
+    "compound_claim": "All models operate on 2.4 GHz with AES-256 encryption and ship with a leather carrying case.",
+    "extracted": [
+      {
+        "claim": "All models operate on 2.4 GHz.",
+        "citation_ids": [],
+        "is_factual": true
+      },
+      {
+        "claim": "All models use AES-256 encryption.",
+        "citation_ids": [],
+        "is_factual": true
+      },
+      {
+        "claim": "All models ship with a leather carrying case.",
+        "citation_ids": [],
+        "is_factual": true
+      }
+    ]
+  }
+}

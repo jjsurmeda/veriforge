@@ -63,6 +63,20 @@ BASELINE_FAST20_FILE = SEED_DIR / "baseline_fast20.json"
 BASELINE_CF_GATE_FILE = (
     Path(__file__).resolve().parents[3] / "evals" / "counterfactual" / "baseline_gate.json"
 )
+# The entity-mismatch set (P2a item 0, KI-54). Its items name entity A while
+# only entity B's corpus is in scope, so the set runs PER ITEM over one of
+# the two eval corpora — `scope_corpus` in the set file decides which. The
+# gate does not run this set (P2a item 6); it is a measurement set.
+ENTITY_MISMATCH_ITEMS = (
+    Path(__file__).resolve().parents[3] / "evals" / "entity_mismatch" / "items.json"
+)
+# The proxy30 set (P2a item 5, the generator bake-off): the 30 proxy-labelled
+# answers' questions, one item per row of evals/judge_validation/answers.csv
+# (the ruler - proxy-labelled, not human). All 30 questions are answerable
+# from the seed corpus; the set's job in the bake-off is the faithfulness
+# mean and its spread. Runs over the default scope like the seed set; no
+# per-item scope, no gate wiring (item 6 leaves the gate unchanged).
+PROXY30_ITEMS = Path(__file__).resolve().parents[3] / "evals" / "proxy30" / "items.json"
 # Both roles are gpt-4o-mini because that is what the product runs today, not
 # because it is the better model: `model_roles` has gpt-4o-mini in every LLM
 # role with claude-haiku-4.5 only as the generator's and planner's *fallback*.
@@ -140,6 +154,7 @@ async def _run_item(
     item: EvalItem,
     mode: str = "auto",
     corpus_collection_ids: Sequence[UUID] = (),
+    generator_model: str = GENERATOR_MODEL,
 ) -> tuple[EvalResult, list[GenerationRef]]:
     async with factory() as session, session.begin():
         chat = Chat(
@@ -174,7 +189,7 @@ async def _run_item(
                     chat_id=chat_id,
                     user_id=user.id,
                     question=item.question,
-                    litellm_model=GENERATOR_MODEL,
+                    litellm_model=generator_model,
                     small_model=SMALL_MODEL,
                     context_window=CONTEXT_WINDOW,
                     source="upload",
@@ -219,7 +234,7 @@ async def _run_item(
                     chat_id=chat_id,
                     user_id=user.id,
                     question=item.question,
-                    litellm_model=GENERATOR_MODEL,
+                    litellm_model=generator_model,
                     small_model=SMALL_MODEL,
                     context_window=CONTEXT_WINDOW,
                     source="upload",
@@ -290,7 +305,7 @@ async def _run_item(
             contexts=contexts,
             citation_count=len(contexts),
             small_model=SMALL_MODEL,
-            litellm_model=GENERATOR_MODEL,
+            litellm_model=generator_model,
         )
         stage_ms["review"] = int((time.monotonic() - review_started) * 1000)
         if review.scores is not None:
@@ -354,7 +369,9 @@ async def run_eval(
     mode: str = "auto",
     category: str | None = None,
     dataset_name: str = "seed",
+    generator_model: str | None = None,
 ) -> tuple[EvalRun, list[tuple[EvalItem, EvalResult]]]:
+    generator = generator_model or GENERATOR_MODEL
     if not STATE_FILE.exists():
         raise SystemExit("run `uv run python -m evals.loader` first")
     state = json.loads(STATE_FILE.read_text())
@@ -377,12 +394,36 @@ async def run_eval(
         payload = json.loads((SEED_DIR / "items.json").read_text(encoding="utf-8"))
         fast20 = set(payload.get("fast20_ids", []))
         seed_ids = _seed_ids(payload)
-    else:
+    elif dataset_name == "counterfactual":
         from evals.loader import COUNTERFACTUAL_ITEMS
 
         payload = json.loads(COUNTERFACTUAL_ITEMS.read_text(encoding="utf-8"))
         fast20 = set()
         seed_ids = _seed_ids(payload)
+    elif dataset_name == "entity_mismatch":
+        payload = json.loads(ENTITY_MISMATCH_ITEMS.read_text(encoding="utf-8"))
+        fast20 = set()
+        seed_ids = _seed_ids(payload)
+    else:
+        # proxy30 (P2a item 5): same load as the seed set, no scope overrides.
+        payload = json.loads(PROXY30_ITEMS.read_text(encoding="utf-8"))
+        fast20 = set()
+        seed_ids = _seed_ids(payload)
+    # KI-54 (P2a item 0): each entity-mismatch item runs with only its
+    # `scope_corpus` in scope — the mismatch IS the label, so a run that
+    # carried both corpora could retrieve the answer from the other one.
+    # Read from the set file, not the database, for the same reason
+    # `item_ids_for_gate_subset` does: the scope is a property of the set.
+    scope_by_question: dict[str, str] = {}
+    if dataset_name == "entity_mismatch":
+        for row in payload["items"]:
+            assert isinstance(row, dict)
+            question = row.get("question")
+            if question is None:
+                turns = row.get("turns")
+                assert isinstance(turns, list) and turns
+                question = turns[-1]
+            scope_by_question[str(question)] = str(row.get("scope_corpus") or "")
 
     factory = _eval_factory()
     async with factory() as session, session.begin():
@@ -415,6 +456,25 @@ async def run_eval(
         await session.flush()
         eval_run_id = eval_run.id
 
+    def _item_corpus_ids(item: EvalItem) -> list[UUID]:
+        if not scope_by_question:
+            return corpus_ids
+        scope = scope_by_question.get(item.question, "")
+        if scope == "seed":
+            return [UUID(state["corpus_collection_id"])]
+        if scope == "counterfactual":
+            raw = state.get("counterfactual_collection_id")
+            if not raw:
+                raise SystemExit(
+                    "entity-mismatch item names the counterfactual scope but the "
+                    "state file has no counterfactual corpus; run the loader"
+                )
+            return [UUID(raw)]
+        raise SystemExit(
+            f"entity-mismatch item {seed_ids.get(item.question, str(item.id))!r} has "
+            f"unknown scope_corpus {scope!r}"
+        )
+
     results: list[tuple[EvalItem, EvalResult]] = []
     pending_ids: dict[int, list[GenerationRef]] = {}  # id(result) -> its LLM calls
     # One item at a time. A concurrent `gather` here would multiply the DB
@@ -430,7 +490,8 @@ async def run_eval(
                     eval_run_id=eval_run_id,
                     item=item,
                     mode=mode,
-                    corpus_collection_ids=corpus_ids,
+                    corpus_collection_ids=_item_corpus_ids(item),
+                    generator_model=generator,
                 ),
                 what=seed_ids.get(item.question, str(item.id)),
             )
@@ -505,7 +566,7 @@ async def run_eval(
     return eval_run, results
 
 
-def models_on_record() -> dict[str, str]:
+def models_on_record(generator_model: str | None = None) -> dict[str, str]:
     """The models this harness ran with, per role.
 
     Recorded in every run summary and in the baseline, and compared by
@@ -513,8 +574,12 @@ def models_on_record() -> dict[str, str]:
     nothing about another, so comparing a run against a baseline written with
     different models would report a regression that is really a config change
     — or hide one that is real. The gate refuses that case instead.
+
+    `generator_model` is the P2a bake-off override: the `--generator` flag
+    changes the generator role only, so the recorded `generator` must be the
+    model the run actually used, not the default.
     """
-    return {"generator": GENERATOR_MODEL, "small": SMALL_MODEL}
+    return {"generator": generator_model or GENERATOR_MODEL, "small": SMALL_MODEL}
 
 
 def _seed_ids(payload: dict[str, object]) -> dict[str, str]:
@@ -720,10 +785,21 @@ async def main() -> None:
     parser.add_argument("--category", default=None)
     parser.add_argument(
         "--dataset",
-        choices=["seed", "counterfactual"],
+        choices=["seed", "counterfactual", "entity_mismatch", "proxy30"],
         default="seed",
         help="which dataset to run. 'counterfactual' is the P1b item-2 set, whose "
-        "corpus states deliberately altered facts.",
+        "corpus states deliberately altered facts. 'entity_mismatch' (P2a, KI-54) "
+        "runs each item over its own scope_corpus only. 'proxy30' (P2a item 5, "
+        "the bake-off) is the 30 proxy-labelled answers' questions; it runs over "
+        "the default scope and is a measurement set only.",
+    )
+    parser.add_argument(
+        "--generator",
+        default=None,
+        help="P2a bake-off: the generator-role model (litellm name, e.g. "
+        "openrouter/anthropic/claude-haiku-4.5). Changes the generator only; "
+        "the rewriter, variants, extraction and decisions keep the default. "
+        "Defaults to the configured generator.",
     )
     args = parser.parse_args()
 
@@ -733,9 +809,10 @@ async def main() -> None:
         mode=args.mode,
         category=args.category,
         dataset_name=args.dataset,
+        generator_model=args.generator,
     )
     summary = aggregate(results)
-    models = models_on_record()
+    models = models_on_record(args.generator)
     print(json.dumps({"eval_run": str(eval_run.id), "models": models, **summary}, indent=2))
     if args.baseline:
         # `models` rides along in the baseline so evals.gate can refuse a
