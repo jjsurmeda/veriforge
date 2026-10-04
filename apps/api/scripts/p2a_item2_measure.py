@@ -133,7 +133,10 @@ async def main() -> None:
                     "agrees": verdict == wants,
                 }
             )
-            print(f"real    {row['claim_id']:<22} {verdict:<13} proxy={wants:<12} agree={verdict == wants}")
+            print(
+                f"real    {row['claim_id']:<22} {verdict:<13} "
+                f"proxy={wants:<12} agree={verdict == wants}"
+            )
 
     caught_n = sum(1 for r in seeded if r["caught"])
     agree_n = sum(1 for r in real if r["agrees"])

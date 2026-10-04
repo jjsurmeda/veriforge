@@ -76,7 +76,9 @@ COUNTERFACTUAL_CORPUS_KEY = "counterfactual"
 # reads the mapping from the set file, not the database). Items are loaded so
 # the dataset exists in the database the runner runs against; nothing here
 # ingests a corpus, so CI pays nothing for it.
-ENTITY_MISMATCH_ITEMS = Path(__file__).resolve().parents[3] / "evals" / "entity_mismatch" / "items.json"
+ENTITY_MISMATCH_ITEMS = (
+    Path(__file__).resolve().parents[3] / "evals" / "entity_mismatch" / "items.json"
+)
 ENTITY_MISMATCH_CORPUS_KEY = "entity_mismatch"
 
 

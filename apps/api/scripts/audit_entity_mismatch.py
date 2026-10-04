@@ -168,7 +168,9 @@ def corpus_chunks_from_db(database_url: str) -> dict[str, list[str]]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--items", type=Path, default=ITEMS_FILE)
-    parser.add_argument("--write-back", action="store_true", help="stamp the proofs into items.json")
+    parser.add_argument(
+        "--write-back", action="store_true", help="stamp the proofs into items.json"
+    )
     args = parser.parse_args()
 
     payload = json.loads(args.items.read_text(encoding="utf-8"))

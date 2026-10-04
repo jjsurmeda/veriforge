@@ -32,8 +32,7 @@ def _response(n: int = N_QUESTIONS) -> str:
             "probability": round(0.5 + 0.02 * i, 2),
             "reasoning": "The passage discusses the named entity and its "
             "specifications, and the wording matches the question's entity "
-            "throughout. "
-            + f"Passage {i}: subject, value and citation all agree. ",
+            "throughout. " + f"Passage {i}: subject, value and citation all agree. ",
         }
     return json.dumps(payload)
 
@@ -54,7 +53,7 @@ async def test_a_twelve_question_batch_round_trips() -> None:
     answers = await engine.decide(state="[query]\nentity question", questions=questions)
 
     assert len(answers) == N_QUESTIONS
-    for name, question in questions.items():
+    for name in questions:
         assert name in answers
         assert answers[name].engine == "fallback"
         assert 0.0 <= answers[name].probability <= 1.0
