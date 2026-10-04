@@ -730,7 +730,9 @@ class TestAbsenceVerification:
         assert engine.call_count == 0
         assert verified[0].verdict == "unsupported"
 
-    async def test_absence_questions_batch_by_their_own_token_weight(self, monkeypatch):
+    async def test_absence_questions_batch_by_their_own_token_weight(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """An absence question carries every passage, so its token count —
         not the standard claim question's — must drive the batch split."""
         from graph import review as review_module

@@ -25,7 +25,7 @@ import argparse
 import json
 import sys
 import unicodedata
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -64,7 +64,7 @@ class EntityAudit:
 def audit_entity_items(
     items: Sequence[dict[str, Any]],
     *,
-    scoped_chunks: dict[str, Sequence[str]],
+    scoped_chunks: Mapping[str, Sequence[str]],
     shared_chunks: Sequence[str] = (),
 ) -> list[EntityAudit]:
     """Prove every item's label against the chunk texts it is scored with.
@@ -193,9 +193,9 @@ def main() -> int:
     if args.write_back:
         by_id = {audit.item_id: audit for audit in audits}
         for item in items:
-            audit = by_id.get(str(item.get("id")))
-            if audit is not None and audit.ok:
-                item["proof"] = audit.proof
+            match = by_id.get(str(item.get("id")))
+            if match is not None and match.ok:
+                item["proof"] = match.proof
         args.items.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
         print(f"proofs written to {args.items}")
     if failed:

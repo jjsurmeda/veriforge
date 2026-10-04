@@ -9,7 +9,7 @@ import json
 from config import get_settings
 from decisions.fallback import FallbackEngine
 from retrieval.context import count_tokens
-from schemas.decisions import Noul
+from schemas.decisions import Choice, Noul, Score
 
 # The largest batch the system asks the fallback engine for is the
 # post-sanitize sufficiency call with its per-passage entity questions
@@ -18,7 +18,7 @@ from schemas.decisions import Noul
 N_QUESTIONS = 12
 
 
-def _questions(n: int = N_QUESTIONS) -> dict[str, Noul]:
+def _questions(n: int = N_QUESTIONS) -> dict[str, Noul | Choice | Score]:
     return {f"entity_{i}": Noul(prompt=f"Is this passage about entity {i}?") for i in range(n)}
 
 
@@ -56,7 +56,9 @@ async def test_a_twelve_question_batch_round_trips() -> None:
     for name in questions:
         assert name in answers
         assert answers[name].engine == "fallback"
-        assert 0.0 <= answers[name].probability <= 1.0
+        probability = answers[name].probability
+        assert probability is not None
+        assert 0.0 <= probability <= 1.0
 
 
 async def test_the_fallback_cap_covers_the_twelve_question_response() -> None:
