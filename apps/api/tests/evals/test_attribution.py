@@ -152,6 +152,7 @@ async def test_run_eval_defers_attribution_and_persists_overhead(
         item: EvalItem,
         mode: str = "auto",
         corpus_collection_ids: Sequence[UUID] = (),
+        generator_model: str = runner.GENERATOR_MODEL,
     ) -> tuple[EvalResult, list[GenerationRef]]:
         result = EvalResult(
             eval_run_id=eval_run_id,
@@ -235,6 +236,7 @@ async def test_run_eval_skips_attribution_for_items_without_ids(
         item: EvalItem,
         mode: str = "auto",
         corpus_collection_ids: Sequence[UUID] = (),
+        generator_model: str = runner.GENERATOR_MODEL,
     ) -> tuple[EvalResult, list[GenerationRef]]:
         result = EvalResult(
             eval_run_id=eval_run_id,
