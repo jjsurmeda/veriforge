@@ -47,6 +47,28 @@ async def test_every_call_is_capped_per_role(monkeypatch: pytest.MonkeyPatch) ->
     assert seen[2]["max_tokens"] == settings.llm_default_max_tokens
 
 
+async def test_the_decision_fallback_role_gets_a_batch_sized_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """KI-57: the fallback engine answers the whole batched decide call in one
+    JSON object. Under the 512 default the largest batch (sufficiency plus the
+    per-passage entity questions) truncated mid-JSON at the same offset on
+    every degraded-jev run; the role therefore carries its own, larger cap.
+    Mutation: drop the entry and the role falls back to the default."""
+    seen: list[dict[str, Any]] = []
+
+    async def fake(**kwargs: Any) -> dict[str, Any]:
+        seen.append(kwargs)
+        return OK
+
+    monkeypatch.setattr("providers.llm.litellm.acompletion", fake)
+    await complete(litellm_model=FREE, messages=[], metadata={"role": "decision_fallback"})
+
+    settings = get_settings()
+    assert seen[0]["max_tokens"] == settings.llm_max_tokens["decision_fallback"]
+    assert seen[0]["max_tokens"] > settings.llm_default_max_tokens
+
+
 async def test_reasoning_is_off_except_for_reasoning_roles(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
