@@ -271,8 +271,17 @@ copies and was not used by any P2a run. Nothing was deleted in this dispatch.
 
 ## 4. CI, credits, SHAs, time
 
-- CI: TODO(item 6) — `gh workflow run ci.yml --ref p2a/answer-quality`, gate
-  executes with both subsets; URL here.
+- CI: pushed `p2a/answer-quality`, `gh workflow run ci.yml` — green at
+  https://github.com/jjsurmeda/veriforge/actions/runs/37233593979
+  (run 1 `37232106273` failed only the api job's `ruff check` — fixed
+  `a82a548`; run 2 `37232788878` failed the api job's `mypy` — fixed
+  `a03513e`). The eval-gate job executed (all three runs: applies=true,
+  fast20 3 runs and counterfactual 3 runs vs the stored P1b baselines,
+  this-run faithfulness 1.0 on both subsets in run 1), with the per-item
+  export `20261004-205850-a03513e.json` and the `eval-gate-evidence`
+  artifact on the green run. The entity-mismatch set is NOT wired into
+  the gate (owner's baseline question, §1.4). Ready for the owner's
+  local merge.
 - Credits (OpenRouter, `GET /api/v1/credits`; floor $0.75; guard $0.90 in
   the task driver): $4.51 before the D7 baseline (2026-10-03) → $4.3337
   after (D7 5-run entity baseline, ≈$0.18) → $4.3327 before the control
@@ -286,7 +295,8 @@ copies and was not used by any P2a run. Nothing was deleted in this dispatch.
   $1.0924 after wave-2 haiku entity ×2 (wave 2 complete, 15/15 exit 0,
   guard never tripped) → $1.0314 after the TTFT probes (≈$0.06, one 10 s
   failed-attempt read on a malformed model id before the corrected probes)
-  → TODO(CI gate run + final).
+  → $0.9823 after CI run 1 (gate executed, ≈$0.05) → $0.9005 after CI
+  runs 2–3 (gates executed again, ≈$0.03 each; final).
 - SHA each run measured: item-0 before @ `f3a1521` (unchanged pipeline);
   item-1/2/3 measures @ their commits (`fa9a403`/`7fcb93f`/`8a5a622`);
   item-4 after + D7 baseline @ `5036b64`; bake-off wave 1 @ `b3c0f2d`
@@ -298,7 +308,10 @@ copies and was not used by any P2a run. Nothing was deleted in this dispatch.
   (overrun dominated by serial model-run wall time: control ~2 h, gemini
   ~3 h, haiku ~1.5 h, plus two OpenRouter degradation windows forcing
   re-runs (~1.5 h) and the KI-57 root-cause fix + re-runs ~45 min; infra
-  flag/proxy30 set/tests ~35 min); item 6 TODO(min).
+  flag/proxy30 set/tests ~35 min); item 6 ~35 min (push, three CI
+  cycles, two lint/type-fix commits, gate verification; the slot was
+  15 min — the overrun is the ruff/mypy detours, both caught by the api
+  job's gates, not the eval gate).
 
 ## 5. What was not fixed, with the evidence
 
