@@ -824,6 +824,84 @@ Langfuse dashboard; if the JP project is empty, this is the cause).
   stream for every subscriber, which is KI-22's batch 1 to schedule.
 - UI keeps reading Postgres only (TRD §3: "UI never reads Langfuse").
 
+**Fixed 2026-10-06 (lane C, private beta).** All four parts, verified by
+`tests/observability/test_tracing.py` (22 tests, each mutation-checked) plus
+one live check against the Langfuse API with 3 questions.
+
+- **Host.** `langfuse_host` in `config.py`, reading `LANGFUSE_HOST` with
+  `LANGFUSE_BASE_URL` accepted as the alias `.env` already used.
+  `observability/tracing.py` owns the client and exports all three settings
+  as the env vars the pinned SDK reads — the whole reason nothing arrived
+  before. `providers/llm.py:_configure_langfuse` and
+  `graph/async_scoring.py` both go through it now, so a host can no longer be
+  forgotten in one of three places. **compose.yaml still has to forward it**
+  (the app owns that file, lane A); the exact line is in the lane C report.
+- **Jev calls.** `decisions/jev.py` records one span per call, including the
+  failure path — a Jev call that timed out is precisely what an operator is
+  looking for, and "no span" reads as "nothing happened". `decision_names`,
+  `engine`, `stage`, `latency_ms` and the per-decision probabilities are the
+  metadata. `decisions/fallback.py` does the same for the fallback, so a
+  degraded decision engine is legible as a degraded trace.
+- **Stage spans.** `make_step_timer` opens a span per stage under
+  `trace_id=run_id`; one function on every mode's path, so every mode is
+  covered without touching the nodes.
+- **Empty trace ids.** The real cause was not the callback: `trace_id` was
+  built as `metadata.get("job", metadata.get("run_id", ""))` in
+  `_request_kwargs`. Two faults in one expression. A caller passing a `job`
+  label (`job="decision_fallback"`, `"claim_extraction"`, …) got *that label*
+  as its trace id, so its generations sat under a trace named after the job
+  instead of under the run — and a caller passing neither key
+  (`graph/planner.py`, `graph/rewrite.py`) got `""`, which is the
+  `set ,` in the 1374 warnings. Now `providers/llm._trace_id` resolves the
+  caller's `run_id`, else the run-scoped usage context's, else `None` —
+  `None` rather than `""` so a call outside a run (a seeding script, an
+  eval) lets LiteLLM name the trace after the call instead of every such
+  call claiming the same empty one. `job` stays in the metadata as a label.
+
+Never-fails-a-run is enforced, not asserted: a fake client that raises on
+every method still yields Jev answers and step return values.
+
+**Live check (2026-10-05, 3 questions, ~$0.01).** Keys read from `.env`,
+never printed. Newest trace moved from **2026-09-20T08:40:40Z** to
+**2026-10-05T19:45:17Z**, and 63 traces newer than 2026-09-20 now exist.
+All 3 runs completed. Observations per run trace: 22 / 20 / 24 —
+**26 decision spans** and **23 stage spans** across them, each under its own
+run's trace id. A decision span's attributes, verbatim:
+
+```json
+{"engine": "jev",
+ "decision_names": ["sufficient", "entity_0", "entity_1", "entity_2",
+                    "entity_3", "entity_4", "entity_5", "entity_6"],
+ "latency_ms": 640,
+ "stage": "sufficient",
+ "probabilities": {"sufficient": 0.19, "entity_0": 0.45, "entity_1": 0.09,
+                   "entity_2": 0.3, "entity_3": 0.26}}
+```
+
+A stage span's attributes, verbatim:
+
+```json
+{"node": "auto", "label": "sufficient",
+ "run_id": "01a10d98-eabe-772d-ba54-9615d8dd2b62", "duration_ms": 675}
+```
+
+Two things the check turned up that the tests could not:
+
+- **The host in `.env` is quoted** (`LANGFUSE_BASE_URL="https://jp.…"`).
+  Compose strips the quotes for the services it injects, but a container
+  started with `--env-file` keeps them, and the SDK then uses the quoted
+  string as the host and fails with a bare
+  `ERROR:langfuse:Unexpected error occurred`. Not a code defect — recorded so
+  the compose-forwarding line is not mistaken for the last mile.
+- **`GET /api/public/traces/{id}/observations` is a 404** in this API
+  version; the working read-only call is
+  `GET /api/public/observations?traceId=<run_id>&limit=100`. That endpoint
+  also answers a polling loop with HTTP 429 and then `{"data": []}` rather
+  than an error, so a naive poll reads as "nothing arrived" when the truth
+  is "you were throttled".
+
+TRD §15. 22 tests, each mutation-checked. Full suite 933 passed.
+
 ## KI-22: Trace tab shows mostly Jev calls; Metrics missing quality detail
 
 **Status: pending** (design agreed 2026-09-30, not dispatched).
@@ -2552,3 +2630,116 @@ dispatch — not fixed in P2a.
   The affected control sets are being re-run on the fixed tree; the
   remaining open question is the degrade-to-fail behaviour itself
   (a fallback failure still fails the item) — later dispatch.
+
+## KI-59: The rate limiter's real security boundary is uvicorn's proxy-header trust list
+
+Logged 2026-10-06 (lane C, item 4) while testing the signup limiter.
+
+- **What:** `auth/router._client_ip` returns `request.client.host` and never
+  reads a header, and its docstring claimed that was what makes the limiter
+  safe from `X-Forwarded-For` spoofing. That claim is wrong, and a test
+  written to check it failed rather than passed.
+- **Evidence.** With two signups from one client and a third carrying
+  `X-Forwarded-For: 203.0.113.7`, the limiter created a bucket keyed
+  `ip:203.0.113.7` — the header value. Uvicorn runs `ProxyHeadersMiddleware`
+  by default (`proxy_headers=True`) with `forwarded_allow_ips` defaulting to
+  `127.0.0.1`, so it rewrites `scope["client"]` from the header *before* any
+  handler runs. Quoting uvicorn's own signature:
+  `proxy_headers: bool = True`, `forwarded_allow_ips: list[str] | str | None = None`.
+- **So the real boundary:** an untrusted peer cannot spoof the bucket,
+  because its connection is not from an allow-listed address — the safety
+  comes from that list, not from our code. Ours only has to not read headers
+  itself, which is what `tests/auth/test_invites_and_rate_limit.py` now pins.
+- **The operational consequence, which is the part that matters.** Behind
+  Caddy on the same host (127.0.0.1) the header is trusted, so the limiter
+  sees the real client and everything works. **If Caddy runs in its own
+  container**, its address is no longer `127.0.0.1`, uvicorn stops trusting
+  the header, every request appears to come from Caddy, and the per-IP limit
+  becomes a global one: one user exhausting their budget locks out
+  everybody. Silent, and it looks like the limiter working. Lane A must set
+  `forwarded_allow_ips` to Caddy's address (or `*` only if something else
+  guarantees the proxy), and the deploy check should confirm two different
+  clients get two different buckets rather than one shared.
+- **Test that found it:** `test_the_ip_key_is_the_socket_peer_or_uvicorns_rewrite_of_it`,
+  which also records that the obvious "a forged header does not reset the
+  limiter" test is wrong for this stack.
+
+## KI-60: Signup answered 409 before validating the invite — account enumeration
+
+Logged 2026-10-06 (lane C, item 4). Fixed in the same commit; recorded
+because the ordering is a security property and nothing about it is obvious
+from the code.
+
+- **What:** in `signup_mode=invite`, `POST /auth/signup` checked for an
+  existing account before checking the invite. So a **bogus** invite code
+  answered `409 email_taken` for an address that has an account and
+  `400 invite_invalid` for one that does not — account enumeration on a
+  public endpoint, requiring no valid invite at all. The same held for a
+  *used* code, because consumption needs a `user_id` and so happened after
+  the user row was written.
+- **Fix:** `auth/invites.ensure_available` checks usability without
+  consuming, before the email lookup; `consume` still claims atomically
+  afterwards. Every unusable code now answers the same 400 whether or not
+  the address has an account.
+- **Tests:** `test_every_unusable_code_answers_identically` (unknown / used /
+  revoked / expired, same body) and
+  `test_a_bogus_code_does_not_reveal_whether_an_account_exists`, which
+  probes the same address before and after the account exists and asserts
+  the two responses are byte-identical. Both fail with the check removed.
+
+## KI-61: A read-then-write invite claim passes a naive concurrency test
+
+Logged 2026-10-06 (lane C, item 4). Not a defect in the shipped code — the
+code is the atomic UPDATE and is correct — but a note about the test that
+has to hold it in place, because the obvious version of that test is
+worthless.
+
+- **What happened:** `consume` uses one `UPDATE … WHERE used_by IS NULL …
+  RETURNING`, which is what makes two concurrent signups on one code produce
+  exactly one account. A first version of the concurrency test passed
+  against a deliberately non-atomic implementation (SELECT, assign in
+  Python, write at COMMIT). Two reasons it passed:
+  - the two attempts were awaited **in sequence**, so the first committed
+    before the second looked at the row; and
+  - a plain `asyncio.sleep` between the pre-read and the claim usually does
+    not land, because in a read-then-write implementation the read and the
+    write are separated by the *commit*, not by an `await`.
+- **The test that works:** both transactions open and both read first (so
+  both hold "unused"), then both claims run under `asyncio.gather` so both
+  reads are in flight before either write lands. Against the non-atomic
+  version this reports `both signups claimed the invite: ['b', 'a']`.
+- **Why it is written down:** anyone tightening this test later will be
+  tempted to simplify it back to a sleep, and the simplification passes.
+
+## KI-62: A total decision-engine failure reported as a generic `run_error`
+
+Logged 2026-10-06 (lane C, item 5). Fixed in the same commit.
+
+- **What R1 asks:** when Jev *and* the fallback both fail, the run fails with
+  a clear error code (`decision_unavailable`) — "never a hang or a generic
+  500". Measured: it was neither. `DecisionEngine.decide` propagated
+  whatever the fallback raised, so a total decision outage surfaced to the
+  user and to `run.failed` as the generic `run_error` that
+  `graph/runner.py` reserves for "a bug in our own code". An operator
+  reading the alarm would go looking for a code defect during what was
+  actually a provider outage.
+- **Second half, found by the same test:** a provider *timeout* inside the
+  fallback escaped as a raw `TimeoutError`, because `FallbackEngine.decide`
+  caught only `FallbackError` and `JSONDecodeError`. So the most common real
+  outage — a hanging provider — was the one that arrived least clearly.
+- **Fix:**
+  - `decisions/engine.py` gained `DecisionUnavailable` (a 503, because a
+    retry may work — which is what separates it from the quota and key codes,
+    where it cannot) and a `_fallback_decide` helper used by every path that
+    can reach the fallback, including `fallback_only`.
+  - `decisions/fallback.py` wraps any other exception from the completion
+    call into a `FallbackError`, so the engine has one thing to name.
+- **Tests:** `tests/graph/test_outages.py` asserts the code, the 503, and
+  that the fallback's own provider failure becomes a `FallbackError`. Both
+  halves fail without their fix.
+- **Note on the breaker signal:** through the engine, `breaker.opened`
+  cannot re-fire once open, because `allow_jev()` stops the engine touching
+  the breaker at all. The no-re-emission property is therefore asserted by
+  item 2's breaker test (`test_further_failures_while_open_do_not_re_emit`),
+  which calls the breaker directly; this test asserts the end-to-end count
+  of one signal per outage. Neither alone covers both halves.

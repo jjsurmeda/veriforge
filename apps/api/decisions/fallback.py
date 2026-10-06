@@ -14,6 +14,7 @@ import time
 from typing import Any
 
 from config import get_settings
+from observability import tracing
 from providers.llm import complete
 from schemas.decisions import Answer, Choice, Noul, Question, Score
 
@@ -173,20 +174,64 @@ class FallbackEngine:
         settings = get_settings()
         state_text = state if isinstance(state, str) else _state_to_text(state)
         prompt = _render_prompt(state_text, questions)
+        stage = state.get("kind") if isinstance(state, dict) else None
         started = time.monotonic()
-        response = await self._complete(
-            litellm_model=settings.fallback_model,
-            messages=[{"role": "system", "content": prompt}],
-            metadata={"job": "decision_fallback", "role": "decision_fallback"},
-        )
-        latency_ms = int((time.monotonic() - started) * 1000)
+
+        def record(exc: BaseException) -> None:
+            # KI-21: the fallback runs through LiteLLM so its *generation*
+            # was traced, but nothing said it was a decision or which one —
+            # and a fallback that fails is exactly when that matters. The
+            # span is recorded here so a degraded decision engine reads as a
+            # degraded trace rather than as an absent one.
+            tracing.record_decision_call(
+                engine="fallback",
+                decision_names=list(questions),
+                stage=stage if isinstance(stage, str) else None,
+                trace_id=tracing.current_trace_id(),
+                latency_ms=int((time.monotonic() - started) * 1000),
+                error=str(exc),
+            )
+
         try:
+            response = await self._complete(
+                litellm_model=settings.fallback_model,
+                messages=[{"role": "system", "content": prompt}],
+                metadata={"job": "decision_fallback", "role": "decision_fallback"},
+            )
+            latency_ms = int((time.monotonic() - started) * 1000)
             payload = json.loads(_strip_fence(response))
-        except json.JSONDecodeError as exc:
-            raise FallbackError(f"fallback returned non-JSON: {exc}") from exc
-        if not isinstance(payload, dict):
-            raise FallbackError("fallback returned non-object JSON")
-        return _parse_answers(payload, questions, latency_ms)
+            if not isinstance(payload, dict):
+                raise FallbackError("fallback returned non-object JSON")
+            answers = _parse_answers(payload, questions, latency_ms)
+        except (FallbackError, json.JSONDecodeError) as exc:
+            record(exc)
+            if isinstance(exc, json.JSONDecodeError):
+                raise FallbackError(f"fallback returned non-JSON: {exc}") from exc
+            raise
+        except Exception as exc:
+            # A provider that times out, is refused, or dies mid-stream used
+            # to escape as whatever litellm raised, which the graph then
+            # reported as a generic `run_error` — indistinguishable from a bug
+            # in our own code, and with no hint that the *decision engine* was
+            # unreachable. Every failure of the fallback becomes a
+            # FallbackError, which `DecisionEngine` turns into the named
+            # `decision_unavailable` code.
+            wrapped = FallbackError(f"fallback call failed: {type(exc).__name__}: {exc}")
+            record(wrapped)
+            raise wrapped from exc
+
+            if isinstance(exc, json.JSONDecodeError):
+                raise FallbackError(f"fallback returned non-JSON: {exc}") from exc
+            raise
+        tracing.record_decision_call(
+            engine="fallback",
+            decision_names=list(questions),
+            stage=stage if isinstance(stage, str) else None,
+            trace_id=tracing.current_trace_id(),
+            answers=answers,
+            latency_ms=latency_ms,
+        )
+        return answers
 
 
 def _state_to_text(state: dict[str, Any]) -> str:

@@ -32,6 +32,7 @@ import httpx
 from pydantic import ValidationError
 
 from config import get_settings
+from observability import tracing
 from quota.usage import get_usage_context
 from retrieval.context import count_tokens
 from schemas.decisions import Answer, Choice, Noul, Question, Score
@@ -87,6 +88,20 @@ def _truncate_state(state: dict[str, Any] | str, max_tokens: int) -> str:
 
 def _state_to_text(state: dict[str, Any]) -> str:
     return "\n\n".join(f"[{key}]\n{value}" for key, value in state.items())
+
+
+def _stage_of(state: dict[str, Any] | str) -> str | None:
+    """The pipeline stage this decision belongs to, for the span metadata.
+
+    The same `kind` key `decisions/engine.py` reads for `DecisionCall.stage`,
+    so a Jev span carries the same stage name the decision events and the
+    UI already show rather than a second vocabulary. None when the state is
+    a bare string, which is what the engine's own tests pass.
+    """
+    if isinstance(state, dict):
+        value = state.get("kind")
+        return value if isinstance(value, str) else None
+    return None
 
 
 def _parse_answer(name: str, q: Question, raw: dict[str, Any], latency_ms: int) -> Answer:
@@ -153,43 +168,78 @@ class JevClient:
         }
         headers = {"Authorization": f"Bearer {api_key}"}
         started = time.monotonic()
+        # Every exit from here records a span, success or failure: a Jev
+        # call that timed out is the thing an operator is looking for, and
+        # it is invisible in the trace otherwise. `latency_ms` is computed
+        # in the `finally` so the failure path reports how long it waited,
+        # which is the number the 2 s timeout is judged against.
+        latency_ms = 0
+        error: str | None = None
         try:
-            if self._client is not None:
-                response = await self._client.post(
-                    settings.openrouter_systemone_url,
-                    json=payload,
-                    headers=headers,
-                    timeout=settings.jev_timeout_ms / 1000,
-                )
-            else:
-                async with httpx.AsyncClient(timeout=settings.jev_timeout_ms / 1000) as client:
-                    response = await client.post(
+            try:
+                if self._client is not None:
+                    response = await self._client.post(
                         settings.openrouter_systemone_url,
                         json=payload,
                         headers=headers,
+                        timeout=settings.jev_timeout_ms / 1000,
                     )
-        except httpx.HTTPError as exc:
-            raise JevError(f"jev http error: {exc}") from exc
-        latency_ms = int((time.monotonic() - started) * 1000)
-        if response.status_code != 200:
-            raise JevError(f"jev status {response.status_code}: {response.text[:200]}")
-        if generation_id_sink is not None:
-            generation_id = response.headers.get("x-generation-id")
-            if generation_id:
-                generation_id_sink(generation_id)
-        try:
-            data = response.json()
-            answers = data["answers"]
-        except (ValueError, KeyError) as exc:
-            raise JevError(f"jev bad payload: {exc}") from exc
-        if usage_context is not None:
-            await usage_context.record_call(
-                model_id=model,
-                role="decision_engine",
-                tokens_in=count_tokens(json.dumps(payload)),
-                tokens_out=count_tokens(json.dumps(data)),
+                else:
+                    async with httpx.AsyncClient(timeout=settings.jev_timeout_ms / 1000) as client:
+                        response = await client.post(
+                            settings.openrouter_systemone_url,
+                            json=payload,
+                            headers=headers,
+                        )
+            except httpx.HTTPError as exc:
+                raise JevError(f"jev http error: {exc}") from exc
+            latency_ms = int((time.monotonic() - started) * 1000)
+            if response.status_code != 200:
+                raise JevError(f"jev status {response.status_code}: {response.text[:200]}")
+            if generation_id_sink is not None:
+                generation_id = response.headers.get("x-generation-id")
+                if generation_id:
+                    generation_id_sink(generation_id)
+            try:
+                data = response.json()
+                answers = data["answers"]
+            except (ValueError, KeyError) as exc:
+                raise JevError(f"jev bad payload: {exc}") from exc
+
+            if usage_context is not None:
+                await usage_context.record_call(
+                    model_id=model,
+                    role="decision_engine",
+                    tokens_in=count_tokens(json.dumps(payload)),
+                    tokens_out=count_tokens(json.dumps(data)),
+                )
+            parsed: dict[str, Answer] = {}
+            try:
+                for name, question in questions.items():
+                    parsed[name] = _parse_answer(name, question, answers.get(name, {}), latency_ms)
+                return parsed
+            finally:
+                # Recorded in a `finally` so a partial or unparseable batch is
+                # still a span: an operator reading the trace needs to see
+                # that the call happened and failed, which is the opposite of
+                # what "no span" looks like. Never raises.
+                tracing.record_decision_call(
+                    engine="jev",
+                    decision_names=list(questions),
+                    stage=_stage_of(state),
+                    trace_id=tracing.current_trace_id(),
+                    answers=parsed,
+                    latency_ms=latency_ms,
+                    error=error,
+                )
+        except JevError as exc:
+            error = str(exc)
+            tracing.record_decision_call(
+                engine="jev",
+                decision_names=list(questions),
+                stage=_stage_of(state),
+                trace_id=tracing.current_trace_id(),
+                latency_ms=int((time.monotonic() - started) * 1000),
+                error=error,
             )
-        return {
-            name: _parse_answer(name, q, answers.get(name, {}), latency_ms)
-            for name, q in questions.items()
-        }
+            raise

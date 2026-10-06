@@ -53,6 +53,21 @@ def _assert_safe_test_database(url: str) -> None:
 _assert_safe_test_database(TEST_DATABASE_URL)
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ["COOKIE_SECURE"] = "false"  # tests run over plain http
+# `signup_mode` defaults to `invite` in the product (item 4: forgetting to
+# set it is the failure that leaks the deployment), and the rate limits are
+# per-IP in a process that every test in the suite shares. Both are turned
+# off here for the same reason the provider keys are blanked below: the
+# default is right for production and wrong for a suite, so the suite says
+# so explicitly rather than inheriting a surprising one. Tests that exercise
+# either set it back per-test.
+os.environ["SIGNUP_MODE"] = "open"
+for _limit in (
+    "RATE_LIMIT_SIGNUP",
+    "RATE_LIMIT_LOGIN",
+    "RATE_LIMIT_RUN",
+):
+    os.environ[_limit] = "100000"
+os.environ["RATE_LIMIT_RUN_WINDOW_SECONDS"] = "1"
 # Never reach live providers from tests (testing.md); .env and Compose
 # otherwise leak real keys in, and rerank/web tests hit Cohere/Tavily/Brave.
 for _key in (

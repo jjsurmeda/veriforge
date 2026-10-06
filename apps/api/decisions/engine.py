@@ -22,6 +22,7 @@ from config import get_settings
 from decisions.breaker import CircuitBreaker, get_breaker
 from decisions.fallback import FallbackEngine, FallbackError
 from decisions.jev import JevClient, JevError
+from errors import AppError
 from runtime import RuntimeSettings
 from schemas.decisions import Answer, Choice, Noul, Question, Score
 
@@ -29,6 +30,15 @@ logger = logging.getLogger(__name__)
 _shadow_tasks: set[asyncio.Task[None]] = set()
 
 EngineMode = Literal["auto", "jev_only", "fallback_only"]
+
+
+class DecisionUnavailable(AppError):
+    """Neither Jev nor the fallback could answer. A 503, not a 500: the
+    decision layer is a dependency that can be transiently unreachable, and a
+    retry may well work — which is what separates it from the quota and key
+    codes, where a retry cannot."""
+
+    status_code = 503
 
 
 class EngineProtocol(Protocol):
@@ -117,7 +127,7 @@ class DecisionEngine:
             batch_size=len(questions),
         )
         if self._mode == "fallback_only":
-            answers = await self._fallback.decide(state=state, questions=questions)
+            answers = await self._fallback_decide(state, questions, call)
             for name, answer in answers.items():
                 await self._emit(name, answer, call)
             return answers
@@ -138,15 +148,39 @@ class DecisionEngine:
                     answers = await self._jev.decide(state=state, questions=questions)
             except (JevError, TimeoutError) as exc:
                 logger.warning("jev failed, retrying on fallback: %s", exc)
-                answers = await self._fallback.decide(state=state, questions=questions)
+                answers = await self._fallback_decide(state, questions, call)
             else:
                 self._maybe_shadow(state, questions, answers)
         else:
-            answers = await self._fallback.decide(state=state, questions=questions)
+            answers = await self._fallback_decide(state, questions, call)
 
         for name, answer in answers.items():
             await self._emit(name, answer, call)
         return answers
+
+    async def _fallback_decide(
+        self, state: dict[str, Any] | str, questions: dict[str, Question], call: DecisionCall
+    ) -> dict[str, Answer]:
+        """The fallback, with a total failure named (R1, item 5).
+
+        When Jev is down *and* the fallback is down, there is no answer — and
+        the failure has to say so. It used to propagate whatever the fallback
+        raised, so the graph reported it as a generic `run_error`:
+        indistinguishable from a bug in our own code, and an operator reading
+        `run.failed` had no way to learn that the decision engine was
+        unreachable. `decision_unavailable` says exactly that, and it is a
+        503 because a retry may work — unlike the quota and key codes, where
+        it cannot.
+        """
+        try:
+            return await self._fallback.decide(state=state, questions=questions)
+        except (FallbackError, JevError, TimeoutError) as exc:
+            logger.warning("decision engine unavailable: %s", exc)
+            raise DecisionUnavailable(
+                "decision_unavailable",
+                "The decision engine could not be reached. Please try again.",
+                {"stage": call.stage, "batch_size": call.batch_size},
+            ) from exc
 
     def _maybe_shadow(
         self,

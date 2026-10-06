@@ -34,6 +34,12 @@ class UserPublic(BaseModel):
 class SignupRequest(BaseModel):
     email: Email
     password: str = Field(min_length=8, max_length=1024)
+    # Required only when `signup_mode=invite`. Optional in the schema rather
+    # than conditionally required so one model serves all three modes: a
+    # deployment flipping to `invite` must not turn every existing client's
+    # signup into a 422 at the validation layer, and `require_code` already
+    # refuses a missing one with the same error an invalid one gets.
+    invite_code: str | None = Field(default=None, max_length=128)
 
 
 class LoginRequest(BaseModel):

@@ -18,6 +18,7 @@ from ingest.chunk import SectionDraft, chunk_document
 from ingest.flags import PageScan, flag_pages
 from ingest.parse import PDF_MIME, parse_document
 from ingest.storage import get_object_store
+from observability import signals
 from providers.llm import embed_batch
 
 logger = logging.getLogger(__name__)
@@ -101,10 +102,24 @@ async def _mark_failed(document_id: UUID, error: str) -> None:
     session_factory = get_session_factory()
     async with session_factory() as session:
         document = await session.get(Document, document_id)
-        if document is not None:
-            document.status = "failed"
-            document.error = error
-            await session.commit()
+        if document is None:
+            # Nothing to mark, so nothing to report: a retried job whose
+            # document was deleted between attempts is not an ingestion
+            # failure, and logging it as one would page on a deletion.
+            return
+        document.status = "failed"
+        document.error = error
+        await session.commit()
+    # Emitted after the commit, so a line in the log always corresponds to a
+    # row that is durably marked failed — the reverse order could log a
+    # failure the database then never recorded. `document_id` is the
+    # correlation key: an operator sees one bad upload's id here and can read
+    # `documents.error` for the reason.
+    signals.emit(
+        signals.INGEST_FAILED,
+        document_id=str(document_id),
+        error=error[:500],
+    )
 
 
 async def _index_document(

@@ -12,6 +12,8 @@ from schemas.admin import (
     AdminModelOut,
     AuditOut,
     DecisionStatsOut,
+    InviteCreate,
+    InviteOut,
     ModelCreate,
     ModelPatch,
     PlanCreate,
@@ -208,3 +210,37 @@ async def audit(
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
 ) -> list[AuditOut]:
     return await service.list_audit(session, limit=limit)
+
+
+# --- invites (item 4) -----------------------------------------------------
+#
+# Admin-only, audited like every other admin action, and there is
+# deliberately no unauthenticated counterpart: an endpoint that can mint an
+# account without a credential is the attack surface item 4 exists to close.
+
+
+@router.post("/invites", response_model=list[InviteOut], status_code=201)
+async def create_invites(
+    body: InviteCreate,
+    user: AdminUser,
+    session: SessionDep,
+) -> list[InviteOut]:
+    return await service.create_invites(session, actor_id=user.id, body=body)
+
+
+@router.get("/invites", response_model=list[InviteOut])
+async def list_invites(
+    _: AdminUser,
+    session: SessionDep,
+    status: Annotated[str | None, Query()] = None,
+) -> list[InviteOut]:
+    return await service.list_invites(session, status=status)
+
+
+@router.post("/invites/{invite_id}/revoke", response_model=InviteOut)
+async def revoke_invite(
+    invite_id: UUID,
+    user: AdminUser,
+    session: SessionDep,
+) -> InviteOut:
+    return await service.revoke_invite(session, actor_id=user.id, invite_id=invite_id)

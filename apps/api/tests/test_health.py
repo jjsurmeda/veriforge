@@ -25,7 +25,13 @@ def test_healthz_returns_ok_when_db_reachable() -> None:
         client = TestClient(app)
         response = client.get("/healthz")
         assert response.status_code == 200
-        assert response.json() == {"status": "ok", "db": "ok"}
+        # The body grew (`breaker`, `jev`, `worker_heartbeat_age_s` — see
+        # `docs/ops/signals.md`), so this is no longer an exact-equality
+        # assertion. It is a subset check on purpose: `status` and `db` are
+        # the two fields the old check keyed on, and this is what proves a
+        # body without the new fields still satisfies the old check.
+        body = response.json()
+        assert {key: body[key] for key in ("status", "db")} == {"status": "ok", "db": "ok"}
     finally:
         app.dependency_overrides.clear()
 

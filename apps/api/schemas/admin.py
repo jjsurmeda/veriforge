@@ -169,3 +169,27 @@ class DecisionStatsOut(BaseModel):
     breaker: DecisionBreakerOut
     shadow: DecisionShadowOut
     targets: DecisionTargetsOut
+
+
+class InviteCreate(BaseModel):
+    # A cap, because this endpoint mints credentials and an unbounded count
+    # would let one admin request fill the table before anyone noticed.
+    count: int = Field(default=1, ge=1, le=100)
+    expires_in_days: int | None = Field(default=None, ge=1, le=365)
+    note: str | None = Field(default=None, max_length=255)
+
+
+class InviteOut(BaseModel):
+    """`code` is populated only by `POST /admin/invites`, the one response
+    that ever carries the plaintext. Every later read returns "" — the
+    server stores the hash and has nothing to show."""
+
+    id: str
+    code: str
+    status: Literal["live", "used", "revoked", "expired"]
+    note: str | None = None
+    used_by: str | None = None
+    used_at: str | None = None
+    expires_at: str | None = None
+    revoked_at: str | None = None
+    created_at: str | None = None

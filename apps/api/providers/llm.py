@@ -6,7 +6,6 @@ every completion is forwarded as a Langfuse generation (TRD §15).
 
 import asyncio
 import logging
-import os
 import re
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
@@ -23,6 +22,7 @@ from litellm.exceptions import (
     Timeout,
 )
 
+import observability.tracing
 from config import get_settings
 from errors import AppError
 from quota.usage import get_usage_context
@@ -185,6 +185,31 @@ def _api_key(model: str) -> str | None:
     return context.api_key_for(model) if context is not None else None
 
 
+def _trace_id(metadata: dict[str, str]) -> str | None:
+    """The Langfuse trace id for this call, or None to let LiteLLM choose.
+
+    KI-21's empty-id bug lived here. `trace_id` was
+    `metadata.get("job", metadata.get("run_id", ""))`, which is wrong twice
+    over: a caller that passes a `job` label (`"decision_fallback"`,
+    `"claim_extraction"`) got that *label* as its trace id, so its
+    generations sat under a trace named after the job rather than under the
+    run, and a caller that passed neither key — `graph/planner.py`,
+    `graph/rewrite.py` — got `""`, which is the `set ,` LiteLLM logged
+    1374 times.
+
+    The run's own id is the trace id, taken from the caller's `run_id` when
+    it has one and from the run-scoped usage context otherwise, so every
+    generation, Jev span and stage span of a run shares one trace. `job`
+    stays in the metadata as a label, where it is useful and where it is
+    not mistaken for an id. None (rather than "") when there is no run at
+    all — an eval or a seeding script — so LiteLLM falls back to its call id
+    and creates a trace per call instead of every such call claiming the
+    same empty one.
+    """
+    run_id = metadata.get("run_id") or observability.tracing.current_trace_id()
+    return run_id or None
+
+
 def _request_kwargs(
     model: str,
     metadata: dict[str, str],
@@ -195,16 +220,21 @@ def _request_kwargs(
 ) -> dict[str, Any]:
     settings = get_settings()
     role = metadata.get("role", "unknown")
+    call_metadata: dict[str, str | None] = {
+        "run_id": metadata.get("run_id", ""),
+        "user_id": metadata.get("user_id", ""),
+        "role": role,
+    }
+    if "job" in metadata:
+        call_metadata["job"] = metadata["job"]
+    trace_id = _trace_id(metadata)
+    if trace_id is not None:
+        call_metadata["trace_id"] = trace_id
     kwargs: dict[str, Any] = {
         "max_tokens": settings.llm_max_tokens.get(role, settings.llm_default_max_tokens),
         "num_retries": settings.llm_max_retries,
         "timeout": settings.llm_timeout_seconds,
-        "metadata": {
-            "trace_id": metadata.get("job", metadata.get("run_id", "")),
-            "run_id": metadata.get("run_id", ""),
-            "user_id": metadata.get("user_id", ""),
-            "role": role,
-        },
+        "metadata": call_metadata,
     }
     # Absent (None) means "send nothing", so the provider's own default applies
     # and every caller that predates this parameter behaves exactly as before
@@ -278,10 +308,12 @@ def _configure_langfuse() -> None:
     global _callbacks_configured
     if _callbacks_configured:
         return
-    settings = get_settings()
-    if settings.langfuse_public_key and settings.langfuse_secret_key:
-        os.environ.setdefault("LANGFUSE_PUBLIC_KEY", settings.langfuse_public_key)
-        os.environ.setdefault("LANGFUSE_SECRET_KEY", settings.langfuse_secret_key)
+    if observability.tracing.enabled():
+        # Exports all three, LANGFUSE_HOST included (KI-21): the callback
+        # below reads only the environment, so without the host the SDK
+        # falls back to the EU default and the JP project's keys fail to
+        # authenticate silently — the trace stream just stops.
+        observability.tracing.export_environment()
         if "langfuse" not in litellm.success_callback:
             litellm.success_callback.append("langfuse")
         if "langfuse" not in litellm.failure_callback:

@@ -23,6 +23,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -283,6 +284,52 @@ class UsageLedger(Base):
     ts: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class Invite(Base):
+    """One invitation to create an account (item 4, `signup_mode=invite`).
+
+    `code_hash` is what is stored; `code` holds the plaintext only for the
+    one response that shows it to the admin who minted it, and is empty on
+    every later read. A code is a bearer credential for account creation, so
+    the table is not the place it should sit in plaintext — and the audit log
+    is not either.
+    """
+
+    __tablename__ = "invites"
+    __table_args__ = (
+        Index(
+            "ix_invites_live",
+            "created_at",
+            postgresql_where=text("used_by IS NULL AND revoked_at IS NULL"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid7)
+    code: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    code_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    created_by: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    used_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Nullable so a code can be permanent; a beta invites by hand and does
+    # not want to hand out expiry maths with every code.
+    expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Separate from used_at so revoking a shared code is not recorded as a
+    # redemption: "this was used" and "this is void" are different facts and
+    # an operator reading the audit trail needs to tell them apart.
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    note: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

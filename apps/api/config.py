@@ -3,6 +3,7 @@
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -30,6 +31,23 @@ class Settings(BaseSettings):
     # cannot be left at its default on a real deployment.
     environment: Literal["development", "staging", "production"] = "development"
 
+    # Signup control (item 4). `invite` is the production default: a private
+    # beta with a handful of invited users must not be reachable by anyone
+    # who guesses a URL, and the default is the safe one because forgetting
+    # to set it is the failure mode that leaks the deployment.
+    signup_mode: Literal["open", "invite", "closed"] = "invite"
+    # In-process rate limits (item 4, ADR-001). 10 auth attempts a minute per
+    # IP is the example; the defaults are deliberately tight on the endpoints
+    # worth brute-forcing and looser on run creation, where a burst is normal
+    # (the Auto mode re-enters retrieval, not run creation, so one request
+    # per turn is the honest count).
+    rate_limit_signup: int = 10
+    rate_limit_signup_window_seconds: float = 60.0
+    rate_limit_login: int = 10
+    rate_limit_login_window_seconds: float = 60.0
+    rate_limit_run: int = 60
+    rate_limit_run_window_seconds: float = 60.0
+
     # Email (AC-1 password reset, KI-35). `dev_log` writes the message to the
     # log instead of sending it, and is refused when ENVIRONMENT=production.
     # `smtp` sends for real; AWS SES publishes an SMTP endpoint, so slice 9
@@ -46,6 +64,15 @@ class Settings(BaseSettings):
     # Observability (TRD §15). Empty keys disable the Langfuse callback.
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
+    # The pinned SDK (`langfuse<3`) reads `LANGFUSE_HOST`, and with no host
+    # it falls back to the EU default — where a JP project's keys silently
+    # fail to authenticate, so traces stop arriving with no error anywhere
+    # (KI-21: 301 traces, then nothing). `LANGFUSE_BASE_URL` is accepted as an
+    # alias because that is the name already in `.env`; both names work and
+    # the SDK's own name wins when both are set.
+    langfuse_host: str = Field(
+        default="", validation_alias=AliasChoices("LANGFUSE_HOST", "LANGFUSE_BASE_URL")
+    )
 
     # RunBus tuning (TRD §7, ADR-001).
     delta_coalesce_ms: int = 50

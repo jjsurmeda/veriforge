@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import Plan, UsageLedger, User, UserQuotaOverride
 from errors import AppError
+from observability import signals
 
 DEFAULT_ESTIMATES = {"fast": 3_000, "auto": 8_000, "deep": 30_000}
 
@@ -171,6 +172,20 @@ async def gate_and_reserve(
             estimate=estimate,
             oldest=oldest,
             now=current,
+        )
+        # `quota.denied` here rather than at the route: this is the one place
+        # a run is refused for credit, so the signal cannot be forgotten by a
+        # caller that adds another entry point. A refusal is a *rejected
+        # request*, not a failed run — no `run.failed` follows it, because
+        # there is no run — which is why it is a separate event.
+        signals.emit(
+            signals.QUOTA_DENIED,
+            level="WARNING",
+            run_id=run_id,
+            user_id=user_id,
+            error_code="quota_exceeded",
+            window=window,
+            reset_at=reset_at.isoformat(),
         )
         raise QuotaExceeded(
             "quota_exceeded",

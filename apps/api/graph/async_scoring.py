@@ -11,6 +11,7 @@ from uuid import UUID
 
 from config import get_settings
 from evals.judge import judge_answer
+from observability import tracing
 from quota.usage import get_usage_context
 from retrieval.expand import ExpandedContext
 from runtime import runtime_value
@@ -21,16 +22,12 @@ _SMALL_MODEL = "openrouter/anthropic/claude-haiku-4.5"
 
 
 def _push_scores(trace_id: str, scores: dict[str, float]) -> None:
-    from langfuse import Langfuse
-
-    from config import get_settings
-
-    settings = get_settings()
-    if not (settings.langfuse_public_key and settings.langfuse_secret_key):
-        return
-    client = Langfuse()
-    for name, value in scores.items():
-        client.score(trace_id=trace_id, name=name, value=value)
+    # `observability.tracing` owns the client, so the host is configured the
+    # same way here as for the spans. This used to build `Langfuse()` with no
+    # arguments, which read LANGFUSE_HOST from the environment — a variable
+    # nothing in the app ever set (KI-21), so scores went to the EU default
+    # and failed there exactly as the generations did.
+    tracing.score(trace_id, scores)
 
 
 async def score_run_async(

@@ -7,7 +7,9 @@ from fastapi import APIRouter, Request, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from auth import ratelimit
 from auth.deps import CurrentUser
+from auth.router import _client_ip
 from chats.scope import (
     chat_starter_questions,
     dedupe,
@@ -367,6 +369,12 @@ async def create_run(
     user: CurrentUser,
     session: SessionDep,
 ) -> RunCreateResponse:
+    # First statement, before any work: a throttled request must cost
+    # nothing beyond the counter. Checking later — after the messages are
+    # written, the run row is created and the model resolved — would mean
+    # the rows exist and then have to be undone, and the quota gate would
+    # have reserved credit against a request that is refused anyway.
+    ratelimit.enforce("run", ip=_client_ip(request), user_id=str(user.id))
     chat = await _owned_chat(session, user, chat_id)
     model_id = body.model_id or chat.model_id
     if model_id is None:

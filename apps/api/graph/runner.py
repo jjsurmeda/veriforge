@@ -47,6 +47,7 @@ from graph.review import (
     review_answer,
 )
 from graph.suggestions import generate_suggestions
+from observability import signals
 from providers.credentials import decrypt_provider_key
 from providers.llm import classify_provider_error
 from quota.service import settle_run
@@ -1075,6 +1076,12 @@ async def execute_run(
 
     except AppError as exc:
         logger.error("run failed", extra={"run_id": str(run_id), "error_code": exc.error_code})
+        signals.emit(
+            signals.RUN_FAILED,
+            run_id=run_id,
+            user_id=user_id,
+            error_code=exc.error_code,
+        )
         await _finalize(session_factory, run_id, message_id, status="failed", text=text)
         await bus.publish(
             run_id,
@@ -1099,6 +1106,24 @@ async def execute_run(
                 "run failed at the provider",
                 extra={"run_id": str(run_id), "error_code": provider_error.error_code},
             )
+            signals.emit(
+                signals.RUN_FAILED,
+                run_id=run_id,
+                user_id=user_id,
+                error_code=provider_error.error_code,
+            )
+            # A provider that is out of credit is a separate alarm from a run
+            # that failed: one user is affected by `run.failed`, every user
+            # is blocked until it is topped up. `provider.credit_low` fires on
+            # the 402/quota codes only, so a provider being merely down does
+            # not page anyone about money.
+            if provider_error.error_code == "quota_exceeded":
+                signals.emit(
+                    signals.PROVIDER_CREDIT_LOW,
+                    run_id=run_id,
+                    user_id=user_id,
+                    error_code=provider_error.error_code,
+                )
             await _finalize(session_factory, run_id, message_id, status="failed", text=text)
             await bus.publish(
                 run_id,
@@ -1110,6 +1135,12 @@ async def execute_run(
             )
             return
         logger.exception("run failed", extra={"run_id": str(run_id)})
+        signals.emit(
+            signals.RUN_FAILED,
+            run_id=run_id,
+            user_id=user_id,
+            error_code="run_error",
+        )
         await _finalize(session_factory, run_id, message_id, status="failed", text=text)
         await bus.publish(
             run_id,
@@ -1172,6 +1203,17 @@ async def sweep_stale_runs(
 
     stale = await _with_session(session_factory, work)
     for run_id, _message_id in stale:
+        # `worker.stalled`, not `run.failed`: this is the one failure whose
+        # cause is our own process rather than a user or a provider, so an
+        # operator paging on it is looking at the right thing. It arrives
+        # here and nowhere else — a stalled worker cannot emit anything
+        # itself, which is the whole reason the sweeper reports it.
+        signals.emit(
+            signals.WORKER_STALLED,
+            run_id=run_id,
+            error_code="heartbeat_timeout",
+            sweep_seconds=get_settings().heartbeat_sweep_seconds,
+        )
         await bus.publish(
             run_id,
             RunFailed(

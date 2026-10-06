@@ -9,8 +9,10 @@ import httpx
 from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from auth import invites
 from db.models import (
     AuditLog,
+    Invite,
     LlmProvider,
     Model,
     ModelRole,
@@ -33,6 +35,8 @@ from schemas.admin import (
     DecisionShadowOut,
     DecisionStatsOut,
     DecisionTargetsOut,
+    InviteCreate,
+    InviteOut,
     ModelCreate,
     ModelPatch,
     PlanCreate,
@@ -830,3 +834,70 @@ async def decision_stats(session: AsyncSession, *, hours: int = 24) -> DecisionS
         ),
         targets=DecisionTargetsOut(ingress_p95_ms=600, fallback_share=0.05),
     )
+
+
+# --- invites (item 4) -----------------------------------------------------
+#
+# Thin CRUD over `auth/invites.py`, with the audit rows every other admin
+# action here writes. The business rules live in the auth package because
+# `auth/router.py` needs them too, and python.md's dependency direction says
+# admin depends on auth — not the other way round.
+
+
+async def create_invites(
+    session: AsyncSession, *, actor_id: UUID, body: InviteCreate
+) -> list[InviteOut]:
+    created = await invites.create(
+        session,
+        actor_id=actor_id,
+        count=body.count,
+        expires_in_days=body.expires_in_days,
+        note=body.note,
+    )
+    # The audit row carries the note, the count and the expiry — never the
+    # code. A code in `audit_log` would be a credential in the one table
+    # every admin can read forever, which is precisely what storing the hash
+    # was to avoid.
+    _audit(
+        session,
+        actor_id=actor_id,
+        action="invite.create",
+        target=f"invites:{len(created)}",
+        before=None,
+        after={
+            "count": body.count,
+            "expires_in_days": body.expires_in_days,
+            "note": body.note,
+            "ids": [str(invite.id) for invite, _ in created],
+        },
+    )
+    return [
+        InviteOut(**invites.invite_out(invite, code=code))
+        for invite, code in created
+    ]
+
+
+async def list_invites(session: AsyncSession, *, status: str | None) -> list[InviteOut]:
+    rows = await invites.list_all(session, status=status)
+    # No `code=` here: this is a later read, and the plaintext is gone. An
+    # admin who needs the code again mints another one.
+    return [InviteOut(**invites.invite_out(row)) for row in rows]
+
+
+async def revoke_invite(
+    session: AsyncSession, *, actor_id: UUID, invite_id: UUID
+) -> InviteOut:
+    before_status = None
+    existing = await session.get(Invite, invite_id)
+    if existing is not None:
+        before_status = invites.status_of(existing)
+    invite = await invites.revoke(session, invite_id=invite_id)
+    _audit(
+        session,
+        actor_id=actor_id,
+        action="invite.revoke",
+        target=f"invite:{invite_id}",
+        before={"status": before_status},
+        after={"status": invites.status_of(invite)},
+    )
+    return InviteOut(**invites.invite_out(invite))

@@ -12,6 +12,7 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from auth import invites, ratelimit
 from auth.cookies import clear_refresh_cookie, set_refresh_cookie
 from auth.deps import CurrentUser
 from auth.email import EmailDeliveryFailed, get_email_transport
@@ -49,12 +50,52 @@ me_router = APIRouter(tags=["me"])
 GOOGLE_STATE_TTL = 600
 
 
+def _client_ip(request: Request) -> str | None:
+    """The caller's address for the rate limiter, or None if unknowable.
+
+    Defined once here and imported by `chats/router.py`, rather than written
+    twice: two copies of a security-relevant helper is two places to forget
+    the decision below.
+
+    **What this function does not do is read a header.** It returns
+    `request.client.host` and nothing else. Measured, not assumed: a test
+    that sent a forged `X-Forwarded-For` and expected the limiter to ignore it
+    failed, and the reason is worth writing down rather than rediscovering.
+
+    Uvicorn runs `ProxyHeadersMiddleware` by default (`proxy_headers=True`),
+    and its `forwarded_allow_ips` defaults to `127.0.0.1`. So when the
+    connection arrives from a trusted peer, the middleware has **already**
+    rewritten `scope["client"]` from `X-Forwarded-For` before any handler
+    sees it. That is why an untrusted attacker cannot spoof the bucket —
+    their connection does not come from a trusted address, so the header is
+    ignored — and it is also why the limiter sees the *real* client in
+    production, which is what makes a per-IP limit mean anything at all.
+
+    **The trust list is therefore the security boundary, not this function.**
+    If Caddy moves to its own container (so its address is no longer
+    `127.0.0.1`), uvicorn stops trusting the header, every request appears to
+    come from Caddy, and one user exhausting their budget locks out
+    everybody. That is a silent, plausible-looking failure. Setting
+    `forwarded_allow_ips` to Caddy's address (or `*` only when something else
+    guarantees it) belongs with the deploy work, and
+    `tests/auth/test_invites_and_rate_limit.py` pins the half of this that is
+    ours: we never read the header ourselves.
+    """
+    client = request.client
+    return client.host if client is not None else None
+
+
 class EmailTaken(AppError):
     status_code = 409
 
 
 class InvalidCredentials(AppError):
     status_code = 401
+
+
+class SignupClosed(AppError):
+    status_code = 403
+
 
 
 async def _default_plan_id(session: AsyncSession) -> UUID:
@@ -96,7 +137,26 @@ async def signup(
     body: SignupRequest,
     response: Response,
     session: SessionDep,
+    request: Request,
 ) -> TokenResponse:
+    mode = get_settings().signup_mode
+    ratelimit.enforce("signup", ip=_client_ip(request))
+    if mode == "closed":
+        raise SignupClosed(
+            "signup_closed", "Signup is closed on this deployment"
+        )
+    # The invite is validated BEFORE the email lookup, deliberately, and the
+    # order is a security property rather than a style choice. With the
+    # lookup first, a bogus code answers 409 `email_taken` for an address that
+    # has an account and 400 `invite_invalid` for one that does not — which
+    # is an account-existence oracle on a public endpoint, requiring no valid
+    # invite at all. Validating the code first makes both cases the same 400.
+    # (Found by a test written to check the oracle; see
+    # test_every_unusable_code_answers_identically.)
+    invite_code: str | None = None
+    if mode == "invite":
+        invite_code = invites.require_code(body.invite_code)
+        await invites.ensure_available(session, code=invite_code)
     existing = await session.execute(select(User).where(User.email == body.email))
     if existing.scalar_one_or_none() is not None:
         raise EmailTaken("email_taken", "An account with this email already exists")
@@ -108,6 +168,11 @@ async def signup(
     )
     session.add(user)
     await session.flush()
+    if invite_code is not None:
+        # After the flush, so there is a user id to attach the invite to, and
+        # before the response, so a failed claim cannot leave a live account
+        # behind on a code that was already spent.
+        await invites.consume(session, code=invite_code, user_id=user.id)
     return await _token_response(session, response, user)
 
 
@@ -116,7 +181,9 @@ async def login(
     body: LoginRequest,
     response: Response,
     session: SessionDep,
+    request: Request,
 ) -> TokenResponse:
+    ratelimit.enforce("login", ip=_client_ip(request))
     user = (
         await session.execute(select(User).where(User.email == body.email))
     ).scalar_one_or_none()
@@ -241,14 +308,37 @@ async def google_callback(
         existing = (
             await session.execute(select(User).where(User.email == identity.email))
         ).scalar_one_or_none()
-        user = existing or User(
-            email=identity.email,
-            password_hash=None,
-            role="user",
-            plan_id=await _default_plan_id(session),
-        )
-        session.add(user)
-        await session.flush()
+        # `signup_mode` governs Google sign-in too (item 4). Google proves the
+        # account with Google, not that the person was invited, so a first-time
+        # account is subject to exactly the same rule as a password signup —
+        # otherwise `signup_mode=invite` is open to anyone with any Google
+        # account, and the mode would be decorative.
+        mode = get_settings().signup_mode
+        ratelimit.enforce("signup", ip=_client_ip(request))
+        if existing is not None:
+            user = existing
+        else:
+            if mode == "closed":
+                return RedirectResponse(f"{settings.web_origin}/login?error=signup_closed")
+            code = request.query_params.get("invite_code")
+            user = User(
+                email=identity.email,
+                password_hash=None,
+                role="user",
+                plan_id=await _default_plan_id(session),
+            )
+            session.add(user)
+            await session.flush()
+            if mode == "invite":
+                try:
+                    await invites.attach_google_first_time(
+                        session, code=invites.require_code(code), user=user
+                    )
+                except invites.InviteInvalid:
+                    await session.rollback()
+                    return RedirectResponse(
+                        f"{settings.web_origin}/login?error=invite_invalid"
+                    )
         session.add(OauthAccount(user_id=user.id, provider="google", subject=identity.subject))
         await session.flush()
 

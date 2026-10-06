@@ -20,6 +20,7 @@ from enum import Enum
 from functools import cache
 
 from config import get_settings
+from observability import signals
 
 
 class BreakerState(Enum):
@@ -63,22 +64,61 @@ class CircuitBreaker:
         return False
 
     def record_success(self) -> None:
+        previous = self._state
         self._failures.clear()
         self._opened_at = None
         self._state = BreakerState.CLOSED
+        # A closed breaker is the normal state, so this line is emitted only
+        # on a state *change* — a breaker that was open and got a successful
+        # probe back. Emitting on every success would bury `breaker.closed`
+        # under a line per successful decision and the alarm would be
+        # unreadable.
+        if previous is not BreakerState.CLOSED:
+            signals.emit(
+                signals.BREAKER_CLOSED,
+                level="INFO",
+                state=self._state.value,
+                cooldown_seconds=self.cooldown_seconds,
+            )
 
     def record_failure(self) -> None:
         now = self._now()
         self._prune(now)
+        previous = self._state
         if self._state is BreakerState.PROBING:
             # Probe failed — re-open for another cooldown.
             self._opened_at = now
             self._state = BreakerState.OPEN
+            signals.emit(
+                signals.BREAKER_OPENED,
+                level="ERROR",
+                state=self._state.value,
+                reason="probe_failed",
+            )
             return
         self._failures.append(now)
         if len(self._failures) >= self.failure_threshold:
             self._opened_at = now
             self._state = BreakerState.OPEN
+            # Gated on the transition, not on "the threshold is met". The
+            # threshold stays met while the breaker is open, so gating on
+            # that re-emitted `breaker.opened` on every further failure —
+            # an alarm counting occurrences would have reported one outage
+            # as N. My own test caught this; see
+            # test_further_failures_while_open_do_not_re_emit.
+            #
+            # The state machine above is unchanged: `_opened_at` is still
+            # pushed forward on every failure while open, which is the
+            # pre-existing cooldown behaviour and not this item's to change.
+            if previous is not BreakerState.OPEN:
+                signals.emit(
+                    signals.BREAKER_OPENED,
+                    level="ERROR",
+                    state=self._state.value,
+                    reason="threshold_reached",
+                    failures=len(self._failures),
+                    window_seconds=self.window_seconds,
+                )
 
     @asynccontextmanager
     async def probe(self) -> AsyncIterator[None]:
