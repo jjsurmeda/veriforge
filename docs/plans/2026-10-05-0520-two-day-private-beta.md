@@ -91,3 +91,19 @@ redesign.
 1. AWS account access (a scoped IAM role) and a domain with DNS.
 2. OpenRouter top-up (about $20) and a separate production key with a cap.
 3. SES production access requested today.
+
+## Amendment 2026-10-07: a one-week throwaway deployment, no domain
+
+Owner decision: no custom domain; AWS lives for about one week, brought up on demand and
+torn down afterwards. Lane A is rewritten (`docs/prompts/2026-10-07-0030-beta-lane-a-deploy-v2.md`):
+
+- one CloudFront distribution (free `*.cloudfront.net` certificate) in front of Caddy on the
+  EC2 box; the SPA and API share one origin, so no CORS and no app changes (Caddy mirrors the
+  Vite dev proxy); the origin is locked to CloudFront by prefix list and a secret header
+- no ACM, Route 53, DNS records, Google sign-in or GitHub deploy workflow
+- `infra/up.sh`, `down.sh`, `status.sh` run from the owner's laptop; a retained S3 bucket
+  keeps database dumps so the corpus is restored without re-embedding
+- SES in sandbox with the owner's verified address (no production-access wait); password
+  reset works for the owner only
+- cost: about $9 for one week; the URL changes each bring-up
+- known limit: CloudFront to EC2 is plain HTTP; acceptable for a throwaway showcase only
