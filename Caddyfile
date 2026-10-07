@@ -1,0 +1,187 @@
+# Caddy for the beta deployment: the SPA, the API proxy, and the origin lock.
+#
+# Design (decided, not revisited here): one origin, CloudFront in front,
+# plain HTTP from CloudFront to this container. There is no domain in this
+# deployment, so there is no origin certificate and no ACM.
+#
+# Three rules, in the order below, and the order is load-bearing:
+#
+#   1. the request must carry the X-Origin-Verify value CloudFront was
+#      configured to add. Without it, nothing is served — a direct hit on the
+#      instance's public address gets a 403 and no content.
+#   2. a request to an API prefix is proxied to the api, UNLESS it is a
+#      top-level document navigation, in which case the SPA owns the path.
+#   3. everything else falls back to index.html.
+#
+# Rule 2's list and its bypass are copied from apps/web/vite.config.ts, which
+# does the same thing for the Vite dev server. tests/test_caddyfile_parity.py
+# fails if the two lists ever drift apart.
+{
+	admin off
+	# No automatic HTTPS: there is no hostname to get a certificate for, and
+	# the viewer's HTTPS is terminated by CloudFront.
+	auto_https off
+	# Request logs are discarded on purpose. The api emits the structured
+	# signals alarms are built on (docs/ops/signals.md); a second, unstructured
+	# log stream would only cost disk on a 30 GB volume.
+	log {
+		output discard
+	}
+	servers {
+		# CloudFront is the only peer that may reach this container, and the
+		# security group allows port 80 from the CloudFront managed prefix list
+		# only. Stated here as the assumption the origin-verify check rests on.
+		trusted_proxies static private_ranges
+	}
+}
+
+:80 {
+	# Compression. No exclusion for text/event-stream is needed, and the
+	# default `match` list does match `text/*`: Caddy documents SSE
+	# explicitly — "Server-sent events responses (Content-Type:
+	# text/event-stream) ... are not held back to reach this threshold: their
+	# headers are sent to the client immediately, and the body is streamed as
+	# it is written" (caddyfile/directives/encode, `minimum_length`). The
+	# buffering hop that matters is the reverse proxy's, handled by
+	# flush_interval -1 below.
+	encode zstd gzip
+
+	# --- 1, 2 and 3, in this order ------------------------------------------
+	# Everything that decides what happens to a request is inside `route`,
+	# because `route` is the only way to keep Caddy's directive reordering out
+	# of it. This is not theoretical: with the origin-verify `respond` written
+	# at the site level above the `route` block, it validated, it looked right,
+	# and it did nothing — Caddy orders `route` ahead of `respond`, so the SPA
+	# fallback answered first and a request with no X-Origin-Verify header got
+	# 200. Measured, both ways, on caddy:2-alpine:
+	#
+	#   respond outside route -> 200   (origin lock inert)
+	#   respond inside  route -> 403   (correct)
+	#
+	# infra/prod_compose_check.sh step 1 is the regression test for it.
+	route {
+		# --- 1. the origin is locked -----------------------------------------
+		# Fail-closed: if ORIGIN_VERIFY is unset in the environment,
+		# {$ORIGIN_VERIFY} expands to the empty string, `header X-Origin-Verify
+		# ""` matches only a request with an empty value, so `not` matches every
+		# real request and everything is refused. A missing secret stops the
+		# site rather than opening it.
+		@notVerified not header X-Origin-Verify {$ORIGIN_VERIFY}
+		respond @notVerified 403
+
+		@assets path /assets/*
+		header @assets Cache-Control "public, max-age=31536000, immutable"
+
+		# --- 2. API prefixes, and the navigation bypass ----------------------
+		# The same list as apps/web/vite.config.ts, but each entry is spelled
+		# "exact or under" (`/auth /auth/*`) rather than as Vite's bare prefix.
+		# That difference is load-bearing and was found by measurement:
+		#
+		#   Vite's proxy keys are matched with plain startsWith, so `/auth`
+		#   covers `/auth/login`. Caddy's `path` matcher is EXACT, so
+		#   `path /auth` does not — and `POST /auth/login` fell through to the
+		#   SPA file server and came back 405 Method Not Allowed, while the api
+		#   answered 422 for the same request direct. `path /auth*` would fix
+		#   that but over-matches: `/me*` swallows any future SPA route that
+		#   merely starts with "me".
+		#
+		# `/auth /auth/*` covers exactly the api's routes and cannot collide
+		# with an SPA route. On a path neither side claims (`/author`) Vite
+		# proxies to the api and this serves the SPA, which is the better
+		# answer; nothing in apps/web has such a route.
+		#
+		# `/admin/` keeps its trailing slash from vite.config.ts: the admin
+		# router is mounted under `/admin/`, and the SPA's own `/admin` route
+		# is not proxied. That is the same behaviour as the dev server.
+		@api path /auth /auth/* \
+ /chats /chats/* \
+ /runs /runs/* \
+ /models /models/* \
+ /model-roles /model-roles/* \
+ /me /me/* \
+ /messages /messages/* \
+ /admin/ /admin/* \
+ /healthz /healthz/* \
+ /library /library/* \
+ /web-sources /web-sources/* \
+ /documents /documents/*
+
+		# The collision rule: a top-level navigation — a request whose Accept
+		# contains text/html — to one of those prefixes belongs to the SPA, not
+		# the api. vite.config.ts calls this bypassDocumentNavigation and
+		# rewrites it to /index.html; `/library` and `/auth/callback` are both
+		# SPA routes that collide with api prefixes.
+		@document header Accept *text/html*
+
+		handle @api {
+			route {
+				handle @document {
+					root * /srv
+					try_files {path} /index.html
+					file_server
+				}
+
+				reverse_proxy api:8000 {
+					# SSE. Measured, not assumed, and the honest version is
+					# narrower than it first looked: this line is NOT what makes
+					# the event stream work. Caddy's reverse_proxy documents that
+					# `flush_interval` "is ignored and responses are flushed
+					# immediately to the client if one of the following applies
+					# from the response: Content-Type: text/event-stream ...".
+					# The api sends exactly that (apps/api/runs/router.py,
+					# StreamingResponse with media_type="text/event-stream"), so
+					# Caddy streams it with or without this line.
+					#
+					# Proof that it is not load-bearing: a rebuild with
+					# `flush_interval 250ms` produced the identical frame spread
+					# (6.01s between first and last) as `flush_interval -1`.
+					#
+					# It is kept anyway. It costs nothing, it is the explicit
+					# statement of intent at the one place a reader will look,
+					# and it is the setting that WOULD matter if the content type
+					# were anything other than text/event-stream or if Caddy's
+					# exemption ever stopped applying.
+					flush_interval -1
+
+					# The client's address for the rate limiter (KI-59).
+					#
+					# REPLACE, do not append. uvicorn's ProxyHeadersMiddleware
+					# scans X-Forwarded-For right-to-left and returns the first
+					# address that is not itself a trusted proxy
+					# (_TrustedHosts.get_trusted_client_address), so appending
+					# Caddy's own peer address here would put the CloudFront
+					# edge IP last, and every request would be keyed on it —
+					# the one-bucket-for-everyone failure KI-59 describes.
+					#
+					# What CloudFront sends is safe to pass through: it appends
+					# the real viewer's address to the END of the header
+					# ("appends it to the end of the X-Forwarded-For header",
+					# Amazon CloudFront Developer Guide), so the genuine address
+					# is the rightmost entry and anything a viewer prepended
+					# sits to its left, where the right-to-left scan never
+					# reaches it. Spoofing is defeated by the same mechanism
+					# that forwards the header.
+					header_up X-Forwarded-For {http.request.header.X-Forwarded-For}
+
+					# The viewer is always on HTTPS — the CloudFront behaviour
+					# is redirect-to-https — even though this hop is plain HTTP.
+					# CloudFront removes the viewer's X-Forwarded-Proto rather
+					# than forwarding it, so without this uvicorn would see
+					# "http" and https:// URLs in the app would be built wrong.
+					header_up X-Forwarded-Proto https
+				}
+			}
+		}
+
+		# --- 3. SPA fallback ------------------------------------------------
+		handle {
+			root * /srv
+			try_files {path} /index.html
+			file_server
+		}
+	}
+
+	log {
+		output discard
+	}
+}

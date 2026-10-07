@@ -1,0 +1,49 @@
+# A second Caddy from the same image and the same Caddyfile, pointed at a
+# synthetic SSE origin instead of the api.
+#
+# This exists only for step 8 of infra/prod_compose_check.sh: proving that
+# flush_interval -1 actually delivers frames incrementally needs a stream with
+# known timings, and getting one from the real api means running a real chat
+# run, which calls a live model. This lane spends no provider credit.
+#
+# It is NOT a deployment file. Nothing in infra/up.sh references it.
+
+name: vf-sse-probe
+
+services:
+  sse-origin:
+    image: python:3.12-slim
+    working_dir: /probe
+    command: >-
+      python sse_origin.py --slow 8 --events 4 --interval 2
+    volumes:
+      # Relative paths resolve against THIS file's directory, not the repo
+      # root, so `./` is infra/tests — writing `./infra/tests` here mounts
+      # infra/tests/infra/tests and the file is not found at runtime.
+      - ./:/probe:ro
+    networks:
+      default:
+        aliases:
+          # The Caddyfile proxies API paths to `api:8000`. In the real compose
+          # that is the api service; here it is this synthetic origin, and it
+          # has to answer to the same name or the proxy 502s on the first byte.
+          # Without the alias, step 8 got 0 frames in 0.08s.
+          - api
+    healthcheck:
+      # The probe sleeps 8s before its first frame, so anything that opens a
+      # TCP connection proves it is listening.
+      test: ["CMD-SHELL", "python -c \"import socket; socket.create_connection(('127.0.0.1',8000),3).close()\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  caddy:
+    image: ${WEB_IMAGE:-veriforge/web:latest}
+    environment:
+      ORIGIN_VERIFY: ${ORIGIN_VERIFY:?set by prod_compose_check.sh}
+    ports:
+      - "127.0.0.1:18081:80"
+    depends_on:
+      sse-origin:
+        condition: service_healthy

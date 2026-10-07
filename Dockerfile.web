@@ -1,0 +1,56 @@
+# syntax=docker/dockerfile:1
+
+# The SPA compiled to static files and served by Caddy, which also proxies the
+# API paths. One image, no node in the runtime: `up.sh` pushes this and the
+# instance pulls one artefact rather than building on boot.
+#
+# No SPA routing config lives in the build: vite.config.ts's `server.proxy` is
+# dev-server-only and is not applied by `vite build`, so the proxy list is
+# hand-mirrored in Caddyfile (the collision rule from apps/web/vite.config.ts
+# is reproduced there, with a test in tests/test_caddyfile.py).
+
+# --- build ------------------------------------------------------------------
+FROM node:22-alpine AS build
+
+WORKDIR /app
+COPY apps/web/package.json apps/web/package-lock.json ./
+
+# `npm ci` from the committed lockfile, so the built bundle is a function of
+# the commit and not of a floating resolution. (The dev compose deliberately
+# uses `--no-package-lock` instead: that comment is about running the musl
+# dev server inside a Linux container, which is not what this stage does.)
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --legacy-peer-deps
+
+COPY apps/web/ .
+
+# The api client under src/generated is git-ignored (apps/web/.gitignore:
+# `src/generated/*`) and is produced by codegen, so it cannot come from the
+# repository. Regenerate it here from the committed openapi.json
+# (`codegen:ci`, which is the same command ci.yml uses) rather than copying a
+# local one — a developer's stale generated directory would otherwise silently
+# become the deployed bundle. If openapi.json has drifted from the api, the
+# `tsc -b` below is what notices.
+RUN npm run codegen:ci
+
+# `tsc -b && vite build`. The output directory is dist/ (vite's default, and
+# the only one the app references), and it is copied into the Caddy stage
+# below.
+RUN npm run build
+
+# --- runtime ----------------------------------------------------------------
+FROM caddy:2-alpine
+
+# Caddyfile is the api-path proxy list, the SPA fallback, the origin-verify
+# check and `flush_interval -1` for SSE.
+COPY Caddyfile /etc/caddy/Caddyfile
+COPY --from=build /app/dist /srv
+
+# Plain :80. There is no domain in this deployment, so there is no origin
+# certificate and no ACM — CloudFront presents the viewer's HTTPS and talks
+# plain HTTP to the instance. See docs/ops/runbook.md for the limit that
+# implies.
+EXPOSE 80
+
+HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
+  CMD ["caddy", "version"]

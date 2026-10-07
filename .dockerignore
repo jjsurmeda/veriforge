@@ -1,0 +1,28 @@
+# Root .dockerignore.
+#
+# This file is used only by the Dockerfile.web build, and only because that
+# build's context has to be the repository root: the Caddyfile lives at the
+# root and has to be copied into the image, while the SPA is built from
+# apps/web. Dockerfile.api's context is apps/api, so this does not affect it.
+#
+# The context is narrowed to just those two things rather than shipped whole —
+# apps/api alone is a few MB of source that the SPA image does not contain.
+
+*
+!Caddyfile
+!apps/web
+
+# And inside apps/web, only what `npm run build` reads.
+apps/web/node_modules
+apps/web/dist
+apps/web/e2e
+apps/web/playwright.config.ts
+
+# The generated api client is deliberately NOT excluded from the build by being
+# copied in: it is git-ignored and is regenerated in the image from the
+# committed openapi.json. Excluding it here is what stops a developer's stale
+# src/generated from silently becoming the deployed bundle.
+apps/web/src/generated
+
+**/.DS_Store
+**/*.log

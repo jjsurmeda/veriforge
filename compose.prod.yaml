@@ -1,0 +1,231 @@
+# Production compose for the beta deployment. One origin on one EC2 box:
+# Caddy serves the built SPA and proxies the API paths, and everything else is
+# the stack in compose.yaml with dev conveniences removed.
+#
+# Differences from compose.yaml, all deliberate:
+#   - no source bind mounts; the images are built, not mounted
+#   - no `uv sync` on boot; the venv is baked in with --frozen
+#   - no --reload
+#   - memory limits from item 0's measured table
+#   - postgres has no published port; nothing but Caddy is reachable
+#   - the api's port is published only on loopback, for SSH-forward debugging
+#
+# Run it with infra/.env loaded (see scripts/load_ssm_env.sh and docs/ops/
+# runbook.md). `docker compose -f compose.prod.yaml config` is the check that
+# it is syntactically valid and that no secret reached it.
+
+name: veriforge-prod
+
+x-api-env: &api-env
+  DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-veriforge}:${POSTGRES_PASSWORD:?set in infra/.env}@postgres:5432/${POSTGRES_DB:-veriforge}
+  PROCRASTINATE_CONNINFO: postgresql://${POSTGRES_USER:-veriforge}:${POSTGRES_PASSWORD:?set in infra/.env}@postgres:5432/${POSTGRES_DB:-veriforge}
+  OBJECT_STORAGE_DIR: /data/objects
+  # Item 2 / lane C: the pinned langfuse SDK reads LANGFUSE_HOST, and without
+  # it falls back to the EU default where these keys silently fail to
+  # authenticate and traces just stop arriving (KI-21). The value is
+  # quote-stripped by scripts/load_ssm_env.sh — a quoted LANGFUSE_HOST makes
+  # the SDK fail.
+  LANGFUSE_HOST: ${LANGFUSE_HOST:-}
+  LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+  LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+  EMBEDDING_MODEL: ${EMBEDDING_MODEL:-openrouter/openai/text-embedding-3-small}
+  REFERENCE_MODEL_ID: ${REFERENCE_MODEL_ID:-anthropic/claude-haiku-4.5}
+  OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+  LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-}
+  PROVIDER_ENCRYPTION_KEY: ${PROVIDER_ENCRYPTION_KEY:-}
+  TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+  BRAVE_API_KEY: ${BRAVE_API_KEY:-}
+  COHERE_API_KEY: ${COHERE_API_KEY:-}
+  NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
+
+x-restart: &restart unless-stopped
+
+services:
+  postgres:
+    image: paradedb/paradedb:0.25.9-pg16
+    restart: *restart
+    # Docker's default /dev/shm is 64 MB, which is fine for serving queries and
+    # nowhere near enough to BUILD an index. Restoring a real corpus failed with
+    # `could not resize shared memory segment ... to 509678304 bytes: No space
+    # left on device` while running
+    #   CREATE INDEX ix_chunks_embedding_hnsw ... USING hnsw (embedding ...)
+    # — the HNSW build over 14k chunks wanted ~509 MB of DSM.
+    #
+    # This matters for pg_restore, for alembic migrations on a cold start, and
+    # for any re-embedding. 1 GB costs nothing (it is shared memory, not
+    # disk) and leaves room for a corpus several times this size.
+    shm_size: 1gb
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-veriforge}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in infra/.env}
+      POSTGRES_DB: ${POSTGRES_DB:-veriforge}
+    volumes:
+      # The named volume, mapped by user data to the EBS mount, so the data
+      # survives a container rebuild. This is the volume pg_dump reads and
+      # scripts/backup.sh writes to S3.
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-veriforge} -d ${POSTGRES_DB:-veriforge}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    # No `ports:` at all. The database is reachable only on the compose
+    # network, from the api and the workers.
+    mem_limit: 1400m
+
+  api:
+    image: ${API_IMAGE:?set by up.sh, or IMAGE_TAG/REGISTRY in the Makefile}
+    restart: *restart
+    # Every continuation line is indented exactly as far as the first one, so
+    # YAML folds them into spaces. Indenting them further makes them literal
+    # block content, and then `sh -c` sees a newline before `||`, which is a
+    # syntax error: `sh: 3: Syntax error: "||" unexpected`. That is what this
+    # command did before.
+    #
+    # `--forwarded-allow-ips` is load-bearing, and leaving it off is silent.
+    # uvicorn's ProxyHeadersMiddleware only trusts proxy headers from a peer in
+    # that list (it defaults to 127.0.0.1), and Caddy is a separate container,
+    # so with the flag omitted `scope["client"]` stays the socket peer — every
+    # request. The per-IP rate limiter then becomes one global bucket and the
+    # first user to exhaust their budget locks out everybody, while looking
+    # exactly like a working limiter. That is KI-59, and it is what
+    # infra/prod_compose_check.sh step 6 caught here:
+    #
+    #   viewer A x10 -> 401 x10
+    #   viewer B x10 -> 429 x10     <- sharing A's bucket
+    #
+    # It is the Caddy container's static address and nothing wider. Not `*`,
+    # and not the whole subnet.
+    command: >-
+      sh -c "alembic upgrade head &&
+      (python -m procrastinate --app=ingest.worker.app schema --apply ||
+      echo 'procrastinate schema already applied') &&
+      uvicorn main:app --host 0.0.0.0 --port 8000 --no-access-log
+      --forwarded-allow-ips=${CADDY_IP:-192.168.210.10}"
+    environment:
+      <<: *api-env
+      # main.py's lifespan calls build_email_transport first, and
+      # auth/email.py refuses dev_log when ENVIRONMENT=production — so with
+      # these four missing the api crash-loops on boot and CloudFront serves
+      # 502s. EMAIL_TRANSPORT=smtp means SES, sandboxed: mail only reaches
+      # addresses verified in SES ap-southeast-1.
+      ENVIRONMENT: production
+      EMAIL_TRANSPORT: smtp
+      SMTP_HOST: ${SMTP_HOST:?set in infra/.env — SES SMTP endpoint}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:?set in infra/.env — SES SMTP user}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:?set in infra/.env — SES SMTP password}
+      SMTP_FROM: ${SMTP_FROM:?set in infra/.env — a SES-verified address}
+      SMTP_STARTTLS: "true"
+      # Signup is invite-only and the refresh cookie is Secure. Both are the
+      # app's safe defaults (signup_mode="invite", cookie_secure=True), set
+      # explicitly so a future default change cannot quietly open the beta.
+      SIGNUP_MODE: invite
+      COOKIE_SECURE: "true"
+      JWT_SECRET: ${JWT_SECRET:?generated by up.sh, held in SSM}
+      # The deployed CloudFront URL. There is no domain, so this is
+      # https://<distribution-id>.cloudfront.net and it changes on every
+      # re-deploy of the edge stack — which is why up.sh writes it after the
+      # distribution exists rather than before.
+      WEB_ORIGIN: ${WEB_ORIGIN:?set by up.sh from the distribution domain}
+    volumes:
+      - objects:/data/objects
+    ports:
+      # Loopback only. Not reachable from the network; this exists so the
+      # owner can `ssh -L` to it via SSM Session Manager and curl /healthz
+      # without going through CloudFront.
+      - "127.0.0.1:${API_DEBUG_PORT:-18000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    mem_limit: 650m
+
+  # Same image as the api, same environment block; only `command` differs.
+  # One single-concurrency worker per queue (TRD §9.1) is unchanged.
+  #
+  # `healthcheck: disable: true` on both workers is not optional. The image's
+  # HEALTHCHECK curls http://127.0.0.1:8000/healthz, which is right for the api
+  # and meaningless for a procrastinate worker that never opens a port — so
+  # both workers would sit at "unhealthy" forever. `restart: unless-stopped`
+  # does not act on unhealthy (only on exit), so the processes keep working and
+  # the stack merely reports them as broken; `docker compose up --wait` in
+  # infra/prod_compose_check.sh and `up.sh` would hang or fail on it. Worker
+  # liveness is the queue's own business: procrastinate's heartbeat, and the
+  # `worker.stalled` signal from docs/ops/signals.md.
+  worker-ingest:
+    image: ${API_IMAGE:?set by up.sh}
+    restart: *restart
+    command: python -m procrastinate --app=ingest.worker.app worker --queues=ingest --concurrency=1
+    healthcheck:
+      disable: true
+    environment:
+      <<: *api-env
+    volumes:
+      - objects:/data/objects
+    depends_on:
+      postgres:
+        condition: service_healthy
+    mem_limit: 500m
+
+  worker-light:
+    image: ${API_IMAGE:?set by up.sh}
+    restart: *restart
+    command: python -m procrastinate --app=ingest.worker.app worker --queues=light --concurrency=1
+    healthcheck:
+      disable: true
+    environment:
+      <<: *api-env
+    volumes:
+      - objects:/data/objects
+    depends_on:
+      postgres:
+        condition: service_healthy
+    mem_limit: 450m
+
+  caddy:
+    image: ${WEB_IMAGE:?set by up.sh}
+    restart: *restart
+    environment:
+      # The origin lock. CloudFront adds this header on every request (the
+      # edge stack's `customHeaders`) and Caddy refuses anything without it.
+      # Generated per deploy by up.sh into SSM; the value never appears in a
+      # file in the repo or in the image — it arrives as this env var.
+      ORIGIN_VERIFY: ${ORIGIN_VERIFY:?generated by up.sh, held in SSM}
+    ports:
+      # Plain HTTP on 80. The security group allows it only from the
+      # CloudFront managed prefix list, and the Caddyfile additionally
+      # refuses any request missing X-Origin-Verify.
+      # CADDY_PORT exists so the local check in infra/prod_compose_check.sh can
+      # bind something other than 80; on the instance it is unset and this is
+      # "80:80".
+      - "${CADDY_PORT:-80}:80"
+    depends_on:
+      - api
+    mem_limit: 128m
+    networks:
+      default:
+        # A fixed address, because the api's --forwarded-allow-ips names it.
+        # uvicorn matches the socket peer against that list, and the peer is
+        # an address — a service name would never match.
+        ipv4_address: ${CADDY_IP:-192.168.210.10}
+
+networks:
+  default:
+    driver: bridge
+    ipam:
+      config:
+        # Explicit so CADDY_IP above is inside it. The 192.168.210/24 block is
+        # chosen because Docker hands out 172.17-172.31 by default and a
+        # laptop running other projects has most of those already — this box
+        # had 14 Docker networks spanning 172.17 to 172.31, and
+        # 172.30.7.0/24 failed with "Pool overlaps with other one on this
+        # address space". Docker checks the host's routes and fails loudly on
+        # a collision rather than silently renumbering, which would break the
+        # --forwarded-allow-ips above. Override NETWORK_SUBNET and CADDY_IP
+        # together if it ever collides.
+        - subnet: ${NETWORK_SUBNET:-192.168.210.0/24}
+
+volumes:
+  db_data:
+  objects:

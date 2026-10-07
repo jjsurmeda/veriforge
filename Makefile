@@ -30,3 +30,70 @@ acceptance:
 # eval-gate job. Baselines are written only this way (D3 item 2).
 eval-gate-local:
 	./scripts/eval_gate_local.sh
+
+# --- beta deployment images (lane A) ----------------------------------------
+# Tag by git SHA so a deployed artefact names its own commit. up.sh overrides
+# IMAGE_TAG for the pushed tags; these are the local build names.
+IMAGE_TAG ?= $(shell git rev-parse --short HEAD)
+REGISTRY   ?= veriforge
+API_IMAGE  ?= $(REGISTRY)/api:$(IMAGE_TAG)
+WEB_IMAGE  ?= $(REGISTRY)/web:$(IMAGE_TAG)
+
+# linux/arm64 explicitly. The owner's Mac is arm64 so this is a native build,
+# but pinning the platform keeps a future builder from silently producing an
+# amd64 image that cannot run on t4g.
+PLATFORM ?= linux/arm64
+
+.PHONY: image-build image-build-api image-build-web image-smoke image-prune
+.PHONY: infra-check infra-check-caddy infra-check-scripts infra-check-backup
+
+# The api and the workers are one image; they differ only by command.
+image-build: image-build-api image-build-web
+
+image-build-api:
+	docker buildx build --platform $(PLATFORM) \
+		-f Dockerfile.api --tag $(API_IMAGE) apps/api
+
+# The SPA is compiled here and baked into the Caddy image, so the instance
+# pulls a static bundle instead of building on boot.
+#
+# Context is the repository root, not apps/web, because the Caddyfile is a root
+# file and has to go into the image. The root .dockerignore narrows that
+# context back down to the Caddyfile plus apps/web.
+image-build-web:
+	docker buildx build --platform $(PLATFORM) \
+		-f Dockerfile.web --tag $(WEB_IMAGE) .
+
+# Proves the built api image actually starts and answers /healthz, against a
+# throwaway database on a port that does not clash with the dev stack.
+image-smoke:
+	./infra/image_smoke.sh
+
+# --- local verification -----------------------------------------------------
+# Everything the beta deployment claims, re-checkable without AWS and without
+# spending provider credit. Run this before believing any of it.
+infra-check: infra-check-caddy infra-check-scripts infra-check-cdk
+
+infra-check-caddy:
+	python3 infra/tests/test_caddyfile_parity.py
+
+infra-check-scripts:
+	./infra/tests/test_scripts.sh
+
+# Dumps the dev database and restores it into a scratch one. Not part of
+# `infra-check` because it moves ~160 MB and builds an HNSW index.
+infra-check-backup:
+	./infra/tests/test_backup_restore.sh
+
+infra-check-cdk:
+	cd infra/cdk && npx jest && npx cdk synth --quiet
+
+# The whole production compose, locally, on ports that do not clash with dev.
+infra-check-compose:
+	./infra/prod_compose_check.sh
+
+# Only this lane's build cache. `docker system prune` would take the dev
+# stack's images with it, which is not this lane's to delete.
+image-prune:
+	docker builder prune --filter "until=24h" --force
+	docker builder prune --force
