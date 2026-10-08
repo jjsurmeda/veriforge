@@ -165,6 +165,12 @@ class DecisionStatsOut(BaseModel):
     jev_latency_p50_ms: float | None
     jev_latency_p95_ms: float | None
     ingress_p95_ms: float | None
+    # Lane E item 3: the reranker's own latency, which the showcase's decision
+    # view reports next to Jev's. Optional and additive, with no value when no
+    # rerank step has run in the window — the panel then says so rather than
+    # drawing a bar at zero.
+    rerank_latency_p50_ms: float | None = None
+    rerank_latency_p95_ms: float | None = None
     by_decision: list[DecisionCountOut]
     breaker: DecisionBreakerOut
     shadow: DecisionShadowOut

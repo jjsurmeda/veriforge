@@ -71,6 +71,13 @@ class Metrics(RunEvent):
     context_window: int = 0
     faithfulness: float | None = None
     min_support: float | None = None
+    # TX-3: time to first token, from the run starting to the first
+    # `answer.delta` going out. Distinct from `generate`, which measures only
+    # the generator's own loop: the number a person waiting on a chat feels is
+    # everything before it. Null for a run that produced no delta (an
+    # abstention, or a hold), because "no first token" has no millisecond value
+    # and reporting 0 would read as "instant".
+    ttft_ms: int | None = None
 
 
 class Heartbeat(RunEvent):

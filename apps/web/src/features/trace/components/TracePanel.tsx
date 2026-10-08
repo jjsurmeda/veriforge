@@ -3,10 +3,14 @@ import { FileText, Gauge, ListTree, Maximize2, PanelRight, Quote } from 'lucide-
 
 import { formatCredits } from '../../../lib/format'
 import { PanelEmpty } from '../../../components/ui/PanelEmpty'
+import { PanelError } from '../../../components/ui/PanelError'
+import type { RunStatus } from '../../chat/store'
 import type { Decision, MessageOut, Metrics, RetrievedChunk, StepCompleted, StepStarted } from '../../../generated/types.gen'
 import { SourcesTab } from '../../chat/components/SourcesTab'
 import { CitationsTab } from './CitationsTab'
 import { DecisionSummary, DecisionTimeline } from './DecisionTimeline'
+import { EvidenceGateCard } from './EvidenceGateCard'
+import { LatencyWaterfall } from './LatencyWaterfall'
 
 interface Props {
   steps: Array<StepStarted | StepCompleted>
@@ -30,6 +34,10 @@ interface Props {
   onCloseViewer?: () => void
   selectedMessage?: MessageOut | null
   scrollToTopSignal?: number
+  /** The traced run's status, so an empty Trace can say whether nothing has
+   *  run yet or the replay was lost. */
+  traceStatus?: RunStatus | null
+  onRetryTrace?: () => void
 }
 
 export type TraceTab = 'sources' | 'citations' | 'trace' | 'metrics'
@@ -44,23 +52,12 @@ function StepRow({ step }: { step: StepStarted | StepCompleted }) {
   )
 }
 
-function WaterfallRow({ label, ms, max }: { label: string; ms: number; max: number }) {
-  const width = max > 0 ? Math.max(2, Math.round((ms / max) * 100)) : 0
-  return (
-    <li className="py-1.5">
-      <div className="flex items-baseline justify-between gap-2 text-xs"><span className="text-fg">{label}</span><span className="font-mono tabular-nums text-fg-muted">{ms} ms</span></div>
-      <div className="mt-1 h-1.5 w-full rounded-full bg-raised"><div className="h-1.5 rounded-full bg-fg-strong" style={{ width: `${width}%` }} /></div>
-    </li>
-  )
-}
-
 function StatTile({ label, value }: { label: string; value: string }) {
   return <div className="rounded-lg border border-border bg-surface px-3 py-2.5"><p className="text-2xs text-fg-muted">{label}</p><p className="mt-1 font-mono text-lg tabular-nums text-fg">{value}</p></div>
 }
 
 function MetricsTab({ metrics, decisions }: { metrics: Metrics | null; decisions: Decision[] }) {
   const latency = Object.entries(metrics?.latency_ms ?? {})
-  const max = Math.max(1, ...latency.map(([, ms]) => ms))
   const total = latency.reduce((sum, [, ms]) => sum + ms, 0)
   const tokens = (metrics?.tokens_in ?? 0) + (metrics?.tokens_out ?? 0)
   return (
@@ -80,12 +77,11 @@ function MetricsTab({ metrics, decisions }: { metrics: Metrics | null; decisions
             <StatTile label="Credits" value={metrics.credits !== undefined ? formatCredits(metrics.credits) : '—'} />
             <StatTile label="Faithfulness" value={metrics.faithfulness !== null && metrics.faithfulness !== undefined ? metrics.faithfulness.toFixed(2) : '—'} />
             <StatTile label="Stages" value={String(latency.length)} />
+            {metrics.ttft_ms !== null && metrics.ttft_ms !== undefined && (
+              <StatTile label="First token" value={`${metrics.ttft_ms} ms`} />
+            )}
           </div>
-          <section>
-            <h3 className="text-xs font-medium text-fg-muted">Latency by stage</h3>
-            <ul className="mt-1">{latency.map(([label, ms]) => <WaterfallRow key={label} label={label} ms={ms} max={max} />)}</ul>
-            <p className="mt-1 font-mono tabular-nums text-fg-muted">total {total} ms</p>
-          </section>
+          <LatencyWaterfall metrics={metrics} />
           <section>
             <h3 className="text-xs font-medium text-fg-muted">Answer scores</h3>
             <ul className="mt-1 space-y-0.5 font-mono tabular-nums text-fg-muted"><li>faithfulness {metrics.faithfulness !== null && metrics.faithfulness !== undefined ? metrics.faithfulness.toFixed(2) : '—'}</li><li>min support {metrics.min_support !== null && metrics.min_support !== undefined ? metrics.min_support.toFixed(2) : '—'}</li></ul>
@@ -100,7 +96,7 @@ function MetricsTab({ metrics, decisions }: { metrics: Metrics | null; decisions
   )
 }
 
-export function TracePanel({ steps, decisions, thinking, streaming, chunks, metrics, hold, query, chatId, viewerDocumentId, open, expanded, activeTab, focusSource, onOpenChange, onExpandedChange, onTabChange, onViewDocument, onCloseViewer, selectedMessage, scrollToTopSignal }: Props) {
+export function TracePanel({ steps, decisions, thinking, streaming, chunks, metrics, hold, query, chatId, viewerDocumentId, open, expanded, activeTab, focusSource, onOpenChange, onExpandedChange, onTabChange, onViewDocument, onCloseViewer, selectedMessage, scrollToTopSignal, traceStatus, onRetryTrace }: Props) {
   const [internalOpen, setInternalOpen] = useState(true)
   const [internalExpanded, setInternalExpanded] = useState(false)
   const [internalTab, setInternalTab] = useState<TraceTab>('trace')
@@ -165,14 +161,36 @@ export function TracePanel({ steps, decisions, thinking, streaming, chunks, metr
           {tab === 'citations' && <div id="workspace-citations" role="tabpanel"><CitationsTab chunks={chunks} message={selectedMessage} query={query} onOpenDocument={onViewDocument} /></div>}
           {tab === 'trace' && <div id="workspace-trace" role="tabpanel" className="space-y-5">
             {thinking.length > 0 && <section><details><summary className="cursor-pointer text-xs font-medium text-fg-muted hover:text-fg">Thinking</summary><p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-fg-muted">{thinking}</p></details></section>}
+            <EvidenceGateCard decisions={decisions} />
             {steps.length > 0 && <section><h3 className="mb-1 text-xs font-medium text-fg-muted">Steps</h3><ul>{steps.map((step, index) => <StepRow key={index} step={step} />)}</ul></section>}
             {decisions.length > 0 && <section aria-labelledby="decision-timeline-heading"><h3 id="decision-timeline-heading" className="mb-2 text-xs font-medium text-fg-muted">Decision timeline</h3><DecisionTimeline decisions={decisions} /></section>}
             {steps.length === 0 && decisions.length === 0 && thinking.length === 0 && (
-              <PanelEmpty
-                icon={<ListTree size={18} strokeWidth={1.75} aria-hidden="true" />}
-                title="No run yet."
-                hint="Decisions and reasoning stream here while a run is in flight."
-              />
+              // Item 6: a dropped replay leaves the same empty arrays as a
+              // chat that has never run, so "No run yet." was a confident
+              // wrong answer about a run that exists.
+              traceStatus === 'connection_lost' ? (
+                <PanelError
+                  title="This trace could not be replayed."
+                  hint="The connection dropped before its steps arrived. The answer and its sources are unaffected."
+                  action={
+                    onRetryTrace && (
+                      <button
+                        type="button"
+                        onClick={onRetryTrace}
+                        className="pressable min-h-9 w-full rounded-lg border border-border bg-surface px-3 text-xs text-fg hover:bg-raised-hover focus-visible:outline-2 focus-visible:outline-focus-ring"
+                      >
+                        Reconnect
+                      </button>
+                    )
+                  }
+                />
+              ) : (
+                <PanelEmpty
+                  icon={<ListTree size={18} strokeWidth={1.75} aria-hidden="true" />}
+                  title="No run yet."
+                  hint="Decisions and reasoning stream here while a run is in flight."
+                />
+              )
             )}
           </div>}
           {tab === 'metrics' && <div id="workspace-metrics" role="tabpanel"><MetricsTab metrics={metrics} decisions={decisions} /></div>}

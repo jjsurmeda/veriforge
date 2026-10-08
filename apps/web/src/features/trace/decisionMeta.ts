@@ -24,6 +24,7 @@ const LABELS: Record<string, string> = {
   risk: 'Risk',
   lexical_weight: 'Lexical weight',
   sufficient: 'Sufficient',
+  relevance: 'Relevance',
   conflict: 'Conflict',
   controller: 'Controller',
   output_toxicity: 'Output toxicity',
@@ -43,6 +44,12 @@ const STAGE_LABELS: Record<string, string> = {
 export function decisionLabel(name: string, stage?: string | null): string {
   if (stage === 'claim_verdict' || name.startsWith('claim_')) return 'Claim verdicts'
   if (name.startsWith('chunk_injection_')) return 'Chunk checks'
+  // One Noul per top-k passage (KI-54), so there are as many of these as
+  // passages. The gate card folds them into a single "Entity match" row and
+  // the timeline collapses them; naming the family once here is what makes
+  // both read as one check instead of N.
+  if (name.startsWith('entity_')) return 'Entity match'
+  if (name.startsWith('conflict_')) return 'Conflict'
   return LABELS[name] ?? name
 }
 
@@ -76,7 +83,15 @@ export function probabilityOf(decision: Decision): number | null {
   if (decision.probability !== null && decision.probability !== undefined) {
     return decision.probability
   }
-  if (!decision.probabilities) return null
+  if (!decision.probabilities) {
+    // A gate whose number is computed rather than asked for — the relevance
+    // gate takes the max rerank score and publishes it as `value`, with no
+    // `probability` — used to read as 0.00 here, because the only two sources
+    // consulted were `probability` and `probabilities`. For a Noul-shaped
+    // decision `value` IS the yes-probability (schemas/decisions.py), so this
+    // is the real number rather than a fallback guess.
+    return typeof decision.value === 'number' ? decision.value : null
+  }
   const value = String(decision.value)
   const selected = decision.probabilities[value]
   if (selected !== undefined) return selected

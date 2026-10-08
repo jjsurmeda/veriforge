@@ -8,14 +8,20 @@ vi.mock('@tanstack/react-router', () => ({
 
 const me = { email: 'demo@example.com', role: 'user' as 'user' | 'admin' }
 
+let chatsFail = false
+
 vi.mock('../../../generated/sdk.gen', () => ({
   meMeGet: vi.fn(async () => ({ data: me })),
-  listChatsChatsGet: vi.fn(async () => ({
-    data: [
-      { id: 'c1', title: 'Pinned chat', pinned: true, model_id: null, starter_questions: [] },
-      { id: 'c2', title: 'Other chat', pinned: false, model_id: null, starter_questions: [] },
-    ],
-  })),
+  listChatsChatsGet: vi.fn(async () =>
+    chatsFail
+      ? { error: { error_code: 'server_error', message: 'boom' } }
+      : {
+          data: [
+            { id: 'c1', title: 'Pinned chat', pinned: true, model_id: null, starter_questions: [] },
+            { id: 'c2', title: 'Other chat', pinned: false, model_id: null, starter_questions: [] },
+          ],
+        },
+  ),
   createChatChatsPost: vi.fn(async () => ({ data: { id: 'c1' } })),
   deleteChatChatsChatIdDelete: vi.fn(async () => ({ data: undefined })),
   patchChatChatsChatIdPatch: vi.fn(async () => ({ data: undefined })),
@@ -39,7 +45,10 @@ function renderSidebar() {
 }
 
 afterEach(cleanup)
-beforeEach(() => window.localStorage.clear())
+beforeEach(() => {
+  window.localStorage.clear()
+  chatsFail = false
+})
 
 describe('ChatSidebar', () => {
   it('renders only chat rows and the header controls', async () => {
@@ -67,5 +76,24 @@ describe('ChatSidebar', () => {
     renderSidebar()
     await waitFor(() => expect(screen.getByText('Pinned chat')).toBeTruthy())
     expect(window.localStorage.getItem('veriforge-sidebar-section')).toBeNull()
+  })
+
+  // Item 6: "No chats yet." on a failed read claims the account is empty.
+  it('a failed chat list is an error, never "No chats yet."', async () => {
+    chatsFail = true
+    renderSidebar()
+
+    expect(await screen.findByText('Your chats could not be read.')).toBeTruthy()
+    expect(screen.queryByText('No chats yet.')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy()
+  })
+
+  it('an empty account still gets "No chats yet."', async () => {
+    const { listChatsChatsGet } = await import('../../../generated/sdk.gen')
+    vi.mocked(listChatsChatsGet).mockResolvedValueOnce({ data: [] } as never)
+    renderSidebar()
+
+    expect(await screen.findByText('No chats yet.')).toBeTruthy()
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 })

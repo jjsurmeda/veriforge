@@ -9,6 +9,9 @@ import { ChatComposer, runOptions, type RunMode, type RunSource } from '../compo
 import { ChatSidebar } from '../components/ChatSidebar'
 import { useLibrary } from '../../library/hooks/useDocuments'
 import { StarterQuestions } from '../../library/components/StarterQuestions'
+import { DemoTour } from '../../demo/DemoTour'
+import { useDemoLimits } from '../../demo/hooks/useDemoLimits'
+import type { TourQuestion } from '../../demo/tourData'
 
 export function ChatIndexPage() {
   const navigate = useNavigate()
@@ -16,6 +19,7 @@ export function ChatIndexPage() {
   const createChat = useCreateChat()
   const library = useLibrary()
   const quota = useQuota()
+  const demoLimits = useDemoLimits()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [deep, setDeep] = useState(false)
   const [web, setWeb] = useState(false)
@@ -87,9 +91,28 @@ export function ChatIndexPage() {
               <h1 className="mt-3 text-3xl font-semibold tracking-tight text-fg sm:text-4xl">What do you want to know?</h1>
               <p className="mx-auto mt-3 max-w-[42ch] text-sm leading-6 text-fg-muted">Drop files to start, or just ask. Follow the evidence while the answer forms.</p>
             </div>
-            <ChatComposer streaming={false} modelId={null} quota={quota.data} emptyThread error={error} deep={deep} web={web} onFiles={(files) => void onFiles(files)} onModelChange={() => undefined} onToggleDeep={setDeep} onToggleWeb={setWeb} onSend={(message, options) => void startRun(message, options)} onStop={() => undefined} />
-            <div className="mx-auto mt-6 max-w-[720px]">
-              <StarterQuestions questions={library.data?.starter_questions ?? []} onSelect={(question) => void startRun(question, runOptions(deep, web))} />
+            <ChatComposer streaming={false} modelId={null} quota={quota.data} emptyThread error={error} deep={deep} web={web} allowDeep={demoLimits.data?.allow_deep ?? true} allowWeb={demoLimits.data?.allow_web ?? true} onFiles={(files) => void onFiles(files)} onModelChange={() => undefined} onToggleDeep={setDeep} onToggleWeb={setWeb} onSend={(message, options) => void startRun(message, options)} onStop={() => undefined} />
+            {/* Item 4: the tour replaces the starter questions for a demo
+                account. A visitor who cannot upload has no sources of their
+                own, so the questions that actually demonstrate something are
+                the only useful thing to offer. */}
+            <div className="mx-auto mt-6 max-w-[720px] space-y-4">
+              {demoLimits.data?.is_demo ? (
+                <DemoTour
+                  allowDeep={demoLimits.data.allow_deep}
+                  onSelect={(item: TourQuestion) =>
+                    void startRun(item.question, {
+                      mode: item.mode ?? 'auto',
+                      // The demo account's only sources are the Shared books,
+                      // so every tour question reads from the library rather
+                      // than the web.
+                      source: 'upload',
+                    })
+                  }
+                />
+              ) : (
+                <StarterQuestions questions={library.data?.starter_questions ?? []} onSelect={(question) => void startRun(question, runOptions(deep, web))} />
+              )}
             </div>
           </section>
         </div>

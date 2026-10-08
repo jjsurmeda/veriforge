@@ -8,6 +8,7 @@ import { useCancelRun, useCreateRun } from '../hooks/useRuns'
 import { useRunStream } from '../hooks/useRunStream'
 import { useQuota } from '../hooks/useQuota'
 import { useUploadChatDocument } from '../../library/hooks/useDocuments'
+import { useDemoLimits } from '../../demo/hooks/useDemoLimits'
 import { useDeleteChat, usePatchChat } from '../hooks/useChatList'
 import { useChatRunStore } from '../store'
 import { ChatComposer, runOptions, type RunMode, type RunSource } from '../components/ChatComposer'
@@ -16,6 +17,8 @@ import { MessageList } from '../components/MessageList'
 import { TracePanel, type TraceTab } from '../../trace/components/TracePanel'
 import { useTrace } from '../../trace/hooks/useTrace'
 import { Menu, MenuContent, MenuItemWithIcon, MenuTrigger } from '../../../components/ui/primitives'
+import { PanelError } from '../../../components/ui/PanelError'
+import { PanelNote } from '../../../components/ui/PanelNote'
 
 export function runFailureMessage(code: string, quotaResetAt?: string): string {
   if (code === 'web_search_unconfigured') return "Couldn't search the web because no web search provider is configured. Try your documents instead."
@@ -49,6 +52,15 @@ function errorMessage(error: unknown): string {
   return 'The question could not be started. Try again.'
 }
 
+/** The API answers a chat that is gone (or was never yours) with a 404
+ *  `chat_not_found`; offline, a 500, a session that failed to refresh — none
+ *  of those prove the chat is absent, so they must not borrow that copy. */
+function isChatMissing(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false
+  const body = error as { error_code?: unknown; data?: { error_code?: unknown } }
+  return body.error_code === 'chat_not_found' || body.data?.error_code === 'chat_not_found'
+}
+
 export function ChatView({ chatId }: { chatId: string }) {
   const navigate = useNavigate()
   const chat = useChat(chatId)
@@ -59,6 +71,7 @@ export function ChatView({ chatId }: { chatId: string }) {
   const cancelRun = useCancelRun()
   const quota = useQuota()
   const upload = useUploadChatDocument(chatId)
+  const demoLimits = useDemoLimits()
   const [viewerDocumentId, setViewerDocumentId] = useState<string | null>(null)
   const [activeRunId, setActiveRunId] = useState<string | null>(null)
   const [traceRunId, setTraceRunId] = useState<string | null>(null)
@@ -103,6 +116,9 @@ export function ChatView({ chatId }: { chatId: string }) {
   const streaming = live !== undefined && (live.status === 'connecting' || live.status === 'streaming')
   const selectedMessage = selectedMessageId ? messages.data?.find((message) => message.id === selectedMessageId) : [...(messages.data ?? [])].reverse().find((message) => message.role === 'assistant')
   const lastQuestion = [...(messages.data ?? [])].reverse().find((message) => message.role === 'user')?.content ?? null
+  const replayedTrace = traceRunId
+    ? { runId: traceRunId, decisions: trace?.decisions ?? [], chunks: trace?.chunks ?? [] }
+    : null
 
   const onSend = async (message: string, options: { mode: RunMode; source: RunSource }) => {
     setSendError(null)
@@ -131,8 +147,17 @@ export function ChatView({ chatId }: { chatId: string }) {
     }
   }
 
+  // Item 4: a demo account is offered neither path, so the decline does not
+    // show buttons whose only outcome is a refusal. The abstain template still
+    // mentions them (it is server-written text); hiding the controls is what
+    // stops the promise.
+  const demoMayDeep = demoLimits.data?.allow_deep ?? true
+  const demoMayWeb = demoLimits.data?.allow_web ?? true
+
   const onAbstainAction = (action: 'web' | 'deep') => {
     if (!lastQuestion) return
+    if (action === 'deep' && !demoMayDeep) return
+    if (action === 'web' && !demoMayWeb) return
     if (action === 'deep') setDeep(true)
     else setWeb(true)
     void onSend(lastQuestion, runOptions(action === 'deep' || deep, action === 'web' || web))
@@ -159,6 +184,20 @@ export function ChatView({ chatId }: { chatId: string }) {
     setRightPanelOpen(true)
     setTraceTab('sources')
     setViewerDocumentId(documentId)
+  }
+
+  // Item 2: the decline message's link opens the Trace on the gate that
+  // blocked. Scrolling the card into view matters as much as switching tabs —
+  // at 1280px+ the panel is beside the thread and the card sits above the
+  // fold of a long decision timeline, so without it the click looks like it
+  // did nothing.
+  const showGates = () => {
+    setRightPanelOpen(true)
+    setTraceTab('trace')
+    setTraceScrollSignal((n) => n + 1)
+    requestAnimationFrame(() => {
+      document.getElementById('evidence-gates')?.scrollIntoView({ block: 'start' })
+    })
   }
 
   const saveThreadRename = async () => {
@@ -197,17 +236,49 @@ export function ChatView({ chatId }: { chatId: string }) {
               <button type="button" aria-label="Toggle workspace panel" aria-pressed={rightPanelOpen} onClick={() => setRightPanelOpen((value) => !value)} className="icon-button size-8"><PanelRight size={17} strokeWidth={1.75} aria-hidden="true" /></button>
             </div>
           </header>
-          {chat.isError ? <p className="p-6 text-sm text-fg-muted">Chat not found.</p> : <>
+          {chat.isPending ? (
+            <div className="p-4"><PanelNote>Reading this conversation…</PanelNote></div>
+          ) : chat.isError ? (
+            isChatMissing(chat.error) ? (
+              <p className="p-6 text-sm text-fg-muted">Chat not found.</p>
+            ) : (
+              <div className="p-6">
+                <PanelError
+                  title="This conversation could not be loaded."
+                  hint="Nothing was changed. Try again in a moment."
+                  action={
+                    <button
+                      type="button"
+                      onClick={() => void chat.refetch()}
+                      className="pressable min-h-9 w-full rounded-lg border border-border bg-surface px-3 text-xs text-fg hover:bg-raised-hover focus-visible:outline-2 focus-visible:outline-focus-ring"
+                    >
+                      Try again
+                    </button>
+                  }
+                />
+              </div>
+            )
+          ) : <>
             <div ref={threadScrollRef} onScroll={(event) => { const element = event.currentTarget; setShowScrollButton(element.scrollHeight - element.scrollTop - element.clientHeight > 160) }} className="min-h-0 flex-1 overflow-y-auto">
-              <MessageList messages={messages.data ?? []} live={live} optimisticQuestion={optimisticQuestion} onSuggestion={(question) => void onSend(question, runOptions(deep, web))} onAbstainAction={onAbstainAction} onOpenSources={openCitations} onSelectMessage={setSelectedMessageId} onShowSteps={showSteps} />
+              {messages.isPending && <div className="px-4 pt-4"><PanelNote>Reading this conversation…</PanelNote></div>}
+              {/* Item 6: a failed history read used to render as a brand-new
+                  empty thread, which reads as "your conversation is gone"
+                  when nothing has been deleted at all. */}
+              {messages.isError && (
+                <p role="alert" className="mx-auto max-w-[720px] px-4 py-4 text-center text-sm text-danger">
+                  This conversation’s messages could not be read.{' '}
+                  <button type="button" onClick={() => void messages.refetch()} className="pressable rounded-lg border border-border/40 px-2 py-1 text-xs text-danger hover:bg-raised focus-visible:outline-2 focus-visible:outline-danger">Try again</button>
+                </p>
+              )}
+              <MessageList messages={messages.data ?? []} live={live} optimisticQuestion={optimisticQuestion} replay={replayedTrace} mayUse={{ web: demoMayWeb, deep: demoMayDeep }} onSuggestion={(question) => void onSend(question, runOptions(deep, web))} onAbstainAction={onAbstainAction} onOpenSources={openCitations} onSelectMessage={setSelectedMessageId} onShowSteps={showSteps} onShowGates={showGates} />
               {live?.status === 'failed' && live.error && <p role="alert" className="mx-auto max-w-[720px] px-4 pb-4 text-sm text-warning">{runFailureMessage(live.error, quota.data?.reset_at_5h)}</p>}
               {live?.status === 'connection_lost' && <div className="mx-auto max-w-[720px] px-4 pb-4"><button type="button" onClick={resume} className="pressable rounded-lg border border-border/40 px-3 py-1.5 text-sm text-danger hover:bg-raised focus-visible:outline-2 focus-visible:outline-danger">Connection lost — resume</button></div>}
             </div>
             {showScrollButton && <button type="button" aria-label="Scroll to bottom" onClick={scrollToBottom} className="icon-button absolute bottom-[9.5rem] left-1/2 z-20 size-9 -translate-x-1/2 rounded-full border border-border bg-raised"><ArrowDown size={16} strokeWidth={1.75} aria-hidden="true" /></button>}
-            <ChatComposer streaming={streaming} modelId={chat.data?.model_id ?? null} quota={quota.data} error={sendError} emptyThread={(messages.data ?? []).length === 0} deep={deep} web={web} onFiles={(files) => void onFiles(files)} onModelChange={(modelId) => void patchChat.mutateAsync({ chatId, patch: { model_id: modelId } })} onToggleDeep={setDeep} onToggleWeb={setWeb} onSend={(message, options) => void onSend(message, options)} onStop={() => activeRunId && cancelRun.mutate(activeRunId)} />
+            <ChatComposer streaming={streaming} modelId={chat.data?.model_id ?? null} quota={quota.data} error={sendError} emptyThread={!messages.isPending && !messages.isError && (messages.data ?? []).length === 0} deep={deep} web={web} onFiles={(files) => void onFiles(files)} onModelChange={(modelId) => void patchChat.mutateAsync({ chatId, patch: { model_id: modelId } })} allowDeep={demoLimits.data?.allow_deep ?? true} allowWeb={demoLimits.data?.allow_web ?? true} onToggleDeep={setDeep} onToggleWeb={setWeb} onSend={(message, options) => void onSend(message, options)} onStop={() => activeRunId && cancelRun.mutate(activeRunId)} />
           </>}
         </main>
-        <TracePanel steps={trace?.steps ?? []} decisions={trace?.decisions ?? []} thinking={trace?.thinking ?? ''} streaming={trace?.streaming ?? false} chunks={trace?.chunks ?? []} metrics={trace?.metrics ?? null} hold={trace?.hold ?? false} query={lastQuestion} chatId={chatId} viewerDocumentId={viewerDocumentId} open={rightPanelOpen} expanded={rightPanelExpanded} activeTab={traceTab} focusSource={focusSource} selectedMessage={selectedMessage} onOpenChange={setRightPanelOpen} onExpandedChange={setRightPanelExpanded} onTabChange={setTraceTab} onViewDocument={viewDocument} onCloseViewer={() => setViewerDocumentId(null)} scrollToTopSignal={traceScrollSignal} />
+        <TracePanel steps={trace?.steps ?? []} decisions={trace?.decisions ?? []} thinking={trace?.thinking ?? ''} streaming={trace?.streaming ?? false} chunks={trace?.chunks ?? []} metrics={trace?.metrics ?? null} hold={trace?.hold ?? false} query={lastQuestion} chatId={chatId} viewerDocumentId={viewerDocumentId} open={rightPanelOpen} expanded={rightPanelExpanded} activeTab={traceTab} focusSource={focusSource} selectedMessage={selectedMessage} onOpenChange={setRightPanelOpen} onExpandedChange={setRightPanelExpanded} onTabChange={setTraceTab} onViewDocument={viewDocument} onCloseViewer={() => setViewerDocumentId(null)} scrollToTopSignal={traceScrollSignal} traceStatus={trace?.status ?? null} onRetryTrace={traceRunId !== activeRunId ? undefined : resume} />
       </div>
     </div>
   )

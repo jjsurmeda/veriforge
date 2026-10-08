@@ -173,6 +173,139 @@ The full record, including the claims that didn't hold up, is in
 
 ---
 
+## Screens
+
+Four screens, captured from a running stack, in both themes. Every number in
+them is a real run on the Shared books corpus — nothing is mocked or staged.
+
+### A cited answer, with the gates that let it through
+
+![A cited answer with the Trace panel open on its evidence gates](media/cited-answer-with-trace-dark.webp)
+
+<sub>Dark. [Light theme](media/cited-answer-with-trace-light.webp)</sub>
+
+The answer is on the left, each claim carrying its citation marker. On the
+right, the **evidence gates**: one row per gate with the value that was
+measured, the threshold it had to clear, and a verdict in words and a shape —
+*answered*, *on topic*, *matched*. Every row is stamped **Jev**, because Jev
+made that call; a fallback decision says `fallback` instead.
+
+### A decline, and the sentence that explains it
+
+![A decline with the evidence-gate card open on the failed entity gate](media/evidence-gate-decline-dark.webp)
+
+<sub>Dark. [Light theme](media/evidence-gate-decline-light.webp)</sub>
+
+*What ingress protection rating does the Kestrel K9 carry?* — the books do not
+contain a Kestrel K9. The message says so in plain words ("Why it declined: No
+retrieved passage is about Kestrel"), and the gate card shows the measurement
+behind it: entity match **0.44** against a **0.50** floor, marked *"no passage
+matches"*. Two gates passed and one failed; the panel does not flatten that into
+a single verdict.
+
+### Where the time went
+
+![The Metrics tab showing the latency waterfall for one run](media/latency-waterfall-dark.webp)
+
+<sub>Dark. [Light theme](media/latency-waterfall-light.webp)</sub>
+
+The same run, stage by stage: ingress and rewrite 3 385 ms, retrieve 4 250 ms,
+rerank 1 133 ms, review 11 779 ms, 24 503 ms in total. Every bar has its
+milliseconds written out, so the chart is never the only way to read it.
+
+This run predates the time-to-first-token field, so the card reads *not
+measured* — the honest answer rather than a blank. Runs recorded since then do
+carry it: the rehearsal's runs measured 12.4 s, 13.8 s and 13.3 s.
+
+### The decision layer, read-only
+
+![The read-only decision layer page](media/decision-layer-dark.webp)
+
+<sub>Dark. [Light theme](media/decision-layer-light.webp)</sub>
+
+Deployment-wide rather than per-run, and readable by the demo role: 646
+decisions, 646 of them answered by Jev, a 0.0% fallback share against a 5%
+target, ingress p95 over its 600 ms target and marked *fall*, the breaker
+closed with no active cooldown, and the decisions counted by name. Rerank
+latency reads *—* and shadow agreement says *nothing sampled yet* — because
+that is the state of this deployment, not because there is nothing to draw.
+
+---
+
+## The demo tour
+
+Six questions, each one demonstrating a different behaviour. Click **Try the
+demo** on the login page; no account, and nothing to upload. Every question
+below was verified against the corpus with a real hybrid search before it was
+put in the tour, and each was then run live — the measured gate numbers are in
+the table, not an estimate.
+
+The corpus is the eleven Gutenberg books in the Shared library: Alice in
+Wonderland, Sherlock Holmes, Frankenstein, The Time Machine, Pride and
+Prejudice, Don Quijote, Madame Bovary, Die Verwandlung, Noli Me Tangere,
+西遊記 and 羅生門.
+
+| # | Behaviour | Question | What the corpus did |
+| --- | --- | --- | --- |
+| 1 | A cited answer | *Why does Alice say the Duchess's kitchen must be full of soup?* | Answered. Sufficiency 0.45, relevance 0.82, entity 0.93 — all cleared. The Mock Turtle's "Beautiful Soup" passage is in the top four hybrid hits (bm25 23.0). |
+| 2 | An abstention | *What is the ISBN number of Pride and Prejudice?* | Declined. Sufficiency 0.02 and relevance 0.03, both below their floors; retrieval returns the Gutenberg front matter, which has no ISBN. The message names the gate: "What was retrieved does not cover enough of the question to answer it." |
+| 3 | A decline the corpus cannot support *(see the gap below)* | *How many months of warranty does the AW-2000 manual specify?* | Declined on sufficiency 0.02 and relevance 0.01. |
+| 4 | An entity-mismatch decline | *What ingress protection rating does the AW-2000 handbook promise?* | Declined. Entity match 0.01 against a 0.50 floor — the retrieved passages are books that resemble the phrasing, and none is about the AW-2000. |
+| 5 | An answer in another language | *Was geschieht mit Samsa, als er die Nachricht von seinem Vater liest?* | Answered in German. Sufficiency 0.31, relevance 0.70, entity 0.65. The passage ranks first on bm25 (48.7), the strongest single-question result in the set. |
+| 6 | A Deep run | *Compare how Holmes and Watson differ in their willingness to believe other people's accounts?* | **Not rehearsed.** Deep is off on the demo plan by default. The retrieval proof is four Sherlock Holmes passages in the top four hits (bm25 19.0 on the first); only Deep reads them all. Set `DEMO_ALLOW_DEEP=true` to offer this question. |
+
+### The gap: there is no conflict to show
+
+The brief asks for a conflict between sources, and the tour does not have one.
+A conflict is two documents that disagree, and the Shared library is eleven
+novels — none of which contradicts another. Rehearsed, question 3 abstains
+like question 2 rather than disclosing anything.
+
+The two conflicting warranty documents that would demonstrate it
+(`warranty_2025.md`, `warranty_legacy.md`) live in the **private** eval
+corpora, and the brief says those stay private. So the fix is the owner's:
+either copy two conflicting documents into the Shared library, or accept that
+the tour shows three kinds of decline and one disclosure-free conflict check.
+Question 3 is labelled for what it does rather than for what the brief wanted,
+because a tour that promises a conflict disclosure and delivers an abstention
+is worse than one that says "the corpus cannot show you this".
+
+The Deep question is the other honest gap: Deep reserves ~30 000 credits
+against Auto's ~8 000, so allowing it for unauthenticated visitors is a
+spending decision, not a UI one. It is a setting (`DEMO_ALLOW_DEEP`).
+
+### Recording the tour
+
+Six screenshots, in order, one per question, each showing the run's trace with
+the evidence-gate card open. The four screens under [Screens](#screens) are
+already captured in both themes and are the reference for framing; the six
+below are the script for the run itself. What to point at, per question:
+
+1. **Cited answer** — the answer, then the citation chips; open the trace and
+   point at three green rows: every gate cleared, and *why* (value against the
+   floor). Then the Metrics tab: time to first token against the stages.
+2. **Abstention** — the abstention message and, under it, "Why it declined:
+   What was retrieved does not cover enough of the question to answer it." Then
+   the card: two red rows, one green. The green one matters — the system was
+   confident the passages were *about* Pride and Prejudice, and still declined
+   because they do not contain the answer.
+3. **The unsupported question** — show the decline, then say out loud that the
+   corpus has no conflicting sources. This is the honest version of the tour.
+4. **Entity mismatch** — the entity row: 0.01 against a 0.50 floor, "no
+   passage matches". The decline message names the thing asked about.
+5. **German** — the answer in German, then the sources in German. Point at the
+   entity row again: it matched at 0.65, so the decline in question 4 is about
+   the entity and not about the language.
+6. **Deep** *(if enabled)* — the longer trace, the plan event, and several hops
+   in the Metrics waterfall. This is the mode where the trace is worth reading
+   on its own.
+
+Then the **Decision layer** page (in the sidebar): engine mix, breaker state,
+rerank latency, shadow agreement. Real numbers only, and it says "no decisions
+in this window yet" rather than drawing an empty chart.
+
+---
+
 ## Roadmap
 
 From [the production-readiness plan](plans/2026-10-02-0430-backend-prod-readiness-v3.md):

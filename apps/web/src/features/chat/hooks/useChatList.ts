@@ -6,6 +6,7 @@ import {
   listChatsChatsGet,
   patchChatChatsChatIdPatch,
 } from '../../../generated/sdk.gen'
+import { unwrap } from '../../../lib/api'
 
 interface CreateChatOptions {
   title?: string | null
@@ -14,7 +15,10 @@ interface CreateChatOptions {
 export function useChatList() {
   return useQuery({
     queryKey: ['chats'],
-    queryFn: async () => (await listChatsChatsGet()).data ?? [],
+    // `?? []` turned every failed list into an empty one, so the sidebar read
+    // "No chats yet." — a claim about the account — whenever the request
+    // failed. `unwrap` lets the failure reach React Query (item 6).
+    queryFn: async () => unwrap(await listChatsChatsGet()),
   })
 }
 

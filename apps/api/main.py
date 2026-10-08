@@ -19,6 +19,8 @@ from config import get_settings
 from db.models import Run
 from db.session import SessionDep
 from decisions.breaker import BreakerState, get_breaker
+from demo import router as demo_router
+from demo.cleanup import sweep_demo_accounts
 from errors import AppError
 from graph import runner
 from ingest import router as sources_router
@@ -51,9 +53,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.session_factory = session_factory
     app.state.bus = bus
     sweep = asyncio.create_task(runner.sweep_loop(bus, session_factory))
+    # Item 4: expired demo accounts and their chats, on the same in-process
+    # footing as the heartbeat sweeper (ADR-001 — no new service for this).
+    demo_sweep = asyncio.create_task(sweep_demo_accounts(session_factory))
     await queue_app.open_async()
     yield
     sweep.cancel()
+    demo_sweep.cancel()
     await queue_app.close_async()
     await runner.drain_background_tasks()
     await bus.stop()
@@ -72,6 +78,7 @@ app.add_middleware(
 
 app.include_router(auth_router.router)
 app.include_router(auth_router.me_router)
+app.include_router(demo_router.router)
 app.include_router(admin_router.router)
 app.include_router(chats_router.router)
 app.include_router(runs_router.router)

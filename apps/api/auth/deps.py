@@ -46,3 +46,26 @@ async def get_admin_user(user: CurrentUser) -> User:
 
 
 AdminUser = Annotated[User, Depends(get_admin_user)]
+
+
+async def get_admin_or_demo_user(user: CurrentUser) -> User:
+    """Read access to the decision-layer statistics for the demo role (AC-2).
+
+    Deliberately a *read* dependency, and deliberately narrow. The demo role
+    already exists to read the shared corpus (PRD AC-2) and `deny_read_only`
+    already refuses it uploads; this widens exactly one GET, the engine
+    statistics the showcase needs to be legible, and nothing else. Every
+    write in `admin/router.py` keeps `AdminUser`, so widening this cannot
+    become a way to create an invite, change a threshold or grant a role.
+
+    Split into its own dependency rather than relaxing `get_admin_user`
+    because `get_admin_user` is used by ~20 handlers: loosening it would hand
+    the demo role every admin write, and the failure would be invisible in
+    review because each individual endpoint still reads as "admin".
+    """
+    if user.role not in ("admin", "demo"):
+        raise Forbidden("admin_required", "Administrator access is required")
+    return user
+
+
+AdminOrDemoUser = Annotated[User, Depends(get_admin_or_demo_user)]

@@ -738,6 +738,32 @@ async def decision_stats(session: AsyncSession, *, hours: int = 24) -> DecisionS
             {"cutoff": cutoff},
         )
     ).mappings().one()
+    # Lane E item 3: the reranker's own latency, which the showcase's decision
+    # view reports alongside Jev's. Read from the `rerank` step events rather
+    # than the decision events: reranking is not a DecisionEngine call, it is
+    # the provider's rerank endpoint, and its cost was in no statistic here at
+    # all before this.
+    rerank_latency = (
+        await session.execute(
+            text(
+                """
+                SELECT
+                    percentile_cont(0.5) WITHIN GROUP (
+                        ORDER BY (re.payload->>'duration_ms')::double precision
+                    ) AS rerank_p50,
+                    percentile_cont(0.95) WITHIN GROUP (
+                        ORDER BY (re.payload->>'duration_ms')::double precision
+                    ) AS rerank_p95
+                FROM run_events AS re
+                JOIN runs AS r ON r.id = re.run_id
+                WHERE re.type = 'step.completed'
+                    AND re.created_at >= :cutoff
+                    AND re.payload->>'node' = 'rerank'
+                """
+            ),
+            {"cutoff": cutoff},
+        )
+    ).mappings().one()
     by_decision_rows = (
         await session.execute(
             text(
@@ -749,6 +775,20 @@ async def decision_stats(session: AsyncSession, *, hours: int = 24) -> DecisionS
                         WHEN re.payload->>'stage' = 'claim_verdict'
                             OR re.payload->>'name' LIKE 'claim_%'
                             THEN 'claim_verdicts'
+                        -- One Noul per passage for the entity gate, one per
+                        -- candidate pair for the conflict check, and one per
+                        -- passage for JevRerank's relevance scoring. Each is
+                        -- ONE check whose name happens to be numbered, so
+                        -- listing every index turned this table into a wall of
+                        -- `passage_7` rows that told an operator nothing. The
+                        -- trace's gate card shows these families per run with
+                        -- their real values; here they are a count.
+                        WHEN re.payload->>'name' LIKE 'entity_%'
+                            THEN 'entity_match'
+                        WHEN re.payload->>'name' LIKE 'conflict_%'
+                            THEN 'conflict_pairs'
+                        WHEN re.payload->>'name' LIKE 'passage_%'
+                            THEN 'passage_relevance'
                         ELSE re.payload->>'name'
                     END AS name_or_prefix,
                     COUNT(*) AS count,
@@ -817,6 +857,8 @@ async def decision_stats(session: AsyncSession, *, hours: int = 24) -> DecisionS
             )
             for row in by_decision_rows
         ],
+        rerank_latency_p50_ms=rerank_latency["rerank_p50"],
+        rerank_latency_p95_ms=rerank_latency["rerank_p95"],
         breaker=DecisionBreakerOut(state=breaker_state, open_until=breaker.open_until),
         shadow=DecisionShadowOut(
             sampled=sampled,

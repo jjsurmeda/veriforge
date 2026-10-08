@@ -120,6 +120,17 @@ def display_threshold(name: str, engine: Engine) -> float | None:
     # P2a item 4: one Noul per passage, named entity_<i>.
     if threshold_name is None and name.startswith("entity_"):
         threshold_name = "entity_match"
+    # KI-34, lane E item 1: the conflict check asks one question per candidate
+    # PAIR of passages, named conflict_<i>. `DISPLAY_THRESHOLDS` only carries
+    # the bare `conflict`, so every real conflict decision resolved to None and
+    # reached the trace with a value and no threshold — the one gate row in the
+    # evidence-gate card that could not say what it was compared against.
+    # Fixed here rather than at the caller: `display_threshold` is the single
+    # place `graph/runner.py`'s emitter turns a decision name into the number
+    # shown beside it, in Auto and Deep alike, so this closes the gap for every
+    # gate instead of for one call site.
+    if threshold_name is None and name.startswith("conflict_"):
+        threshold_name = "conflict_disclose"
     if threshold_name is None:
         return None
     try:

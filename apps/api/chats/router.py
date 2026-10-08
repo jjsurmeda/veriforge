@@ -31,6 +31,7 @@ from db.models import (
     User,
 )
 from db.session import SessionDep
+from demo.settings import demo_settings
 from errors import AppError
 from graph import runner
 from graph.chat_title import DEFAULT_CHAT_TITLE, collapse_instant_title
@@ -61,6 +62,14 @@ class ChatNotFound(AppError):
 
 class ModelNotAvailable(AppError):
     status_code = 422
+
+
+class DemoNotAllowed(AppError):
+    """A demo account asked for something the demo plan does not include
+    (item 4). 403 with its own code so the composer can say why rather than
+    showing a generic failure."""
+
+    status_code = 403
 
 
 async def _owned_chat(session: AsyncSession, user: User, chat_id: UUID) -> Chat:
@@ -375,6 +384,24 @@ async def create_run(
     # the rows exist and then have to be undone, and the quota gate would
     # have reserved credit against a request that is refused anyway.
     ratelimit.enforce("run", ip=_client_ip(request), user_id=str(user.id))
+    # Lane E item 4: the demo account's limits, enforced here because this is
+    # the one place that decides what a run may do. Refusing them in a
+    # pre-check on the demo route would leave a second path, and the composer
+    # hiding the toggle is a UI affordance rather than a control.
+    #
+    # `deep=False, web=False` in the body is how the composer spells "not
+    # asked for", so the check is on the request rather than on a client flag:
+    # a demo account that asks for Deep here is refused.
+    if user.role == "demo":
+        demo_cfg = demo_settings()
+        if body.mode == "deep" and not demo_cfg.allow_deep:
+            raise DemoNotAllowed(
+                "demo_not_allowed", "Deep mode is not available on a demo account"
+            )
+        if body.source == "web":
+            raise DemoNotAllowed(
+                "demo_not_allowed", "Web search is not available on a demo account"
+            )
     chat = await _owned_chat(session, user, chat_id)
     model_id = body.model_id or chat.model_id
     if model_id is None:

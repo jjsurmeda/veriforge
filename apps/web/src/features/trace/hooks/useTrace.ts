@@ -9,6 +9,8 @@ export function useTrace(runId: string | null) {
       const run = s.runs[runId]
       if (!run) return undefined
       return {
+        status: run.status,
+        error: run.error,
         steps: run.steps,
         plan: run.plan,
         decisions: run.decisions,

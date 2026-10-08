@@ -133,6 +133,47 @@ beforeEach(() => {
   useChatRunStore.setState({ runs: {} })
 })
 
+describe('failed reads', () => {
+  // Item 6: every read here used to coerce to `[]`, so a dead API rendered
+  // as an empty conversation. Only a 404 may claim the chat is absent.
+  it('a 404 keeps "Chat not found."', async () => {
+    const { getChatChatsChatIdGet } = await import('../../../generated/sdk.gen')
+    vi.mocked(getChatChatsChatIdGet).mockResolvedValueOnce({
+      error: { error_code: 'chat_not_found', message: 'Chat not found' },
+    } as never)
+    renderView()
+
+    expect(await screen.findByText('Chat not found.')).toBeTruthy()
+  })
+
+  it('any other failure is a failure to load, with a retry', async () => {
+    const { getChatChatsChatIdGet } = await import('../../../generated/sdk.gen')
+    vi.mocked(getChatChatsChatIdGet).mockResolvedValueOnce({
+      error: { error_code: 'server_error', message: 'boom' },
+    } as never)
+    renderView()
+
+    expect(await screen.findByText('This conversation could not be loaded.')).toBeTruthy()
+    expect(screen.queryByText('Chat not found.')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy()
+  })
+
+  it('a failed history read never renders as a new thread', async () => {
+    const { listMessagesChatsChatIdMessagesGet } = await import('../../../generated/sdk.gen')
+    vi.mocked(listMessagesChatsChatIdMessagesGet).mockRejectedValueOnce(
+      new Error('network down'),
+    )
+    renderView()
+
+    expect(
+      await screen.findByText(/messages could not be read/),
+    ).toBeTruthy()
+    // The composer still accepts a question, so it must not claim the thread
+    // is empty while its history is unreadable.
+    expect(screen.getByLabelText('Question').getAttribute('placeholder')).toBe('Ask a follow-up')
+  })
+})
+
 describe('Show steps', () => {
   it('points the trace at the clicked message run, not the latest one', async () => {
     renderView()
@@ -196,7 +237,7 @@ describe('composer', () => {
     const { createRunChatsChatIdRunsPost } = await import('../../../generated/sdk.gen')
     renderView()
 
-    expect(screen.getByRole('button', { name: 'Web' }).getAttribute('aria-pressed')).toBe('false')
+    expect((await screen.findByRole('button', { name: 'Web' })).getAttribute('aria-pressed')).toBe('false')
     fireEvent.click(await screen.findByRole('button', { name: /Searching the web/ }))
 
     await waitFor(() =>

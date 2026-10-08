@@ -1,7 +1,7 @@
 # Local task entry points. Apps run in Docker Compose; the scripts talk to the
 # same Postgres through DATABASE_URL in .env.
 
-.PHONY: seed-models seed-books seed-admin seed-eval-user smoke acceptance eval-gate-local
+.PHONY: seed-models seed-books seed-admin seed-eval-user seed-demo smoke acceptance eval-gate-local
 
 seed-models:
 	cd apps/api && .venv/bin/python scripts/seed_models.py
@@ -19,6 +19,13 @@ seed-admin:
 # seeded internal-eval plan once, here, rather than on every run (KI-20).
 seed-eval-user:
 	cd apps/api && .venv/bin/python scripts/seed_eval_user.py
+
+# Lane E item 4. Creates the `demo` plan demo accounts run on and reports
+# whether the Shared library holds the books. Idempotent, and it never writes
+# `free`, `pro` or `internal-eval`. The plan's limits ARE the demo budget —
+# there is no separate quota path for the demo role.
+seed-demo:
+	cd apps/api && .venv/bin/python scripts/seed_demo.py
 
 smoke:
 	cd apps/api && .venv/bin/python scripts/smoke_chat.py

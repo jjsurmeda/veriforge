@@ -503,6 +503,8 @@ async def _finish_answer(
     chitchat: bool = False,
     revert_title: bool = False,
     mode: str = "auto",
+    on_first_delta: Callable[[], None] = lambda: None,
+    first_token_ms: Callable[[], int | None] = lambda: None,
 ) -> None:
     """Shared tail for every mode: review phase (skipped for abstentions —
     the fixed template has no claims to verify), event order per delivery
@@ -572,6 +574,9 @@ async def _finish_answer(
                 )
         blocked = guard is not None and guard.blocked
         if plan == "hold":
+            # The whole reviewed answer goes out as one delta, so this IS the
+            # first token a reader sees for a held run.
+            on_first_delta()
             await bus.publish(run_id, AnswerDelta(run_id=str(run_id), text=final_text))
         # A prose decline is an abstention: the reply text still lands (above
         # for hold plans), but an abstention shows no claim chips.
@@ -609,6 +614,10 @@ async def _finish_answer(
         credits = context.credits
     latency = {**latency_ms, "generate": generate_ms}
     scores = review.scores if review is not None else None
+    # TX-3. Set by the caller through `on_first_delta`, and null when the run
+    # published no delta at all (an abstention, or a hold whose plan never
+    # reached the generator).
+    ttft_ms = first_token_ms()
     # P2a item 3: an abstention carries no review scores, whatever the
     # parallel review computed.
     if prose_declined:
@@ -625,10 +634,12 @@ async def _finish_answer(
             context_window=context_window,
             faithfulness=scores.faithfulness if scores else None,
             min_support=scores.min_support if scores else None,
+            ttft_ms=ttft_ms,
         ),
     )
     metrics: dict[str, object] = {
         "latency_ms": latency,
+        "ttft_ms": ttft_ms,
         "tokens_in": tokens_in,
         "tokens_out": tokens_out,
         "credits": credits,
@@ -714,6 +725,18 @@ async def execute_run(
 ) -> None:
     text = ""
     heartbeat_task: asyncio.Task[None] | None = None
+    # TX-3: the clock for time-to-first-token starts here, before the runtime
+    # and model roles are resolved, because everything from here on is latency
+    # the person waiting on the chat experiences. It stops at the first
+    # `answer.delta` published for this run.
+    run_started = time.monotonic()
+    first_delta_ms: int | None = None
+
+    def mark_first_delta() -> None:
+        nonlocal first_delta_ms
+        if first_delta_ms is None:
+            first_delta_ms = int((time.monotonic() - run_started) * 1000)
+
     try:
         settings = get_settings()
         runtime, model_roles, api_keys = await _runtime_context(session_factory, settings_version)
@@ -766,6 +789,13 @@ async def execute_run(
         heartbeat_task = asyncio.create_task(
             _heartbeat_loop(bus, session_factory, run_id, settings.heartbeat_interval_seconds)
         )
+
+        async def publish_delta(chunk: str) -> None:
+            """Every `answer.delta` goes through here, in all three modes, so
+            the first-token clock cannot miss a path (a per-mode
+            `if first_token:` would eventually)."""
+            mark_first_delta()
+            await bus.publish(run_id, AnswerDelta(run_id=str(run_id), text=chunk))
 
         async def emit_decision(name: str, answer: Answer, call: DecisionCall) -> None:
             await bus.publish(
@@ -852,13 +882,13 @@ async def execute_run(
                 text += token
                 batcher.add(token)
                 if plan == "stream" and batcher.due():
-                    await bus.publish(run_id, AnswerDelta(run_id=str(run_id), text=batcher.take()))
+                    await publish_delta(batcher.take())
                     if time.monotonic() - last_heartbeat >= settings.heartbeat_interval_seconds:
                         await bus.publish(run_id, Heartbeat(run_id=str(run_id)))
                         await _touch_heartbeat(session_factory, run_id)
                         last_heartbeat = time.monotonic()
             if plan == "stream" and batcher.buffer:
-                await bus.publish(run_id, AnswerDelta(run_id=str(run_id), text=batcher.take()))
+                await publish_delta(batcher.take())
 
             generate_ms = int((time.monotonic() - generate_start) * 1000)
             prompt_tokens = sum(
@@ -897,6 +927,8 @@ async def execute_run(
                 chat_id=chat_id,
                 instant_title=instant_title,
                 mode=mode,
+                on_first_delta=mark_first_delta,
+                first_token_ms=lambda: first_delta_ms,
             )
             return
 
@@ -945,13 +977,13 @@ async def execute_run(
                 text += token
                 batcher.add(token)
                 if plan == "stream" and batcher.due():
-                    await bus.publish(run_id, AnswerDelta(run_id=str(run_id), text=batcher.take()))
+                    await publish_delta(batcher.take())
                     if time.monotonic() - last_heartbeat >= settings.heartbeat_interval_seconds:
                         await bus.publish(run_id, Heartbeat(run_id=str(run_id)))
                         await _touch_heartbeat(session_factory, run_id)
                         last_heartbeat = time.monotonic()
             if plan == "stream" and batcher.buffer:
-                await bus.publish(run_id, AnswerDelta(run_id=str(run_id), text=batcher.take()))
+                await publish_delta(batcher.take())
 
             generate_ms = int((time.monotonic() - generate_start) * 1000)
             prompt_tokens = sum(
@@ -988,6 +1020,8 @@ async def execute_run(
                 chat_id=chat_id,
                 instant_title=instant_title,
                 mode=mode,
+                on_first_delta=mark_first_delta,
+                first_token_ms=lambda: first_delta_ms,
             )
             return
 
@@ -1022,13 +1056,13 @@ async def execute_run(
             text += token
             batcher.add(token)
             if batcher.due():
-                await bus.publish(run_id, AnswerDelta(run_id=str(run_id), text=batcher.take()))
+                await publish_delta(batcher.take())
                 if time.monotonic() - last_heartbeat >= settings.heartbeat_interval_seconds:
                     await bus.publish(run_id, Heartbeat(run_id=str(run_id)))
                     await _touch_heartbeat(session_factory, run_id)
                     last_heartbeat = time.monotonic()
         if batcher.buffer:
-            await bus.publish(run_id, AnswerDelta(run_id=str(run_id), text=batcher.take()))
+            await publish_delta(batcher.take())
 
         generate_ms = int((time.monotonic() - generate_start) * 1000)
         prompt_tokens = sum(
@@ -1065,6 +1099,8 @@ async def execute_run(
             chat_id=chat_id,
             instant_title=instant_title,
             mode=mode,
+            on_first_delta=mark_first_delta,
+            first_token_ms=lambda: first_delta_ms,
         )
 
     except asyncio.CancelledError:

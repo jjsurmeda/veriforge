@@ -6,7 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Body, Query
 
 from admin import service
-from auth.deps import AdminUser
+from auth.deps import AdminOrDemoUser, AdminUser
 from db.session import SessionDep
 from schemas.admin import (
     AdminModelOut,
@@ -196,10 +196,13 @@ async def activate_settings(
 
 @router.get("/decisions/stats", response_model=DecisionStatsOut)
 async def decision_stats(
-    _: AdminUser,
+    _: AdminOrDemoUser,
     session: SessionDep,
     hours: Annotated[int, Query()] = 24,
 ) -> DecisionStatsOut:
+    # The one admin GET the demo role may read (AC-2), for the showcase's
+    # decision-layer view. Every other endpoint here stays `AdminUser`: this is
+    # a read of aggregate engine statistics, not a route to admin data.
     return await service.decision_stats(session, hours=hours)
 
 

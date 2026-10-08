@@ -2743,3 +2743,43 @@ Logged 2026-10-06 (lane C, item 5). Fixed in the same commit.
   item 2's breaker test (`test_further_failures_while_open_do_not_re_emit`),
   which calls the breaker directly; this test asserts the end-to-end count
   of one signal per outage. Neither alone covers both halves.
+
+## KI-63: `POST /auth/demo` has no kill switch and no global spend cap
+
+Logged 2026-10-09 (lane E review). Open; fix before the first deploy.
+
+- **What:** the route is unauthenticated, mints an account and a credit
+  budget, and is always on. The only limit is 5 per hour per IP, kept in
+  process memory. Many source addresses, or a restart, defeat it, and nothing
+  bounds the total credit demo accounts can spend. In production,
+  `signup_mode=invite` does not apply to it.
+- **Fix:** `DEMO_ENABLED` (default off; set only in the compose env when the
+  owner wants the demo), plus a cap on demo accounts created per day and on
+  total demo credits outstanding. Tests: disabled returns 404, the daily cap
+  returns 429 across distinct IPs.
+
+## KI-64: The demo tour cannot show a conflict, and the eval corpus is shared
+
+Logged 2026-10-09 (lane E review). Open; a data decision, not code.
+
+- Tour question 3 abstains like question 2, because the Shared library is
+  eleven novels and none contradicts another. A conflict needs two disagreeing
+  documents (the warranty pair) put into Shared by the owner.
+- `eval-seed-corpus` is `visibility='shared'`. `make seed-demo` warns but does
+  not change it. Decide before the beta whether visitors may retrieve from it.
+
+## KI-65: Lane E leftovers
+
+Logged 2026-10-09 (lane E report). Open, low priority.
+
+- The waterfall screenshot reads "TTFT not measured" (recorded before the
+  field existed); a re-shoot costs one run.
+- The six per-question tour screenshots are scripted but not captured.
+- Tab order was spot-checked on two screens, not audited across auth, admin
+  and the decision layer.
+- "Show steps" has no focus ring by design (design-system exception).
+- Deep (question 6) stays behind `DEMO_ALLOW_DEEP`; reserving about 30 000
+  credits for an unauthenticated visitor is a spending decision.
+- `apps/web/package-lock.json` changed by about 2.6k lines each way; confirm
+  it is only the axe dependency.
+- Observed TTFT in the rehearsal was 12.4 to 13.8 s; lane B's target, not E's.

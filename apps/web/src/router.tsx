@@ -16,6 +16,7 @@ import { ResetPasswordPage } from './features/auth/pages/ResetPasswordPage'
 import { SignupPage } from './features/auth/pages/SignupPage'
 import { ChatIndexPage } from './features/chat/pages/ChatIndexPage'
 import { ChatView } from './features/chat/pages/ChatView'
+import { DecisionLayerPage } from './features/trace/pages/DecisionLayerPage'
 
 const rootRoute = createRootRoute({ component: Outlet })
 
@@ -96,6 +97,15 @@ const adminRoute = createRoute({
   component: AdminPage,
 })
 
+// Lane E item 3: readable by the demo role, which `AdminPage` refuses at the
+// role check. The page renders only the read-only decision statistics — every
+// other section of /admin stays behind `me.data?.role !== 'admin'`.
+const decisionLayerRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: '/decision-layer',
+  component: DecisionLayerPage,
+})
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
   signupRoute,
@@ -108,6 +118,7 @@ const routeTree = rootRoute.addChildren([
     libraryRedirectRoute,
     sourcesRedirectRoute,
     adminRoute,
+    decisionLayerRoute,
   ]),
 ])
 

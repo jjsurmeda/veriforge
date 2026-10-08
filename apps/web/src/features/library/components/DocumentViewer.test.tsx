@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { ChunkOut, DocumentOut } from '../../../generated/types.gen'
@@ -100,5 +100,39 @@ describe('DocumentViewer', () => {
     )
     expect(screen.getByText('Unsupported or unreadable document type')).toBeTruthy()
     expect(screen.getByText('Re-index document')).toBeTruthy()
+  })
+
+  // Item 6: an unanswered chunk read and a document with no text produced the
+  // same panel — a claim about the user's file rather than about the request.
+  it('a failed chunk read never says the document has no text', () => {
+    const onRetryChunks = vi.fn()
+    render(
+      <DocumentViewer
+        document={document({})}
+        chunks={[]}
+        chunksState="error"
+        onRetryChunks={onRetryChunks}
+        onClose={noop}
+        onSaveTags={vi.fn()}
+        onReindex={noop}
+      />,
+    )
+    expect(screen.getByRole('alert').textContent).toContain('text could not be read')
+    expect(screen.queryByText('No text could be extracted from this document.')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    expect(onRetryChunks).toHaveBeenCalled()
+  })
+
+  it('a document that genuinely has no text still says so', () => {
+    render(
+      <DocumentViewer
+        document={document({})}
+        chunks={[]}
+        onClose={noop}
+        onSaveTags={vi.fn()}
+        onReindex={noop}
+      />,
+    )
+    expect(screen.getByText('No text could be extracted from this document.')).toBeTruthy()
   })
 })

@@ -6,6 +6,8 @@ import type { DocumentOut } from '../../../generated/types.gen'
 
 const uploads: string[] = []
 let documents: DocumentOut[] = []
+let chatDocumentsFail = false
+let libraryFail = false
 
 function makeDocument(id: string, name: string, status = 'queued'): DocumentOut {
   return {
@@ -22,10 +24,16 @@ function makeDocument(id: string, name: string, status = 'queued'): DocumentOut 
 }
 
 vi.mock('../../../generated/sdk.gen', () => ({
-  listChatDocumentsChatsChatIdDocumentsGet: vi.fn(async () => ({ data: documents })),
-  getLibraryLibraryGet: vi.fn(async () => ({
-    data: { documents: [], starter_questions: [] },
-  })),
+  listChatDocumentsChatsChatIdDocumentsGet: vi.fn(async () =>
+    chatDocumentsFail
+      ? { error: { error_code: 'server_error', message: 'boom' } }
+      : { data: documents },
+  ),
+  getLibraryLibraryGet: vi.fn(async () =>
+    libraryFail
+      ? { error: { error_code: 'server_error', message: 'boom' } }
+      : { data: { documents: [], starter_questions: [] } },
+  ),
   uploadChatDocumentChatsChatIdDocumentsPost: vi.fn(async ({ body }: { body: { file: File } }) => {
     uploads.push(body.file.name)
     return { data: makeDocument('new', body.file.name) }
@@ -70,6 +78,8 @@ afterEach(() => {
   cleanup()
   uploads.length = 0
   documents = []
+  chatDocumentsFail = false
+  libraryFail = false
 })
 
 describe('SourcesTab', () => {
@@ -115,5 +125,60 @@ describe('SourcesTab', () => {
 
     fireEvent.click(screen.getByLabelText('Back to Sources'))
     expect(onCloseViewer).toHaveBeenCalled()
+  })
+
+  // Item 6: a failed read used to render as an empty corpus, which is a
+  // statement about the user's documents rather than about the request.
+  it('a failed chat read is an error, never "add sources to this chat"', async () => {
+    chatDocumentsFail = true
+    renderTab()
+
+    expect(
+      await screen.findByText('This chat’s sources could not be read.'),
+    ).toBeTruthy()
+    expect(screen.queryByText('Add sources to this chat.')).toBeNull()
+    expect(screen.queryByText('PDF, DOCX, MD, TXT, up to 20 MB.')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy()
+  })
+
+  it('a failed library read is an error, never "the Shared library is empty"', async () => {
+    libraryFail = true
+    renderTab()
+
+    fireEvent.click(await screen.findByRole('button', { expanded: false, name: /Shared library/ }))
+
+    expect(await screen.findByText('The Shared library could not be read.')).toBeTruthy()
+    expect(screen.queryByText('The Shared library is empty.')).toBeNull()
+  })
+
+  it('a genuinely empty library still gets the empty state', async () => {
+    renderTab()
+
+    fireEvent.click(await screen.findByRole('button', { expanded: false, name: /Shared library/ }))
+
+    expect(await screen.findByText('The Shared library is empty.')).toBeTruthy()
+  })
+
+  // The chat query is disabled without a chat, and a disabled query never
+  // leaves `isPending` — so this must read as "no chat yet", not "reading…".
+  it('with no chat selected it says so rather than reading forever', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <ThemeProvider>
+        <TooltipProvider>
+          <QueryClientProvider client={client}>
+            <SourcesTab
+              chatId={null}
+              viewerDocumentId={null}
+              onViewDocument={vi.fn()}
+              onCloseViewer={vi.fn()}
+            />
+          </QueryClientProvider>
+        </TooltipProvider>
+      </ThemeProvider>,
+    )
+
+    expect(await screen.findByText('No chat to add sources to yet.')).toBeTruthy()
+    expect(screen.queryByText('Reading this chat’s sources…')).toBeNull()
   })
 })

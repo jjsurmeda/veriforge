@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Check, ChevronDown, Search } from 'lucide-react'
+import { Check, ChevronDown, LoaderCircle, Search } from 'lucide-react'
 
 import type { ModelOut } from '../../../generated/types.gen'
 import { useModels } from '../hooks/useModels'
@@ -44,7 +44,7 @@ export function groupByProvider(models: ModelOut[]): Array<[string, ModelOut[]]>
 }
 
 export function ModelPicker({ value, disabled, onChange }: Props) {
-  const { data: models } = useModels()
+  const { data: models, isPending, isError, refetch } = useModels()
   const all = models ?? []
   const selected = all.find((model) => model.model_id === value)
 
@@ -119,7 +119,11 @@ export function ModelPicker({ value, disabled, onChange }: Props) {
           aria-label="Model"
           aria-expanded={open}
           disabled={disabled}
-          className="inline-flex h-8 min-w-0 max-w-[7.5rem] items-center gap-1.5 overflow-hidden rounded-lg px-2.5 text-sm text-fg-muted outline-none transition-[background-color,color] duration-150 ease-out hover:bg-raised hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:pointer-events-none disabled:opacity-40 sm:max-w-[13rem]"
+          // No `outline-none` here: it and `focus-visible:outline-2` both set
+          // `outline-style`, and Tailwind emits them in an order where the
+          // later rule won — so this trigger focused with a 2px *width* and no
+          // style, i.e. no visible ring at all. Measured, item 6.
+          className="inline-flex h-8 min-w-0 max-w-[7.5rem] items-center gap-1.5 overflow-hidden rounded-lg px-2.5 text-sm text-fg-muted transition-[background-color,color] duration-150 ease-out hover:bg-raised hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:pointer-events-none disabled:opacity-40 motion-reduce:transition-none sm:max-w-[13rem]"
         >
           <span className="truncate">{selected ? shortModelName(selected.model_id) : 'Model'}</span>
           <ChevronDown
@@ -161,6 +165,33 @@ export function ModelPicker({ value, disabled, onChange }: Props) {
             </label>
           </div>
         )}
+        {/* A listbox may only hold options and groups, so the reading,
+            failed and no-match states sit beside it rather than inside it —
+            axe flagged `aria-required-children` when they did not. */}
+        {isPending ? (
+          <p role="status" className="flex items-center gap-1.5 px-2.5 py-3 text-xs text-fg-muted">
+            <LoaderCircle
+              size={13}
+              strokeWidth={1.75}
+              className="shrink-0 animate-spin motion-reduce:animate-none"
+              aria-hidden="true"
+            />
+            Reading models…
+          </p>
+        ) : isError ? (
+          <div className="px-2.5 py-3">
+            <p role="alert" className="text-xs text-danger">
+              The model list could not be read.
+            </p>
+            <button
+              type="button"
+              onClick={() => void refetch()}
+              className="pressable mt-2 min-h-7 rounded-lg border border-border/40 px-2 text-2xs text-fg hover:bg-raised-hover focus-visible:outline-2 focus-visible:outline-focus-ring"
+            >
+              Try again
+            </button>
+          </div>
+        ) : null}
         <div
           id="model-listbox"
           role="listbox"
@@ -168,7 +199,7 @@ export function ModelPicker({ value, disabled, onChange }: Props) {
           aria-activedescendant={flat[cursor] ? `model-option-${flat[cursor].model_id}` : undefined}
           className="max-h-72 overflow-y-auto p-1"
         >
-          {flat.length === 0 && (
+          {!isPending && !isError && flat.length === 0 && (
             <p className="px-2.5 py-3 text-xs text-fg-muted">No models match.</p>
           )}
           {groups.map(([provider, entries]) => (

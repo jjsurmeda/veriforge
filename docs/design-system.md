@@ -35,7 +35,7 @@ below was sampled from `docs/design-refs/*.png`.
 | `--fg` (body, titles) | `#e5e4e3` | Perplexity body text |
 | `--fg-strong` (buttons, headings) | `#d6d5d4` for button fills, `#ffffff` for Grok-bright emphasis only | Perplexity Share button |
 | `--fg-muted` (placeholder, secondary, icons) | `#999897` | Perplexity snippet and Model label |
-| `--fg-subtle` (section labels, timestamps) | `#7f7e7d` | Perplexity "Projects" label |
+| `--fg-subtle` (section labels, timestamps) | `#8c8b8b` | Perplexity "Projects" label, lightened from `#7f7e7d` to clear §9's 4.5:1 floor (5.01:1 on `--bg-sidebar`; the sampled value measured 4.19:1) |
 | `--fg-faint` (empty hints) | `#636260` (decorative text only, never for info) | Perplexity "No projects" |
 | `--on-strong` | `#171615` | text on the Share button |
 | `--focus-ring` | `#e5e4e3` at 45% opacity, 2px, offset 2px | neutral, no hue |
@@ -53,9 +53,24 @@ below was sampled from `docs/design-refs/*.png`.
 | `--border-strong` | `#cfcdc8` |
 | `--fg` | `#1d1c1b` |
 | `--fg-strong` | `#171615` |
-| `--fg-muted` | `#6b6a67` |
-| `--fg-subtle` | `#8a8884` |
+| `--fg-muted` | `#63625e` |
+| `--fg-subtle` | `#66655f` |
 | `--on-strong` | `#fbfaf8` |
+
+Both moved for the same reason as the dark `--fg-subtle`: the sampled values
+measured 4.49:1 and 3.16:1 on the light surfaces, below §9's floor.
+
+**Status ramp** — measured, not sampled. axe reported `--status-warning` at
+4.1:1 on `--bg-main` (the `Abstained` label, 12px), and success and danger
+were shorter still on `--bg-raised-hover`, the surface a hover row sits on. All
+three cleared 4.5:1 on every surface they are used on after this move; light
+moved further than dark because light surfaces are the shallow end.
+
+| token | dark | light | worst surface, after |
+| --- | --- | --- | --- |
+| `--status-success` | `#7fb89b` (from `#6fae8a`) | `#326e4e` (from `#3f8a61`) | 5.01 dark, 4.66 light |
+| `--status-warning` | `#c9a15b` (unchanged) | `#7e5f1f` (from `#9a7426`) | 4.74 dark, 4.57 light |
+| `--status-danger` | `#ed887f` (from `#d0776f`) | `#a8433b` (from `#b5483f`) | 4.58 dark, 4.59 light |
 
 **Rules:**
 - **Delete** `--color-accent`, `--color-secondary`, `--color-info`, and every
@@ -64,6 +79,8 @@ below was sampled from `docs/design-refs/*.png`.
   with inactive tabs in `fg-muted`.
 - **Status colours** are allowed only as a 6px dot or a text label. Never use them as
   ambient panel fills. Success/warning/danger stay for dots and text, not backgrounds.
+- A status label never carries its meaning in colour alone: it ships with a
+  word, and a failure state with an icon.
 - **Map Tailwind v4 `@theme`** so utilities read naturally: `bg-main`, `bg-sidebar`,
   `bg-surface`, `bg-raised`, `text-fg`, `text-fg-muted`, `border-border`, and so on.
 - **Focus** is a neutral ring only: `focus-ring`.
@@ -170,6 +187,13 @@ Use plain, specific language: `Ask anything`, `Ask a follow-up`, `Sources`, `Rel
 - Keep existing `aria-label`, `role`, and test selectors. A moved control must retain its accessible name.
 - Tables, meters, status badges, and charts have text equivalents.
 - No horizontal overflow or clipped controls at 390px.
+- **A failed read is never an empty list.** A query that coerces a failure to
+  `[]` (`data ?? []`) makes a dead API claim "no documents", "no chats yet" or
+  "no text could be extracted" — statements about the user's data that nothing
+  supports. Reads go through `unwrap` (apps/web/src/lib/api.ts) so a failure
+  reaches React Query, and each surface has three states: a loading line
+  (`PanelNote`), an error with a retry (`PanelError`, `role="alert"`), and the
+  empty state for a genuinely empty result.
 
 ## 10. Anti-slop pre-flight
 

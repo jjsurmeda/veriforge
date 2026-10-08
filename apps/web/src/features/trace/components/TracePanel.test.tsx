@@ -17,7 +17,7 @@ const { TooltipProvider } = await import('../../../components/ui/primitives')
 
 Element.prototype.scrollIntoView = () => undefined
 
-function renderPanel() {
+function renderPanel(props: Partial<React.ComponentProps<typeof TracePanel>> = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <TooltipProvider>
@@ -33,6 +33,7 @@ function renderPanel() {
           chatId="chat-1"
           viewerDocumentId={null}
           open
+          {...props}
         />
       </QueryClientProvider>
     </TooltipProvider>,
@@ -42,12 +43,12 @@ function renderPanel() {
 afterEach(cleanup)
 
 describe('workspace panel empty states', () => {
-  it('Sources uses PanelEmpty when the chat has no documents', () => {
+  it('Sources uses PanelEmpty when the chat has no documents', async () => {
     renderPanel()
 
     fireEvent.click(screen.getByRole('tab', { name: 'Sources' }))
 
-    expect(screen.getByText('Add sources to this chat.')).toBeTruthy()
+    expect(await screen.findByText('Add sources to this chat.')).toBeTruthy()
     expect(screen.getByText('PDF, DOCX, MD, TXT, up to 20 MB.')).toBeTruthy()
   })
 
@@ -71,5 +72,19 @@ describe('workspace panel empty states', () => {
     expect(
       screen.getByText('Latency, tokens, credits and scores land when the run completes.'),
     ).toBeTruthy()
+  })
+
+  // Item 6: a lost replay leaves the same empty arrays as a chat that has
+  // never run, so "No run yet." was a wrong claim about a run that exists.
+  it('Trace says the replay was lost instead of "No run yet."', () => {
+    const onRetryTrace = vi.fn()
+    renderPanel({ traceStatus: 'connection_lost', onRetryTrace })
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Trace' }))
+
+    expect(screen.getByText('This trace could not be replayed.')).toBeTruthy()
+    expect(screen.queryByText('No run yet.')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Reconnect' }))
+    expect(onRetryTrace).toHaveBeenCalled()
   })
 })

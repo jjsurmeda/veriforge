@@ -16,7 +16,9 @@ function engineLabel(engine: Decision['engine']): string {
   return engine === 'jev' ? 'Jev' : 'fallback'
 }
 
-function EngineBadge({ engine }: { engine: Decision['engine'] }) {
+/** Exported so the evidence-gate card badges a gate with this component rather
+ *  than a second engine badge that drifts from it. */
+export function EngineBadge({ engine }: { engine: Decision['engine'] }) {
   const fallback = engine === 'fallback'
   return (
     <span
@@ -185,7 +187,16 @@ function DecisionValueRow({ decision, stage }: { decision: Decision; stage: stri
 }
 
 function isDynamicDecision(decision: Decision): boolean {
-  return decision.stage === 'claim_verdict' || decision.name.startsWith('chunk_injection_')
+  // The entity family is one Noul per top-k passage and the conflict family
+  // one per candidate pair, so both arrive as a run of decisions that mean a
+  // single gate. Collapsed like the chunk checks, they read as one check each;
+  // left flat they are exactly the "mostly Jev calls" reading KI-22 names.
+  return (
+    decision.stage === 'claim_verdict' ||
+    decision.name.startsWith('chunk_injection_') ||
+    decision.name.startsWith('entity_') ||
+    decision.name.startsWith('conflict_')
+  )
 }
 
 function DynamicSummary({

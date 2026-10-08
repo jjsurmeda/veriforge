@@ -937,6 +937,28 @@
             ],
             "title": "Jev Latency P95 Ms"
           },
+          "rerank_latency_p50_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rerank Latency P50 Ms"
+          },
+          "rerank_latency_p95_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rerank Latency P95 Ms"
+          },
           "shadow": {
             "$ref": "#/components/schemas/DecisionShadowOut"
           },
@@ -1615,6 +1637,17 @@
             "format": "date-time",
             "title": "Ts",
             "type": "string"
+          },
+          "ttft_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ttft Ms"
           },
           "type": {
             "const": "metrics",
@@ -4568,6 +4601,56 @@
         "summary": "Update User",
         "tags": [
           "admin"
+        ]
+      }
+    },
+    "/auth/demo": {
+      "post": {
+        "operationId": "start_demo_auth_demo_post",
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Start Demo",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/demo/limits": {
+      "get": {
+        "description": "What a demo account may do, for the composer.\n\nRead by any authenticated user, not just the demo role, so the composer can\nhide the Deep and Web toggles for a demo account before the request is\nmade \u2014 a control that is visible and then refused is worse than one that is\nabsent. The values are the same settings the route enforces, read from the\nsame place, so the UI cannot drift from the server.",
+        "operationId": "demo_limits_auth_demo_limits_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Demo Limits Auth Demo Limits Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Demo Limits",
+        "tags": [
+          "auth"
         ]
       }
     },

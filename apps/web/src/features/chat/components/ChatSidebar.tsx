@@ -17,6 +17,8 @@ import {
 
 import { useMe } from '../../auth/hooks/useMe'
 import { IconButton } from '../../../components/ui/IconButton'
+import { PanelError } from '../../../components/ui/PanelError'
+import { PanelNote } from '../../../components/ui/PanelNote'
 import {
   Menu,
   MenuContent,
@@ -67,7 +69,7 @@ export function ChatSidebar({
   onMobileClose?: () => void
 }) {
   const navigate = useNavigate()
-  const { data: chats } = useChatList()
+  const { data: chats, isPending, isError, refetch } = useChatList()
   const { data: me } = useMe()
   const createChat = useCreateChat()
   const deleteChat = useDeleteChat()
@@ -311,11 +313,34 @@ export function ChatSidebar({
               </div>
             )}
             {otherChats.map(renderChatRow)}
-            {filteredChats.length === 0 && (
+            {/* Item 6: "No chats yet." on a failed read is a claim about the
+                account, not about the request. Same for the first paint. */}
+            {isPending ? (
+              <div className="px-1">
+                <PanelNote>Reading your chats…</PanelNote>
+              </div>
+            ) : isError ? (
+              <div className="px-1">
+                <PanelError
+                  compact
+                  title="Your chats could not be read."
+                  hint="Nothing was changed. Try again in a moment."
+                  action={
+                    <button
+                      type="button"
+                      onClick={() => void refetch()}
+                      className="pressable min-h-8 rounded-lg border border-border bg-surface px-2.5 text-2xs text-fg hover:bg-raised-hover focus-visible:outline-2 focus-visible:outline-focus-ring"
+                    >
+                      Try again
+                    </button>
+                  }
+                />
+              </div>
+            ) : filteredChats.length === 0 ? (
               <p className="px-2 py-3 text-xs text-fg-muted">{searchQuery ? 'No chats match.' : 'No chats yet.'}</p>
-            )}
+            ) : null}
 
-            {me?.role === 'admin' && (
+            {me?.role === 'admin' ? (
               <button
                 type="button"
                 onClick={() => void navigate({ to: '/admin' })}
@@ -323,6 +348,18 @@ export function ChatSidebar({
               >
                 <ShieldCheck size={15} strokeWidth={1.75} aria-hidden="true" />
                 Admin
+              </button>
+            ) : (
+              // The demo role gets the decision layer, not Admin: the page is
+              // read-only and the API refuses it every write (item 3), so
+              // calling it "Admin" would promise a control room it cannot enter.
+              <button
+                type="button"
+                onClick={() => void navigate({ to: '/decision-layer' })}
+                className="mt-2 flex min-h-9 w-full items-center gap-2 rounded-lg px-2 text-left text-xs text-fg-muted transition-colors duration-150 hover:bg-raised-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-focus-ring"
+              >
+                <ShieldCheck size={15} strokeWidth={1.75} aria-hidden="true" />
+                Decision layer
               </button>
             )}
           </nav>

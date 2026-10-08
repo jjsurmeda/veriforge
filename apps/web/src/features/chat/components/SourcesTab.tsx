@@ -25,6 +25,8 @@ import {
 } from '../../library/hooks/useDocuments'
 import { IconButton } from '../../../components/ui/IconButton'
 import { PanelEmpty } from '../../../components/ui/PanelEmpty'
+import { PanelError } from '../../../components/ui/PanelError'
+import { PanelNote } from '../../../components/ui/PanelNote'
 import {
   Menu,
   MenuContent,
@@ -121,10 +123,14 @@ function DocumentRow({
 
 function SharedRow({
   documents,
+  state,
   onView,
+  onRetry,
 }: {
   documents: LibraryDocumentOut[]
+  state: 'loading' | 'error' | 'ready'
   onView: (documentId: string) => void
+  onRetry: () => void
 }) {
   const [open, setOpen] = useState(false)
   return (
@@ -137,19 +143,43 @@ function SharedRow({
       >
         <Library size={14} strokeWidth={1.75} className="shrink-0" aria-hidden="true" />
         <span className="min-w-0 flex-1 truncate">Shared library</span>
-        <span className="shrink-0 font-mono text-2xs tabular-nums text-fg-subtle">
-          {documents.length} documents · always searched
+        {/* The count is a claim about the corpus, so it waits for the read.
+            "0 documents" during a slow response reads as an empty library. */}
+        <span className="flex shrink-0 items-baseline gap-1.5 text-2xs text-fg-subtle">
+          {state === 'ready' && (
+            <span className="font-mono tabular-nums">
+              {documents.length} {documents.length === 1 ? 'document' : 'documents'}
+            </span>
+          )}
+          <span>always searched</span>
         </span>
         <ChevronRight
           size={14}
           strokeWidth={1.75}
-          className={`shrink-0 transition-transform duration-150 ${open ? 'rotate-90' : ''}`}
+          className={`shrink-0 transition-transform duration-150 motion-reduce:transition-none ${open ? 'rotate-90' : ''}`}
           aria-hidden="true"
         />
       </button>
       {open && (
         <ul className="pb-1">
-          {documents.length === 0 ? (
+          {state === 'loading' ? (
+            <li className="py-1 pl-3 pr-2">
+              <PanelNote>Reading the Shared library…</PanelNote>
+            </li>
+          ) : state === 'error' ? (
+            <li className="flex items-center gap-2 py-1 pl-6 pr-2">
+              <p role="alert" className="min-w-0 flex-1 text-2xs text-danger">
+                The Shared library could not be read.
+              </p>
+              <button
+                type="button"
+                onClick={onRetry}
+                className="pressable min-h-7 shrink-0 rounded-lg px-2 text-2xs text-fg-muted hover:bg-raised-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-focus-ring"
+              >
+                Try again
+              </button>
+            </li>
+          ) : documents.length === 0 ? (
             <li className="py-1 pl-6 pr-2 text-2xs text-fg-muted">The Shared library is empty.</li>
           ) : (
             documents.map((document) => (
@@ -189,6 +219,11 @@ export function SourcesTab({ chatId, viewerDocumentId, onViewDocument, onCloseVi
   const viewerLive =
     viewer !== undefined && ['queued', 'parsing', 'embedding'].includes(viewer.status)
   const viewerChunks = useDocumentChunks(viewer?.id ?? null, viewerLive)
+  const viewerChunkState = viewerChunks.isError
+    ? ('error' as const)
+    : viewerChunks.isPending
+      ? ('loading' as const)
+      : ('ready' as const)
 
   const disabled = chatId === null || upload.isPending
   const pick = () => inputRef.current?.click()
@@ -215,6 +250,8 @@ export function SourcesTab({ chatId, viewerDocumentId, onViewDocument, onCloseVi
       <DocumentViewer
         document={viewer}
         chunks={viewerChunks.data ?? []}
+        chunksState={viewerChunkState}
+        onRetryChunks={() => void viewerChunks.refetch()}
         backLabel="Sources"
         readOnly={shared.some((entry) => entry.id === viewer.id)}
         onClose={onCloseViewer}
@@ -225,6 +262,14 @@ export function SourcesTab({ chatId, viewerDocumentId, onViewDocument, onCloseVi
       />
     )
   }
+
+  // Item 6: a failed read must say so. Both queries coerce to `[]` on error
+  // (`documents = chat.data ?? []`), so a dead API rendered as "add sources to
+  // this chat" and "the Shared library is empty" — two confident, wrong
+  // statements about a corpus that is merely unreachable. The same argument
+  // covers the first paint: an empty list and an unanswered one look identical,
+  // so each read gets its own loading line.
+  const libraryState = library.isError ? 'error' : library.isPending ? 'loading' : 'ready'
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -248,7 +293,26 @@ export function SourcesTab({ chatId, viewerDocumentId, onViewDocument, onCloseVi
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
-        {documents.length === 0 ? (
+        {/* A disabled query with no data stays `isPending` forever, so the
+            null-chat case must be excluded or it would read "reading…" for a
+            request that is never going to be made. */}
+        {chat.isPending && chatId !== null ? (
+          <PanelNote>Reading this chat’s sources…</PanelNote>
+        ) : chat.isError ? (
+          <PanelError
+            title="This chat’s sources could not be read."
+            hint="Uploading still works — the list comes back when the request succeeds."
+            action={
+              <button
+                type="button"
+                onClick={() => void chat.refetch()}
+                className="pressable min-h-9 w-full rounded-lg border border-border bg-surface px-3 text-xs text-fg hover:bg-raised-hover focus-visible:outline-2 focus-visible:outline-focus-ring"
+              >
+                Try again
+              </button>
+            }
+          />
+        ) : documents.length === 0 ? (
           <PanelEmpty
             title={chatId === null ? 'No chat to add sources to yet.' : 'Add sources to this chat.'}
             hint={
@@ -262,7 +326,7 @@ export function SourcesTab({ chatId, viewerDocumentId, onViewDocument, onCloseVi
                 disabled={disabled}
                 onClick={pick}
                 {...dropProps}
-                className={`flex min-h-28 w-full flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed transition-[background-color,border-color] duration-150 focus-visible:outline-2 focus-visible:outline-focus-ring ${
+                className={`flex min-h-28 w-full flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed transition-[background-color,border-color] duration-150 focus-visible:outline-2 focus-visible:outline-focus-ring motion-reduce:transition-none ${
                   dragOver
                     ? 'border-fg-muted bg-raised text-fg'
                     : 'border-border-strong bg-surface text-fg-muted hover:border-fg-subtle hover:text-fg'
@@ -291,7 +355,7 @@ export function SourcesTab({ chatId, viewerDocumentId, onViewDocument, onCloseVi
               disabled={disabled}
               onClick={pick}
               {...dropProps}
-              className={`mt-2 flex min-h-11 w-full items-center justify-center gap-1.5 rounded-lg border border-dashed text-2xs transition-[background-color,border-color,color] duration-150 focus-visible:outline-2 focus-visible:outline-focus-ring ${
+              className={`mt-2 flex min-h-11 w-full items-center justify-center gap-1.5 rounded-lg border border-dashed text-2xs transition-[background-color,border-color,color] duration-150 focus-visible:outline-2 focus-visible:outline-focus-ring motion-reduce:transition-none ${
                 dragOver
                   ? 'border-fg-muted bg-raised text-fg'
                   : 'border-border text-fg-subtle hover:border-border-strong hover:text-fg-muted'
@@ -305,7 +369,12 @@ export function SourcesTab({ chatId, viewerDocumentId, onViewDocument, onCloseVi
       </div>
 
       <ul className="shrink-0">
-        <SharedRow documents={shared} onView={onViewDocument} />
+        <SharedRow
+          documents={shared}
+          state={libraryState}
+          onView={onViewDocument}
+          onRetry={() => void library.refetch()}
+        />
       </ul>
 
       <input

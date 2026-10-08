@@ -59,13 +59,24 @@
   --fg: #e5e4e3;
   --fg-strong: #d6d5d4;
   --fg-muted: #999897;
-  --fg-subtle: #7f7e7d;
+  /* `fg-subtle` moved from #7f7e7d (sampled "Projects" label) to clear
+     design-system.md §9's 4.5:1 floor on the surfaces it is actually used on:
+     4.19:1 on `--bg-sidebar` at the 0.68rem section-label size, which is
+     10.88px and so needs the full ratio, not the 3:1 large-text one. #8c8b8b
+     measures 5.01 on sidebar, 4.95 on surface and 4.61 on raised. The ramp
+     still reads in order (muted > subtle > faint). */
+  --fg-subtle: #8c8b8b;
   --fg-faint: #636260;
   --on-strong: #171615;
   --focus-ring: rgb(229 228 227 / 0.45);
-  --status-success: #6fae8a;
+  /* The status ramp moved for the same reason as `fg-subtle`, measured the
+     same way (axe, WCAG 2.1 AA, 4.5:1 for text at these sizes): success was
+     4.40:1 and danger 3.56:1 on `--bg-raised-hover`, the surface a hover row
+     sits on. #7fb89b measures 5.01 and #ed887f 4.58 there. Warning already
+     cleared (4.74:1) and is unchanged, so the ramp keeps its order. */
+  --status-success: #7fb89b;
   --status-warning: #c9a15b;
-  --status-danger: #d0776f;
+  --status-danger: #ed887f;
   --motion-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
   --motion-panel: cubic-bezier(0.16, 1, 0.3, 1);
   --motion-fast: 150ms;
@@ -86,14 +97,22 @@
   --border-strong: #cfcdc8;
   --fg: #1d1c1b;
   --fg-strong: #171615;
-  --fg-muted: #6b6a67;
-  --fg-subtle: #8a8884;
+  --fg-muted: #63625e;
+  /* Same floor as dark, and light needed it more: the original #8a8884
+     measured 3.16:1 on `--bg-sidebar` and 3.54:1 on `--bg-surface`. #66655f
+     measures 5.22 and 5.85. `fg-muted` moved with it (4.49:1 on `--bg-raised`
+     was also short), so muted > subtle > faint still holds in lightness. */
+  --fg-subtle: #66655f;
   --fg-faint: #aaa7a1;
   --on-strong: #fbfaf8;
   --focus-ring: rgb(29 28 27 / 0.45);
-  --status-success: #3f8a61;
-  --status-warning: #9a7426;
-  --status-danger: #b5483f;
+  /* Light moved further than dark because light surfaces are the shallow end:
+     all three sat between 3.23:1 (success on `--bg-raised-hover`) and 4.29:1
+     (warning on `--bg-surface`). These measure 4.66, 4.57 and 4.59 there —
+     the floor plus a little headroom for the 0.68rem labels that use them. */
+  --status-success: #326e4e;
+  --status-warning: #7e5f1f;
+  --status-danger: #a8433b;
   color-scheme: light;
 }
 

@@ -273,6 +273,17 @@ class TestDisplayThresholds:
         assert display_threshold("intent", "jev") is None
         assert display_threshold("claim_c1", "jev") is None
 
+    def test_display_threshold_resolves_the_numbered_conflict_pairs(self) -> None:
+        """Lane E item 1. Every conflict decision is published as
+        `conflict_<i>` (KI-34 asks one question per candidate pair), so the
+        bare `conflict` entry alone left every real conflict decision with no
+        threshold to show beside its value in the evidence-gate card."""
+        assert display_threshold("conflict_0", "jev") == pytest.approx(0.60)
+        assert display_threshold("conflict_7", "fallback") == pytest.approx(0.60)
+        # And it stays a prefix match: a hypothetical `conflicting_thing`
+        # is not a pair question and must not borrow the disclose floor.
+        assert display_threshold("conflicting_thing", "jev") is None
+
     def test_display_threshold_honors_runtime_override(self) -> None:
         token = set_runtime_settings(
             RuntimeSettings.from_data(

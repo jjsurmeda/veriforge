@@ -20,6 +20,7 @@ import {
   MenuTrigger,
 } from '../../components/ui/primitives'
 import { IconButton } from '../../components/ui/IconButton'
+import { PanelNote } from '../../components/ui/PanelNote'
 
 export function SharedLibraryPanel() {
   const library = useLibrary()
@@ -36,12 +37,19 @@ export function SharedLibraryPanel() {
     viewerId,
     viewer !== undefined && ['queued', 'parsing', 'embedding'].includes(viewer.status),
   )
+  const viewerChunkState = viewerChunks.isError
+    ? ('error' as const)
+    : viewerChunks.isPending
+      ? ('loading' as const)
+      : ('ready' as const)
 
   if (viewer !== undefined) {
     return (
       <DocumentViewer
         document={viewer}
         chunks={viewerChunks.data ?? []}
+        chunksState={viewerChunkState}
+        onRetryChunks={() => void viewerChunks.refetch()}
         onClose={() => setViewerId(null)}
         onSaveTags={async (tags) => {
           await patchTags.mutateAsync({ documentId: viewer.id, tags })
@@ -59,11 +67,39 @@ export function SharedLibraryPanel() {
         onUpload={async (file) => upload.mutateAsync(file)}
       />
       <p className="text-xs text-fg-muted">
-        Every chat searches these. {documents.length}{' '}
-        {documents.length === 1 ? 'document' : 'documents'} published.
+        Every chat searches these.{' '}
+        {/* Item 6: a failed read made this "0 documents published" — a claim
+            about the library, from a request that never answered. */}
+        {library.isPending
+          ? 'Reading the library…'
+          : library.isError
+            ? 'The library could not be read.'
+            : `${documents.length} ${documents.length === 1 ? 'document' : 'documents'} published.`}
       </p>
       <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-surface">
-        {documents.length === 0 && (
+        {library.isPending && (
+          <li className="px-2 py-3">
+            <PanelNote>Reading the library…</PanelNote>
+          </li>
+        )}
+        {library.isError && (
+          <li className="px-4 py-6 text-center">
+            <p role="alert" className="text-sm font-medium text-fg">
+              The Shared library could not be read.
+            </p>
+            <p className="mx-auto mt-1 max-w-[40ch] text-xs leading-5 text-fg-muted">
+              Nothing was changed. Try again in a moment.
+            </p>
+            <button
+              type="button"
+              onClick={() => void library.refetch()}
+              className="pressable mt-3 min-h-9 rounded-lg border border-border bg-surface px-3 text-xs text-fg hover:bg-raised-hover focus-visible:outline-2 focus-visible:outline-focus-ring"
+            >
+              Try again
+            </button>
+          </li>
+        )}
+        {!library.isPending && !library.isError && documents.length === 0 && (
           <li className="px-4 py-6 text-center text-sm text-fg-muted">
             Nothing published yet.
           </li>

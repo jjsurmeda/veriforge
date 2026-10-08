@@ -14,7 +14,7 @@ import {
 } from 'lucide-react'
 
 import { formatCredits } from '../../../lib/format'
-import type { MessageOut } from '../../../generated/types.gen'
+import type { Decision, MessageOut, RetrievedChunk } from '../../../generated/types.gen'
 import {
   CitationChip,
   chipSourceFromCitation,
@@ -24,6 +24,7 @@ import {
   type ChipSource,
 } from '../../trace/components/CitationChip'
 import { CitationsTab } from '../../trace/components/CitationsTab'
+import { DeclineReason } from '../../trace/components/DeclineReason'
 import type { RunLive } from '../store'
 
 interface Props {
@@ -34,6 +35,13 @@ interface Props {
   onOpenSources?: (sourceNumber?: number, messageId?: string) => void
   onSelectMessage?: (messageId: string) => void
   onShowSteps?: (message: MessageOut) => void
+  /** Opens the Trace tab on the gate that blocked, from the decline message. */
+  onShowGates?: () => void
+  /** Which escalation paths this account may use (item 4). Defaults to both,
+   *  so an ordinary account is unaffected. */
+  mayUse?: { web: boolean; deep: boolean }
+  /** The replayed run's trace, so a reopened decline can name its gate too. */
+  replay?: { runId: string | null; decisions: Decision[]; chunks: RetrievedChunk[] } | null
   optimisticQuestion?: string | null
 }
 
@@ -48,15 +56,22 @@ function isAbstainAction(value: string): value is AbstainAction {
 function abstentionActions(
   live: RunLive | undefined,
   lastMessage: MessageOut | undefined,
+  mayUse: { web: boolean; deep: boolean },
 ): AbstainAction[] {
-  if (live?.abstain) {
-    return (live.abstain.offered_actions ?? []).filter(isAbstainAction)
-  }
+  // The offered actions come off the server's abstain event, which does not
+  // know what this account may do. Filtering here means a demo account is
+  // never shown a "Try Deep" button whose only outcome is a 403 (item 4).
+  const offered = (actions: string[]) =>
+    actions.filter(isAbstainAction).filter((action) =>
+      action === 'deep' ? mayUse.deep : mayUse.web,
+    )
+
+  if (live?.abstain) return offered(live.abstain.offered_actions ?? [])
   if (lastMessage?.status !== 'abstained') return []
   const actions: AbstainAction[] = []
   if (lastMessage.content.includes('Searching the web')) actions.push('web')
   if (lastMessage.content.includes('Deep mode')) actions.push('deep')
-  return actions
+  return offered(actions)
 }
 
 function renderWithCitations(
@@ -279,7 +294,7 @@ function SourceCardRow({ message, onOpenSources, hoveredCitation, onHoverCitatio
   )
 }
 
-export function MessageList({ messages, live, onSuggestion, onAbstainAction, onOpenSources, onSelectMessage, onShowSteps, optimisticQuestion }: Props) {
+export function MessageList({ messages, live, onSuggestion, onAbstainAction, onOpenSources, onSelectMessage, onShowSteps, onShowGates, mayUse = { web: true, deep: true }, replay, optimisticQuestion }: Props) {
   const [hoveredCitation, setHoveredCitation] = useState<number | null>(null)
   const optimisticUserId = 'optimistic-user'
   const optimisticAssistantId = 'optimistic-assistant'
@@ -295,7 +310,7 @@ export function MessageList({ messages, live, onSuggestion, onAbstainAction, onO
   const persistedSuggestions = lastAssistantMessage?.role === 'assistant' ? ((lastAssistantMessage.metrics?.suggestions as string[] | undefined) ?? []) : []
   const suggestions = liveSuggestions.length > 0 ? liveSuggestions : live === undefined || live.status === 'completed' ? persistedSuggestions : []
   const showSuggestions = onSuggestion !== undefined && suggestions.length > 0
-  const abstainActions = abstentionActions(live, lastAssistantMessage)
+  const abstainActions = abstentionActions(live, lastAssistantMessage, mayUse)
 
   return (
     <div className="mx-auto flex w-full max-w-[720px] flex-col gap-8 px-4 py-8 sm:px-6">
@@ -316,6 +331,29 @@ export function MessageList({ messages, live, onSuggestion, onAbstainAction, onO
         const verdictFor = isLivePlaceholder ? (n: number) => worstVerdict(live?.claims ?? [], n) : (n: number) => citations.find((c) => c.n === n)?.verdict ?? null
         const footerMetrics = isLivePlaceholder ? live?.metrics : message.metrics
         const revisionDiff = isLivePlaceholder ? live?.revision?.diff : message.metrics?.revised === true ? (message.metrics?.revision_diff as string | undefined) : undefined
+        // The gate card needs decisions, and a run's decisions live in the
+        // store keyed by run_id. While the run streams that is `live`; for a
+        // message reopened from history it is the replayed run the reader has
+        // opened (`replayed`, matched on run_id so a stale run's gates can
+        // never be shown against the wrong message).
+        const replayed = !isLivePlaceholder && replay?.runId === message.run_id ? replay : undefined
+        const declined =
+          (isLivePlaceholder && live?.abstain !== null && live?.abstain !== undefined) ||
+          (!isLivePlaceholder && message.status === 'abstained')
+        const declineTrace =
+          declined && isLivePlaceholder
+            ? { decisions: live!.decisions, chunks: live!.chunks }
+            : declined && replayed
+              ? { decisions: replayed.decisions, chunks: replayed.chunks }
+              : null
+        // The sentence names the entity the *question* asked about, so it needs
+        // the user turn in front of this message — not the thread's latest
+        // question, which is a later turn in a multi-turn chat.
+        const declineQuestion =
+          [...displayedMessages]
+            .slice(0, displayedMessages.indexOf(message))
+            .reverse()
+            .find((m) => m.role === 'user')?.content ?? null
         return (
           <article key={message.id} id={`message-${message.id}`} onClick={() => isAssistant && onSelectMessage?.(message.id)} className={`message-enter flex w-full ${isAssistant ? 'cursor-pointer justify-start' : 'justify-end'}`}>
             {isAssistant ? (
@@ -350,6 +388,20 @@ export function MessageList({ messages, live, onSuggestion, onAbstainAction, onO
                  {!isLivePlaceholder && <SourceCardRow message={message} onOpenSources={onOpenSources} hoveredCitation={hoveredCitation} onHoverCitation={setHoveredCitation} />}
 
                  {isAssistant && <MessageActions message={message} content={content} onShowSteps={onShowSteps} />}
+
+                {/* The abstain text is server-written prose, so the gate it
+                    names is rendered beside it rather than inside it. Live
+                    while the run streams, and for a reopened message once its
+                    run has been replayed (`replayed`). */}
+                {declined && declineTrace && (
+                  <DeclineReason
+                    declined
+                    decisions={declineTrace.decisions}
+                    question={declineQuestion}
+                    retrieved={declineTrace.chunks}
+                    onShowGates={onShowGates}
+                  />
+                )}
 
                 <AnswerFooter metrics={footerMetrics} />
               </div>

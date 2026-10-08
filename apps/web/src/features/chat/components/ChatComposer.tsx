@@ -27,6 +27,11 @@ interface Props {
   emptyThread?: boolean
   deep: boolean
   web: boolean
+  /** Whether this account may use Deep / web search (item 4). Defaults to
+   *  true, so an ordinary account is unaffected and a demo account hides what
+   *  the server will refuse. */
+  allowDeep?: boolean
+  allowWeb?: boolean
   onFiles: (files: File[]) => void
   onModelChange: (modelId: string) => void
   onToggleDeep: (value: boolean) => void
@@ -74,6 +79,8 @@ export function ChatComposer({
   emptyThread = false,
   deep,
   web,
+  allowDeep = true,
+  allowWeb = true,
   onFiles,
   onModelChange,
   onToggleDeep,
@@ -86,11 +93,16 @@ export function ChatComposer({
   const [dragOver, setDragOver] = useState(false)
   const blocked = quota?.blocked ?? false
   const disabled = streaming || blocked
+  // A toggle this account may not use is removed rather than disabled: a greyed
+  // control invites the question, and the answer ("the demo cannot do that")
+  // belongs beside the tour, not on every message.
+  const effectiveDeep = allowDeep && deep
+  const effectiveWeb = allowWeb && web
 
   const submit = () => {
     const value = textareaRef.current?.value.trim() ?? ''
     if (!value || disabled) return
-    onSend(value, runOptions(deep, web))
+    onSend(value, runOptions(effectiveDeep, effectiveWeb))
     if (textareaRef.current) {
       textareaRef.current.value = ''
       textareaRef.current.style.height = 'auto'
@@ -120,7 +132,11 @@ export function ChatComposer({
               onFiles(Array.from(event.dataTransfer.files))
             }
           }}
-          className={`rounded-3xl border bg-surface p-2 transition-[border-color] duration-150 focus-within:border-border-strong/60 ${dragOver ? 'border-fg-muted' : 'border-border'}`}
+          // The ring is on the container, not the textarea: `focus-within` reaches the
+            // textarea (and the send button) and paints a rounded-3xl outline
+            // that matches the composer's shape. Measured as the only control
+            // in the app without a visible focus indicator.
+            className={`rounded-3xl border bg-surface p-2 transition-[border-color] duration-150 focus-within:border-border-strong/60 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-focus-ring motion-reduce:transition-none ${dragOver ? 'border-fg-muted' : 'border-border'}`}
         >
           <textarea
             ref={textareaRef}
@@ -139,7 +155,12 @@ export function ChatComposer({
               target.style.height = 'auto'
               target.style.height = `${Math.min(target.scrollHeight, 160)}px`
             }}
-            className="block max-h-40 min-h-14 w-full resize-none rounded-2xl border-0 bg-transparent px-3 py-2.5 text-base leading-6 text-fg outline-none placeholder:text-fg-muted/80 disabled:cursor-not-allowed disabled:opacity-60"
+            // `outline-none` with nothing replacing it: the composer's textarea was the
+            // one control in the app with no visible focus indicator
+            // (measured, item 6). The container carries the ring instead, so
+            // the focus lands on a 24px-radius shape that matches the composer
+            // rather than a rectangle inside a rounded one.
+            className="block max-h-40 min-h-14 w-full resize-none rounded-2xl border-0 bg-transparent px-3 py-2.5 text-base leading-6 text-fg outline-none placeholder:text-fg-muted/80 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none"
           />
           <div className="flex items-center justify-between gap-2 px-1 pt-2">
             <div className="flex min-w-0 items-center gap-1 overflow-x-auto">
@@ -157,20 +178,24 @@ export function ChatComposer({
                 </TooltipTrigger>
                 <TooltipContent>Add sources</TooltipContent>
               </TooltipRoot>
-              <ToggleChip
-                icon={<Layers3 size={14} strokeWidth={1.75} aria-hidden="true" />}
-                label="Deep"
-                pressed={deep}
-                disabled={disabled}
-                onToggle={onToggleDeep}
-              />
-              <ToggleChip
-                icon={<Globe2 size={14} strokeWidth={1.75} aria-hidden="true" />}
-                label="Web"
-                pressed={web}
-                disabled={disabled}
-                onToggle={onToggleWeb}
-              />
+              {allowDeep && (
+                <ToggleChip
+                  icon={<Layers3 size={14} strokeWidth={1.75} aria-hidden="true" />}
+                  label="Deep"
+                  pressed={effectiveDeep}
+                  disabled={disabled}
+                  onToggle={onToggleDeep}
+                />
+              )}
+              {allowWeb && (
+                <ToggleChip
+                  icon={<Globe2 size={14} strokeWidth={1.75} aria-hidden="true" />}
+                  label="Web"
+                  pressed={effectiveWeb}
+                  disabled={disabled}
+                  onToggle={onToggleWeb}
+                />
+              )}
             </div>
             <div className="flex shrink-0 items-center gap-2">
               <ModelPicker value={modelId} disabled={disabled} onChange={onModelChange} />
