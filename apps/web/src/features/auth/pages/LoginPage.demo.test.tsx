@@ -108,6 +108,41 @@ describe('Try the demo', () => {
     })
   })
 
+  it('says the demo is not available when the kill switch is off', async () => {
+    // KI-63: DEMO_ENABLED defaults to false, so on any deployment that has
+    // not turned it on this button is the first thing a visitor presses. A
+    // generic "could not start the demo" reads as a broken product, not a
+    // switched-off one.
+    mocks.startDemo.mockResolvedValue({
+      error: { error_code: 'demo_disabled', message: 'The demo is not available on this deployment.' },
+    })
+    renderPage()
+
+    await screen.getByRole('button', { name: 'Try the demo' }).click()
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert').textContent).toBe('The demo is not available right now.')
+    })
+    expect(mocks.setAccessToken).not.toHaveBeenCalled()
+    // The form is untouched: a visitor who came to sign in must still be able
+    // to.
+    expect(screen.getByRole('button', { name: 'Sign in' })).toBeTruthy()
+  })
+
+  it('says the demo is full for today when the daily cap is spent', async () => {
+    mocks.startDemo.mockResolvedValue({
+      error: { error_code: 'demo_capacity', message: '2 demo account(s) already created in the last 24h; the cap is 2' },
+    })
+    renderPage()
+
+    await screen.getByRole('button', { name: 'Try the demo' }).click()
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert').textContent).toBe('The demo is full for today. Try again tomorrow.')
+    })
+    expect(mocks.setAccessToken).not.toHaveBeenCalled()
+  })
+
   it('leaves the sign-in form alone when the demo fails', async () => {
     mocks.startDemo.mockResolvedValue({ error: { error_code: 'internal_error' } })
     renderPage()

@@ -105,6 +105,132 @@ Restoring **replaces** the database, so every refresh token issued after the
 dump is dead and everyone is logged out. That is why `--restore` is a flag and
 not part of a plain `up.sh`.
 
+## The demo: turning it on and off
+
+`POST /auth/demo` mints an account with a credit budget and **no credential**.
+It is the one endpoint in the product anyone on the internet can call to spend
+your money, so it is off unless you turn it on (KI-63).
+
+**Off by default.** A deployment that has never heard of `DEMO_ENABLED` comes
+up with the demo off. Do not read that as a bug.
+
+The variable lives in **`infra/.env`** (600 mode, never printed by any script —
+see `.env.example`). `compose.prod.yaml` passes it through to the api, so
+changing it needs a restart of the api container, not a redeploy:
+
+```bash
+$EDITOR infra/.env          # set DEMO_ENABLED=true
+# over SSM Session Manager, on the instance:
+docker compose -f /opt/veriforge/compose.prod.yaml up -d api
+```
+
+To turn it **off** again — do this the moment the beta week ends, it is the
+kill switch:
+
+```bash
+$EDITOR infra/.env          # DEMO_ENABLED=false, or delete the line
+docker compose -f /opt/veriforge/compose.prod.yaml up -d api
+```
+
+Off means the route answers **404** and creates nothing, checked before the
+rate limiter and before any database work, so a disabled demo costs a visitor
+none of their hourly tries. `GET /auth/demo/limits` stays available; it is
+authenticated and the composer's source of truth, and turning the demo off
+should not start erroring signed-in pages.
+
+Confirm which state you are in without guessing:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' -X POST https://<url>/auth/demo
+# 404 = off, 201 = on (this mints an account — one request), 429 = cap spent
+```
+
+### The cap
+
+`DEMO_DAILY_CAP` (default **50**) caps demo accounts created in any rolling 24
+hours. It is counted **from the database** — demo-role users by `created_at` —
+so a restart or a second api process cannot reset it. Over the cap is a **429**
+with `error_code: demo_capacity` and a `Retry-After` of when the oldest account
+in the window ages out.
+
+It is a second brake, not the first: the per-IP limit (5/hour, in process
+memory) still applies first, so a throttled request costs no capacity.
+
+### Worst-case spend, and where the number comes from
+
+**$15.00 per rolling 24 hours**, with the shipped defaults. The inputs, so you
+can disagree with any of them:
+
+| Input | Value | Where |
+| --- | --- | --- |
+| Cap | 50 | `DEMO_DAILY_CAP` default, `demo/settings.py` |
+| Demo plan, 5 h | 60 000 credits | `scripts/seed_demo.py` `CREDITS_5H` |
+| Demo plan, month | 400 000 credits | `scripts/seed_demo.py` `CREDITS_MONTH` |
+| Account lifetime | 24 h | `DEMO_TTL_HOURS` default; the cleanup sweep deletes it |
+| Credit valuation | 1 credit = **$1 per 1M input tokens** | see below |
+
+**The valuation.** `calculate_credits` (in `quota/service.py`) is
+`(price_in·tokens_in + price_out·tokens_out) / reference_price`. The reference
+model is `anthropic/claude-haiku-4.5` at `price_in = 1.00` (migration `0004`),
+i.e. $1 per million input tokens. So one credit is $1 of input at the reference
+rate. Verified directly: 1 000 in / 1 000 out on `gpt-4o-mini` (0.15/0.60) is
+750 credits and $0.00075 — a ratio of exactly 1 000 000 credits per dollar.
+
+**The arithmetic.** One account lives at most 24 h, so the 5-hour window can
+refill at most 5 times inside its life: `5 × 60 000 = 300 000` credits, which
+is below the 400 000 monthly ceiling, so **300 000 credits ≈ $0.30 per
+account**. At the cap: `50 × 300 000 = 15 000 000` credits ≈ **$15.00**.
+
+**If you ignore the TTL** and assume an account could spend its whole monthly
+budget, the figure is `50 × 400 000 = 20 000 000` credits = **$20.00**. That
+is the number to plan against: it is what the cap bounds even if the cleanup
+sweep never runs, and it is the same order as the ~$20/monthly AWS budget —
+though provider credit and AWS spend are separate bills.
+
+Two things tighten this further in practice, both already on by default:
+`DEMO_ALLOW_DEEP=false` keeps every run on Auto (~8 000 credits, $0.008), and
+demo accounts cannot use web search or upload at all.
+
+### When a visitor says the demo did not work
+
+The login page says which of the three it was, and no new endpoint is needed to
+tell:
+
+- **"The demo is not available right now."** — `DEMO_ENABLED` is false.
+- **"The demo is full for today. Try again tomorrow."** — the daily cap.
+  Capacity frees itself as accounts age out of the 24 h window or are swept.
+  The refused count is in the 429's `message` field, and the account count is
+  in the `users` table. To see the live number:
+
+  ```bash
+  docker compose -f /opt/veriforge/compose.prod.yaml exec api \
+    uv run python -c "
+  import asyncio
+  from sqlalchemy import func, select
+  from datetime import UTC, datetime, timedelta
+  from db.models import User
+  from db.session import get_session_factory
+  from demo.settings import demo_settings
+  async def main():
+      s = demo_settings()
+      cutoff = datetime.now(UTC) - timedelta(hours=s.cap_window_hours)
+      async with get_session_factory()() as db:
+          n = await db.scalar(select(func.count()).select_from(User)
+              .where(User.role == 'demo', User.created_at >= cutoff))
+          print(f'{n}/{s.daily_cap} demo accounts in the last {s.cap_window_hours:g}h')
+  asyncio.run(main())"
+  ```
+
+- **"The demo has been started a few times from this network."** — the per-IP
+  limiter. Different message, different fix; it clears in an hour.
+- **"The demo is not set up on this deployment yet."** — `make seed-demo` has
+  not been run, so there is no `demo` plan to put the account on. The 503 body
+  names the fix.
+
+The off and full states are also the two screens in
+`apps/web/e2e/screenshots/login-demo-*.png`, and
+`node e2e/shot-demo-unavailable.mjs` regenerates them.
+
 ## Add an invite
 
 The admin API, over SSM Session Manager, so nothing is exposed to the internet:

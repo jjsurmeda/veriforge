@@ -2746,7 +2746,10 @@ Logged 2026-10-06 (lane C, item 5). Fixed in the same commit.
 
 ## KI-63: `POST /auth/demo` has no kill switch and no global spend cap
 
-Logged 2026-10-09 (lane E review). Open; fix before the first deploy.
+Logged 2026-10-09 (lane E review). **Mostly fixed** on `beta/demo-guard`
+(2026-10-11): `03b1977` (kill switch), `8e5ea76` (daily cap), `9de8a16`
+(login page), plus this branch's runbook section. One part is **not** done —
+see "Still open" below.
 
 - **What:** the route is unauthenticated, mints an account and a credit
   budget, and is always on. The only limit is 5 per hour per IP, kept in
@@ -2757,6 +2760,28 @@ Logged 2026-10-09 (lane E review). Open; fix before the first deploy.
   owner wants the demo), plus a cap on demo accounts created per day and on
   total demo credits outstanding. Tests: disabled returns 404, the daily cap
   returns 429 across distinct IPs.
+- **What landed.** `DEMO_ENABLED`, default **false**, checked before the rate
+  limiter and before any database work: off answers 404 `demo_disabled` and
+  creates nothing, and costs the visitor none of their hourly tries.
+  `DEMO_DAILY_CAP`, default **50**, counted over a rolling 24 h **from the
+  database** (demo-role users by `created_at`), so a restart or a second
+  process cannot reset it; over the cap is 429 `demo_capacity` with a
+  `Retry-After`. The check and the insert are one atomic step
+  (`SELECT … FOR UPDATE` on the demo plan row), proven by a deterministic
+  test that fails 8/8 without the lock — see the test docstring for why the
+  obvious `asyncio.gather` versions of it proved nothing. Worst case at the
+  shipped defaults: **$15.00 per rolling 24 h** ($20.00 ignoring the 24 h
+  account TTL), derived in `docs/ops/runbook.md`. `GET /auth/demo/limits` is
+  deliberately left outside the switch, so turning the demo off does not start
+  erroring signed-in composers.
+- **Still open.** The cap is on **accounts created**, not on **total demo
+  credits outstanding**, so the second half of the original fix is not done.
+  The exposure is bounded (the runbook figure) and each account is individually
+  capped by the ordinary quota gate at 60 000 credits/5 h, but nothing stops
+  the *sum* across 50 accounts from being spent slowly. Closing it needs a
+  sum-over-demo-accounts check in the same locked section; not done here, and
+  it is a deliberate omission rather than an oversight. Worth it only if the
+  owner wants a hard ceiling below the $15/day figure.
 
 ## KI-64: The demo tour cannot show a conflict, and the eval corpus is shared
 

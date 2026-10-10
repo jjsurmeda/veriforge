@@ -41,6 +41,13 @@ def _hours_env(name: str, default: float) -> float:
         return default
 
 
+def _bool_env(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return default
+    return raw.strip().lower() in ("1", "true", "yes")
+
+
 @dataclass(frozen=True)
 class DemoSettings:
     """`POST /auth/demo` — the numbers, and why they are these numbers.
@@ -73,6 +80,37 @@ class DemoSettings:
     #: traffic does not accumulate.
     ttl_hours: float
 
+    #: The kill switch, and the only setting here whose default is "the
+    #: dangerous thing does not happen". `POST /auth/demo` is unauthenticated
+    #: and mints an account with a credit budget; off means the route answers
+    #: 404 and creates nothing, before any database work and before the rate
+    #: limiter is touched — a disabled demo costs a visitor nothing.
+    #:
+    #: Default false, unlike every other value here. A deployment that has
+    #: never heard of `DEMO_ENABLED` must come up with the demo off, because
+    #: the failure of forgetting it is a stranger's credit card and the
+    #: failure of remembering to turn it on is a button the owner can press.
+    enabled: bool
+
+    #: Maximum demo accounts created in any rolling 24 h, counted from the
+    #: database (demo-role users by `created_at`) rather than from a counter
+    #: in memory. Fifty is about a real beta's worth of visitors with room to
+    #: spare: the per-IP limit is 5/hour, so fifty is ten distinct addresses
+    #: exhausting their whole hour, and anything beyond that is not a visitor.
+    #:
+    #: Counted from rows, not from a counter, because a counter in memory is
+    #: reset by a restart and not shared with a second process — which is
+    #: exactly the defeat KI-63 describes. The rows are already there (an
+    #: account has to exist to spend anything), so the count costs one
+    #: indexed SELECT and cannot drift from reality.
+    daily_cap: int
+
+    #: The window `daily_cap` is counted over. Rolling rather than calendar
+    #: midnight: a calendar boundary lets an attacker spend a full day's cap
+    #: at 23:59 and another at 00:01, and a beta that runs across UTC
+    #: midnight would show the operator two different numbers for one day.
+    cap_window_hours: float
+
     #: Whether a demo account may use Deep mode. Off by default: Deep is the
     #: most expensive path in the product (a 30k-credit reservation against
     #: roughly 3k for Auto, quota/service.py) and a visitor should not be able
@@ -84,6 +122,9 @@ class DemoSettings:
 
 def demo_settings() -> DemoSettings:
     return DemoSettings(
+        enabled=_bool_env("DEMO_ENABLED", False),
+        daily_cap=_int_env("DEMO_DAILY_CAP", 50),
+        cap_window_hours=_hours_env("DEMO_DAILY_CAP_WINDOW_HOURS", 24.0),
         rate_limit=_int_env("DEMO_RATE_LIMIT", 5),
         window_seconds=_hours_env("DEMO_RATE_LIMIT_WINDOW_SECONDS", 3600.0),
         plan_name=os.environ.get("DEMO_PLAN_NAME", "demo"),

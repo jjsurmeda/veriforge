@@ -31,7 +31,16 @@ export function LoginPage() {
             ? 'The demo has been started a few times from this network. Try again in an hour.'
             : code === 'demo_unavailable'
               ? 'The demo is not set up on this deployment yet.'
-              : 'Could not start the demo. Try again.',
+              : // KI-63: the demo is off by default, so "Try the demo" is
+                // the first button a visitor presses on a deployment whose
+                // operator has not turned it on. "Could not start the demo"
+                // reads as a broken product; these two say what is actually
+                // true and what, if anything, the visitor can do about it.
+                code === 'demo_disabled'
+                ? 'The demo is not available right now.'
+                : code === 'demo_capacity'
+                  ? 'The demo is full for today. Try again tomorrow.'
+                  : 'Could not start the demo. Try again.',
         )
         return
       }

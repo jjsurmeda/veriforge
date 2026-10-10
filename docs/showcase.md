@@ -234,6 +234,23 @@ that is the state of this deployment, not because there is nothing to draw.
 
 ## The demo tour
 
+> **The demo is off by default.** `POST /auth/demo` answers 404 unless
+> `DEMO_ENABLED=true` (KI-63), so on a fresh clone **Try the demo** says "The
+> demo is not available right now" until you turn it on. To follow the tour
+> locally:
+>
+> ```sh
+> make seed-demo                    # creates the `demo` plan and reports the corpus
+> cd apps/api && DEMO_ENABLED=true uv run uvicorn main:app --reload
+> ```
+>
+> Run the API directly like that rather than through `docker compose up`: the
+> dev `compose.yaml` lists its api environment explicitly and does not forward
+> `DEMO_ENABLED` from your shell, so setting it there silently has no effect.
+> On the deployed stack the variable lives in `infra/.env` and
+> `compose.prod.yaml` does pass it through — see
+> [docs/ops/runbook.md](ops/runbook.md).
+
 Six questions, each one demonstrating a different behaviour. Click **Try the
 demo** on the login page; no account, and nothing to upload. Every question
 below was verified against the corpus with a real hybrid search before it was

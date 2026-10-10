@@ -2,10 +2,13 @@
 
 Order of operations is the whole design here, and it is deliberate:
 
-1. **Rate limit first**, before any database work. A throttled request must
-   cost nothing beyond the counter, exactly as `chats/router.py` does it for
-   run creation — checking later would mean an account row had been created
-   and then had to be undone.
+0. **The kill switch first**, before the limiter and before any database
+   work. `DEMO_ENABLED` defaults to false (KI-63), and a demo that is off has
+   to cost a visitor nothing at all — not even one of their five hourly tries.
+1. **Then the rate limit**, before any database work. A throttled request
+   must cost nothing beyond the counter, exactly as `chats/router.py` does it
+   for run creation — checking later would mean an account row had been
+   created and then had to be undone.
 2. **Then create the account**, on the seeded `demo` plan.
 3. **Then the normal tokens.** No special token, no demo-only claim: the
    frontend's existing auth path is what gets exercised, which is also why the
@@ -43,6 +46,36 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 class DemoNotSeeded(AppError):
     status_code = 503
+
+
+class DemoDisabled(AppError):
+    """404 — the route is not there while the kill switch is off (KI-63).
+
+    404 rather than 403 or 503: a visitor should not be able to tell "the
+    demo is off" from "this deployment has no demo at all", and an operator
+    who has not seeded the plan should not be sent here. The body still
+    carries `demo_disabled` so the frontend can say something better than a
+    generic failure.
+    """
+
+    status_code = 404
+
+
+class DemoCapacity(AppError):
+    """429 — the rolling 24 h cap on new demo accounts is spent (KI-63).
+
+    429, not 503: nothing is broken and retrying in a moment will not help,
+    but it is a condition with an obvious resolution — the window rolls. The
+    `retry_after` is the time until the oldest account in the window ages out,
+    which is the first moment a new one can be created, so the frontend and
+    any well-behaved client are told when rather than left to guess.
+    """
+
+    status_code = 429
+
+    def __init__(self, message: str, retry_after: int) -> None:
+        super().__init__("demo_capacity", message, {"retry_after": retry_after})
+        self.retry_after = retry_after
 
 
 # One limiter for the scope, rebuilt when the configured limit changes — the
@@ -90,6 +123,20 @@ async def start_demo(
     request: Request,
 ) -> TokenResponse:
     settings = demo_settings()
+    # First, before the limiter and before anything touches a database. A
+    # disabled demo must cost a visitor nothing: if the switch were checked
+    # after `limiter.check`, five 404s would spend a real visitor's whole
+    # hourly budget on a feature that is switched off.
+    #
+    # `SessionDep` has already been resolved by FastAPI to get here, which
+    # opens an `AsyncSession` — that object is lazy and holds no connection
+    # until a statement runs, so no query is issued on this path. The test
+    # asserts it: `test_disabled_it_does_not_consume_the_per_ip_budget`
+    # hammers the route past the limit and then proves the demo still works.
+    if not settings.enabled:
+        raise DemoDisabled(
+            "demo_disabled", "The demo is not available on this deployment."
+        )
     wait = _demo_limiter(settings).check(("demo", f"ip:{_client_ip(request) or 'unknown'}"))
     if wait is not None:
         raise RateLimited("demo", wait)
@@ -100,6 +147,8 @@ async def start_demo(
         # `make seed-demo` needs to be told, not silently handed a free-tier
         # account with a 200k budget.
         raise DemoNotSeeded("demo_unavailable", str(exc)) from exc
+    except service.DemoCapacityReached as exc:
+        raise DemoCapacity(str(exc), exc.retry_after) from exc
 
     access = create_access_token(user)
     refresh = await issue_refresh_token(session, user.id)

@@ -58,6 +58,18 @@ class DemoUnavailable(Exception):
     """The `demo` plan is missing — `make seed-demo` has not been run."""
 
 
+class DemoCapacityReached(Exception):
+    """The rolling 24 h cap on new demo accounts is already spent.
+
+    Carries `retry_after` so the route can set `Retry-After` the way the
+    per-IP limiter does, rather than answering 429 with no idea when.
+    """
+
+    def __init__(self, message: str, *, retry_after: int) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
 def _demo_email() -> str:
     """A random address, so two visitors never collide on one account and the
     address itself says what it is when an operator reads the users table."""
@@ -65,14 +77,43 @@ def _demo_email() -> str:
 
 
 async def create_demo_user(session: AsyncSession, settings: DemoSettings) -> User:
-    """One ephemeral demo account on the `demo` plan.
+    """One ephemeral demo account on the `demo` plan, within the daily cap.
 
     Commits before returning: the route then issues a refresh token, and a
     refresh cookie outlives the request. Failing the commit afterwards would
     hand a browser a session for a row that is not there.
+
+    **The cap check and the insert are one atomic step** (KI-63), and the
+    mechanism is a `SELECT … FOR UPDATE` on the demo *plan* row. Why that row:
+
+    - The cap is a single global number, so it needs a single global lock. A
+      per-IP or per-user lock would bound nothing: the thing being stopped is
+      many different addresses at once, which is the whole failure mode.
+    - The plan row is exactly one row, it always exists (the plan is
+      referenced, and a missing plan is already a loud 503 above), and it is
+      never deleted while the demo is on — `purge_expired` deletes users, and
+      the seeder only inserts the plan `ON CONFLICT DO NOTHING`.
+    - It reuses the shape `quota/service.py` already uses for the same job
+      (`_limits(..., lock=True)`), so there is no new locking idiom to learn.
+
+    A plain `SELECT count(*)` then `INSERT` cannot work: two requests at
+    cap-1 both read cap-1, both decide there is room, and both insert. The
+    lock makes the second one wait, and it re-reads the count *after* the
+    first has committed — so it sees the new row and refuses.
+
+    Proven by `tests/demo/test_demo_mode.py::test_the_cap_check_and_the_
+    insert_are_one_atomic_step`, which holds one creator between its count
+    read and its commit and shows the other cannot read until the first has
+    committed. Both `asyncio.gather` formulations that look equivalent were
+    measured on this branch and neither held: two HTTP requests passed 12 runs
+    out of 12 without the lock, and two service-level sessions managed about
+    6 in 8. A concurrency test that cannot fail without the fix is decoration
+    (KI-61).
     """
     plan = (
-        await session.execute(select(Plan).where(Plan.name == settings.plan_name))
+        await session.execute(
+            select(Plan).where(Plan.name == settings.plan_name).with_for_update()
+        )
     ).scalar_one_or_none()
     if plan is None:
         # Named rather than defaulting: an account silently created on `free`
@@ -81,6 +122,7 @@ async def create_demo_user(session: AsyncSession, settings: DemoSettings) -> Use
         raise DemoUnavailable(
             f"plan {settings.plan_name!r} does not exist; run `make seed-demo`"
         )
+    await check_daily_capacity(session, settings)
     user = User(
         email=_demo_email(),
         password_hash=None,
@@ -91,6 +133,79 @@ async def create_demo_user(session: AsyncSession, settings: DemoSettings) -> Use
     await session.commit()
     await session.refresh(user)
     return user
+
+
+async def check_daily_capacity(
+    session: AsyncSession, settings: DemoSettings, *, now: datetime | None = None
+) -> int:
+    """How many demo accounts exist in the window; raise if the cap is spent.
+
+    Takes `now` for the same reason `is_expired` does — so a test can ask
+    about a specific instant instead of the one this process happens to be
+    running at, and so the rolling window is answerable without a fixture
+    that lies about the clock.
+
+    Called with the plan row already locked by `create_demo_user`; calling it
+    standalone is safe (it only reads) but then the check is not atomic with
+    any insert.
+    """
+    current = now or datetime.now(UTC)
+    cutoff = current - timedelta(hours=settings.cap_window_hours)
+    used = await demo_accounts_in_window(session, cutoff=cutoff)
+    if used >= settings.daily_cap:
+        raise DemoCapacityReached(
+            f"{used} demo account(s) already created in the last "
+            f"{settings.cap_window_hours:g}h; the cap is {settings.daily_cap}",
+            retry_after=await seconds_until_capacity(
+                session, settings, now=current
+            ),
+        )
+    return used
+
+
+async def seconds_until_capacity(
+    session: AsyncSession, settings: DemoSettings, *, now: datetime | None = None
+) -> int:
+    """Seconds until the oldest account in the window ages out of it.
+
+    That is the earliest moment the next request can be served, so it is the
+    honest `Retry-After`: the cap frees up from the *front* of the window, not
+    all at once, and the front is what is nearly expired.
+
+    At least 1, never 0 — a `Retry-After: 0` reads as "immediately", which is
+    the opposite of true and invites exactly the hammering the cap exists to
+    stop.
+    """
+    current = now or datetime.now(UTC)
+    cutoff = current - timedelta(hours=settings.cap_window_hours)
+    oldest = await session.scalar(
+        select(func.min(User.created_at)).where(User.role == "demo", User.created_at >= cutoff)
+    )
+    if oldest is None:
+        return 1
+    if oldest.tzinfo is None:
+        oldest = oldest.replace(tzinfo=UTC)
+    frees_at = oldest + timedelta(hours=settings.cap_window_hours)
+    return max(1, round((frees_at - current).total_seconds()))
+
+
+async def demo_accounts_in_window(
+    session: AsyncSession, *, cutoff: datetime
+) -> int:
+    """Demo-role accounts created at or after `cutoff`.
+
+    `role == 'demo'` rather than an email pattern: the role is what the
+    product enforces everywhere else, and matching on the address would miss
+    an account whose row was written by the seeder or an admin script.
+    """
+    return int(
+        await session.scalar(
+            select(func.count())
+            .select_from(User)
+            .where(User.role == "demo", User.created_at >= cutoff)
+        )
+        or 0
+    )
 
 
 async def is_expired(user: User, settings: DemoSettings, *, now: datetime | None = None) -> bool:
