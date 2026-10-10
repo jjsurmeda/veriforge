@@ -261,7 +261,13 @@ async def test_the_conflict_call_is_one_batched_decide_and_is_timed(
 ) -> None:
     """KI-34's second half: the call was outside `_step`, so it appeared in
     no latency figure. It is also one call for every pair, not one per pair
-    (TRD §8 batches, and ingress already relies on it)."""
+    (TRD §8 batches, and ingress already relies on it).
+
+    Lane B item 4 changed WHERE that call is: the pairs now ride the
+    post-sanitize sufficiency call (the sanitizer dropped nothing here), so the
+    run makes one Jev round trip after ingress instead of two. The stage is
+    still timed — see tests/graph/test_batched_conflict.py for the pair of
+    cases (batched vs re-asked) side by side."""
     chat, message_id = await _seed_chat(db, user_a)
     chunks = await _corpus_with_warranty_documents(db, user_a)
     _patch_pipeline(monkeypatch, chunks, no_llm)
@@ -273,8 +279,10 @@ async def test_the_conflict_call_is_one_batched_decide_and_is_timed(
         DecisionEngine(jev=jev, mode="jev_only"),
     )
 
-    assert len(jev.calls) == 1, "the pairs must go in one batched decide call"
-    assert len(jev.calls[0]) == 3, "3 passages -> 3 candidate pairs"
+    assert len(jev.calls) == 1, "the pairs ride the one post-sanitize call"
+    pairs = [name for name in jev.calls[0] if name.startswith("conflict_")]
+    assert len(pairs) == 3, "3 passages -> 3 candidate pairs"
+    assert "sufficient" in jev.calls[0], "the same call, not one of its own"
     assert "conflict" in run.latency_ms
 
 

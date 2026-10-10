@@ -15,6 +15,7 @@ from db.models import Chunk, Document, QueryCache, User, WebPage
 from errors import AppError
 from retrieval.cache import (
     get_query_embedding,
+    get_query_embeddings,
     get_web_results,
     normalise_query,
     put_web_results,
@@ -69,6 +70,102 @@ def test_query_embedding_cache_key_includes_the_model() -> None:
 
 def test_normalise_query_collapses_case_and_whitespace() -> None:
     assert normalise_query("  Foo   BAR ") == "foo bar"
+
+
+# Batched query embeddings (TRD §7.1): one `embed_batch` for the whole variant
+# set instead of one per variant. Real Postgres (the cache is a table).
+
+
+async def test_all_variants_cached_means_no_embedding_call_at_all(
+    db: AsyncSession, embed_calls: list[list[str]]
+) -> None:
+    await get_query_embeddings(db, ["zebra stripes", "zebra habitat", "zebra diet"])
+
+    calls_before = len(embed_calls)
+    got = await get_query_embeddings(db, ["zebra stripes", "zebra habitat", "zebra diet"])
+
+    assert calls_before == 1, "given, everything is embedded in one call"
+    assert len(embed_calls) == calls_before, "when, then no provider call at all"
+    assert len(got) == 3
+
+
+async def test_mixed_hits_and_misses_make_exactly_one_call_for_the_misses(
+    db: AsyncSession, embed_calls: list[list[str]]
+) -> None:
+    await get_query_embedding(db, "zebra stripes")
+    assert len(embed_calls) == 1
+
+    got = await get_query_embeddings(db, ["zebra stripes", "zebra habitat", "zebra diet"])
+
+    assert len(embed_calls) == 2, "one more call, not two"
+    assert embed_calls[1] == ["zebra habitat", "zebra diet"], "only the misses are embedded"
+    assert len(got) == 3
+
+
+async def test_batched_answers_are_in_the_caller_s_order_and_each_matches_its_query(
+    db: AsyncSession, embed_calls: list[list[str]]
+) -> None:
+    got = await get_query_embeddings(db, ["zebra habitat", "zebra stripes"])
+
+    assert embed_calls[0] == ["zebra habitat", "zebra stripes"]
+    # every vector is identical in the fixture, so order is checked through the
+    # cache the batch filled, not through the values themselves
+    assert await get_query_embeddings(db, ["zebra stripes", "zebra habitat"]) == got
+
+
+async def test_batched_and_single_paths_share_cache_entries(
+    db: AsyncSession, embed_calls: list[list[str]]
+) -> None:
+    """The keys and TTL are unchanged, so an entry either path writes is an
+    entry the other reads — otherwise the batch would re-embed what the
+    single-query path already cached."""
+    await get_query_embeddings(db, ["zebra stripes"])
+    assert len(embed_calls) == 1
+
+    single = await get_query_embedding(db, "zebra stripes")
+
+    assert len(embed_calls) == 1, "the single-query path read what the batch wrote"
+    assert single == [0.01] * 1536
+
+
+async def test_a_duplicate_miss_is_embedded_once(
+    db: AsyncSession, embed_calls: list[list[str]]
+) -> None:
+    await get_query_embeddings(db, ["zebra stripes", "ZEBRA   stripes"])
+
+    assert embed_calls[0] == ["zebra stripes"], "normalised to one text"
+
+
+async def test_an_embedding_failure_propagates_as_before(
+    db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The single-query path lets the provider error out; a batch that caught
+    it would answer a retrieval with a silent zero vector."""
+
+    async def failing(*, texts: list[str]) -> list[list[float]]:
+        raise RuntimeError("embedding provider down")
+
+    monkeypatch.setattr(cache_module, "embed_batch", failing)
+
+    with pytest.raises(RuntimeError, match="embedding provider down"):
+        await get_query_embeddings(db, ["zebra stripes"])
+
+
+async def test_a_short_batch_raises_instead_of_pairing_the_wrong_vectors(
+    db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def short(*, texts: list[str]) -> list[list[float]]:
+        return [[0.01] * 1536] * max(0, len(texts) - 1)
+
+    monkeypatch.setattr(cache_module, "embed_batch", short)
+
+    with pytest.raises(ValueError, match="returned 1 vectors for 2 queries"):
+        await get_query_embeddings(db, ["zebra stripes", "zebra habitat"])
+
+
+async def test_no_queries_means_no_call(db: AsyncSession, embed_calls: list[list[str]]) -> None:
+    assert await get_query_embeddings(db, []) == []
+    assert embed_calls == []
 
 
 async def test_web_results_cache_roundtrip(db: AsyncSession) -> None:

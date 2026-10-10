@@ -39,7 +39,7 @@ from graph.ingress import IngressOutcome, run_ingress
 from graph.rewrite import CompleteFn
 from graph.timing import EventPublisher, make_step_timer
 from providers.llm import complete
-from retrieval.cache import get_query_embedding
+from retrieval.cache import get_query_embeddings
 from retrieval.context import count_tokens, trim_context
 from retrieval.expand import ExpandedContext, dedupe_adjacent, expand_context
 from retrieval.filters import ClientFilters, Ownership
@@ -94,6 +94,40 @@ MULTI_PARTS = (
 MAX_SUFFICIENT_RETRIES = 1
 TOP_CHUNKS_FOR_SUFFICIENT = 5
 SUFFICIENT_EVIDENCE_CHARS = 9_000
+
+# Lane B item 5: when the evidence is clearly absent, the rewrite + retry is
+# another 13-15 s to reach the same abstention, so it is skipped.
+#
+# The two bounds come from the recorded runs, not from taste. Offline replay of
+# the dev database's decision events (2026-10-07): 636 Auto runs carry a
+# sufficiency reading, 238 of them took the retry, and 231 of those still
+# abstained.
+#
+#   | first attempt            | n   | sufficiency        | max rerank score |
+#   | ------------------------ | --- | ------------------ | ---------------- |
+#   | retry produced an answer |   7 | 0.01 - 0.43        | 0.47 - 0.75 (3 with a reading) |
+#   | retry abstained anyway   | 231 | 0.01 - 0.63        | 0.00 - 0.97 (175 with a reading) |
+#
+# Sufficiency alone separates nothing (a rescued run scored 0.01), so the skip
+# needs BOTH readings far below their floors, and a run with no relevance
+# reading never skips:
+#
+#   * sufficiency <= 0.02 — the floor is 0.05 and the lowest sufficiency any
+#     answering run recorded is 0.05, so this is below every answering run by
+#     0.03; it catches 70 of the 231 futile retries.
+#   * relevance <= 0.40 — the floor is 0.60, and the lowest relevance among
+#     runs the retry rescued is 0.47, a margin of 0.07. Nothing in the skip
+#     band scored above 0.10 on relevance in the replay.
+#
+# 0 of the 7 rescued answers fall inside the band. AD-4 makes both bounds
+# admin-overridable (`retrieval.retry_skip_sufficient_max`,
+# `retrieval.retry_skip_relevance_max`); a value of None disables the skip.
+RETRY_SKIP_SUFFICIENT_MAX = 0.02
+RETRY_SKIP_RELEVANCE_MAX = 0.40
+# Only four recorded runs carry an entity reading (P2a is new), so this bound
+# is deliberately inert: it exists to stop a MATCHED passage being called
+# "clearly absent", and it never fires on its own.
+RETRY_SKIP_ENTITY_MAX = 0.50
 
 # KI-34: the conflict check asks one question per candidate PAIR of passages,
 # batched into a single DecisionEngine call. With at most
@@ -185,6 +219,10 @@ class AutoRun:
     chitchat: bool = False
     sufficiency_p: float = 0.0
     library_names: list[str] | None = None
+    # Lane B item 5: the rewrite + retry was skipped because every signal was
+    # far below its floor. Carried on the run so a caller (and a test) can see
+    # that a fast decline was a deliberate decision, not a short first pass.
+    retry_skipped: bool = False
 
     async def stream_answer(self) -> AsyncIterator[str]:
         if self.chitchat:
@@ -311,6 +349,35 @@ def _fuse_multi_query(result_sets: list[list[ScoredChunk]]) -> list[ScoredChunk]
     from dataclasses import replace as dc_replace
 
     return [dc_replace(chunk, fused_score=score) for chunk, score in ordered]
+
+
+# Lane B item 6 (TRD §7.1: "skip query variants on simple single-hop lookups
+# (complexity = single, intent = lookup)").
+#
+# OFF by default and meant to stay off until item 7 shows no recall loss on
+# every set: the brief calls this the riskiest item in the lane, and the three
+# variants are also what makes multi-query recall work on a phrasing the
+# embedding misses. `retrieval.skip_variants_simple_lookup` is the admin
+# override (AD-4).
+SKIP_VARIANTS_SIMPLE_LOOKUP = False
+
+
+def _skip_variants_for(ingress: IngressOutcome) -> bool:
+    """Skip the query variants for a single-hop, single-entity lookup?
+
+    Both conditions are needed. `complexity = single` alone still covers a
+    multi-part question, whose parts are separate retrievals and not
+    phrasings — dropping those is the KI-12 abstention. `intent = lookup`
+    alone still covers a compare question, whose per-entity queries are the
+    only reason the second book is retrieved at all.
+    """
+    if not bool(
+        runtime_value(
+            "retrieval.skip_variants_simple_lookup", SKIP_VARIANTS_SIMPLE_LOOKUP
+        )
+    ):
+        return False
+    return ingress.complexity == "single" and ingress.intent == "lookup"
 
 
 def _entity_queries(question: str, intent: str) -> list[str]:
@@ -476,17 +543,73 @@ def _entity_passage_questions(
     }
 
 
+def _evidence_clearly_absent(
+    *,
+    p_sufficient: float,
+    relevance_max: float | None,
+    relevance_measured: bool,
+    entity_max: float | None,
+    entity_measured: bool,
+    entity_ok: bool,
+) -> bool:
+    """Is the evidence CLEARLY absent, so the rewrite + retry is pointless?
+
+    Every signal must be far below its floor, and a signal that was not
+    measured blocks the skip:
+
+    * `relevance_measured` is required, not optional. The offline replay of the
+      recorded runs (2026-10-07, 636 Auto runs with a sufficiency reading) is
+      what the two bounds come from, and it says plainly that sufficiency alone
+      cannot decide this: among the runs the retry RESCUED, sufficiency went as
+      low as 0.01, and the three of those with a relevance reading sat at 0.47,
+      0.64 and 0.75. The runs the retry did not rescue, with a relevance
+      reading, sat at 0.40 or below for 119 of them at sufficiency <= 0.05, and
+      at 0.10 or below for the 70 at sufficiency <= 0.02 — the band these two
+      bounds describe. No run with a relevance reading in the skip band was
+      rescued by a retry (0 of 7).
+    * `entity_measured` alone is not enough to skip: only four recorded runs
+      have an entity reading (it is new in P2a), so the check is used the other
+      way round — if it ran and a passage MATCHED, the evidence is not clearly
+      absent and the retry still happens.
+
+    Both bounds are admin-overridable (AD-4): `retrieval.retry_skip_sufficient_max`
+    and `retrieval.retry_skip_relevance_max`. The skip is a latency
+    optimisation, so the failure direction is a decline that could have been an
+    answer — the reason the bounds sit below the floors rather than at them.
+    """
+    if not relevance_measured or relevance_max is None:
+        return False
+    if entity_measured and entity_ok:
+        return False
+    entity_bound = runtime_value("retrieval.retry_skip_entity_max", RETRY_SKIP_ENTITY_MAX)
+    if entity_max is not None and entity_bound is not None and entity_max > float(entity_bound):
+        return False
+    sufficient_bound = runtime_value(
+        "retrieval.retry_skip_sufficient_max", RETRY_SKIP_SUFFICIENT_MAX
+    )
+    relevance_bound = runtime_value(
+        "retrieval.retry_skip_relevance_max", RETRY_SKIP_RELEVANCE_MAX
+    )
+    # AD-4: an admin can turn the skip off by setting either bound to null.
+    if sufficient_bound is None or relevance_bound is None:
+        return False
+    return (
+        p_sufficient <= float(sufficient_bound)
+        and relevance_max <= float(relevance_bound)
+    )
+
+
 async def _search_one_variant(
     session: AsyncSession,
     variant: str,
     *,
+    embedding: list[float],
     params: AutoRunInput,
     ingress: IngressOutcome,
 ) -> list[ScoredChunk]:
     """One variant's hybrid search, with the ownership filter injected here
     (CLAUDE.md: every retrieval query gets its ownership filter server-side,
     and `params.client_filters` may only narrow it)."""
-    embedding = await get_query_embedding(session, variant)
     ownership = Ownership(
         user_id=params.user_id,
         collection_ids=list(params.collection_ids),
@@ -500,6 +623,27 @@ async def _search_one_variant(
         filters=params.client_filters,
         lexical_weight=ingress.lexical_weight,
     )
+
+
+async def _search_one_variant_on_own_session(
+    session_factory: async_sessionmaker[AsyncSession],
+    variant: str,
+    *,
+    embedding: list[float],
+    params: AutoRunInput,
+    ingress: IngressOutcome,
+) -> list[ScoredChunk]:
+    """One variant's search on its OWN session, so the fan-out can run
+    concurrently (one AsyncSession cannot run two statements at once).
+
+    Read-only, so it needs no explicit transaction: the `async with` rolls
+    back on the way out and there is nothing to commit. The rest of
+    `prepare_auto_run` keeps its single transaction.
+    """
+    async with session_factory() as session:
+        return await _search_one_variant(
+            session, variant, embedding=embedding, params=params, ingress=ingress
+        )
 
 
 def _sub_step_timer(
@@ -650,12 +794,15 @@ async def prepare_auto_run(
                 complete_fn=complete,
             )
 
-        async def _skip_retrieval() -> None:
+        async def _no_call() -> None:
+            """A step that legitimately makes no call — a skipped retrieval, or
+            a stage whose questions were batched into an earlier one. Timed and
+            published like any other step, so it still appears in the trace."""
             return None
 
         canonical_greeting = greeting_canonical(params.question)
         if canonical_greeting is not None:
-            await _step("Greeting fast path: skipped ingress", _skip_retrieval)
+            await _step("Greeting fast path: skipped ingress", _no_call)
             return AutoRun(
                 params=params,
                 history=history,
@@ -690,7 +837,7 @@ async def prepare_auto_run(
         ingress, rewritten = await _step("ingress+rewrite", ingress_and_rewrite)
 
         if ingress.intent == "chitchat" and ingress.off_topic != "block":
-            await _step("Small talk: skipped retrieval", _skip_retrieval)
+            await _step("Small talk: skipped retrieval", _no_call)
             return AutoRun(
                 params=params,
                 history=history,
@@ -709,7 +856,7 @@ async def prepare_auto_run(
             )
 
         if ingress.intent == "library":
-            await _step("Library: skipped retrieval", _skip_retrieval)
+            await _step("Library: skipped retrieval", _no_call)
             names = [
                 document.name
                 for document in await list_scope_documents(
@@ -764,27 +911,63 @@ async def prepare_auto_run(
             source_filter = ingress.source
 
         if source_filter in {"web", "both"}:
-            await ensure_web_chunks(
-                session,
-                query=params.question,
-                chat_id=params.chat_id,
-                optional=source_filter == "both",
-            )
+            # Its own transaction, committed before the fan-out below: those
+            # searches run on their own sessions, and a session cannot see
+            # another session's uncommitted rows — so web chunks this run
+            # indexes inside the run's transaction would be invisible to every
+            # one of them, and a `source=web` run would not retrieve its own
+            # web results. Everything after this point keeps the run's single
+            # transaction.
+            async with session_factory() as web_session, web_session.begin():
+                await ensure_web_chunks(
+                    web_session,
+                    query=params.question,
+                    chat_id=params.chat_id,
+                    optional=source_filter == "both",
+                )
 
         async def retrieve_queries(
             query: str,
         ) -> tuple[list[ScoredChunk], list[Retrieval], dict[UUID, str]]:
-            variants = await _generate_query_variants(
-                query, params.small_model, complete, MULTI_QUERY_VARIANTS
+            # Lane B item 6: a single-hop, single-entity lookup does not need
+            # three extra phrasings — they are overhead on the exact question
+            # that already retrieves well. The setting defaults to OFF, and
+            # item 7 is what would turn it on; the variants path is unchanged
+            # until then. (Compare and multi-part intents keep their per-entity
+            # and per-part queries regardless: those are not phrasings, they
+            # are different questions, and dropping them is the KI-12 bug.)
+            skip_variants = _skip_variants_for(ingress)
+            # CH-5: every step inside `retrieve` publishes its own label, so
+            # the trace shows the work as it happens. Before this, the first
+            # thing a client saw after `retrieve` started was the first search
+            # finishing — the variants call and the embedding batch were a
+            # silent gap inside the stage they belong to.
+            variants = (
+                [query]
+                if skip_variants
+                else await _variant_step(
+                    "query variants",
+                    partial(
+                        _generate_query_variants,
+                        query,
+                        params.small_model,
+                        complete,
+                        MULTI_QUERY_VARIANTS,
+                    ),
+                )
             )
             parts: list[str] = []
             if ingress.intent == "multi-part":
-                parts = await _generate_query_variants(
-                    query,
-                    params.small_model,
-                    complete,
-                    MULTI_PART_VARIANTS,
-                    instruction=MULTI_PARTS,
+                parts = await _variant_step(
+                    "query parts",
+                    partial(
+                        _generate_query_variants,
+                        query,
+                        params.small_model,
+                        complete,
+                        MULTI_PART_VARIANTS,
+                        instruction=MULTI_PARTS,
+                    ),
                 )
             part_queries = [
                 candidate
@@ -795,24 +978,38 @@ async def prepare_auto_run(
                 if candidate not in variants
             ]
             variants.extend(part_queries)
-            result_sets: list[list[ScoredChunk]] = []
+            # TRD §7.1: one embedding call for every variant, and the
+            # searches themselves in parallel. Each search runs on its OWN
+            # session from the factory — one AsyncSession cannot run concurrent
+            # statements, and the sequential fan-out was the other half of the
+            # stage's cost. The ownership filter is built per search inside
+            # `_search_one_variant`, so it is on every one of them (CLAUDE.md).
+            embeddings = await _variant_step(
+                f"embed queries ({len(variants)})",
+                partial(get_query_embeddings, session, variants),
+            )
+            result_sets: list[list[ScoredChunk]] = await asyncio.gather(
+                *(
+                    # One published sub-step per variant, so the trace shows the
+                    # multi-query fan-out as it runs rather than one opaque
+                    # `retrieve` that appears only when it is already over.
+                    _variant_step(
+                        f"retrieve: {variant}",
+                        partial(
+                            _search_one_variant_on_own_session,
+                            session_factory,
+                            variant,
+                            embedding=embedding,
+                            params=params,
+                            ingress=ingress,
+                        ),
+                    )
+                    for variant, embedding in zip(variants, embeddings, strict=True)
+                )
+            )
             events: list[Retrieval] = []
             provenance: dict[UUID, str] = {}
-            for variant in variants:
-                # One published sub-step per variant, so the trace shows the
-                # multi-query fan-out as it runs rather than one opaque
-                # `retrieve` that appears only when it is already over.
-                fused = await _variant_step(
-                    f"retrieve: {variant}",
-                    partial(
-                        _search_one_variant,
-                        session,
-                        variant,
-                        params=params,
-                        ingress=ingress,
-                    ),
-                )
-                result_sets.append(fused)
+            for variant, fused in zip(variants, result_sets, strict=True):
                 if variant in part_queries:
                     for c in fused:
                         provenance.setdefault(c.chunk_id, variant)
@@ -863,6 +1060,9 @@ async def prepare_auto_run(
         # KI-54: per-passage entity gate; True when the check is skipped
         # (no named entity) or a passage matched the last iteration.
         entity_ok = True
+        # Lane B item 5: set when the retry was skipped because every signal
+        # was far below its floor; published as a `retry_skipped` decision.
+        skipped_retry = False
         while True:
             reranked = await _step(
                 "rerank",
@@ -911,10 +1111,16 @@ async def prepare_auto_run(
                 reranker.relevance_engine() if isinstance(reranker, JevRerank) else None
             )
             relevance_ok = True
+            # Kept for item 5's skip test: `relevance_measured` says the gate
+            # actually produced a number, which the skip REQUIRES (see
+            # `_evidence_clearly_absent`).
+            relevance_max: float | None = None
+            relevance_measured = False
             if relevance_engine is not None:
                 scores = [c.rerank_score for c in winners if c.rerank_score is not None]
                 if scores:
                     relevance_max = max(scores)
+                    relevance_measured = True
                     relevance_threshold = threshold("rerank_abstain", relevance_engine)
                     relevance_ok = relevance_max >= relevance_threshold
                     relevance_decision = Decision(
@@ -944,14 +1150,36 @@ async def prepare_auto_run(
             entity_questions = _entity_passage_questions(
                 current_query, named_entities(current_query), top_for_check
             )
+            # TRD §7.1 / lane B item 4: the conflict pairs ride this call too —
+            # but ONLY when the sanitizer dropped nothing. When it dropped
+            # something, the kept set changed underneath the question, so the
+            # pairs are re-asked over what survived, in their own call after
+            # the loop. `sides` is therefore per-iteration state: the conflict
+            # event is built from the LAST attempt's, which is the attempt the
+            # answer is delivered from.
+            batched_pairs = not sanitize_dropped
+            sides = _conflict_sides(winners)
+            pair_questions = (
+                _conflict_pair_questions(sides, params.question) if batched_pairs else {}
+            )
             sufficient_answer = await _step(
                 "sufficient",
                 partial(
                     engine.decide,
                     state={"run_id": str(params.run_id), "kind": "sufficient"},
-                    questions={"sufficient": sufficient_question, **entity_questions},
+                    questions={
+                        "sufficient": sufficient_question,
+                        **entity_questions,
+                        **pair_questions,
+                    },
                 ),
             )
+            # Kept so the post-loop branch does not ask again on the common path.
+            batched_conflict_answers = {
+                name: answer
+                for name, answer in sufficient_answer.items()
+                if name.startswith("conflict_")
+            }
             sufficient = sufficient_answer["sufficient"]
             decision_events.append(
                 Decision(
@@ -968,16 +1196,50 @@ async def prepare_auto_run(
             p_sufficient = float(sufficient.value)
             abstain_threshold = threshold("sufficient_abstain", sufficient.engine)
             entity_ok = True
+            entity_max: float | None = None
             if entity_questions:
                 # Every passage in the top-k is about a DIFFERENT entity when
                 # none of the per-passage Nouls clears the floor.
                 entity_threshold = threshold("entity_match", sufficient.engine)
-                entity_ok = any(
-                    float(sufficient_answer[name].value) >= entity_threshold
-                    for name in entity_questions
-                )
+                entity_values = [
+                    float(sufficient_answer[name].value) for name in entity_questions
+                ]
+                entity_max = max(entity_values)
+                entity_ok = any(value >= entity_threshold for value in entity_values)
             # One bar: every signal must clear, with the same single retry.
             if p_sufficient >= abstain_threshold and relevance_ok and entity_ok:
+                break
+            if retries_left > 0 and _evidence_clearly_absent(
+                p_sufficient=p_sufficient,
+                relevance_max=relevance_max,
+                relevance_measured=relevance_measured,
+                entity_max=entity_max,
+                entity_measured=bool(entity_questions),
+                entity_ok=entity_ok,
+            ):
+                # Every signal is far below its floor (see the constants), so
+                # the rewrite + full re-retrieve would abstain again for
+                # another 13-15 s. Recorded as a decision so the trace says why
+                # this run declined without a retry.
+                skipped_retry = True
+                decision_events.append(
+                    Decision(
+                        run_id=str(params.run_id),
+                        name="retry_skipped",
+                        value=p_sufficient,
+                        probability=p_sufficient,
+                        probabilities=None,
+                        engine=sufficient.engine,
+                        latency_ms=0,
+                        stage="sufficient",
+                        threshold=RETRY_SKIP_SUFFICIENT_MAX,
+                        reasoning=(
+                            "sufficiency, relevance and the entity check were all "
+                            f"far below their floors (relevance {relevance_max}); "
+                            "the rewrite + retry would not change the outcome"
+                        ),
+                    )
+                )
                 break
             if retries_left > 0:
                 retries_left -= 1
@@ -1029,20 +1291,29 @@ async def prepare_auto_run(
             # steps, so its cost appeared in no latency figure), and asking
             # about PAIRS rather than the whole evidence set, so the two
             # passages that disagree are the two the event names.
-            sides = _conflict_sides(winners)
-            pair_questions = _conflict_pair_questions(sides, params.question)
-            conflict_answers = (
-                await _step(
+            #
+            # Lane B item 4: on the common path the pairs already rode the
+            # post-sanitize call and this is the same `_step`, so the stage is
+            # still timed — now at its true cost, which is assembling the event
+            # rather than a second round trip. When the sanitizer dropped
+            # something the pairs were NOT batched, and they are asked here,
+            # over the kept set, exactly as before.
+            conflict_answers: dict[str, Answer] = {}
+            if batched_pairs:
+                conflict_answers = batched_conflict_answers
+                # Same label, same timer, now measuring what the stage really
+                # costs: the event assembly, not a second round trip. Publishing
+                # it keeps `conflict` in the trace and in latency_ms either way.
+                await _step("conflict", _no_call)
+            elif len(sides) >= 2:
+                conflict_answers = await _step(
                     "conflict",
                     partial(
                         engine.decide,
                         state={"run_id": str(params.run_id), "kind": "conflict"},
-                        questions=pair_questions,
+                        questions=_conflict_pair_questions(sides, params.question),
                     ),
                 )
-                if pair_questions
-                else {}
-            )
             best: tuple[ScoredChunk, ScoredChunk, Answer] | None = None
             for index, (left, right) in enumerate(combinations(sides, 2)):
                 pair_answer: Answer | None = conflict_answers.get(f"conflict_{index}")
@@ -1095,6 +1366,7 @@ async def prepare_auto_run(
         context_used=context_used,
         ingress=ingress,
         sufficiency_p=p_sufficient_final,
+        retry_skipped=skipped_retry,
     )
 
 
