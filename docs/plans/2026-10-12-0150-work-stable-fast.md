@@ -24,6 +24,10 @@ Earlier targets must still pass.
 | 2. Stable | `make check-stable` | 10 parallel chats × 3 rounds: 0 dead runs; 30-min mixed soak: 0 failed or stuck runs, no memory growth; injected faults (OpenRouter timeout/5xx, Jev down, worker killed mid-run) end in a clean error or fallback with credits settled; gate verdict identical over 3 runs |
 | 3. Fast | `make check-fast` | ADR-003: answers ≤ 5 s p50 / ≤ 8 s p95, declines ≤ 10 s p95, no trace gap > 2 s; per-stage budget table in ADR-003 asserted from `run_events` |
 
+Open KIs by phase (triage 2026-10-12, `docs/known-issues.md` index): phase 2
+fixes KI-15, KI-31, KI-57; UI pass takes KI-22, KI-65; before deploy KI-59,
+KI-63, KI-64; nine are post-beta. Phases 1 and 3 have no open KI.
+
 Phase 3 order: p95 tail SQL over existing `run_events` first (no spend), then
 lane B3 — fold variants into the rewrite call (biggest stage, 1667 ms p50),
 embed the question during ingress, skip/replace the rerank call when fusion
