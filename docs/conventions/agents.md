@@ -66,6 +66,29 @@ back to a run that went wrong. See "Where these came from".
   gate, smoke runs), the prompt tells the agent to check the balance and
   stop below a floor.
 
+## Finish lines and measurement (owner rule, 2026-10-12)
+
+The project kept looping: measure, log a KI, measure again, ship nothing.
+These rules stop that.
+
+- **A phase is done when its `make check-*` target passes.** The target is
+  written and committed *before* the phase's fix work starts:
+  `check-work` (it works), `check-stable` (it keeps working), `check-fast`
+  (ADR-003). Briefs don't restate checks; they run the targets.
+- **Every brief starts and ends by running the current check targets.** A
+  change that breaks an earlier phase's target doesn't merge.
+- **No measurement-only lanes.** A measurement must name the decision it
+  changes, before it runs. If no decision changes, don't run it.
+- **Findings that break no check go to `known-issues.md` tagged
+  `post-beta`.** They don't open a lane or appear in status reports.
+- **Plans start from the repo, not memory:** `git worktree list`, open
+  branches, `known-issues.md`. A plan that overlaps running work is wrong.
+- **Credit pre-flight:** balance ≥ the lane cap plus its gate runs, or the
+  lane doesn't start.
+
+Order (owner): work → stable → fast → UI redesign → rerun all checks →
+deploy. Plan: `docs/plans/2026-10-12-0150-work-stable-fast.md`.
+
 ## Parallel work
 
 - **Independent code items:** sub-agents in separate git worktrees, one
