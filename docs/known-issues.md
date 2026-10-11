@@ -2811,9 +2811,10 @@ Logged 2026-10-09 (lane E report). Open, low priority.
 
 ## KI-66: The generator's time to first token is an unlabelled silence, and it is the largest gap a user waits through
 
-Logged 2026-10-11 (lane B item 7, the measurement). Open. **Not a lane B
-regression** — the gap is in code lane B did not touch, and lane B's own step
-labels are what made it visible.
+Logged 2026-10-11 (lane B item 7, the measurement). **Fixed 2026-10-11 on
+`beta/lane-b2-fixes`**, not yet merged. **Not a lane B regression** — the gap
+is in code lane B did not touch, and lane B's own step labels are what made it
+visible.
 
 - **What:** lane B item 3 labelled every step inside `retrieve`, so the trace
   now shows the variants call, the embedding batch and each search as they
@@ -2848,6 +2849,31 @@ labels are what made it visible.
   `_step` call and it makes the remaining latency attributable rather than a
   residual.
 
+- **What landed (`beta/lane-b2-fixes`).** One `make_step_timer` step labelled
+  `generate` around the generation loop in `runner.py`. The step's duration is
+  **the same measurement** as `generate_ms` — read back out of
+  `auto_run.latency_ms` rather than timed a second time — so the waterfall and
+  the `metrics` event cannot disagree about how long the generator took.
+  Fast and Deep are untouched: Deep streams `thinking.delta` already, and Fast
+  has no trace panel to show it in.
+
+  The test is a **gap check**, not "a step exists", because a label in the
+  wrong place passes the second one. On a run whose generator waits 2.4 s
+  before its first token, no interval over 2 s may have nothing open across
+  it — and the same helper is re-run with the `generate` events removed and
+  **must** report the silence it exists to catch, so the check cannot pass by
+  computing nothing.
+
+  One measurement note, because it changes how the gap is read: gaps are
+  measured in **arrival time at the client**, not from each event's own `ts`.
+  A publish that reaches the stream 2 s after it was stamped reads as instant
+  in its own payload, and CH-5 is about the silence a watching client
+  experiences.
+
+  Measured without the fix on this fixture:
+  `('retrieval -> answer.delta', 2.44 s)` with no step open across it. That is
+  the defect, in one line.
+
 - **Evidence:** `.data/lane-b/ttft-main-1857362.json` (40 turns, per-run TTFT
   and max gap), `.data/lane-b/gaps-main.json` (per-run gap split into
   "waiting" and "post-delivery"), and the results note
@@ -2855,9 +2881,8 @@ labels are what made it visible.
 
 ## KI-67: Lane B item 6 ("skip query variants on simple lookups") costs most of fast20 its answers
 
-Logged 2026-10-11 (lane B item 7, step 4). Open. The setting
-`retrieval.skip_variants_simple_lookup` stays **off**, as it should: turning
-it on is what broke it, and the decision to leave it off is the owner's.
+Logged 2026-10-11 (lane B item 7, step 4). **The code was REMOVED 2026-10-11 on
+`beta/lane-b2-fixes`**, not merely left off — see "What landed" below.
 
 - **What:** with item 6 on, `fast20` answered **1 of 12** answerable items.
   `answer_rate` fell 0.917 → 0.083 and `false_abstention_rate` rose to 0.917.
@@ -2893,6 +2918,32 @@ it on is what broke it, and the decision to leave it off is the owner's.
   latency: a variant-skipping rule must be shown to keep `answerable_answered`
   at 12/12 before it is allowed near a default.
 
+- **What landed (`beta/lane-b2-fixes`): removed, not disabled.**
+  `_skip_variants_for`, `SKIP_VARIANTS_SIMPLE_LOOKUP` and the branch in
+  `retrieve_queries` are gone. Nothing else read them.
+
+  **Removed rather than left off, and that is the decision worth recording.**
+  A setting that defaults to off is one admin click from a 92% answer-rate
+  collapse, and the evidence against it lives in a document while the knob
+  lives in the code — where the next person to look will not be. `retrieval`
+  is an open dict in `_ALLOWED_SETTINGS`, so `PATCH /admin/settings` with
+  `{"retrieval": {"skip_variants_simple_lookup": true}}` still validates and
+  still creates a settings row. What must not exist is a **reader**, and there
+  is none now.
+
+  The comment at the call site says why, in place, because that is where
+  someone re-adding this would look. The tests assert the property rather
+  than the absence of a diff: the helper and constant are gone, **no module in
+  `graph/` contains the key as a string constant** (checked over the parsed
+  AST, so the explanatory comment does not trip it — a text search would fail
+  on the explanation and pass on the branch), setting the key produces an
+  identical variants call and an identical set of searches, and a multi-part
+  question still retrieves on each part.
+
+  Measured on `main` with the new tests against the old code:
+  `assert [1] == [1, 1]` on the variants LLM call — with the setting on, the
+  run makes one LLM call where it now makes two.
+
 - **Evidence:** runs `01a127de-fb4b-741a-8139-5fa8c5b61bd9` (fast20, item 6
   off) and `01a127fc-e52d-7c0b-9b02-b3f07df43566` (fast20, item 6 on);
   `01a127da`/`01a127dc` vs `01a127fa-c274-788e-b458-682101ce3b6f` for
@@ -2903,8 +2954,9 @@ it on is what broke it, and the decision to leave it off is the owner's.
 
 ## KI-68: Three concurrent event publishers exhaust the seq race retry and lose the whole run
 
-Logged 2026-10-11 (lane B item 7, step 3, on `main` = `1857362`). Open.
-**Made reachable by lane B, not caused by it** — see the note below.
+Logged 2026-10-11 (lane B item 7, step 3, on `main` = `1857362`). **Fixed
+2026-10-11 on `beta/lane-b2-fixes`**, not yet merged. **Made reachable by
+lane B, not caused by it** — see the note below.
 
 - **What:** one turn in 40 died outright. Run `01a127f3-9724-73e3-a7a1-89c8c7fe8b1c`,
   "Compare how Victor Frankenstein and the Time Traveller deal with the
@@ -2937,6 +2989,41 @@ Logged 2026-10-11 (lane B item 7, step 3, on `main` = `1857362`). Open.
   `MAX(seq)+1` in a separate statement. That makes the race impossible rather
   than retried, and the retry can stay as a backstop. Raising
   `SEQ_RACE_RETRIES` would lower the rate and leave the mechanism.
+
+- **What landed (`beta/lane-b2-fixes`).** Migration `0018` adds
+  `run_seq_counters(run_id PK → runs.id ON DELETE CASCADE, last_seq)`, and
+  `publish` takes its number from
+  `INSERT … ON CONFLICT (run_id) DO UPDATE SET last_seq = last_seq + 1
+  RETURNING last_seq` **in the same transaction as the insert**. The
+  counter row, not `SELECT … FOR UPDATE` on `run_events`, because
+  `FOR UPDATE` has nothing to lock for the *first* event of a run — no
+  earlier row exists — so the read-then-write window would survive for
+  exactly the one event per run it could not close. `SEQ_RACE_RETRIES`
+  stays as a backstop; the race it covered no longer exists.
+  ADR-001 is unaffected: a Postgres table behind the RunBus, not a counter
+  in Redis.
+
+  Three properties come from the increment being in the same transaction,
+  and each is a test:
+
+  - **Serialised.** Eight publishers on one run, all held inside the window
+    at once, produce numbers `1..8` with no duplicates and no gaps.
+  - **Gapless.** A publish that rolls back after taking its number returns
+    it — the increment rolls back with the row. A permanent hole in a run's
+    sequence is not cosmetic, because `subscribe(after_seq=…)` walks it.
+  - **Ordered.** Allocation order is commit order (a publisher cannot take
+    a number until the previous holder commits), so a replay arrives in
+    grant order, and each publisher's event streams at the number that
+    publisher was handed.
+
+  The overlap is proved with a session wrapper that pauses each publisher
+  after its first statement, on an `asyncio.Event` — deliberately, not with
+  a sleep (KI-61, `agents.md`). Measured on `main` with the test as written:
+  `[0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 3]` — nine
+  publishers, eight of them holding the same number, and
+  `UniqueViolationError … "run_events_pkey"` on the first collision. A plain
+  `asyncio.gather` version of the same test passes on `main`, which is why
+  it is not the version written.
 
 - **Evidence:** `.data/lane-b/ttft-main-1857362.json` (the run, with
   `status: run.failed`, `ttft_ms: null`), the container log line above, and

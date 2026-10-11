@@ -26,6 +26,32 @@ REPLAY_BATCH = 500
 POLL_FALLBACK_SECONDS = 15.0
 SEQ_RACE_RETRIES = 3
 
+# KI-68. The number and the row are written by ONE statement, so the
+# database decides who gets which `seq` instead of a retry budget deciding
+# it afterwards.
+#
+# Why an `ON CONFLICT … DO UPDATE … RETURNING` counter row and not
+# `SELECT … MAX(seq) … FOR UPDATE` on the run's latest event:
+#
+# - `FOR UPDATE` has nothing to lock for the FIRST event of a run — there is
+#   no earlier row — so the read-then-write window is exactly the one event
+#   per run it cannot close. The counter row has no such case: the upsert
+#   creates the row and returns 1 in the same statement.
+# - The lock is on one row per run, taken and released with the transaction,
+#   so publishers on *different* runs never touch each other, and the
+#   `run_events` rows themselves stay append-only and uncontended.
+#
+# What the old `MAX(seq)+1` cost, measured: three publishers on one run all
+# read the same maximum ([0, 0, 0] in the test's probe), so all three
+# inserted the same primary key and `SEQ_RACE_RETRIES` was three chances to
+# lose the whole run. The retry stays as a backstop for anything else that
+# can violate the key, but the race it covered no longer exists.
+_ALLOCATE_SEQ_SQL = text(
+    "INSERT INTO run_seq_counters (run_id, last_seq) VALUES (:run_id, 1) "
+    "ON CONFLICT (run_id) DO UPDATE SET last_seq = run_seq_counters.last_seq + 1 "
+    "RETURNING last_seq"
+)
+
 _Listener = Callable[[asyncpg.Connection, int, str, str], None]
 
 
@@ -118,29 +144,22 @@ class PostgresRunBus:
     async def publish(self, run_id: UUID, event: RunStreamEvent) -> RunStreamEvent:
         """Append to run_events, NOTIFY the seq, return the stamped event.
 
-        seq is assigned client-side (SELECT max+1) so the stored payload
-        carries its own seq; a same-run write race loses the PK race once
-        and retries.
+        seq is allocated by the increment in the same transaction as the
+        insert (KI-68), so the stored payload carries its own seq and two
+        publishers on one run cannot choose the same number. The retry is a
+        backstop for anything else that can violate the primary key.
         """
         last_error: Exception | None = None
         for _ in range(SEQ_RACE_RETRIES):
             async with self._session_factory() as session:
                 try:
                     async with session.begin():
-                        current_max = int(
+                        allocated = int(
                             (
-                                await session.execute(
-                                    text(
-                                        "SELECT COALESCE(MAX(seq), 0) FROM run_events "
-                                        "WHERE run_id = :run_id"
-                                    ),
-                                    {"run_id": run_id},
-                                )
+                                await session.execute(_ALLOCATE_SEQ_SQL, {"run_id": run_id})
                             ).scalar_one()
                         )
-                        stamped = event.model_copy(
-                            update={"run_id": str(run_id), "seq": current_max + 1}
-                        )
+                        stamped = event.model_copy(update={"run_id": str(run_id), "seq": allocated})
                         payload = _event_adapter.dump_python(stamped, mode="json")
                         await session.execute(
                             text(

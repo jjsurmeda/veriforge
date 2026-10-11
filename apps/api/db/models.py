@@ -201,6 +201,20 @@ class RunEvent(Base):
     )
 
 
+class RunSeqCounter(Base):
+    """KI-68: the per-run `run_events.seq` counter, incremented in the same
+    transaction as the event it numbers. See migration 0018 for why it is a
+    column on a row rather than a Postgres sequence — the rollback behaviour
+    (gapless) and the commit ordering (replay order) both come from that."""
+
+    __tablename__ = "run_seq_counters"
+
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("runs.id", ondelete="CASCADE"), primary_key=True
+    )
+    last_seq: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
 class LlmProvider(Base):
     __tablename__ = "llm_providers"
 

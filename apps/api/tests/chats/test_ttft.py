@@ -13,6 +13,7 @@ only place the requirement is observable.
 """
 
 import json
+import time
 from collections.abc import AsyncIterator
 from typing import Any
 from uuid import UUID
@@ -45,9 +46,7 @@ class _AutoJev:
         answers: dict[str, Answer] = {}
         for name in questions:
             if name == "intent":
-                answers[name] = Answer(
-                    engine="jev", latency_ms=1, value="lookup", probability=0.95
-                )
+                answers[name] = Answer(engine="jev", latency_ms=1, value="lookup", probability=0.95)
             elif name in {"source", "complexity"}:
                 value = "both" if name == "source" else "single"
                 answers[name] = Answer(engine="jev", latency_ms=1, value=value, probability=0.9)
@@ -146,6 +145,7 @@ async def _run_auto_and_collect(
     question: str = QUESTION,
     tokens: tuple[str, ...] = ("24 ", "months."),
     delay_before_first_token_s: float = 0.0,
+    arrival_stamps: list[float] | None = None,
 ) -> tuple[list[tuple[str, dict[str, Any]]], UUID]:
     """Sign up, seed one chunk, run Auto, return the SSE transcript in order.
 
@@ -153,6 +153,12 @@ async def _run_auto_and_collect(
     which is the honest way to make TTFT and `generate` differ: with no delay
     a fast faked generator makes the two nearly the same number and a test
     asserting they differ proves nothing.
+
+    `arrival_stamps`, when given, collects the wall-clock time each event
+    REACHED THE CLIENT, one entry per transcript event. The trace gap check
+    is about silences as a watching client experiences them, which the
+    events' own `ts` (server-side publish time) cannot answer — a publish
+    that arrives 2 s late reads as instant in its own payload.
     """
     seen: dict[str, list[str]] = {"streamed": []}
 
@@ -193,9 +199,7 @@ async def _run_auto_and_collect(
     async def fake_guard_output(*args: Any, **kwargs: Any) -> Any:
         return OutputGuardResult()
 
-    signup = await client.post(
-        "/auth/signup", json={"email": EMAIL, "password": "password123"}
-    )
+    signup = await client.post("/auth/signup", json={"email": EMAIL, "password": "password123"})
     headers = {"Authorization": f"Bearer {signup.json()['access_token']}"}
     user = (await db.execute(select(User).where(User.email == EMAIL))).scalar_one()
     chunks = await _seed_one_chunk(db, user)
@@ -228,6 +232,8 @@ async def _run_auto_and_collect(
         assert response.status_code == 200
         async for event_type, data in _parse_sse(response.aiter_lines()):
             transcript.append((event_type, data))
+            if arrival_stamps is not None:
+                arrival_stamps.append(time.monotonic())
             if event_type in ("run.completed", "run.failed"):
                 break
     assert seen["streamed"], "the generator must have run, or the timing proves nothing"

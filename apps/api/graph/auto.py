@@ -178,6 +178,8 @@ def greeting_canonical(raw: str) -> str | None:
         return None
     candidate = " ".join(words)
     return candidate if candidate in GREETING_ALLOWLIST else None
+
+
 # Round 2 (KI-12): the per-source head window is gone. It measured better
 # on faithfulness (2026-09-28, batch 5/6) only because the judge saw the
 # first 250 chars of a 500-token child and the Darcy proposal lives in a
@@ -351,35 +353,6 @@ def _fuse_multi_query(result_sets: list[list[ScoredChunk]]) -> list[ScoredChunk]
     return [dc_replace(chunk, fused_score=score) for chunk, score in ordered]
 
 
-# Lane B item 6 (TRD §7.1: "skip query variants on simple single-hop lookups
-# (complexity = single, intent = lookup)").
-#
-# OFF by default and meant to stay off until item 7 shows no recall loss on
-# every set: the brief calls this the riskiest item in the lane, and the three
-# variants are also what makes multi-query recall work on a phrasing the
-# embedding misses. `retrieval.skip_variants_simple_lookup` is the admin
-# override (AD-4).
-SKIP_VARIANTS_SIMPLE_LOOKUP = False
-
-
-def _skip_variants_for(ingress: IngressOutcome) -> bool:
-    """Skip the query variants for a single-hop, single-entity lookup?
-
-    Both conditions are needed. `complexity = single` alone still covers a
-    multi-part question, whose parts are separate retrievals and not
-    phrasings — dropping those is the KI-12 abstention. `intent = lookup`
-    alone still covers a compare question, whose per-entity queries are the
-    only reason the second book is retrieved at all.
-    """
-    if not bool(
-        runtime_value(
-            "retrieval.skip_variants_simple_lookup", SKIP_VARIANTS_SIMPLE_LOOKUP
-        )
-    ):
-        return False
-    return ingress.complexity == "single" and ingress.intent == "lookup"
-
-
 def _entity_queries(question: str, intent: str) -> list[str]:
     """One retrieval per named entity in a compare question."""
     # ponytail: capitalised-noun regex — misses ALL-CAPS titles, quoted names
@@ -425,9 +398,7 @@ async def _rerank_candidates(
     share = math.ceil(limit / len(groups))
     picked: list[ScoredChunk] = []
     for label, group in groups.items():
-        picked.extend(
-            await apply_rerank(reranker, query=label or query, chunks=group, top_n=share)
-        )
+        picked.extend(await apply_rerank(reranker, query=label or query, chunks=group, top_n=share))
     # Order by rerank score, not group insertion order. Dict order put the
     # "" (no-entity) share first whatever it scored, so a compare run's
     # citations [1]-[3] could be the weakest passages (compare-inventors
@@ -482,15 +453,78 @@ def _sufficient_question(question: str, top_contexts: list[ExpandedContext]) -> 
 _MODEL_CODE_RE = re.compile(r"\b[A-Z]{1,4}-?\d{1,4}(?:[-/]\d{1,4})*\b")
 _CAPITALISED_NAME_RE = re.compile(r"\b[A-Z][a-z]+(?:\s+(?:[A-Z][a-z]+|the))*(?=\b)")
 _ENTITY_STOP = {
-    "Compare", "How", "What", "Why", "When", "Where", "Who", "Which", "Does",
-    "Did", "Can", "Could", "Should", "Shall", "May", "Might", "The", "A", "An",
-    "This", "That", "These", "Those", "There", "Here", "It", "I", "You", "We",
-    "They", "He", "She", "My", "Your", "Our", "Their", "In", "On", "At", "For",
-    "With", "From", "About", "Into", "Over", "Under", "Per", "Also", "Please",
-    "Note", "Hi", "Hello", "Thanks", "Thank", "Yes", "No",
+    "Compare",
+    "How",
+    "What",
+    "Why",
+    "When",
+    "Where",
+    "Who",
+    "Which",
+    "Does",
+    "Did",
+    "Can",
+    "Could",
+    "Should",
+    "Shall",
+    "May",
+    "Might",
+    "The",
+    "A",
+    "An",
+    "This",
+    "That",
+    "These",
+    "Those",
+    "There",
+    "Here",
+    "It",
+    "I",
+    "You",
+    "We",
+    "They",
+    "He",
+    "She",
+    "My",
+    "Your",
+    "Our",
+    "Their",
+    "In",
+    "On",
+    "At",
+    "For",
+    "With",
+    "From",
+    "About",
+    "Into",
+    "Over",
+    "Under",
+    "Per",
+    "Also",
+    "Please",
+    "Note",
+    "Hi",
+    "Hello",
+    "Thanks",
+    "Thank",
+    "Yes",
+    "No",
     # FR/DE/ES openers that the ASCII-range regex still matches
-    "Quel", "Quels", "Qui", "Quand", "Comment", "Pourquoi",
-    "Wer", "Was", "Wie", "Wann", "Wo", "Warum", "Welche", "Welcher", "Welches",
+    "Quel",
+    "Quels",
+    "Qui",
+    "Quand",
+    "Comment",
+    "Pourquoi",
+    "Wer",
+    "Was",
+    "Wie",
+    "Wann",
+    "Wo",
+    "Warum",
+    "Welche",
+    "Welcher",
+    "Welches",
 }
 
 
@@ -587,16 +621,11 @@ def _evidence_clearly_absent(
     sufficient_bound = runtime_value(
         "retrieval.retry_skip_sufficient_max", RETRY_SKIP_SUFFICIENT_MAX
     )
-    relevance_bound = runtime_value(
-        "retrieval.retry_skip_relevance_max", RETRY_SKIP_RELEVANCE_MAX
-    )
+    relevance_bound = runtime_value("retrieval.retry_skip_relevance_max", RETRY_SKIP_RELEVANCE_MAX)
     # AD-4: an admin can turn the skip off by setting either bound to null.
     if sufficient_bound is None or relevance_bound is None:
         return False
-    return (
-        p_sufficient <= float(sufficient_bound)
-        and relevance_max <= float(relevance_bound)
-    )
+    return p_sufficient <= float(sufficient_bound) and relevance_max <= float(relevance_bound)
 
 
 async def _search_one_variant(
@@ -859,9 +888,7 @@ async def prepare_auto_run(
             await _step("Library: skipped retrieval", _no_call)
             names = [
                 document.name
-                for document in await list_scope_documents(
-                    session, list(params.collection_ids)
-                )
+                for document in await list_scope_documents(session, list(params.collection_ids))
             ]
             return AutoRun(
                 params=params,
@@ -929,32 +956,38 @@ async def prepare_auto_run(
         async def retrieve_queries(
             query: str,
         ) -> tuple[list[ScoredChunk], list[Retrieval], dict[UUID, str]]:
-            # Lane B item 6: a single-hop, single-entity lookup does not need
-            # three extra phrasings — they are overhead on the exact question
-            # that already retrieves well. The setting defaults to OFF, and
-            # item 7 is what would turn it on; the variants path is unchanged
-            # until then. (Compare and multi-part intents keep their per-entity
-            # and per-part queries regardless: those are not phrasings, they
-            # are different questions, and dropping them is the KI-12 bug.)
-            skip_variants = _skip_variants_for(ingress)
             # CH-5: every step inside `retrieve` publishes its own label, so
             # the trace shows the work as it happens. Before this, the first
             # thing a client saw after `retrieve` started was the first search
             # finishing — the variants call and the embedding batch were a
             # silent gap inside the stage they belong to.
-            variants = (
-                [query]
-                if skip_variants
-                else await _variant_step(
-                    "query variants",
-                    partial(
-                        _generate_query_variants,
-                        query,
-                        params.small_model,
-                        complete,
-                        MULTI_QUERY_VARIANTS,
-                    ),
-                )
+            #
+            # KI-67: there is deliberately NO setting here to skip this call.
+            # Lane B item 6 had one (`retrieval.skip_variants_simple_lookup`,
+            # off by default) and it was removed rather than left off, because
+            # it was a quality regression wearing a latency win: with it on,
+            # fast20 answered 1 of its 12 answerable items (answer_rate 0.917
+            # -> 0.083) while faithfulness went UP to 1.0, so no confidence
+            # metric and no part of the eval gate caught it. The premise was
+            # that a single-hop lookup "already retrieves well" on its own; on
+            # this corpus it does not, and the three LLM rephrasings were the
+            # bridge. (Compare and multi-part intents keep their per-entity
+            # and per-part queries regardless — those are not phrasings, they
+            # are different questions, and dropping them is the KI-12 bug.)
+            #
+            # If this is ever revisited, the gate condition is answer rate, not
+            # latency: `answerable_answered` must stay at 12/12 on fast20 and
+            # entity-mismatch must stay 12/12 before the rule is allowed near a
+            # default.
+            variants = await _variant_step(
+                "query variants",
+                partial(
+                    _generate_query_variants,
+                    query,
+                    params.small_model,
+                    complete,
+                    MULTI_QUERY_VARIANTS,
+                ),
             )
             parts: list[str] = []
             if ingress.intent == "multi-part":
@@ -1201,9 +1234,7 @@ async def prepare_auto_run(
                 # Every passage in the top-k is about a DIFFERENT entity when
                 # none of the per-passage Nouls clears the floor.
                 entity_threshold = threshold("entity_match", sufficient.engine)
-                entity_values = [
-                    float(sufficient_answer[name].value) for name in entity_questions
-                ]
+                entity_values = [float(sufficient_answer[name].value) for name in entity_questions]
                 entity_max = max(entity_values)
                 entity_ok = any(value >= entity_threshold for value in entity_values)
             # One bar: every signal must clear, with the same single retry.

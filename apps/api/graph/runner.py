@@ -47,6 +47,7 @@ from graph.review import (
     review_answer,
 )
 from graph.suggestions import generate_suggestions
+from graph.timing import make_step_timer
 from observability import signals
 from providers.credentials import decrypt_provider_key
 from providers.llm import classify_provider_error
@@ -876,21 +877,42 @@ async def execute_run(
 
             batcher = _DeltaBatcher()
             last_heartbeat = time.monotonic()
-            generate_start = time.monotonic()
+            # KI-66: the generator published no step of its own. Lane B item 3
+            # labelled everything inside `retrieve` and stopped one function too
+            # early, which left the single longest wait a user sits through —
+            # time to first token — as the one stage with nothing on the stream
+            # during it. Measured on `main`: `step.completed: conflict` at
+            # 6869 ms, first `answer.delta` at 18778 ms, an 8145 ms silence with
+            # no event in it. One `_step` here makes that wait attributable
+            # rather than a residual.
+            #
+            # The duration is the SAME measurement as `generate_ms` — it is read
+            # back out of the node metrics rather than timed twice, so the two
+            # can never disagree.
+            generate_step = make_step_timer(
+                node="auto",
+                run_id=run_id,
+                latency_ms=auto_run.latency_ms,
+                publish=_publish_step,
+            )
 
-            async for token in auto_run.stream_answer():
-                text += token
-                batcher.add(token)
-                if plan == "stream" and batcher.due():
-                    await publish_delta(batcher.take())
-                    if time.monotonic() - last_heartbeat >= settings.heartbeat_interval_seconds:
-                        await bus.publish(run_id, Heartbeat(run_id=str(run_id)))
-                        await _touch_heartbeat(session_factory, run_id)
-                        last_heartbeat = time.monotonic()
+            async def _generate() -> None:
+                nonlocal last_heartbeat, text
+                async for token in auto_run.stream_answer():
+                    text += token
+                    batcher.add(token)
+                    if plan == "stream" and batcher.due():
+                        await publish_delta(batcher.take())
+                        if time.monotonic() - last_heartbeat >= settings.heartbeat_interval_seconds:
+                            await bus.publish(run_id, Heartbeat(run_id=str(run_id)))
+                            await _touch_heartbeat(session_factory, run_id)
+                            last_heartbeat = time.monotonic()
+
+            await generate_step("generate", _generate)
             if plan == "stream" and batcher.buffer:
                 await publish_delta(batcher.take())
 
-            generate_ms = int((time.monotonic() - generate_start) * 1000)
+            generate_ms = auto_run.latency_ms.get("generate", 0)
             prompt_tokens = sum(
                 count_tokens(m["content"])
                 for m in build_grounded_messages(
@@ -1204,14 +1226,18 @@ async def sweep_stale_runs(
 
     async def work(session: AsyncSession) -> list[tuple[UUID, UUID]]:
         candidates = (
-            await session.execute(
-                select(Run.id).where(
-                    Run.status == "running",
-                    Run.heartbeat_at.is_not(None),
-                    Run.heartbeat_at < cutoff,
+            (
+                await session.execute(
+                    select(Run.id).where(
+                        Run.status == "running",
+                        Run.heartbeat_at.is_not(None),
+                        Run.heartbeat_at < cutoff,
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         # The staleness predicate is repeated in the UPDATE, not trusted from
         # the SELECT above: a run that heartbeats in between is alive, and
         # matching on id alone failed it anyway — then settled its usage and
