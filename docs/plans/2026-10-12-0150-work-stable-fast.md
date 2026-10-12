@@ -49,3 +49,22 @@ is authoritative).
 
 About $8.7 OpenRouter credit left after B2. Phase 1 ≈ $2, phase 2 ≈ $2–3,
 phase 3 ≈ $3–5. Top up before phase 3.
+
+## Scope locked (owner, 2026-10-12)
+
+Every remaining source was mapped (known issues, lane D, state review §4,
+day-2 checklist, PRD §5). Additions:
+
+- `check-stable` also asserts: decision fallback share ≤ 5% during the soak;
+  a 50-page PDF ingested mid-soak is ready ≤ 2 min and chat p95 rises ≤ 20%.
+- `check-fast` budget also asserts Jev ingress ≤ 600 ms p95.
+- Deploy dispatch: remove the key-shaped fixture in `infra/tests/test_scripts.sh`,
+  look up the CloudFront prefix list in `up.sh`, KI-59, KI-63.
+- Deferred to v1 (new metrics, not new behaviour): minimum claim support,
+  context recall ≥ 0.85, grounding ≥ 95%. Quality for the beta stays guarded
+  by the gate's faithfulness (fast20 + counterfactual), entity-mismatch 12/12,
+  0 confident-wrong, ≥ 90% clean declines, and no uncited answers (phase 1c).
+  Stated in the beta notice.
+
+Remaining dispatches: phase 1c (running), phase 2, phase 3, deploy prep.
+Each continues until its check passes twice; stops only on time box or credit.
