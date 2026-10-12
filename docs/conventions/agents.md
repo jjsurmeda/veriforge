@@ -94,6 +94,9 @@ deploy. Plan: `docs/plans/2026-10-12-0150-work-stable-fast.md`.
 - **Independent code items:** sub-agents in separate git worktrees, one
   branch each, with a test database name per worktree. Merge one at a time,
   each through the gate.
+- **One process per test database.** Two pytest (or check) runs on the same
+  `TEST_DATABASE_URL` collide and fail for reasons that aren't the code's. A
+  run that overlapped another is void, not evidence: rerun it alone.
 - **Quality runs** may run concurrently **only on isolated stacks**: an
   ephemeral DB per fast20 run (`eval-gate-local`), and a separate api
   container pinned to the commit for each acceptance run. Never against the
