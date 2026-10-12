@@ -2246,3 +2246,248 @@ are unchanged — 菩提祖师 was **not** added, which is what this entry warne
 against. The item's `proof` was re-run with `scripts/audit_labels.py`
 against the corpus, because the turn is the audit's query and the old proof
 described the old one. Labels only; no pipeline change.
+
+## KI-28: Jev reranker — switched to Jev (owner decision); abstention separation still open
+
+**Re-measured on the full 57-item set (2026-10-12, phase 1b, `28c808c`, the
+first run since 2026-10-01).** The four should-decline items that answered then
+(`outside-study-in-scarlet`, `outside-emma`, `outside-looking-glass`,
+`ml-fr-outside`) — **all decline cleanly now, and the class is 20/20 clean
+declines with 0 confident wrong.** P2a plus the widened
+set closed that direction of KI-28; KI-27's `xl-en-wukong-master` passes after
+the owner's reword. The set as a whole: 52/57, answer 28/33,
+not_in_sources 20/20, smalltalk 2/2, library 2/2, TTFT p50 9.0 s.
+
+What is left is the *other* direction, and it is not a reranker choice: three
+answerable items decline, all of them on the KI-26 **relevance** gate, not on
+`sufficient` (0.61/0.48 against a floor of 0.05). The reranker is not what is
+wrong here — the same run's answer items rerank as high as 0.98, and
+`compare-inventors` (the item this entry said sat inside the abstain band) now
+answers at 0.97. The signal that does not separate the groups is the relevance
+gate's, and it does not separate them at any threshold. See **KI-70**, which is
+where that work now lives; and **KI-71** for the two items answered with no
+citations at all.
+
+**Decision, 2026-09-30 (owner): switched to Jev — settings version 142,
+`retrieval.reranker = jev`, `sufficient_abstain` unchanged at 0.05; code
+defaults (`runtime.DEFAULT_DATA`, `get_reranker`) now `jev`.** Basis, from
+C3's three full acceptance runs: pass rate is equal within run-to-run
+noise (NVIDIA 27 and 29 on identical code, Jev 28 on one run — C3's rule
+compared Jev's single run with NVIDIA's best of two, which is biased); Jev
+separates the should-answer / should-abstain `sufficient` groups best
+(margin 0.00 vs NVIDIA −0.07 / −0.04), keeps the answer text in the top 8
+on every item (1.00 vs 0.82), reranks ~2x faster (431 vs 839 ms p50) at
+~$0.0006/query, and is production-licensed where the NVIDIA free tier is
+not. The C2 regression that caused the revert was measured before the
+Turkish-decline (KI-29) and abstain-citation (KI-25) fixes. Remaining
+open: a second Jev run was never completed, and neither reranker separates
+the groups until KI-26 (`outside-study-in-scarlet`) is fixed and the
+abstention set is widened (KI-6). Fast mode has no DecisionEngine, so with
+`jev` selected it falls back to the provider reranker, not fused order.
+
+**Second and third Jev runs done (2026-10-01, D1).** Two full acceptance
+runs on the widened 41-item set (14 `not_in_sources`, KI-6), settings
+v142, back to back: **36/41 both runs, identical failure sets** —
+`outside-study-in-scarlet` (0.11/0.12, KI-26), the new `outside-emma`
+(0.07/0.06), `outside-looking-glass` (0.07/0.07), `ml-fr-outside`
+(0.08/0.08) answering when they should abstain, and `xl-en-wukong-master`
+(0.67/0.69, KI-27, fails on content at every threshold). Per class both
+runs: answer 22/23, not_in_sources 10/14, smalltalk 2/2, library 2/2;
+per language: en 26/30, es 2/2, fr 1/2, de 2/2, ja 2/2, tl 1/1, zh 2/2;
+0 language mismatches. `sufficient` last-score distributions: answer
+0.05/0.73/0.98 and 0.06/0.77/0.96 (min/median/max) vs not_in_sources
+0.01/0.03/0.11 and 0.01/0.025/0.12 — **margin −0.06 in both runs; no
+cut-off separates the groups.** `compare-inventors` (answer) sits at
+0.05/0.06 inside the abstain band while the four hallucinating
+not_in_sources items sit at 0.06–0.12. Threshold replay on the recorded
+scores: 36/41 at the shipped 0.05 in both runs; ceiling **39/41 at
+T ≈ 0.13–0.25 in both runs** (gates all four hallucinations, loses
+`compare-inventors`; a trade, not a separator). Recommendation reported
+to the owner: T ≈ 0.15–0.20 is the best replay zone in both runs — the
+owner decides. `sufficient_abstain` stays **0.05** until then. The four
+outliers are the same items with stable scores across runs — consistent
+with the KI-26 mechanism (topically-adjacent-answerless evidence),
+not threshold noise.
+**Compare's evidence view was broken too (2026-10-01, D2 item 3,
+`30f3e98`).** Two evidence-shaping defects, both fixed: `_rerank_candidates`
+returned `picked` in group insertion order, so the "" (no-entity) share
+led whatever it scored (compare's citations [1]–[3] were *Noli Me
+Tangere* at rerank 0.01–0.02, ahead of Frankenstein and The Time
+Machine); and `_sufficient_question` interleaved each entry's parent
+before the next entry's child, so with ~4,000-char entries the 9,000-char
+budget held ~2 entries and the judge saw only Noli. Both now follow the
+order the code's own comment described (children first, parent only if
+there's room; shares sorted by rerank score). Live subset (7 items,
+`20260930-205630`): `compare-inventors` sufficient **0.05/0.06 → 0.20**
+(0.23 in the item-4 run), still answering; no answer item dropped below
+0.20 or abstained, so the addendum's `SUFFICIENT_EVIDENCE_CHARS` guard was
+not needed; the `sufficient` step's latency is unchanged (before median
+330 ms, after 321 ms — it holds more evidence at the same cost). Note the
+item-4 run's `compare-inventors` TTFT was 35.9 s against a 9.8 s p50 for
+the set — one slow generation, not a step cost; worth watching in D3's
+runs.
+
+Logged 2026-09-30, from the C2 reranker comparison and the full acceptance
+run that followed it. **Reverted — `retrieval.reranker` is back to the
+`nvidia` default in settings version 137.** Read this before the next
+reranker change.
+
+`retrieval.reranker` was set to `jev` in runtime settings version 136 on
+the strength of that table, and **that setting was reverted in version 137
+after the full acceptance run regressed the abstention class in both
+directions.** The table below is the reranker comparison, not the verdict.
+
+| reranker | recall@8 | mean rank of expected | mention@8 | p50 ms | $/query | fell back |
+| --- | --- | --- | --- | --- | --- | --- |
+| jev | 1.000 | 1.0 | 1.000 | 431 | 0.000607 | 0/23 |
+| nvidia | 1.000 | 1.0 | 0.818 | 839 | 0.0 | 0/23 |
+
+Both arms saw byte-identical fused candidates (top 40) and no generation
+happened, so the reranker was the only variable.
+
+- **Why the comparison was not enough:** it measured *ranking* quality —
+  which book lands first, whether a `mention` term survives into the top
+  8. It did not measure the effect on the `sufficient` noul, which is
+  asked over the reranked top-k and is what actually decides answer vs
+  abstain. A reranker can be better at putting the right book on top and
+  still change sufficiency in both directions. On the full run it did:
+
+  | item | C1 (nvidia) | with jev |
+  | --- | --- | --- |
+  | `fact-bennet-sisters` | answer PASS (0.90) | not_in_sources FAIL |
+  | `fact-irene-adler` | answer PASS (0.65) | not_in_sources FAIL |
+  | `outside-whitman` | not_in_sources (0.03) | **answer** FAIL |
+  | `outside-study-in-scarlet` | answer (0.14) | answer FAIL |
+
+  `outside-whitman` answering a Walt Whitman question from a corpus that
+  does not contain it is the worst outcome in the product, and it is
+  strictly worse than the abstention it replaced. That settles it:
+  shipping the latency win is not worth it.
+
+  > **Correction, 2026-10-02 (KI-36). The corpus *did* contain it.** The
+  > `outside-whitman` answer read as the worst outcome in the product
+  > because the item asserted the corpus had no Whitman passage. It has
+  > one: the Pride and Prejudice preface states the "loving by
+  > allowance" / "loving with personal love" distinction verbatim (read
+  > back by zero-hit/hit search over the 10,733 chunks an acceptance run
+  > user can retrieve — the only `%whitman%` chunk in scope is Pride and
+  > Prejudice.txt ord 0). So the answer in the C2 run was **correct**,
+  > and this is an item defect, not a product defect. The item is now
+  > `answer`, with a Pride and Prejudice cite check and an "allowance"
+  > mention check. The reasoning above still stands for the reranker
+  > decision it was used in — C2's `not_in_sources` classes scored
+  > against labels that were partly wrong, so the abstention evidence in
+  > this section is softer than it reads — but the specific "worst
+  > outcome in the product" claim about this item is retracted.
+- **What a real decision needs:** the comparison harness has to carry the
+  reranked top-k through the `sufficient` noul and record the
+  answer/abstain verdict per item, not just the rank. That is a
+  generation-cost measurement, not an offline replay, so it cannot live in
+  `scripts/compare_rerankers.py` as written.
+- **Still true:** Jev is the better *ranker* here and 1.9x faster, and it
+  keeps the `mention` term in the top 8 on four items NVIDIA drops
+  (`plot-red-headed-league`, `fact-weena`, `ml-fr-bovary-death`,
+  `xl-en-bovary-death`). The three-way replay with Cohere (below) should
+  measure the sufficiency effect, not the rank.
+- **Licensing, unchanged:** the $0 NVIDIA column is the free,
+  evaluation-only tier. It is not shippable, so production still needs
+  Cohere Rerank via Bedrock per the earlier provider analysis.
+  `CohereRerank` is implemented and already takes precedence when
+  `COHERE_API_KEY` is set, so that arm is a config change.
+- **Also worth knowing:** Fast mode cannot use Jev — it has no
+  DecisionEngine, so it falls back to fused order and logs a warning.
+
+### C3 measured this at the decision level. **Decision: stay on NVIDIA.**
+
+The C2 gap above — that the ranking comparison says nothing about the
+answer/abstain decision — was closed on 2026-09-30. Three full 31-item
+acceptance runs (nvidia ×2, jev ×1), each in its own active settings
+version so `retrieval.reranker` was the only variable, with KI-29 and the
+language scorer in place:
+
+| run | settings | pass | answer | not_in_sources | smalltalk | library | `language_mismatch` |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| nvidia 1 (`20260930-140558`) | v138 | 27/31 | 20/23 | 3/4 | 2/2 | 2/2 | 0 |
+| jev 1 (`20260930-144733`) | v139 | 28/31 | 21/23 | 3/4 | 2/2 | 2/2 | 0 |
+| nvidia 2 (`20260930-152951`) | v140 | 29/31 | 22/23 | 3/4 | 2/2 | 2/2 | 0 |
+
+Per question language, all three runs: en 21-22/24, es 2/2, fr 0-1/1, de
+1/1, ja 1/1, tl 1/1, zh 1/1. Every failure in every run is
+`wrong_class_or_content` — **no run produced a language mismatch**, which is
+the independent confirmation that KI-29's fix holds across a full set.
+
+**The `sufficient` distributions, and the answer to "does a cut-off
+separate the two groups?":**
+
+| run | should abstain (n=4) min / median / max | should answer (n=23) min / median / max | margin |
+| --- | --- | --- | --- |
+| nvidia 1 | 0.02 / 0.025 / **0.13** | **0.06** / 0.61 / 0.96 | **−0.07** |
+| jev 1 | 0.02 / 0.03 / **0.09** | **0.09** / 0.73 / 0.95 | **0.00** |
+| nvidia 2 | 0.02 / 0.025 / **0.13** | **0.09** / 0.62 / 0.97 | **−0.04** |
+
+**No arm separates the two groups.** In every run the highest
+should-abstain score is `outside-study-in-scarlet`, and in every run it is
+at or above the lowest should-answer score, which is `compare-inventors`.
+Under Jev the two are **exactly equal at 0.09**: there is no threshold at
+which `outside-study-in-scarlet` abstains and `compare-inventors` still
+answers, because they scored the same number.
+
+Replaying each run's own recorded scores against every candidate
+`sufficient_abstain` (a run answers at or above the floor, so the decision
+at any threshold is exactly replayable):
+
+| run | at the shipped 0.05 | best over all thresholds | at that threshold |
+| --- | --- | --- | --- |
+| nvidia 1 | 27/31 | **27/31** | 0.05 (already optimal) |
+| jev 1 | 28/31 | **28/31** | ~0.09 (gains one, loses one) |
+| nvidia 2 | 29/31 | **29/31** | ~0.13 (gains one, loses one) |
+
+Raising the floor buys exactly one `not_in_sources` item
+(`outside-study-in-scarlet`) and costs exactly one answer-class item at or
+below the new floor, in every run and both arms. It is a wash, which is why
+0.05 stays.
+
+**Against the decision rule.** Jev fails on the *first* clause, before
+stability is reached: it must reach a score at least equal to NVIDIA's best
+(29/31) and its ceiling is 28/31. It also fails the second — no threshold
+gives a score with **no `not_in_sources` item answering**, because
+`outside-study-in-scarlet` and `compare-inventors` are tied at 0.09. So:
+**stay on NVIDIA, `sufficient_abstain` stays 0.05, nothing was changed.**
+
+- **Not verified:** the rule's third clause, *stable across both Jev runs*.
+  The second Jev run was stopped at 14/31 items. It can only confirm or
+  widen a margin of exactly 0.00, and the first clause already fails, so it
+  could not have changed the decision — but it is not done, and it is the
+  one number here I did not measure. Four runs at ~45 min each did not fit
+  the dispatch's 60-minute box; that conflict should have been raised
+  before starting, not discovered three hours in.
+- **What this does and does not say about Jev.** It says Jev does not beat
+  NVIDIA *on this corpus, on this 31-item set, at this threshold*. It does
+  not retract the ranking result above: Jev is still the better ranker and
+  ~1.9x faster. The blocker is that `sufficient` has no headroom on either
+  side of the floor, so a reranker change cannot be evaluated by threshold
+  tuning — only by fixing `outside-study-in-scarlet` (KI-26) and adding
+  abstention items (KI-6).
+
+**Closed 2026-10-12:** passed two consecutive full check-work runs (phase 1b final, phase 1c run 2 on `72263cb`).
+
+## KI-56: The only chunk carrying the RP-77 answer embeds an injection block, so the sanitizer drops the answer with it
+
+Logged 2026-10-04, P2a item 4, from a per-item probe (fix, don't analyse —
+one paragraph, not a detour). "What torque should the RP-77 retaining
+screw be tightened to?" false-abstains on fast20 and in the
+counterfactual runs. Root cause: the only chunk carrying the 4 Nm figure
+(`field_service_note.md`) embeds a prompt-injection block; the sanitizer
+scores it `chunk_injection_0` 0.96 ≥ `chunk_injection_drop` 0.70 and drops
+the chunk before the sufficiency judge ever sees it, so the judge scores
+`sufficient` 0.02 and the run declines. Proven pre-existing, not caused by
+the item-4 entity gate: a probe that spied on `DecisionEngine.decide`
+shows the item-4 gate passing (entity values 0.74/0.67) with
+`sufficient: 0.02` → abstain, and the identical probe on pre-item-4 code
+(HEAD `8a5a622` swapped in temporarily) reproduces the same
+`sufficient: 0.02` → abstain. Fix direction for a later dispatch: judge
+sufficiency before the sanitizer drops a flagged chunk, let the generator
+see flagged-but-not-dropped chunks, or re-chunk the corpus so the
+injection block does not swallow the fact. Not fixed in P2a.
+
+**Closed 2026-10-12:** passed two consecutive full check-work runs (phase 1b final, phase 1c run 2 on `72263cb`).
