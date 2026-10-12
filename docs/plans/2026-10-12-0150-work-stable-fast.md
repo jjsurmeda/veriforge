@@ -61,7 +61,10 @@ day-2 checklist, PRD §5). Additions:
 - Deploy dispatch: remove the key-shaped fixture in `infra/tests/test_scripts.sh`,
   look up the CloudFront prefix list in `up.sh`, KI-59, KI-63.
 - Deferred to v1 (new metrics, not new behaviour): minimum claim support,
-  context recall ≥ 0.85, grounding ≥ 95%. Quality for the beta stays guarded
+  grounding ≥ 95%. **Corrected 2026-10-13:** answer content (the acceptance
+  set's required mentions, ≤ 1 miss of 32) is in `check-work` from phase 1e —
+  deferring context recall left wrong answers unchecked. The `check-work` bar
+  is now final. Quality for the beta stays guarded
   by the gate's faithfulness (fast20 + counterfactual), entity-mismatch 12/12,
   0 confident-wrong, ≥ 90% clean declines, and no uncited answers (phase 1c).
   Stated in the beta notice.
