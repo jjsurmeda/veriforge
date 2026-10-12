@@ -90,3 +90,15 @@ or the hop controller (multi-hop).
 
 **Verdict** — A claim's outcome after review: supported, partial,
 unsupported, or contradicted.
+
+## Providers, retrieval and modes
+
+- **Decision provider** — a model behind the `DecisionProvider` interface that answers `Noul`, `Choice` and `Score` questions (Jev, an LLM judge, other decision models). Chosen per run.
+- **Reranker** — reorders retrieved passages by whether they answer the question (Cohere, NVIDIA, Jev, LLM judge, or fused order for none).
+- **Answer-containment rubric** — the rerank question "Does the passage contain the information needed to answer or verify the question?", graded off-topic / related / partly / fully.
+- **Evidence check (corrective)** — Auto's single check that the reranked evidence answers the question; on failure it corrects the retrieval once before abstaining.
+- **Entity guard** — rejects passages about a different named entity than the one asked about.
+- **Section summary** — a summary of one document section (and one per document), indexed for gist questions.
+- **Agent loop** — Deep mode's cycle: choose the next sub-question, retrieve, take notes, then search again or answer.
+- **Comparison view** — one question replayed across chosen providers, side by side.
+

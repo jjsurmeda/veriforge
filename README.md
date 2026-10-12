@@ -7,11 +7,14 @@ and the web with inline citations, **per-claim verification** and an explicit
 panel. Its quality is guarded by an **eval gate in CI**.
 
 → **[The showcase](docs/showcase.md)**: architecture, why a decision model,
-OKF + RAG, the measured scorecard, and the bugs the evals caught.
+the decision-model and reranker comparison, the measured scorecard, and the bugs the evals caught.
 
 | | |
 | --- | --- |
-| Retrieval | Hybrid BM25 + vector (weighted RRF), decision-model rerank, small-to-big, multi-query |
+| Modes | Auto: adaptive + hybrid RAG with a corrective evidence check. Deep: agentic RAG (search, read, search again or answer) |
+| Retrieval | Hybrid BM25 + vector (weighted RRF), pluggable rerank, small-to-big, multi-query, section summaries for gist questions |
+| Decision layer | Pluggable decision models (Jev and others) and rerankers (Cohere, NVIDIA, Jev, LLM judge), compared side by side |
+| Benchmarks | Reranker and decision-model tables in [`docs/benchmarks/`](docs/benchmarks/) *(published at the end of phase R3)* |
 | Trust | Claim verification, faithfulness and minimum support, abstention with no fabricated citations, conflict disclosure |
 | Quality | Faithfulness **0.976** (mean of 5 runs, fast20, 2026-10-02); 7 languages |
 | Engineering | Multi-user, quotas, admin and audit, resumable SSE, PRD/TRD/ADRs, known-issues log |

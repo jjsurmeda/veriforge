@@ -55,8 +55,8 @@ abstention accuracy and p50 latency.
   the Redis adapters are scoped to slice 8 only, behind the `redis` Compose
   profile, and stay off by default.
 - **All routing, classification, scoring and verification decisions go
-  through `DecisionEngine`** (Jev primary via OpenRouter System One, LLM
-  fallback, circuit breaker). Never call an LLM directly for something that
+  through `DecisionEngine`** over pluggable decision providers (Jev by
+  default, LLM judge fallback, circuit breaker; ADR-005). Never call an LLM directly for something that
   fits a `Noul`, `Choice` or `Score` question — see TRD §8. One approved
   exception (batch A, 2026-09-28): the greeting fast path in
   `graph/auto.py` skips ingress for a fixed allowlist of raw messages of

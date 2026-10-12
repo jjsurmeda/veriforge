@@ -109,11 +109,11 @@ flowchart TD
   A --> B[Rewrite + summary]
   B --> C{Mode}
   C -->|Auto / Fast| D[Multi-query retrieve<br/>rerank + sanitize]
-  D --> E{Sufficient?}
+  D --> E{Evidence check<br/>corrective}
   E -->|no, retries left| D
-  C -->|Deep| F[Plan sub-questions]
-  F --> G[Parallel hop retrieve<br/>+ extract notes]
-  G --> H{Controller}
+  C -->|Deep| F[Agent: plan next step]
+  F --> G[Hop retrieve<br/>+ extract notes]
+  G --> H{Agent: search again<br/>or answer?}
   H -->|need more| G
   E -->|yes| I[Conflict check]
   H -->|sufficient| I
@@ -126,25 +126,37 @@ flowchart TD
 Ingress also runs the rewrite in parallel, so the two top boxes cost one
 round trip.
 
-*(Amended 2026-10-02, PRD v3.)* **Auto is single-hop.** The multi-hop branch
-is Deep only; Auto's `complexity` decision affects query parts, not hops. The
-"Sufficient?" box is two evidence checks (sufficiency and relevance/
-answerability, below), with one rewrite + retry. Abstentions carry no
-citations (KI-25).
+**Stages.** The pipeline is a sequence of LangGraph stage nodes, each a
+small function over an explicit typed run state: ingress → rewrite/variants
+→ retrieve → rerank → sanitize → evidence check → generate → review →
+finish. Auto, Fast and Deep compose the same stages; OKF link expansion
+(v1.1) is one more stage after the evidence check.
+
+**Auto is adaptive + hybrid, single-hop.** Ingress picks the intent; the
+intent selects the generator instructions and, for gist questions, adds
+section summaries to the evidence. The evidence check is **one corrective
+check** (PRD TR-4): insufficient → one corrected retrieval (rewritten or
+decomposed query, summaries) → check again → answer or abstain. A
+named-entity guard keeps passages about a different entity out of the
+evidence. Abstentions carry no citations.
+
+**Deep is agentic.** An agent loop over the same stages: decide the next
+sub-question, retrieve, extract notes, then decide to search again or
+answer (DecisionEngine `Choice`), up to 4 hops or the credit budget.
 
 | Node | Engine | Behaviour |
 | --- | --- | --- |
 | Ingress | Jev, one call | Questions: `guard_injection`, `guard_jailbreak`, `guard_pii`, `off_topic` (noul); `intent` (choice: chitchat, lookup, compare, summarize, multi-part, follow-up, library); `source` (choice, if source = Auto); `complexity` (choice, if mode = Auto); `lexical_weight` (score 0–1); `risk` (choice: low, high). `intent = chitchat` (and not `off_topic`) routes to a direct small-talk reply: no retrieval, no citations, no reviewer, no abstention. *(Amended 2026-09-28, batch A — greeting fast path: a raw message of ≤ 40 chars whose normalised form (NFKC, lowercase, letters/spaces only, ≤ 4 words) exactly matches the greeting allowlist skips ingress and retrieval; the generator receives the canonical phrase only.)* *(Amended 2026-09-30, C2 — `intent = library` answers "what books do we have" / "how many documents are in my sources" from the document list of the chat's own scope (its container plus Shared, the same ids retrieval is given), not from retrieval: no retrieval, no citations, no reviewer. Only documents in a searchable state are listed. Language per book is not reported — no document language is stored.)* |
 | Rewrite + summary | Small LLM | Condenses the question with history; refreshes the rolling chat summary every 10 turns. |
 | Multi-query retrieve | Small LLM + SQL | 3 query variants (Auto only), each through hybrid search; results fused. Fast uses the rewritten query only. |
-| Sufficient? | Jev | `sufficient` noul over question + top chunks *(amended 2026-10-02: the evidence lists every reranked child first, then parent context while the 9,000-char budget lasts; D2)*. Answer-first *(amended 2026-09-28, batch A)*: at or above `sufficient_abstain`, generate; below it, rewrite and retry once, then abstain. |
-| Relevance gate *(2026-10-02)* | Jev (via `JevRerank`) | Second evidence check: the max raw Jev rerank score over the post-sanitize winners must reach `rerank_abstain` (0.60); both checks must pass. Applies only when Jev reranked and at least one passage got a real score. Published as a `decision` named `relevance`. **P2 replaces it with an answerability `Noul` per passage** ("does this passage contain the answer?"; for summary intents, coverage of the subject). |
-| Plan | Planner LLM | Streams a plan; emits 2–5 sub-questions with dependencies. |
+| Evidence check | Decision provider | `sufficient` noul over the question and the reranked evidence (children first, then parent context within the 9,000-char budget; section summaries for `summarize` intent). Below the provider's threshold: one corrective retrieval, then check again; still below → abstain. |
+| Entity guard | Decision provider | When the question names an entity, each passage is asked whether it concerns any one of the named entities; every named entity must be covered by a passing passage. |
+| Agent: plan next step | Planner LLM + decision provider | Picks the next sub-question from the notes so far; streams it to the trace. |
 | Hop retrieve | SQL + small LLM | Independent sub-questions run in parallel; notes extracted per hop with chunk ids kept. |
-| Controller | Jev | `sufficient` / `need_more` + next sub-question type. Stops at 4 hops or the credit budget. *(OKF, planned O4: the Choice gains a `follow_link` option, through DecisionEngine, never the planner LLM; ADR-004.)* |
+| Agent: search again or answer | Decision provider | `Choice`: `search_again` / `answer` (+ `follow_link` with OKF, v1.1). Stops at 4 hops or the credit budget. |
 | Abstain | Generator LLM | Fixed template: what was found (**plain text, no citations**, KI-25), what is missing, offers Web or Deep as buttons. English questions get the template with no model call; other languages get it translated, with the target language named (KI-29). |
 | Conflict check | Jev | `conflict` noul across top chunks from different documents or source types. If yes, the priority rule and both citations go into the prompt. *(2026-10-02: today's side assignment is a midpoint split of document ids and the call is untimed: KI-34.)* |
-| Generate | Generator LLM | Streams the answer with `[n]` markers; native reasoning streamed when the model exposes it. No tools. |
+| Generate | Generator LLM | Streams the answer with `[n]` markers. Base prompt (sources-are-data, citation and grounding rules) plus one block per intent (lookup, summarize, compare, multi-part). Best-ranked passages at the start and end of the sources block. No tools. |
 | Review + deliver | Section 10 | Risk-based delivery; claim verdicts; optional single revision; output guardrail; suggestions in parallel. |
 
 **Mode behaviour**
@@ -196,12 +208,15 @@ Progress: `prepare_auto_run` receives `publish=` so its steps stream live,
 and `retrieve` publishes a sub-step per query variant, so no gap exceeds
 2 s.
 
-## 8. Decision layer: Jev and LLM fallback
+## 8. Decision layer: pluggable decision providers
 
 All classification, routing, scoring and verification go through one
-`DecisionEngine` interface. Jev on OpenRouter is primary; a small LLM with
-structured output is the fallback. The graph never knows which engine
-answered.
+`DecisionEngine` interface. The engine runs a **primary decision provider**
+and a **fallback provider**, both behind the `DecisionProvider` interface
+(ADR-005): Jev (default primary), an LLM judge (default fallback), and other
+decision models from OpenRouter's decision list. The provider is chosen per
+run (admin default, eval run, comparison view). The graph never knows which
+provider answered; every decision event records it.
 
 **Interface.** `decide(state: dict | str, questions: dict[str, Question])
 -> dict[str, Answer]`, where `Question` is `Noul` (yes-probability),
@@ -223,15 +238,17 @@ Choice asks for a probability per option, normalised to sum to 1.
 - Per call: a Jev error or timeout retries once on the fallback.
 - Circuit breaker: 3 failures within 60 s opens the breaker; all
   decisions use the fallback for 60 s, then one probe call to Jev.
-- Admin mode: `auto` (default), `jev_only`, `fallback_only`.
-- Thresholds are stored per engine, so a fallback probability of 0.7 is
-  not treated as a Jev 0.7.
+- Provider selection: admin default primary and fallback; an eval run or the comparison view may override both for one run.
+- Thresholds are stored per provider, so one provider's 0.7 is never
+  treated as another's 0.7.
 - Every decision event carries `engine`; the trace marks fallback
   decisions.
 
-**Shadow mode.** For a configurable sample (default 2%), the fallback
-also answers asynchronously. Disagreements are stored in
-`decision_shadow` and shown on the eval page.
+**Shadow mode and comparison.** For a configurable sample (default 2%), a
+second provider also answers asynchronously; results are stored in
+`decision_shadow`. The comparison view (PRD AD-11) replays one question
+across chosen providers and shows verdicts, scores, latency and cost side by
+side.
 
 **Decision catalogue**
 
@@ -244,9 +261,8 @@ also answers asynchronously. Disagreements are stored in
 | lexical_weight | Score 0–1 | Retrieval fusion | Used as weight |
 | chunk_injection | Noul | Sanitizer | Drop at ≥ 0.7 |
 | sufficient | Noul | Single-hop loop | Answer-first *(amended 2026-09-28, batch A)*: generate at or above `sufficient_abstain`; below it one rewrite + retry, then abstain. `sufficient_retry` is removed; default floor 0.05 |
-| relevance *(2026-10-02)* | Score per passage (`JevRerank`), max taken | Single-hop evidence gate | `rerank_abstain` 0.60 (Jev; fallback cell unmeasured); raw score, never trust-weighted |
-| answerability *(planned, P2)* | Noul per passage | Replaces the relevance gate | Set from the eval sets at P2 |
-| controller | Choice | Deep loop | Argmax *(OKF O4: adds a `follow_link` option)* |
+| entity_match | Noul per passage | Entity guard | Per provider; a passage passes when it concerns any named entity |
+| agent_step | Choice | Deep agent loop | Argmax (`search_again`, `answer`; `follow_link` in v1.1) |
 | conflict | Noul | Conflict check | Disclose at ≥ 0.6 |
 | claim_verdict | Choice | Reviewer | See section 10 |
 | output_toxicity | Noul | Output guardrail | Block at ≥ 0.85 |
@@ -291,7 +307,11 @@ their surrounding context.
    `parent_id`, `ord`, `page`, `heading_path`.
 5. **Embed.** Children embedded as `heading_path + text` in batches of
    100.
-6. **Index.** Rows written in one transaction; document status set to
+6. **Summarise.** Each section gets a short summary, and each document a
+   summary built from its section summaries; summaries are embedded and
+   indexed as their own rows, linked to the section or document. They are
+   retrieved for `summarize` questions only.
+7. **Index.** Rows written in one transaction; document status set to
    `ready`. Starter questions for the document's collection (chat or
    Shared library) are regenerated in the
    background.
@@ -307,7 +327,7 @@ WITH vec AS (top 50 by cosine distance, filtered),
      lex AS (top 50 by pg_search BM25, same filter)
 fused  = Σ weight_i / (60 + rank_i)
          weight: vector = 1 − w, bm25 = w, w = lexical_weight from ingress
-→ top 40 → rerank (Jev Score; `retrieval.reranker`) → top 8 → dedupe adjacent → expand
+→ top 40 → rerank (pluggable, §9.6) → top 8 → dedupe adjacent → expand
 ```
 
 - **Filter.** `owner_id or shared` and `collection_id in (scope)` are
@@ -342,7 +362,17 @@ Query embeddings are cached in Postgres by hash of the normalised query
 text (30-day TTL). Tavily results are cached as above. Rerank results are
 not cached.
 
-### 9.5 OKF bundles *(amended 2026-10-02, PRD v3 §4.7, ADR-004)*
+### 9.6 Rerankers
+
+`Reranker` interface: `rerank(query, passages, top_n) -> [(index, score)]`.
+Implementations: Cohere, NVIDIA, **Jev** (one batched call; each passage is
+asked "Does the passage contain the information needed to answer or verify
+the question?" graded off-topic / related / partly / fully, ranked by the
+expected level), an **LLM judge** (same rubric, a chat model), and **fused
+order** (no rerank). Chosen per run like decision providers (PRD AD-10). A
+rerank outage degrades to fused order and never fails the run.
+
+### 9.5 OKF bundles *(v1.1, PRD §4.7, ADR-004)*
 
 - **Storage:** each concept is a `documents` row with `format = 'okf'` and
   `okf_meta` (JSONB: type, title, tags, status, `sources`, `generated`,
@@ -883,6 +913,18 @@ context use and scores per run; the usage page and admin dashboards
 aggregate these with SQL. Structured JSON logs go to CloudWatch Logs with
 7-day retention.
 
+### Release checks and showcase benchmark
+
+- `make check-work`: the quality bar in `docs/plans/2026-10-13-0340-plan.md`
+  (lint, types, tests, eval gate, entity-mismatch, books acceptance with
+  answer content, Deep set). `make check-stable` and `make check-fast` as
+  defined there. A phase is done when its check passes twice in a row.
+- `make benchmark`: every reranker on BEIR SciFact and on the books set
+  (a passage is relevant when it contains the item's required content),
+  and every decision provider on the acceptance and entity-mismatch sets.
+  Writes `docs/benchmarks/YYYY-MM-DD-*.md`; the README links the latest.
+  Run at phase end and before release.
+
 ## 16. Deployment, infrastructure and cost
 
 Stage 1 runs on one t4g.medium in ap-southeast-1 for about $39 per month
@@ -934,24 +976,12 @@ Estimated $90–130 per month.
 instance, restore the latest `pg_dump`, repoint the Elastic IP. Target
 30 minutes, tested once before launch.
 
-## 17. Build plan (Claude Code slices)
+## 17. Build plan
 
-The build is ten vertical slices, each merged, deployed and demoable
-before the next starts. From slice 3, each slice must also pass the eval
-gate in section 15.
-
-| Slice | Delivers | Acceptance criteria | Requirements |
-| --- | --- | --- | --- |
-| 0. Foundation | Monorepo, uv and pnpm, Compose, settings on both sides, OpenAPI codegen, CI, `CLAUDE.md` with conventions and the SSE contract | `docker compose up` gives a healthy API, DB and SPA; CI runs lint, types and tests | — |
-| 1. Auth and streaming chat | Signup, login, Google OAuth, chat CRUD, plain LLM streaming over the SSE contract via `PostgresRunBus`, cancel, model picker, Langfuse, first AWS deploy | A signed-in user streams an answer on the deployed URL with 2 Uvicorn workers; stream and cancel work from either worker; replay and resume work; trace visible in Langfuse | AC-1, AC-2, CH-5, CH-6, CH-8 |
-| 2. Ingestion and sources | Collections, upload, parse, page flags, chunking with sections, embedding, BM25 index, Sources page, worker limits | 50-page PDF ready in under 2 min; flags shown; chat latency unaffected during ingestion | SR-1–SR-4 |
-| 3. Retrieval and Fast mode | Hybrid SQL, filters, rerank, small-to-big, citations UI, seed eval set, eval runner CLI | Fast mode answers with hover citations; seed set baseline stored; ownership-filter tests pass | SR-6, TR-1, TX-2 |
-| 4. Decision layer and Auto | `DecisionEngine` (Jev + fallback, breaker, shadow), ingress, sanitizer, structural injection defence, web search, multi-query, fusion weights, retry loop, abstention, conflict check, Trace panel | Auto meets section 5 latency; abstention ≥ 80% on the seed set; injection items pass | CH-1, CH-2, TR-4, TR-5, TX-1, SR-5 |
-| 5. Deep mode | Planner, parallel hops, controller, notes, native thinking stream, Deep budget | Multi-hop seed items beat Auto on faithfulness and recall; p50 under 30 s | CH-4 |
-| 6. Reviewer and trust UI | Claim extraction, Jev verification, scores, revision, risk-based delivery, output guardrail, suggestions, metrics and context UI | Faithfulness ≥ 0.90 on the seed set; chips recolour live; revision diff shown | TR-2, TR-3, TR-6, TR-7, CH-9, TX-3, TX-4 |
-| 7. Quotas and admin | Ledger, gate, reserve and settle, quota meter; all admin pages, versioned settings, audit log | Parallel runs cannot exceed limits; settings rollback works | AC-3–AC-6, AD-1–AD-6, AD-8, AD-9 |
-| 8. Evals page, demo and hardening | Eval page with datasets, synthetic generation, harvest, run diffs; demo corpus and account; usage page; restore test; security review; `RedisRunBus`, Redis cache and rate-limiter adapters behind Compose profile `redis`; load test of both buses | Restore under 30 min; demo account read-only; all section 5 targets met; the same test suite passes on both buses; load-test results recorded in ADR-001 | AD-7, TX-5, TX-6, CH-7, CH-10 |
-| 9. OCR (v1.1) | OCR adapter behind toggle for `low_text` pages; Jev reranker A/B | Scanned PDF answers cite the right page | — |
+Slices 0–8 are built. The remaining work and its order live in
+`docs/plans/2026-10-13-0340-plan.md`: stage refactor, proven-RAG completion,
+pluggable providers and benchmark, stability, latency, UI redesign,
+deployment. OKF (§9.5) and OCR follow in v1.1.
 
 **Working agreement for Claude Code**
 

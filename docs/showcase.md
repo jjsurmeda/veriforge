@@ -6,10 +6,10 @@ streams every decision it makes while it works. It's built production-shaped:
 multi-user accounts, quotas, an admin console, versioned settings, an eval
 gate in CI, and a written record of every decision and defect.
 
-> **Status (2026-10-02).** Core RAG, trust layer, eval gate and multilingual
-> support are built and merged. OKF support and the latency work are planned
-> (see [Roadmap](#roadmap)). Every number on this page carries the date it
-> was measured. Where something isn't measured yet, it says so.
+> **Status (2026-10-13).** Core RAG, trust layer, eval gate and multilingual
+> support are built. Stage refactor, proven-RAG completion and the pluggable
+> provider benchmark are in progress (see [Roadmap](#roadmap)). Every number
+> on this page carries the date it was measured.
 
 ---
 
@@ -89,7 +89,7 @@ And the engineering it demands:
 
 ---
 
-## OKF and RAG: better together *(planned, ADR-004)*
+## OKF and RAG: better together *(v1.1, ADR-004)*
 
 [Google's Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog)
 (v0.2) is a bundle of markdown concept files with frontmatter, links between
@@ -325,16 +325,17 @@ in this window yet" rather than drawing an empty chart.
 
 ## Roadmap
 
-From [the production-readiness plan](plans/2026-10-02-0430-backend-prod-readiness-v3.md):
+From [the plan](plans/2026-10-13-0340-plan.md):
 
-1. **Eval sets:** a counterfactual corpus, a label audit of every item,
-   per-corpus gates, and graders validated against human labels
-2. **Answerability:** decline when no passage contains the answer; stop
-   declining broad questions; ambiguity disclosure
-3. **OKF:** import, link traversal and export (ADR-004)
-4. **Latency:** answers ≤ 5 s p50, declines ≤ 10 s p95 (ADR-003)
-5. Reliability, observability and security hardening
-6. Deployment
+1. **Stage refactor and cleanup:** the pipeline as stage nodes
+2. **Proven RAG, complete:** answer-containment rerank, one corrective
+   evidence check, per-intent generation, section summaries, Deep as an
+   agent loop
+3. **Pluggable providers and benchmark:** decision models and rerankers
+   compared side by side, tables published here and in the README
+4. **Stability**, then **latency** (answers ≤ 5 s p50, ADR-003)
+5. UI redesign, then deployment
+6. **v1.1:** OKF import, link traversal and export (ADR-004); OCR
 
 ---
 
