@@ -17,11 +17,11 @@ Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 | check-work (acceptance) | KI-70 | the relevance gate abstains on broad/summary answerables; no threshold separates |
 | check-work (acceptance) | KI-28 | reranker choice settled; the abstention signal itself is the open question |
 | check-work (acceptance) | KI-56 | RP-77 answer chunk carries an injection block, so it false-abstains |
-| check-stable | KI-15 | order-dependent hang in test_chats_runs.py; a flaky suite fails "repeatable" |
-| check-stable | KI-31 | attribution cause still open; flaky overhead figure fails "gate 3x same verdict" |
+| check-work (1d) | KI-15 | order-dependent hang in test_chats_runs.py; a flaky suite fails "repeatable" |
+| check-work (1d) | KI-31 | attribution cause still open; flaky overhead figure fails "gate 3x same verdict" |
 | check-stable | KI-57 | degrade-to-fail when the decision fallback truncates; fault injection covers it |
 | check-stable | KI-32 | record of faithfulness variance; gate tolerances already set |
-| check-stable | KI-43 | absence-claim verdict flips between runs (grader quality) |
+| check-work (1d) | KI-43 | absence-claim verdict flips between runs (grader quality) |
 | check-stable | KI-49 | reviewer rarely makes an unsupported judgement itself |
 | check-stable | KI-51 | cf subset spread 0.0667 vs 0.06 band |
 | UI redesign | KI-22 | trace tab redesign; belongs to the UI pass |
