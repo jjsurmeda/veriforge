@@ -117,7 +117,8 @@ def display_threshold(name: str, engine: Engine) -> float | None:
     threshold_name = DISPLAY_THRESHOLDS.get(name)
     if threshold_name is None and name.startswith("chunk_injection_"):
         threshold_name = "chunk_injection_drop"
-    # P2a item 4: one Noul per passage, named entity_<i>.
+    # P2a item 4: one Noul per (passage, entity) pair, named entity_<passage>_<entity>
+    # (the second index is KI-72's). The prefix test covers both.
     if threshold_name is None and name.startswith("entity_"):
         threshold_name = "entity_match"
     # KI-34, lane E item 1: the conflict check asks one question per candidate

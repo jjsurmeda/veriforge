@@ -13,7 +13,7 @@ from typing import Protocol
 import httpx
 
 from config import get_settings
-from decisions.engine import DecisionEngine
+from decisions.engine import DecisionEngine, DecisionUnavailable
 from decisions.thresholds import Engine
 from retrieval.context import count_tokens
 from retrieval.hybrid import ScoredChunk
@@ -249,8 +249,18 @@ async def apply_rerank(
         top_n = int(runtime_value("retrieval.top_k", top_n))
     try:
         ranked = await provider.rerank(query=query, documents=[c.text for c in chunks], top_n=top_n)
-    except httpx.HTTPError as exc:
+    except (httpx.HTTPError, DecisionUnavailable) as exc:
         # A rerank outage degrades retrieval to fused order; it never fails the run.
+        #
+        # Both failure classes are here, and the second one was missing until
+        # phase 1d item 1. An HTTP provider raises `httpx.HTTPError`, but the
+        # default provider is `JevRerank`, which goes through DecisionEngine:
+        # when Jev *and* the LLM fallback are both unreachable, the engine
+        # raises `DecisionUnavailable`, an `AppError`. Catching only
+        # `httpx.HTTPError` meant the handler the contract above is written
+        # against did not cover the provider that actually runs — so one
+        # transient decision-layer outage during rerank failed a whole item,
+        # which is what made "passes twice" fail at random.
         logger.warning("rerank failed (%s); using fused order", exc)
         ranked = await FusedOrderRerank().rerank(
             query=query, documents=[c.text for c in chunks], top_n=top_n

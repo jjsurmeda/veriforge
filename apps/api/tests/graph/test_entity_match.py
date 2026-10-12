@@ -51,6 +51,86 @@ AW2000_PORT = "The AW-2000 supports up to 8 Gbps on port 1."
 KESTREL_BATTERY = "The Kestrel K9 battery lasts 38 hours on a full charge."
 
 
+async def test_a_compare_question_with_one_passage_per_entity_answers(
+    db: AsyncSession, user_a: Any, no_llm: dict[str, list[str]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """KI-72 end to end, through the real pipeline.
+
+    `compare-inventors` declined on all sixteen of its recorded entity readings
+    across two runs because the Noul asked each passage whether it concerned
+    BOTH characters and `_rerank_candidates` had split the top-k so each passage
+    was about exactly one. Two passages, one per entity, is what the corpus
+    actually retrieves for that question — so with the fixed per-entity
+    question both entities are covered and the run answers.
+    """
+    chat, message_id = await _seed_chat(db, user_a)
+    chunks = await _corpus(
+        db,
+        user_a,
+        [
+            "Victor Frankenstein abandons his creature and it hunts him down.",
+            "The Time Traveller shows his guests the future and is disbelieved.",
+        ],
+    )
+    _patch_pipeline(monkeypatch, chunks, no_llm)
+
+    jev = _PerEntityJev(matching=["Victor Frankenstein", "Time Traveller"])
+    run = await prepare_auto_run(
+        get_session_factory(),
+        await _params(
+            db,
+            chat,
+            user_a,
+            message_id,
+            "Compare how Victor Frankenstein and the Time Traveller deal with the "
+            "consequences of their inventions",
+        ),
+        DecisionEngine(jev=jev, mode="jev_only"),
+    )
+
+    assert named_entities(
+        "Compare how Victor Frankenstein and the Time Traveller deal with the "
+        "consequences of their inventions"
+    ), "the compare question must still name entities for this to be a KI-72 test"
+    assert run.abstain_event is None, "a compare question with both sides covered must answer"
+    assert len(run.contexts) == 2
+
+
+async def test_a_compare_question_missing_one_side_still_declines(
+    db: AsyncSession, user_a: Any, no_llm: dict[str, list[str]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The loosening must not become an answer from half the evidence: only the
+    Time Traveller is covered, so the run declines rather than answering one
+    side of a two-sided comparison."""
+    chat, message_id = await _seed_chat(db, user_a)
+    chunks = await _corpus(
+        db,
+        user_a,
+        [
+            "The Time Traveller shows his guests the future and is disbelieved.",
+            "He returns to the laboratory and finds his time machine gone.",
+        ],
+    )
+    _patch_pipeline(monkeypatch, chunks, no_llm)
+
+    jev = _PerEntityJev(matching=["Time Traveller"])
+    run = await prepare_auto_run(
+        get_session_factory(),
+        await _params(
+            db,
+            chat,
+            user_a,
+            message_id,
+            "Compare how Victor Frankenstein and the Time Traveller deal with the "
+            "consequences of their inventions",
+        ),
+        DecisionEngine(jev=jev, mode="jev_only"),
+    )
+
+    assert run.abstain_event is not None
+    assert run.contexts == []
+
+
 @pytest.mark.parametrize(
     ("question", "expected"),
     [
@@ -117,6 +197,32 @@ class _EntityJev(_IngressJev):
                 )
             else:
                 answers[name] = Answer(engine="jev", latency_ms=1, value=0.01, probability=0.01)
+        return answers
+
+
+class _PerEntityJev(_EntityJev):
+    """KI-72: judge each (passage, entity) pair on whether the passage is about
+    THAT entity, which is what the fixed Noul now asks.
+
+    `_EntityJev` matches the entity's marker anywhere in the passage, which is
+    what a single-entity question needs and is unchanged by the fix.
+    """
+
+    async def decide(
+        self, *, state: dict[str, Any] | str, questions: dict[str, Question]
+    ) -> dict[str, Answer]:
+        answers: dict[str, Answer] = {}
+        for name, question in questions.items():
+            if not name.startswith("entity_"):
+                continue
+            # Which entity this question is about: it is the quoted name in the
+            # prompt, and the passage is everything after [passage].
+            entity = question.prompt.split("entity '", 1)[1].split("'", 1)[0]
+            passage = question.prompt.split("[passage]", 1)[1]
+            value = self._yes if entity in passage else self._no
+            answers[name] = Answer(engine="jev", latency_ms=1, value=value, probability=value)
+        rest = {name: q for name, q in questions.items() if not name.startswith("entity_")}
+        answers.update(await super().decide(state=state, questions=rest))
         return answers
 
 

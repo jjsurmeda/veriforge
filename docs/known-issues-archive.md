@@ -2491,3 +2491,163 @@ see flagged-but-not-dropped chunks, or re-chunk the corpus so the
 injection block does not swallow the fact. Not fixed in P2a.
 
 **Closed 2026-10-12:** passed two consecutive full check-work runs (phase 1b final, phase 1c run 2 on `72263cb`).
+
+## KI-72: the entity Noul reads a compare question as a conjunction, so a compare item is a stable false abstention
+
+Logged 2026-10-12 (phase 1c item 3, commit `72263cb`, first full acceptance run
+since the KI-70 rule landed). **Breaks `make check-work` step 9**: 2 of 32
+answerable items declined, and PRD §5 allows 1.
+
+- **What:** `compare-inventors` ("Compare how Victor Frankenstein and the Time
+  Traveller deal with the consequences of their inventions") declines. It is
+  not the relevance gate and it is not sufficiency: relevance **0.97** on both
+  attempts (floor 0.60) and sufficiency **0.15 / 0.22** then **0.14 / 0.14** on
+  a rerun (floor 0.05). The signal that abstains it is KI-54's per-passage
+  entity check.
+- **The evidence, from the run's own `run_events`** (the acceptance database
+  survives the step's teardown, so this is read back rather than inferred).
+  Across two runs, all sixteen entity readings for this item:
+
+  | | readings | min | max | floor |
+  | --- | --- | --- | --- | --- |
+  | run 1 | 8 | 0.05 | **0.44** | 0.50 |
+  | rerun | 8 | 0.19 | **0.40** | 0.50 |
+
+  Not one passage clears the floor, in either run, and the band is narrow
+  (0.05–0.44). That is not jitter around a boundary; it is a signal that
+  consistently says no to evidence that is provably about the two named
+  characters — the same passages the reranker scored at 0.97, and the same
+  item that **answered** in phase 1b run 1.
+- **The mechanism, read from the code rather than inferred**
+  (`graph/auto.py::_entity_passage_questions`): one Noul is built per top-k
+  passage, asking "does this passage concern **that same entity or entities**"
+  — and for a `compare` question `named_entities` returns *both* characters, so
+  the prompt reads "concern 'Victor Frankenstein' and 'Time Traveller'". A
+  passage about the Time Machine is literally not about Victor Frankenstein, so
+  it scores low; a passage about Frankenstein is not about the Time Traveller,
+  so it scores low. `_rerank_candidates` deliberately splits a compare item's
+  top-k by entity (KI-12), which guarantees both halves are single-entity
+  passages and the conjunction can never be satisfied. The check asks "is this
+  passage about ALL the named entities" where the product needs "is this
+  passage about ANY of them".
+- **Why it is not fixed here.** This is KI-54's signal, it predates this lane,
+  and nothing in this lane touches it — both phase-1c items were proven
+  no-ops for this item from the run's own decisions: intent `compare`, so KI-70's
+  `summarize` exemption never applied, and relevance 0.97, so the veto was not
+  in force either. Fixing it means changing the question the Noul asks, and
+  that signal is what carries the **entity-mismatch set's 12/12 clean
+  declines** — a change to it invalidates the evidence for the whole class and
+  needs before/after on fast20, counterfactual and entity-mismatch together
+  (agents.md). Phase 1c had one run's budget left and no recorded entity values
+  from phase 1b to replay a candidate against — the same evidence gap KI-70's
+  doc records. Shipping an unproven change to the abstention signal to make a
+  gate pass is the mistake this file exists to prevent.
+- **Done when:** the entity Noul asks about each named entity separately (or
+  "any of them"), `compare-inventors` answers, and entity-mismatch is still 12/12
+  clean declines with 0 confident wrong on the same commit.
+- **Also noted, and NOT the same thing:** `amb-alice-sister` was the second
+  false abstention in that run (sufficiency 0.31, relevance 0.89, entity 0.96 —
+  all three clear) and it **passed on a rerun** at sufficiency 0.39. The
+  generator gave an honest decline and the P2a prose-decline Noul caught it: the
+  corpus names Alice's sister exactly once and never names her, so "she is
+  unnamed" is the true answer to "who is she?". That is an intermittent
+  generation miss, not a label defect — relabelling the item would have been
+  wrong, and it is not logged as one.
+
+**Closed 2026-10-13 (phase 1d item 2, `7735340`).** The entity Noul now asks
+about each named entity SEPARATELY -- one Noul per (passage, entity) pair, named
+`entity_<passage>_<entity>` -- and the check passes only when EVERY named entity is
+covered by at least one passing passage. A single-entity question is unchanged (one
+entity means "any" and "every" are the same predicate). All three parts of this
+entry's Done-when are verified on one commit, `f7cd86d`, from the live run's own
+recorded fields: `compare-inventors` graded `answer`/`answer`/pass (ttft 34904 ms,
+sufficiency 0.15), and entity-mismatch returned **12/12 clean declines, 0 confident
+wrong, 0 errored**. `outside-holmes-boston`, which this check holds alone, still
+declined (sufficiency 0.37/0.36). Both new end-to-end tests fail on the parent
+commit and pass here, so they are repros rather than restatements.
+
+
+## KI-31: One unresolvable generation id discards an item's whole overhead figure
+
+Logged 2026-10-01 (D3 item 4), found while deciding whether the fast20
+baseline could be written. It is the last thing standing between D3 and a
+baseline.
+
+- **What:** `evals/attribution.py` records `our_overhead_ms` for an item
+  only when `Attribution.complete` is true, and `complete` is
+  `unattributed == 0 and attributed > 0` — i.e. when **every** generation id
+  on that item resolved to a stats record within `STATS_ATTEMPTS` (8) ×
+  `STATS_BACKOFF_SECONDS` (3.0) ≈ 24 s. One id that never comes back throws
+  away the item's entire figure, including the provider time that *did*
+  resolve. Across D3's three fast20 runs, 16, 18 and 17 of 20 items were
+  attributed (80% / 90% / 85%), against a ≥ 90% bar.
+- **Evidence, run 3:** the four uncovered items — "Does the AW-2000 work with
+  Zigbee smart-home hubs?" (abstained), "When will the AW-3000 be released?"
+  (abstained), "How much does the AW-2000 weigh with the mounting bracket?",
+  "How long is the warranty on an AW-2000?" — each carry a real
+  `provider_ms` of 3481 / 6202 / 3622 / 3472 ms and a null
+  `our_overhead_ms`. So the calls *were* recorded; one id per item did not
+  resolve. Their wall clocks were 11545 / 10140 / 7747 / 6866 ms, which is
+  33706 ms of pipeline time silently counted as nobody's.
+- **Why it matters beyond the bar:** `p50_our_overhead_ms` is the figure the
+  gate hard-limits (TRD §15, KI-18). It is a median over the *attributed*
+  items, so dropping the slow items biases it **downward** — the gate is
+  currently comparing a flattering subset. That is the opposite of the
+  conservative direction, which is why this is a defect and not a coverage
+  footnote.
+- **PARTIALLY FIXED (2026-10-02, D4 item 2, `de725d4`); the cause is still
+  undiagnosed.** Two changes, one of which was the instrumentation this entry
+  asked for:
+  - *Partial attribution is reported instead of discarded.* A generation that
+    resolves contributes its `provider_ms` even when a sibling on the same item
+    does not; `stage_ms` records `generations_unattributed` and a one-line
+    description of each unresolved id. `our_overhead_ms` is **still withheld**
+    on a partial item — a partial sum understates provider time and would
+    overstate our overhead, and the gated figure must not be a guess. The
+    summary gains `p50_total_ms_unattributed_items`: the median wall clock of
+    exactly the items the gated median excludes, so the downward bias has a
+    number next to it. No figure is invented for a miss (KI-18).
+  - *The miss is now diagnosable.* `record_generation_ids` returns
+    `GenerationRef` — id, source (`litellm`/`jev`), model, role, job and call
+    time — instead of a bare id, and `_stats` returns the HTTP status of its
+    last lookup alongside the record. Every unresolved id is logged with its
+    call site, final status, attempt count and age. Role and job come off the
+    request metadata `providers/llm.py` already sends, so nothing is threaded
+    through the graph. `eval_dump_stages.py` carries all of it into the
+    `.data/evals/<timestamp>-<sha>.json` export, so it survives the database
+    drop that destroyed the evidence three times running.
+  - **Still open: the cause.** The narrowed candidates, none ruled in or out:
+    OpenRouter never indexing a stats record for some requests; Jev's
+    `gen-dec-*` ids behaving differently from `gen-*` ones; a stream that died
+    and restarted, recording the first attempt's id with no completed
+    generation behind it; or a transient 5xx. The landing delay is **ruled
+    out as the whole story** for any id abandoned well past ~20 s, which the
+    new `age_ms` makes visible per id. Read the ids back by hand with
+    `curl https://openrouter.ai/api/v1/generation?id=…` from the export before
+    theorising further.
+  - Note a second, *distinguishable* failure now reported separately: a record
+    that lands but carries no duration field (`api_type` set, no `latency` and
+    no `generation_time`) contributes nothing and used to look identical to a
+    404. That class is reported with `last_status=200` and its `api_type`.
+- **CAUSE FOUND AND FIXED (2026-10-02, `692f073`); the entry closes.** The
+  budget, not the calls: measured 0.4 s / 0.4 s / 0.4 s / **123.6 s** for four
+  consecutive calls' records to land, against a 21 s budget. Every candidate
+  class this entry listed is ruled out — the three ids that 404'd for a whole
+  fast20 budget (one Jev `decisions`, two `gpt-4o-mini` `rewriter`) all answered
+  **200** on a manual read a minute later with their durations intact. Budget
+  now 30 × 6.0 s ≈ 174 s, pinned by a test against the measured 123.6 s.
+- **Do not** fix this by loosening the gate's thresholds or by writing a
+  baseline on the current coverage. That is the mistake KI-6 has already
+  recorded once for latency. TRD §15's "coverage must not bias the median
+  downward" paragraph landed with the fix.
+
+**Closed 2026-10-13 (phase 1d item 3b, `f7cd86d`).** The cause was already found
+and fixed in `692f073` (the stats record's landing delay, measured at 123.6 s against
+a 21 s budget); what was missing was a test holding the behaviour in place, and the
+entry was never moved out of the open list. `tests/evals/test_attribution_coverage.py`
+now pins it from this entry's own recorded shape: partial attribution KEEPS the
+provider time that resolved and counts coverage per id, and the gated
+`our_overhead_ms` stays withheld on a partial item -- asserted with the arithmetic
+(11545 - 1000 = 10545 ms would charge the unresolved generation's time to us, which
+is the flattering direction for a hard-limited figure). No behaviour change.
+

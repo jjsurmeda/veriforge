@@ -15,7 +15,7 @@ import math
 import re
 import time
 import unicodedata
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable
 from dataclasses import dataclass
 from functools import partial
 from itertools import combinations
@@ -587,28 +587,81 @@ def named_entities(question: str) -> list[str]:
 def _entity_passage_questions(
     question: str, entities: list[str], top_contexts: list[ExpandedContext]
 ) -> dict[str, Noul]:
-    """KI-54 (P2a item 4): one Noul per top-k passage, "is this passage
-    about the entity the question names?", batched into the existing
+    """KI-54 (P2a item 4): one Noul per (top-k passage, named entity) pair,
+    "is this passage about THIS entity?", batched into the existing
     post-sanitize sufficiency call — no extra round trip. Skipped when the
-    question names no entity or nothing survived to the top-k."""
+    question names no entity or nothing survived to the top-k.
+
+    **One entity per question, never the conjunction** (KI-72). This used to
+    build a single prompt per passage naming "the entity or entities
+    'Victor Frankenstein' and 'Time Traveller'" and asking whether the passage
+    concerned "that same entity or entities". For a compare question that is a
+    conjunction over passages, and `_rerank_candidates` deliberately splits a
+    compare item's top-k by entity (KI-12) — so each passage is about exactly
+    one of the two and the conjunction can never be satisfied. The recorded
+    consequence was `compare-inventors` declining on all sixteen entity
+    readings across two runs, none clearing the floor (KI-72).
+
+    Asking per (passage, entity) makes each reading mean what it says, and lets
+    the caller ask the question the product actually needs: "is there at least
+    one passage about this entity?", per entity. For a single-entity question
+    this is byte-for-byte the same set of questions as before — one entity
+    means "any" and "every" are the same predicate.
+    """
     if not entities or not top_contexts:
         return {}
-    entity_list = " and ".join(f"'{entity}'" for entity in entities)
-    return {
-        f"entity_{index}": Noul(
-            prompt=(
-                f"The question below names the entity or entities {entity_list}. "
-                "Does this passage concern that same entity or entities — the "
-                "same product or model family, the same organisation, or the "
-                "same named place or person? Answer yes only if the passage is "
-                "about the named entity; a passage about a different product, "
-                "even in the same category, is not about it.\n\n"
-                f"[question]\n{question}\n\n"
-                f"[passage]\n{top_contexts[index].chunk.text[:1500]}"
+    questions: dict[str, Noul] = {}
+    for passage_index, context in enumerate(top_contexts):
+        passage = context.chunk.text[:1500]
+        for entity_index, entity in enumerate(entities):
+            questions[f"entity_{passage_index}_{entity_index}"] = Noul(
+                prompt=(
+                    f"The question below names the entity '{entity}'. "
+                    "Does this passage concern that same entity — the "
+                    "same product or model family, the same organisation, or the "
+                    "same named place or person? Answer yes only if the passage is "
+                    "about the named entity; a passage about a different product, "
+                    "even in the same category, is not about it.\n\n"
+                    f"[question]\n{question}\n\n"
+                    f"[passage]\n{passage}"
+                )
             )
+    return questions
+
+
+def _entity_passage_decision(
+    answers: dict[str, Answer],
+    names: Iterable[str],
+    entity_count: int,
+    threshold_value: float,
+) -> tuple[bool, float | None]:
+    """Does the evidence cover EVERY entity the question names?
+
+    A passage may be about any one of the named entities, but the run may only
+    answer if each one of them is actually covered — otherwise a compare
+    question with evidence for only one side answers half of it, which is the
+    confident-wrong shape KI-54 exists to prevent. So this is "every entity has
+    at least one passing passage", not "some passage passed".
+
+    Returns the verdict and the maximum reading across the whole batch, the
+    latter being what `_evidence_clearly_absent` judges the retry against.
+
+    With `entity_count == 1` this is exactly the old "any passage matched"
+    rule, so every single-entity question behaves as it did before KI-72.
+    """
+    values = [float(answers[name].value) for name in names]
+    if not values:
+        return True, None
+    # Values arrive passage-major: passage 0's readings for every entity,
+    # then passage 1's, and so on.
+    covered = [
+        any(
+            values[passage * entity_count + entity] >= threshold_value
+            for passage in range(len(values) // entity_count)
         )
-        for index in range(len(top_contexts))
-    }
+        for entity in range(entity_count)
+    ]
+    return all(covered), max(values)
 
 
 def _evidence_clearly_absent(
@@ -1245,8 +1298,9 @@ async def prepare_auto_run(
             # KI-54 (P2a item 4): the per-passage entity Noul rides this
             # same post-sanitize call (TRD §7.1) — no sequential round trip.
             # Empty when the question names no entity: the check is skipped.
+            entity_names = named_entities(current_query)
             entity_questions = _entity_passage_questions(
-                current_query, named_entities(current_query), top_for_check
+                current_query, entity_names, top_for_check
             )
             # TRD §7.1 / lane B item 4: the conflict pairs ride this call too —
             # but ONLY when the sanitizer dropped nothing. When it dropped
@@ -1296,12 +1350,16 @@ async def prepare_auto_run(
             entity_ok = True
             entity_max: float | None = None
             if entity_questions:
-                # Every passage in the top-k is about a DIFFERENT entity when
-                # none of the per-passage Nouls clears the floor.
+                # KI-72: EVERY named entity must be covered by at least one
+                # passing passage. For one entity that is the old "any passage
+                # matched" rule, unchanged.
                 entity_threshold = threshold("entity_match", sufficient.engine)
-                entity_values = [float(sufficient_answer[name].value) for name in entity_questions]
-                entity_max = max(entity_values)
-                entity_ok = any(value >= entity_threshold for value in entity_values)
+                entity_ok, entity_max = _entity_passage_decision(
+                    sufficient_answer,
+                    entity_questions,
+                    len(entity_names),
+                    entity_threshold,
+                )
             # One bar: every signal must clear, with the same single retry.
             if p_sufficient >= abstain_threshold and relevance_ok and entity_ok:
                 break

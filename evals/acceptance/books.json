@@ -791,17 +791,17 @@
     {
       "id": "amb-alice-sister",
       "turns": [
-        "Who is the sister Alice sits with on the riverbank at the start of her adventure?"
+        "What is Alice's sister doing on the riverbank at the start of the story?"
       ],
       "expect": "answer",
       "cite": [
         "Alice"
       ],
       "mention_all": [
-        "sister"
+        "book"
       ],
-      "why_ambiguous": "The corpus names the sister exactly once ('Alice was beginning to get very tired from sitting by her sister on the bank') and never gives her a name, so there is no second referent in the text — but 'sister' is a word the corpus uses for at least four different characters across the library, and the retrieval that has to resolve it is the same one that finds Eleanor in Pride and Prejudice. Included as the cheap half of an ambiguity item: the corpus's answer is thin enough that the wrong sister is easy to reach.",
-      "proof": "Audited by scripts/audit_labels.py over all 10733 passages the test user can retrieve (testing.md: 'Test data is audited like code'). Expect 'answer'. Query 'Who is the sister Alice sits with on the riverbank at the start of her adventure?' (content terms ['adventure', 'riverbank', 'sister', 'alice', 'start', 'sits']) hits 3+ passages; top hit 'The Adventures of Sherlock Holmes.txt' ord 0 (score 14.44): \"f Identity    IV.    The Boscombe Valley Mystery    V.     The Five Orange Pips    VI.    The Man with the Twisted Lip    VII.   The Adventure of the Blue Carbuncle    VIII.  The Adventure of the Speckled Band    IX.    The Adventure of the Engineer’s Thumb    X.     The Adventure of the Noble Bachelor    XI.    The Adventure of the Beryl Coronet    XII.   The Adventure of the Copper Beeches\"",
+      "why_ambiguous": "REWORDED 2026-10-12 (phase 1d item 3, owner decision, labels only). The old turn asked 'Who is the sister Alice sits with on the riverbank at the start of her adventure?', and the corpus never gives her a name, so both recorded outputs said the same true thing - 'she is not named' - one shipped as a cited answer and one as a decline. The item could not tell right from wrong, so it measured the generator's phrasing rather than its grounding. Same precedent as KI-27: reword, don't widen. The corpus supports a fact here: 'Alice was beginning to get very tired of sitting by her sister on the bank, and of having nothing to do: once or twice she had peeped into the book her sister was reading' - the sister is reading. Expect 'answer', cite 'Alice', mention_all ['book']. Class counts unchanged (32 answer / 21 not_in_sources); the reason it was a false abstention is gone, because the question now has an answerable answer.",
+      "proof": "RE-AUDITED 2026-10-12 (phase 1d item 3) by scripts/audit_labels.py over all 10592 passages the test user can retrieve -- verdict CLEAN: 3 hits, no findings. Expect 'answer'. Query \"What is Alice's sister doing on the riverbank at the start of the story?\" (content terms ['riverbank', 'sister', 'alice', 'start', 'story']) hits 3+ passages; top hit \"Alice's Adventures in Wonderland.txt\" ord 0 (score 16.27). SPOT-READ of that passage, which carries the answer and the mention_all string: \"Alice was beginning to get very tired of sitting by her sister on the bank, and of having nothing to do: once or twice she had peeped into the book her sister was reading, but it had no pictures or conversations in it\". So the sister is READING, 'book' is attested in this same passage, and the item is answerable. NOTE the corpus says 'bank', not 'riverbank'; the turn's wording is the owner's as dispatched and is recorded here rather than silently corrected.",
       "corpus": "books",
       "note": "pending_p2 cleared 2026-10-12: P2 shipped (grounded_answer.md v4), so the item is scored normally."
     },

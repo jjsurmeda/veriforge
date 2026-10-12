@@ -16,7 +16,6 @@ Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 | --- | --- | --- |
 | check-work (acceptance) | KI-70 | the relevance gate abstains on broad/summary answerables; no threshold separates |
 | check-work (1d) | KI-15 | order-dependent hang in test_chats_runs.py; a flaky suite fails "repeatable" |
-| check-work (1d) | KI-31 | attribution cause still open; flaky overhead figure fails "gate 3x same verdict" |
 | check-stable | KI-57 | degrade-to-fail when the decision fallback truncates; fault injection covers it |
 | check-stable | KI-32 | record of faithfulness variance; gate tolerances already set |
 | check-stable | KI-43 | absence-claim verdict flips between runs (grader quality) |
@@ -31,7 +30,7 @@ Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 | post-beta | KI-39 | web-chunk sweep undercounts deletions (return value only) |
 | post-beta | KI-69 | reasoning-mandatory retry in providers/llm.py only serves free endpoints; dead on supported config |
 | check-work (acceptance) | KI-71 | ingress routes content questions to `chitchat`: ungrounded answer, no citations |
-| check-work (acceptance) | KI-72 | the entity Noul reads a compare question as a conjunction, so `compare-inventors` is a stable false abstention |
+| check-work (acceptance) | KI-73 | the rewriter's prose becomes the retrieval query, so a message with no question can answer |
 
 ---
 
@@ -129,79 +128,35 @@ Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
   branch's suite makes no live provider call. This entry is unchanged by D3:
   the hang is still unexplained, and 467 passed in 50 s on the D3 tree.
 
-## KI-31: One unresolvable generation id discards an item's whole overhead figure
+- **Phase 1d item 3b (2026-10-13): still not reproduced, and no code changed.**
+  Measured on `f7cd86d` with the brief's own proof shape:
+  `tests/chats/test_chats_runs.py` as a whole file, `-p no:randomly` with
+  `-o faulthandler_timeout=40`, **5 consecutive runs: 13 passed each, 4.4-4.6 s,
+  no hang and no faulthandler dump**. Full `pytest -q` with
+  `-o faulthandler_timeout=90`, **3 consecutive clean runs: 1312 passed each,
+  ~3.5 min apiece, no hang**. (The file is 13 tests on this revision; this
+  entry's "40+" is from older ones.)
 
-Logged 2026-10-01 (D3 item 4), found while deciding whether the fast20
-baseline could be written. It is the last thing standing between D3 and a
-baseline.
+  Nothing was changed, because nothing was found. The title-refinement
+  hypothesis was already disproved in the 2026-09-28 note — `graph/runner.py:493`
+  awaits `refine_title` inline, so there is no background title task — and the
+  one real leak this entry did find (`score_run_async` and
+  `_settle_after_scoring` pending and unowned when `run.completed` is published)
+  is fixed by `9840f95`, which drains at both lifecycle boundaries. What remains
+  unexplained is the original report, and it still does not reproduce.
 
-- **What:** `evals/attribution.py` records `our_overhead_ms` for an item
-  only when `Attribution.complete` is true, and `complete` is
-  `unattributed == 0 and attributed > 0` — i.e. when **every** generation id
-  on that item resolved to a stats record within `STATS_ATTEMPTS` (8) ×
-  `STATS_BACKOFF_SECONDS` (3.0) ≈ 24 s. One id that never comes back throws
-  away the item's entire figure, including the provider time that *did*
-  resolve. Across D3's three fast20 runs, 16, 18 and 17 of 20 items were
-  attributed (80% / 90% / 85%), against a ≥ 90% bar.
-- **Evidence, run 3:** the four uncovered items — "Does the AW-2000 work with
-  Zigbee smart-home hubs?" (abstained), "When will the AW-3000 be released?"
-  (abstained), "How much does the AW-2000 weigh with the mounting bracket?",
-  "How long is the warranty on an AW-2000?" — each carry a real
-  `provider_ms` of 3481 / 6202 / 3622 / 3472 ms and a null
-  `our_overhead_ms`. So the calls *were* recorded; one id per item did not
-  resolve. Their wall clocks were 11545 / 10140 / 7747 / 6866 ms, which is
-  33706 ms of pipeline time silently counted as nobody's.
-- **Why it matters beyond the bar:** `p50_our_overhead_ms` is the figure the
-  gate hard-limits (TRD §15, KI-18). It is a median over the *attributed*
-  items, so dropping the slow items biases it **downward** — the gate is
-  currently comparing a flattering subset. That is the opposite of the
-  conservative direction, which is why this is a defect and not a coverage
-  footnote.
-- **PARTIALLY FIXED (2026-10-02, D4 item 2, `de725d4`); the cause is still
-  undiagnosed.** Two changes, one of which was the instrumentation this entry
-  asked for:
-  - *Partial attribution is reported instead of discarded.* A generation that
-    resolves contributes its `provider_ms` even when a sibling on the same item
-    does not; `stage_ms` records `generations_unattributed` and a one-line
-    description of each unresolved id. `our_overhead_ms` is **still withheld**
-    on a partial item — a partial sum understates provider time and would
-    overstate our overhead, and the gated figure must not be a guess. The
-    summary gains `p50_total_ms_unattributed_items`: the median wall clock of
-    exactly the items the gated median excludes, so the downward bias has a
-    number next to it. No figure is invented for a miss (KI-18).
-  - *The miss is now diagnosable.* `record_generation_ids` returns
-    `GenerationRef` — id, source (`litellm`/`jev`), model, role, job and call
-    time — instead of a bare id, and `_stats` returns the HTTP status of its
-    last lookup alongside the record. Every unresolved id is logged with its
-    call site, final status, attempt count and age. Role and job come off the
-    request metadata `providers/llm.py` already sends, so nothing is threaded
-    through the graph. `eval_dump_stages.py` carries all of it into the
-    `.data/evals/<timestamp>-<sha>.json` export, so it survives the database
-    drop that destroyed the evidence three times running.
-  - **Still open: the cause.** The narrowed candidates, none ruled in or out:
-    OpenRouter never indexing a stats record for some requests; Jev's
-    `gen-dec-*` ids behaving differently from `gen-*` ones; a stream that died
-    and restarted, recording the first attempt's id with no completed
-    generation behind it; or a transient 5xx. The landing delay is **ruled
-    out as the whole story** for any id abandoned well past ~20 s, which the
-    new `age_ms` makes visible per id. Read the ids back by hand with
-    `curl https://openrouter.ai/api/v1/generation?id=…` from the export before
-    theorising further.
-  - Note a second, *distinguishable* failure now reported separately: a record
-    that lands but carries no duration field (`api_type` set, no `latency` and
-    no `generation_time`) contributes nothing and used to look identical to a
-    404. That class is reported with `last_status=200` and its `api_type`.
-- **CAUSE FOUND AND FIXED (2026-10-02, `692f073`); the entry closes.** The
-  budget, not the calls: measured 0.4 s / 0.4 s / 0.4 s / **123.6 s** for four
-  consecutive calls' records to land, against a 21 s budget. Every candidate
-  class this entry listed is ruled out — the three ids that 404'd for a whole
-  fast20 budget (one Jev `decisions`, two `gpt-4o-mini` `rewriter`) all answered
-  **200** on a manual read a minute later with their durations intact. Budget
-  now 30 × 6.0 s ≈ 174 s, pinned by a test against the measured 123.6 s.
-- **Do not** fix this by loosening the gate's thresholds or by writing a
-  baseline on the current coverage. That is the mistake KI-6 has already
-  recorded once for latency. TRD §15's "coverage must not bias the median
-  downward" paragraph landed with the fix.
+  **One measurement artefact worth recording, because it reads as a failure and
+  is not.** A fourth full-suite run in the same window reported 5 failures, all
+  of them from two `pytest` processes sharing one `TEST_DATABASE_URL` — my own
+  probe runs overlapping the suite, which is the second harness hazard recorded
+  in this entry. Re-run clean with nothing else on the database it is 1312
+  passed. If a suite run ever fails with connection or truncation errors, check
+  for a second process before believing the failures.
+
+  This entry stays open and its substance is unchanged: the hang is
+  unexplained and unreproduced, and "still not reproduced" is not a fix. When it
+  next stalls, the decisive evidence is `faulthandler_timeout` plus the two
+  probes named in the 2026-10-02 note, in that order.
 
 ## KI-57: The decision fallback's output cap (512) truncates the batched decision JSON, failing the whole item whenever jev degrades
 
@@ -401,6 +356,50 @@ Logged 2026-10-09 (lane E review). Open; a data decision, not code.
 
 ---
 
+## KI-73: the rewriter's prose becomes the retrieval query, so a message with no question can answer
+
+Logged 2026-10-13 (phase 1d item 4, first full `make check-work` on the KI-72
+branch, served commit `f7cd86d`). **Breaks the acceptance step**: `smalltalk`
+is pass/fail in full, not a rate, so one item is the whole verdict.
+
+- **What:** `smalltalk-thanks` — "thanks, that's helpful!" — was graded
+  `answer` with 8 citations instead of `smalltalk`. The run's own answer is
+  `the source text contains an instruction I am ignoring.`
+- **Mechanism, read from the run's recorded steps, not inferred.** Ingress
+  classified it correctly (`intent: chitchat`), and `named_entities` returns
+  `[]` so the KI-72 entity check is skipped — neither is involved. The
+  **rewriter answered with prose instead of a standalone question**, and the
+  variant parser turned that prose into the retrieval queries:
+
+  ```
+  retrieve: I understand. You're correct—there is no question to rewrite in your message. I'm ready to help when you provide:
+  retrieve: I appreciate the message, but there's no actual question to rewrite here. The user's statement "thanks, that's helpful!" is simply an acknow...
+  retrieve: A conversation context
+  ```
+
+  Nothing validates that a rewrite is a question. KI-71 made `chitchat` still
+  retrieve when sources are in scope and let the evidence decide; on this run
+  the nonsense retrieval cleared sufficiency at **0.25 / 0.43** against a floor
+  of 0.05, so the run answered with citations instead of taking the chitchat
+  reply. Nothing in the pipeline ever asked "is there a question here", and the
+  rewrite step silently answered it wrongly.
+- **Not a regression from phase 1d.** The previous acceptance run
+  (`veriforge-phase1c/.data/acceptance/20261012-134549.json`) graded this item
+  `chitchat`, 0 citations, **pass**. It is intermittent — 1 failure in 2
+  recorded runs — because it depends on whether the rewriter happens to return
+  prose on a given draw, and on whether the resulting retrieval clears
+  sufficiency.
+- **Fix direction, for the owner.** Two candidates, and they are not the same
+  decision. (a) Validate the rewrite: if it is not interrogative, do not
+  retrieve on it. This is the root fix and it also covers any future
+  non-question phrasing. (b) Extend `GREETING_ALLOWLIST` to cover an
+  acknowledgement with trailing gratitude. This is *not* free: CLAUDE.md fixes
+  that allowlist as "one approved exception" with "a fixed allowlist of raw
+  messages", so widening it is an owner change, and it fixes this one phrasing
+  while leaving the general defect in place.
+- **Done when:** a message containing no question never produces an
+  `answer`-class reply with citations, and `smalltalk-thanks` passes.
+
 # post-beta
 
 ## KI-8: Six Playwright specs drive live LLM runs
@@ -597,68 +596,6 @@ so it breaks `make check-work` step 9.
   proves it on the real corpus is `make check-work` running green twice
   (phase 1c item 3). This entry moves to `known-issues-archive.md` in the
   commit that does, not in this one.
-
-## KI-72: the entity Noul reads a compare question as a conjunction, so a compare item is a stable false abstention
-
-Logged 2026-10-12 (phase 1c item 3, commit `72263cb`, first full acceptance run
-since the KI-70 rule landed). **Breaks `make check-work` step 9**: 2 of 32
-answerable items declined, and PRD §5 allows 1.
-
-- **What:** `compare-inventors` ("Compare how Victor Frankenstein and the Time
-  Traveller deal with the consequences of their inventions") declines. It is
-  not the relevance gate and it is not sufficiency: relevance **0.97** on both
-  attempts (floor 0.60) and sufficiency **0.15 / 0.22** then **0.14 / 0.14** on
-  a rerun (floor 0.05). The signal that abstains it is KI-54's per-passage
-  entity check.
-- **The evidence, from the run's own `run_events`** (the acceptance database
-  survives the step's teardown, so this is read back rather than inferred).
-  Across two runs, all sixteen entity readings for this item:
-
-  | | readings | min | max | floor |
-  | --- | --- | --- | --- | --- |
-  | run 1 | 8 | 0.05 | **0.44** | 0.50 |
-  | rerun | 8 | 0.19 | **0.40** | 0.50 |
-
-  Not one passage clears the floor, in either run, and the band is narrow
-  (0.05–0.44). That is not jitter around a boundary; it is a signal that
-  consistently says no to evidence that is provably about the two named
-  characters — the same passages the reranker scored at 0.97, and the same
-  item that **answered** in phase 1b run 1.
-- **The mechanism, read from the code rather than inferred**
-  (`graph/auto.py::_entity_passage_questions`): one Noul is built per top-k
-  passage, asking "does this passage concern **that same entity or entities**"
-  — and for a `compare` question `named_entities` returns *both* characters, so
-  the prompt reads "concern 'Victor Frankenstein' and 'Time Traveller'". A
-  passage about the Time Machine is literally not about Victor Frankenstein, so
-  it scores low; a passage about Frankenstein is not about the Time Traveller,
-  so it scores low. `_rerank_candidates` deliberately splits a compare item's
-  top-k by entity (KI-12), which guarantees both halves are single-entity
-  passages and the conjunction can never be satisfied. The check asks "is this
-  passage about ALL the named entities" where the product needs "is this
-  passage about ANY of them".
-- **Why it is not fixed here.** This is KI-54's signal, it predates this lane,
-  and nothing in this lane touches it — both phase-1c items were proven
-  no-ops for this item from the run's own decisions: intent `compare`, so KI-70's
-  `summarize` exemption never applied, and relevance 0.97, so the veto was not
-  in force either. Fixing it means changing the question the Noul asks, and
-  that signal is what carries the **entity-mismatch set's 12/12 clean
-  declines** — a change to it invalidates the evidence for the whole class and
-  needs before/after on fast20, counterfactual and entity-mismatch together
-  (agents.md). Phase 1c had one run's budget left and no recorded entity values
-  from phase 1b to replay a candidate against — the same evidence gap KI-70's
-  doc records. Shipping an unproven change to the abstention signal to make a
-  gate pass is the mistake this file exists to prevent.
-- **Done when:** the entity Noul asks about each named entity separately (or
-  "any of them"), `compare-inventors` answers, and entity-mismatch is still 12/12
-  clean declines with 0 confident wrong on the same commit.
-- **Also noted, and NOT the same thing:** `amb-alice-sister` was the second
-  false abstention in that run (sufficiency 0.31, relevance 0.89, entity 0.96 —
-  all three clear) and it **passed on a rerun** at sufficiency 0.39. The
-  generator gave an honest decline and the P2a prose-decline Noul caught it: the
-  corpus names Alice's sister exactly once and never names her, so "she is
-  unnamed" is the true answer to "who is she?". That is an intermittent
-  generation miss, not a label defect — relabelling the item would have been
-  wrong, and it is not logged as one.
 
 ## KI-32: Faithfulness moves between runs because the generator rewrites the answer, not because the judge disagrees
 

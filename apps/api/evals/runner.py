@@ -30,6 +30,14 @@ from typing import Any
 from uuid import UUID
 
 import asyncpg
+import httpx
+from litellm.exceptions import (
+    APIConnectionError,
+    InternalServerError,
+    RateLimitError,
+    ServiceUnavailableError,
+    Timeout,
+)
 from sqlalchemy import select
 from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 from sqlalchemy.ext.asyncio import (
@@ -129,6 +137,61 @@ def _is_transient_db_error(exc: BaseException) -> bool:
     return isinstance(
         exc, asyncpg.PostgresError | asyncpg.InterfaceError | OSError | PoolTimeoutError
     )
+
+
+# The transient provider set for the eval tooling's own calls (phase 1d item
+# 1.3). These are the judge and the scorer: calls the *harness* makes to grade
+# an item, not calls the product made. `httpx` covers a raw transport timeout
+# from any of them; the litellm classes cover OpenRouter's own 429/5xx.
+#
+# Scoped deliberately narrow. A 4xx that is not a 429 (a bad key, a bad
+# request) is not transient and re-raising it immediately keeps a
+# misconfiguration from being retried four times before it is reported.
+_TRANSIENT_PROVIDER_ERRORS = (
+    httpx.HTTPError,
+    RateLimitError,
+    ServiceUnavailableError,
+    InternalServerError,
+    Timeout,
+    APIConnectionError,
+)
+
+# One retry, one short pause. Long enough for a provider blip to clear, short
+# enough that a genuine outage costs one extra call per graded item.
+PROVIDER_RETRY_DELAY_S = 2.0
+
+# Per-run count of provider retries, reported in the summary. A run that needed
+# none and a run that needed twenty are the same verdict and very different
+# stories, and only the second one is worth an operator's attention.
+_provider_retries = 0
+
+
+def _is_transient_provider_error(exc: BaseException) -> bool:
+    return isinstance(exc, _TRANSIENT_PROVIDER_ERRORS)
+
+
+async def _retry_provider[T](work: Callable[[], Awaitable[T]], *, what: str) -> T:
+    """Run one eval-tooling provider call, retrying once on a transient error.
+
+    Phase 1d item 1. Run 1 of phase 1c lost a whole item to a single
+    provider timeout, and the gate refused the run because an errored item is
+    not a measurement. A timeout is a property of the network, not of the item
+    being graded, so the harness retries it — the product's own decisions
+    already fall back internally and are not retried here.
+    """
+    global _provider_retries
+    try:
+        return await work()
+    except Exception as exc:
+        if not _is_transient_provider_error(exc):
+            raise
+        _provider_retries += 1
+        logger.warning(
+            "eval provider call retrying after transient error",
+            extra={"what": what, "error": repr(exc)[:200]},
+        )
+    await asyncio.sleep(PROVIDER_RETRY_DELAY_S)
+    return await work()
 
 
 async def _retry_transient[T](work: Callable[[], Awaitable[T]], *, what: str) -> T:
@@ -298,14 +361,18 @@ async def _run_item(
     ]
     if not abstained:
         review_started = time.monotonic()
-        review = await review_answer(
-            engine=engine,
-            run_id=str(pipeline_run_id),
-            answer=answer,
-            contexts=contexts,
-            citation_count=len(contexts),
-            small_model=SMALL_MODEL,
-            litellm_model=generator_model,
+        review = await _retry_provider(
+            partial(
+                review_answer,
+                engine=engine,
+                run_id=str(pipeline_run_id),
+                answer=answer,
+                contexts=contexts,
+                citation_count=len(contexts),
+                small_model=SMALL_MODEL,
+                litellm_model=generator_model,
+            ),
+            what=f"review:{item.question[:40]}",
         )
         stage_ms["review"] = int((time.monotonic() - review_started) * 1000)
         if review.scores is not None:
@@ -334,12 +401,16 @@ async def _run_item(
         # the column is never `null` for a result the harness measured, which
         # would otherwise be indistinguishable from a review that never ran.
         min_support = 1.0
-    scores = await judge_answer(
-        question=item.question,
-        reference_answer=item.reference_answer,
-        answer=answer,
-        passages=[context.context_text for context in contexts],
-        small_model=SMALL_MODEL,
+    scores = await _retry_provider(
+        partial(
+            judge_answer,
+            question=item.question,
+            reference_answer=item.reference_answer,
+            answer=answer,
+            passages=[context.context_text for context in contexts],
+            small_model=SMALL_MODEL,
+        ),
+        what=f"judge:{item.question[:40]}",
     )
     result = EvalResult(
         eval_run_id=eval_run_id,
@@ -827,7 +898,23 @@ async def main() -> None:
     )
     summary = aggregate(results)
     models = models_on_record(args.generator)
-    summary_json = json.dumps({"eval_run": str(eval_run.id), "models": models, **summary}, indent=2)
+    # Phase 1d item 1: how many times the harness retried one of its OWN
+    # provider calls after a transient error.
+    #
+    # Deliberately NOT a key of `aggregate`, and that is the point:
+    # `evals.baseline` derives AGGREGATE_METRICS from `aggregate`'s own source
+    # and averages every one of them into the stored baseline, so anything
+    # added there becomes a metric the gate compares. A retry count is not a
+    # quality metric — a run that needed retries graded the same items the same
+    # way, and averaging it into faithfulness or abstention would corrupt the
+    # comparison. It belongs beside the metrics, reported and never gated.
+    envelope = {
+        "eval_run": str(eval_run.id),
+        "models": models,
+        "provider_retries": _provider_retries,
+        **summary,
+    }
+    summary_json = json.dumps(envelope, indent=2)
     print(summary_json)
     if args.summary_out:
         # to_thread: a blocking write in an async function, off the loop the
