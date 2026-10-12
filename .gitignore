@@ -49,3 +49,6 @@ docs/design-refs/
 
 # Gutenberg corpus cache
 .data/
+
+# Local-only history: past reviews, plans, KI archive, lessons (not part of the product docs)
+docs/history/
