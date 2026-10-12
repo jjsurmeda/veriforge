@@ -18,7 +18,7 @@ agentic RAG chatbot showcase. Read this before writing code, every slice.
 6. **`docs/conventions/`** — the concrete how-to for each area, so it's
    answered the same way across slices and sessions:
    `react.md`, `python.md`, `testing.md`, `playwright.md`, `git.md`,
-   `agents.md` (time boxes, prove-then-fix, commit early; read it before
+   `rag-reference.md` (check every design review against it), `agents.md` (time boxes, prove-then-fix, commit early; read it before
    any unattended run or before writing a dispatch prompt).
    `docs.md`: point-in-time docs (prompts, reviews, screenshots) are named
    `YYYY-MM-DD-HHMM-<slug>`; living docs (PRD, TRD, conventions, ADRs)
