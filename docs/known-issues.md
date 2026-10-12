@@ -3,6 +3,7 @@
 Open defects only. Triaged 2026-10-12: every entry is either tied to the
 phase whose `make check-*` target it breaks, or tagged `post-beta`.
 Fixed and record-only entries live in `known-issues-archive.md`.
+The Phase column is authoritative; section placement below is from the first triage.
 
 Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 - When you fix one, move it to the archive in the same commit, with the fixing commit hash.
@@ -13,23 +14,23 @@ Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 
 | Phase | KI | Summary |
 | --- | --- | --- |
+| check-work (acceptance) | KI-27 | xl-en-wukong-master answers the wrong person |
+| check-work (acceptance) | KI-28 | neither reranker separates abstention cleanly |
+| check-work (acceptance) | KI-56 | RP-77 answer chunk carries an injection block, so it false-abstains |
 | check-stable | KI-15 | order-dependent hang in test_chats_runs.py; a flaky suite fails "repeatable" |
 | check-stable | KI-31 | attribution cause still open; flaky overhead figure fails "gate 3x same verdict" |
 | check-stable | KI-57 | degrade-to-fail when the decision fallback truncates; fault injection covers it |
+| check-stable | KI-32 | record of faithfulness variance; gate tolerances already set |
+| check-stable | KI-43 | absence-claim verdict flips between runs (grader quality) |
+| check-stable | KI-49 | reviewer rarely makes an unsupported judgement itself |
+| check-stable | KI-51 | cf subset spread 0.0667 vs 0.06 band |
 | UI redesign | KI-22 | trace tab redesign; belongs to the UI pass |
 | UI redesign | KI-65 | screenshots and tab-order audit; redo after the UI pass |
 | before deploy | KI-59 | uvicorn forwarded_allow_ips must match the deployed proxy |
 | before deploy | KI-63 | demo credit-outstanding cap still open; only matters if DEMO_ENABLED=true |
 | before deploy | KI-64 | owner data decision: conflict pair in Shared, eval corpus visibility |
 | post-beta | KI-8 | six Playwright specs make live LLM runs instead of replaying fixtures |
-| post-beta | KI-27 | xl-en-wukong-master answers the wrong person |
-| post-beta | KI-28 | neither reranker separates abstention cleanly |
-| post-beta | KI-32 | record of faithfulness variance; gate tolerances already set |
 | post-beta | KI-39 | web-chunk sweep undercounts deletions (return value only) |
-| post-beta | KI-43 | absence-claim verdict flips between runs (grader quality) |
-| post-beta | KI-49 | reviewer rarely makes an unsupported judgement itself |
-| post-beta | KI-51 | cf subset spread 0.0667 vs 0.06 band |
-| post-beta | KI-56 | RP-77 answer chunk carries an injection block, so it false-abstains |
 | post-beta | KI-69 | reasoning-mandatory retry in providers/llm.py only serves free endpoints; dead on supported config |
 
 ---
