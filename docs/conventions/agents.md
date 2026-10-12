@@ -130,11 +130,3 @@ Every dispatch ends with a report file in the main checkout:
 the datetime the run finished. The agent replies with the path and a short
 summary; the reviewer reads the file.
 
-
-## Library docs
-
-Before writing or changing code against a library API (LangGraph, SQLAlchemy
-async, Alembic, Pydantic, FastAPI, TanStack, Cohere/NVIDIA SDKs), look up the
-current docs with the Context7 MCP (`resolve-library-id`, then `query-docs`)
-for the version pinned in the lockfile. RAG design choices come from
-`docs/conventions/rag-reference.md`, not from library docs.
