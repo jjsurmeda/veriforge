@@ -39,18 +39,24 @@ eval-gate-local:
 	./scripts/eval_gate_local.sh
 
 # --- phase 1 finish line: does the product work? ------------------------------
-# `make check-work` runs five steps in order and stops at the first failure,
+# `make check-work` runs nine steps in order and stops at the first failure,
 # printing one PASS/FAIL line per step with the number that decided it: the api
 # unit gate (ruff, mypy --strict, pytest), the web unit gate (vitest, OpenAPI
 # export + drift), a check that no config or seed default resolves to a `:free`
 # model, the TRD §15 eval gate against both stored baselines (fast20 AND the
-# counterfactual subset, each on a fresh ephemeral database), and the
-# entity-mismatch set at 12/12 clean declines with 0 confident wrong. It SPENDS
-# PROVIDER CREDIT in its last two steps — check the OpenRouter balance first
-# (docs/conventions/agents.md) — and is therefore not the three-minute command
-# the unit gate alone is. Every step is classified from the run's own recorded
-# fields, never inferred from a stream: a decline streams a delta too, and
-# lane B2's probe nearly reported a false failure rate for exactly that reason.
+# counterfactual subset, each on a fresh ephemeral database), the
+# entity-mismatch set at 12/12 clean declines with 0 confident wrong, and the
+# 57-item books acceptance set at PRD §5's bar for one run (0 confident wrong,
+# ≥18/20 clean declines, ≤1/33 false abstentions, smalltalk and library pass).
+# It SPENDS PROVIDER CREDIT in its last three steps — check the OpenRouter
+# balance first (docs/conventions/agents.md) — and is therefore not the
+# three-minute command the unit gate alone is. Every step is classified from the
+# run's own recorded fields, never inferred from a stream: a decline streams a
+# delta too, and lane B2's probe nearly reported a false failure rate for
+# exactly that reason. The acceptance step runs against an api started from this
+# checkout and fails if that api is not serving `git rev-parse HEAD` — the
+# running dev stack serves the main checkout's code, so `make acceptance` in a
+# worktree scores the wrong commit.
 check-work:
 	./scripts/check_work.sh
 

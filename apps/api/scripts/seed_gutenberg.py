@@ -122,14 +122,39 @@ async def upload_book(
     return str(payload["id"]), bool(payload.get("deduped"))
 
 
-async def poll_until_ready(client: httpx.AsyncClient, token: str, books: dict[str, str]) -> None:
-    headers = {"Authorization": f"Bearer {token}"}
+async def poll_until_ready(
+    client: httpx.AsyncClient, token: str, books: dict[str, str]
+) -> None:
+    """Poll until every book is ready or failed, re-authenticating on a 401.
+
+    The access token is a 15-minute JWT (config.access_token_ttl_seconds) and a
+    cold eleven-book ingest runs past that: on 2026-10-12 the poll died with
+    `KeyError: 'status'` on the first 401, because the response was an error
+    body with no `status` field. The KeyError was the visible symptom and the
+    expired token was the cause, so this re-authenticates and retries the one
+    request instead of unwrapping a body that is not the one it asked for.
+
+    Not the same fix as the acceptance runner's (one token reused, refreshed
+    from `exp`): this polls a handful of requests, so a refresh on 401 is
+    enough and needs no token decoding. Both are the same lesson — a long
+    operation must not assume its token outlives it.
+    """
     deadline = time.monotonic() + READY_TIMEOUT_SECONDS
     pending = dict(books)
+    current = token
     while pending and time.monotonic() < deadline:
         for title, document_id in list(pending.items()):
-            response = await client.get(f"/documents/{document_id}", headers=headers)
-            status = str(response.json()["status"])
+            response = await client.get(
+                f"/documents/{document_id}", headers={"Authorization": f"Bearer {current}"}
+            )
+            if response.status_code == 401:
+                print("  access token expired mid-ingest; signing in again", flush=True)
+                current = await sign_in(client)
+                response = await client.get(
+                    f"/documents/{document_id}",
+                    headers={"Authorization": f"Bearer {current}"},
+                )
+            status = str(response.json().get("status", f"http {response.status_code}"))
             print(f"  {title}: {status}", flush=True)
             if status in {"ready", "failed"}:
                 pending.pop(title)

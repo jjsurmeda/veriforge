@@ -14,8 +14,8 @@ Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 
 | Phase | KI | Summary |
 | --- | --- | --- |
-| check-work (acceptance) | KI-27 | xl-en-wukong-master answers the wrong person |
-| check-work (acceptance) | KI-28 | neither reranker separates abstention cleanly |
+| check-work (acceptance) | KI-70 | the relevance gate abstains on broad/summary answerables; no threshold separates |
+| check-work (acceptance) | KI-28 | reranker choice settled; the abstention signal itself is the open question |
 | check-work (acceptance) | KI-56 | RP-77 answer chunk carries an injection block, so it false-abstains |
 | check-stable | KI-15 | order-dependent hang in test_chats_runs.py; a flaky suite fails "repeatable" |
 | check-stable | KI-31 | attribution cause still open; flaky overhead figure fails "gate 3x same verdict" |
@@ -32,6 +32,7 @@ Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 | post-beta | KI-8 | six Playwright specs make live LLM runs instead of replaying fixtures |
 | post-beta | KI-39 | web-chunk sweep undercounts deletions (return value only) |
 | post-beta | KI-69 | reasoning-mandatory retry in providers/llm.py only serves free endpoints; dead on supported config |
+| post-beta | KI-71 | ingress routes content questions to `chitchat`: ungrounded answer, no citations |
 
 ---
 
@@ -428,39 +429,103 @@ Logged 2026-10-09 (lane E review). Open; a data decision, not code.
   one raw SSE fixture per UI scenario, then assert an unchanged
   `usage_ledger` around the default suite.
 
-## KI-27: `xl-en-wukong-master` answers with the wrong person (pre-existing, not retrieval)
+## KI-70: The KI-26 relevance gate abstains on broad/summary answerable items, and no threshold separates them
 
-Logged 2026-09-30, from the C2 KI-19 live check. **Not caused by the
-CJK tokenizer work** — the C1 23/31 run (`.data/acceptance/20260929-180258.json`)
-already failed it with the same answer.
+Logged 2026-10-12 (phase 1b, first full run of the books acceptance set as
+`make check-work` step 9, on `28c808c`). **Breaks the step**: 3 of 33 answerable
+items declined; PRD §5 allows <= 1.
 
-- **What:** the item asks who Sun Wukong's master is and expects Tang
-  Sanzang / 唐僧 / 三藏 / Tripitaka / Xuanzang. The run answers "the Bodhi
-  Patriarch (菩提祖师) who teaches him various magical skills". Retrieval is
-  fine: all six citations are 西遊記.txt, so the book was found and the
-  `answer` class is correct. Only the `mention` check fails.
-- **Why it matters:** it is a generation-side entity confusion between the
-  two figures a reader of Journey to the West would name first — the
-  teacher of the seventy-two transformations and the master of the
-  pilgrimage — not a retrieval or scope failure.
-- **Fix:** worth one look at whether the retrieved top-k actually contains
-  the passage naming 唐僧 as the pilgrimage master. If it does, this is a
-  generator/grounding problem and belongs with the reviewer; if it does not,
-  the chunking of the 西遊記 corpus is dropping the introduction. Do not
-  "fix" it by adding 菩提祖师 to the item's `mention` list — that would
-  make the check pass while the product is still wrong.
-- **Reviewer finding (2026-10-01, D2):** the passage **is** in the top-k —
-  rank 2, rerank 0.94, 「賤號三藏…小徒…第一個名孫悟空」 — but 6 of the 8
-  chunks are Bodhi Patriarch scenes where Wukong calls him 師父, so the
-  generator's top-of-mind master is Bodhi. The question itself is
-  ambiguous: both figures are Wukong's master (菩提祖师 for the skills,
-  唐僧 for the pilgrimage), so the "right" answer is a judgement call the
-  owner has to make. **The owner decides the fix (D3); the item was not
-  edited.** It is the only item the KI-26 replay leaves failing at every
-  threshold, and it fails on content (`mention`), not on the
-  answer/abstain decision.
+- **What:** `broad-alice` ("can you give me the gist of alice's adventures in
+  wonderland?"), `broad-bovary` ("Peux-tu resumer Madame Bovary ?") and
+  `amb-bovary-homais` all declined. **Not a sufficiency failure.** The
+  sufficiency judge scored them 0.61/0.61 and 0.48/0.50 against a floor of
+  0.05, and the KI-54 entity check scored `broad-alice` 0.95-0.97 and
+  `broad-bovary` 0.96-0.97 against a floor of 0.50. What abstained them is the
+  **relevance gate** (KI-26: abstain when the max post-sanitize rerank score is
+  under `rerank_abstain` 0.60) at 0.35/0.36, 0.23/0.26 and 0.26/0.40.
+- **Why the gate misfires here:** a broad or summary question matches no single
+  passage lexically, so JevRerank scores the *correct* passages low --
+  `broad-alice`'s best passage scored 0.36 while the entity check scored 0.97
+  on those same passages. The gate measures question-passage lexical overlap and
+  is asked to stand in for "is this evidence relevant", which for a gist
+  question it cannot be. PRD §5 requires false abstention <= 5% of answerable
+  items "including broad/summary questions", so this class is one the bar names
+  directly.
+- **Why no threshold move:** this run's `relevance` distributions **overlap**.
+  Answerable items sit at 0.23 / 0.26 / 0.36 / 0.40; should-abstain items reach
+  0.59, with 0.48, 0.51 and 0.33 nearby. Any cut-off that admits 0.26 also
+  admits abstentions and manufactures *confident wrong answers* -- strictly
+  worse than the false abstentions it removes. This is KI-28's finding restated
+  for the relevance signal: no cut-off separates the groups.
+- **What the data does support** (one run, 20 abstains -- a hypothesis, not a
+  decision): the **sufficiency** score has no overlap at the top. No
+  should-abstain item exceeded `sufficient` 0.50, and the two broad items sit at
+  0.61. A compound rule -- the relevance gate does not veto a sufficiency score
+  at or above ~0.60 -- would fix 2 of the 3 and leave 1, exactly at PRD §5's bar.
+  `amb-bovary-homais` is not in that set (0.13/0.15): its evidence is about
+  *other* characters, so any such rule leaves it declining. **Not done:** a
+  threshold change must keep fast20, counterfactual and entity-mismatch passing
+  with before/after on all three (agents.md), and this lane's credit floor was
+  reached before that evidence could be gathered.
+- **Rerun of the three ids (2026-10-12, `7c7a0c1`), and it changes the shape of
+  the problem:** `broad-bovary` **answered** this time (sufficient 0.42, one
+  attempt, no relevance veto) and `broad-alice` declined again (0.51/0.56). So
+  of the three, **one is stable (`amb-bovary-homais`, sufficient 0.13-0.16 both
+  runs — a real evidence failure, not a gate artefact) and two are intermittent,
+  tracking the rerank score's run-to-run movement** (broad-bovary's relevance was
+  0.23/0.26 in run 1, above the gate in run 2). An intermittent false
+  abstention means the step's verdict moves between runs on the same commit, so
+  it cannot be called a stable pass without the fix; treat any green acceptance
+  step on this branch as one sample, not as the number.
+- **Done when:** the two broad items answer, `amb-bovary-homais` either answers
+  or is relabelled against the corpus, and the whole step passes **twice**.
+
+## KI-71: `post-beta` -- ingress routes content questions to `chitchat`, which skips retrieval and answers ungrounded
+
+Logged 2026-10-12 (phase 1b, same run). **post-beta:** it fails two acceptance
+items but breaks no step, because the step's bar (PRD §5 as the brief takes it)
+covers confident wrong, decline accuracy, false abstention, smalltalk, library
+and errors -- not an answer-class item answered with no citations.
+
+- **What:** `broad-sherlock` ("tell me something about the adventures of sherlock
+  holmes") and `ml-es-rocinante` ("\u00bfComo se llama el caballo de Don
+  Quijote?") were classified `intent=chitchat`, took the `Small talk: skipped
+  retrieval` path, and answered from model memory with **no citations** and no
+  `sufficient` or `relevance` decision at all. Rocinante is the right answer;
+  it is ungrounded, which is the thing the product claims not to do.
+- **Intermittent, which is the worse property:** on the same commit,
+  `broad-sherlock` took the chitchat path in both runs, but `ml-es-rocinante`
+  routed `lookup` on the rerun (sufficient 0.97, cited, passed). So this is the
+  intent classifier's coin-flip on questions that plainly name a document, not a
+  deterministic rule.
+- **Worth the owner's attention despite the tag:** this is the one failure shape
+  where the product is confidently right by luck. Any question phrased as a
+  greeting plus a topic can land here, and nothing in `make check-work` would
+  notice a rise in it.
+- **Done when:** the intent gate's `chitchat` option stops catching questions
+  that name a document or a character, asserted in a test rather than measured
+  in a run.
 
 ## KI-28: Jev reranker — switched to Jev (owner decision); abstention separation still open
+
+**Re-measured on the full 57-item set (2026-10-12, phase 1b, `28c808c`, the
+first run since 2026-10-01).** The four should-decline items that answered then
+(`outside-study-in-scarlet`, `outside-emma`, `outside-looking-glass`,
+`ml-fr-outside`) — **all decline cleanly now, and the class is 20/20 clean
+declines with 0 confident wrong.** P2a plus the widened
+set closed that direction of KI-28; KI-27's `xl-en-wukong-master` passes after
+the owner's reword. The set as a whole: 52/57, answer 28/33,
+not_in_sources 20/20, smalltalk 2/2, library 2/2, TTFT p50 9.0 s.
+
+What is left is the *other* direction, and it is not a reranker choice: three
+answerable items decline, all of them on the KI-26 **relevance** gate, not on
+`sufficient` (0.61/0.48 against a floor of 0.05). The reranker is not what is
+wrong here — the same run's answer items rerank as high as 0.98, and
+`compare-inventors` (the item this entry said sat inside the abstain band) now
+answers at 0.97. The signal that does not separate the groups is the relevance
+gate's, and it does not separate them at any threshold. See **KI-70**, which is
+where that work now lives; and **KI-71** for the two items answered with no
+citations at all.
 
 **Decision, 2026-09-30 (owner): switched to Jev — settings version 142,
 `retrieval.reranker = jev`, `sufficient_abstain` unchanged at 0.05; code

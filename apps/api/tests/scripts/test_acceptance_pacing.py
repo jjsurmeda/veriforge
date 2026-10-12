@@ -37,6 +37,10 @@ class _FakeResponse:
         self._payload = payload
         self.status_code = status_code
 
+    def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            raise httpx.HTTPStatusError("boom", request=None, response=None)  # type: ignore[arg-type]
+
     def json(self) -> dict[str, Any]:
         return self._payload
 
@@ -46,7 +50,8 @@ class _FakeResponse:
 
 
 class _FakeAsyncClient:
-    """Same surface run() touches: async context manager, login, POST /chats."""
+    """Same surface run() touches: async context manager, healthz, login,
+    POST /chats."""
 
     def __init__(self, **_kwargs: Any) -> None:
         pass
@@ -56,6 +61,12 @@ class _FakeAsyncClient:
 
     async def __aexit__(self, *_exc: Any) -> bool:
         return False
+
+    def raise_for_status(self) -> None:
+        pass
+
+    async def get(self, url: str, **_kwargs: Any) -> _FakeResponse:
+        return _FakeResponse({"status": "ok", "served_commit": "f" * 40})
 
     async def post(self, url: str, **_kwargs: Any) -> _FakeResponse:
         if url == "/auth/login":

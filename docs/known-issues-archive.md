@@ -2205,3 +2205,44 @@ lane B, not caused by it** — see the note below.
   `run_events` for the run, where seq 20 is missing its `step.started`
   counterpart and the stream ends at `step.completed: retrieve: Time
   Traveller`. 1 failure in 40 turns on this build; rate not established.
+
+## KI-27: `xl-en-wukong-master` answers with the wrong person (pre-existing, not retrieval)
+
+Logged 2026-09-30, from the C2 KI-19 live check. **Not caused by the
+CJK tokenizer work** — the C1 23/31 run (`.data/acceptance/20260929-180258.json`)
+already failed it with the same answer.
+
+- **What:** the item asks who Sun Wukong's master is and expects Tang
+  Sanzang / 唐僧 / 三藏 / Tripitaka / Xuanzang. The run answers "the Bodhi
+  Patriarch (菩提祖师) who teaches him various magical skills". Retrieval is
+  fine: all six citations are 西遊記.txt, so the book was found and the
+  `answer` class is correct. Only the `mention` check fails.
+- **Why it matters:** it is a generation-side entity confusion between the
+  two figures a reader of Journey to the West would name first — the
+  teacher of the seventy-two transformations and the master of the
+  pilgrimage — not a retrieval or scope failure.
+- **Fix:** worth one look at whether the retrieved top-k actually contains
+  the passage naming 唐僧 as the pilgrimage master. If it does, this is a
+  generator/grounding problem and belongs with the reviewer; if it does not,
+  the chunking of the 西遊記 corpus is dropping the introduction. Do not
+  "fix" it by adding 菩提祖师 to the item's `mention` list — that would
+  make the check pass while the product is still wrong.
+- **Reviewer finding (2026-10-01, D2):** the passage **is** in the top-k —
+  rank 2, rerank 0.94, 「賤號三藏…小徒…第一個名孫悟空」 — but 6 of the 8
+  chunks are Bodhi Patriarch scenes where Wukong calls him 師父, so the
+  generator's top-of-mind master is Bodhi. The question itself is
+  ambiguous: both figures are Wukong's master (菩提祖师 for the skills,
+  唐僧 for the pilgrimage), so the "right" answer is a judgement call the
+  owner has to make. **The owner decides the fix (D3); the item was not
+  edited.** It is the only item the KI-26 replay leaves failing at every
+  threshold, and it fails on content (`mention`), not on the
+  answer/abstain decision.
+
+**Resolved 2026-10-12 (owner decision, phase 1b).** The owner chose the
+reword, not a widened `mention`: the turn is now "Who is Sun Wukong's
+master **on the pilgrimage** in Journey to the West?", which names the
+referent the accepted mentions already name. `expect`, `cite` and `mention`
+are unchanged — 菩提祖师 was **not** added, which is what this entry warned
+against. The item's `proof` was re-run with `scripts/audit_labels.py`
+against the corpus, because the turn is the audit's query and the old proof
+described the old one. Labels only; no pipeline change.

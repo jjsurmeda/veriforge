@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from admin import router as admin_router
 from auth import router as auth_router
 from auth.email import build_email_transport
+from build_info import served_commit
 from chats import router as chats_router
 from config import DEFAULT_MODEL_ID, Settings, free_model_violations, get_settings
 from db.models import ModelRole, Run
@@ -196,6 +197,12 @@ async def healthz(
         # still correct while this reads degraded.
         "jev": "ok" if breaker_state == BreakerState.CLOSED.value else "degraded",
         "worker_heartbeat_age_s": await _worker_heartbeat_age_s(session),
+        # The commit this process's code came from, read from git at boot
+        # (`build_info.served_commit`). A quality run compares it with the
+        # commit it meant to test: an acceptance run against the dev api
+        # measures the main checkout's code, and without this field that is
+        # invisible. `unknown` in an image with no checkout.
+        "served_commit": served_commit(),
     }
     return body
 

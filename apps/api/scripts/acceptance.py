@@ -31,11 +31,14 @@ runs back-to-back, which paid models can afford.
 
 import argparse
 import asyncio
+import base64
+import binascii
 import json
 import os
 import re
 import statistics
 import sys
+import time
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -83,6 +86,42 @@ NOT_IN_SOURCES = tuple(
 
 def says_not_in_sources(answer: str) -> bool:
     return any(p.search(answer) for p in NOT_IN_SOURCES)
+
+
+# Re-authenticate this long before the token's own `exp`, not after: a token
+# that expires between the chat and its turn 401s, and the turn runner raises on
+# that rather than retrying.
+TOKEN_REFRESH_MARGIN_SECONDS = 60.0
+
+# The runner's own pacing between re-logins, when the token's expiry cannot be
+# read. 0 means "log in every time", which is the pre-2026-10-12 behaviour: slow
+# but never wrong about expiry.
+TOKEN_LIFETIME_FALLBACK_SECONDS = 0.0
+
+
+def _token_lifetime(token: str) -> float:
+    """Seconds until `token` expires, or the fallback when it cannot be read.
+
+    Reads the JWT's own `exp` claim **without verifying the signature**, on
+    purpose: this decides only when to spend another login against a rate limit,
+    and the api is the one that decides whether a token is valid. A token this
+    cannot read (an opaque token, a non-JWT shape) gets the fallback, so an
+    unparseable token can never be mistaken for a long-lived one.
+
+    `exp` is in seconds since the epoch and `time.monotonic()` is not, so the
+    claim is compared against wall clock and converted here to a duration.
+    """
+    payload = token.split(".")
+    if len(payload) != 3:
+        return TOKEN_LIFETIME_FALLBACK_SECONDS
+    try:
+        padded = payload[1] + "=" * (-len(payload[1]) % 4)
+        claims = json.loads(base64.urlsafe_b64decode(padded))
+        expires_at = float(claims["exp"])
+    except (ValueError, KeyError, TypeError, binascii.Error):
+        return TOKEN_LIFETIME_FALLBACK_SECONDS
+    remaining = expires_at - time.time()
+    return remaining if remaining > 0 else TOKEN_LIFETIME_FALLBACK_SECONDS
 
 
 def _cited_documents(result: dict[str, Any]) -> list[str]:
@@ -214,6 +253,129 @@ def failure_reason(item: dict[str, Any], result: dict[str, Any]) -> str | None:
     return "wrong_class_or_content"
 
 
+def summarise(
+    rows: list[dict[str, Any]], *, served_commit: str | None = None
+) -> dict[str, Any]:
+    """The run's own counts, in the shape `evals.acceptance_gate` classifies.
+
+    Pure over `rows`, so the numbers a gate reads are testable without a stack.
+
+    The classes are the run's *observed* behaviour, not the item's label:
+
+    - `confident_wrong` — a should-abstain item where the run **asserted an
+      answer**: it neither abstained nor said the sources lack it (PRD §5's
+      definition, and the scorer's `says_not_in_sources`). A prose "not in the
+      sources" reply that carries citations is an *unclean decline*, counted
+      against decline accuracy, not here.
+    - `clean_decline` — abstained, or plainly said so, **with no citations**.
+    - `false_abstention` — an answerable item the run declined on.
+    - `errored` — the run did not complete. Never a decline: an errored item
+      has no behaviour to grade.
+    """
+    counts = {
+        "confident_wrong": 0,
+        "clean_declines": 0,
+        "unclean_declines": 0,
+        "false_abstentions": 0,
+        "errored": 0,
+        "answer_items": 0,
+        "abstain_items": 0,
+        "smalltalk_items": 0,
+        "library_items": 0,
+        "items": 0,
+    }
+    detail: dict[str, list[str]] = {
+        "confident_wrong_ids": [],
+        "clean_decline_ids": [],
+        "unclean_decline_ids": [],
+        "false_abstention_ids": [],
+        "errored_ids": [],
+        "failed_ids": [],
+    }
+
+    def is_error(row: dict[str, Any]) -> bool:
+        return not str(row.get("status") or "").startswith("completed")
+
+    for row in rows:
+        counts["items"] += 1
+        if not row.get("pass"):
+            detail["failed_ids"].append(str(row["id"]))
+        errored = is_error(row)
+        if errored:
+            counts["errored"] += 1
+            detail["errored_ids"].append(str(row["id"]))
+            continue
+        expect = str(row.get("expect"))
+        abstained = row.get("message_status") == "abstained"
+        cited = bool(row.get("citations"))
+        declined = abstained or says_not_in_sources(str(row.get("answer") or ""))
+        if expect == "not_in_sources":
+            counts["abstain_items"] += 1
+            # The order here is PRD §5's, not convenience's. Whether the reply
+            # *says the sources lack it* decides confident wrong; citations only
+            # split the declines, into clean and unclean. A confident wrong
+            # answer normally cites, so checking citations first would file
+            # every hallucination as an unclean decline and report zero
+            # confident wrong answers — the one number that must never be zero.
+            if not declined:
+                counts["confident_wrong"] += 1
+                detail["confident_wrong_ids"].append(str(row["id"]))
+            elif cited:
+                # Declined in prose but cited: unclean, per PRD §5. Counted
+                # against decline accuracy, not here.
+                counts["unclean_declines"] += 1
+                detail["unclean_decline_ids"].append(str(row["id"]))
+            else:
+                counts["clean_declines"] += 1
+                detail["clean_decline_ids"].append(str(row["id"]))
+        elif expect == "answer":
+            counts["answer_items"] += 1
+            if declined:
+                counts["false_abstentions"] += 1
+                detail["false_abstention_ids"].append(str(row["id"]))
+        elif expect == "smalltalk":
+            counts["smalltalk_items"] += 1
+        elif expect == "library":
+            counts["library_items"] += 1
+
+    summary: dict[str, Any] = {"counts": counts}
+    if served_commit is not None:
+        summary["served_commit"] = served_commit
+    return {**summary, "detail": detail, "items": rows}
+
+
+def write_summary(
+    rows: list[dict[str, Any]], path: Path, *, served_commit: str | None = None
+) -> dict[str, Any]:
+    """Write the summary `evals.acceptance_gate` reads, and return it.
+
+    Sync and called after the run's event loop work is done, so the blocking
+    write does not sit inside the async body (`ASYNC240`); the summary is written
+    once, at the end, exactly like the raw results file beside it.
+    """
+    summary = summarise(rows, served_commit=served_commit)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(summary, indent=2))
+    return summary
+
+
+async def served_commit(client: httpx.AsyncClient) -> str:
+    """The commit the api this run is talking to is serving.
+
+    Read from the api's own `/healthz`, so it is the code that answered, not a
+    commit this script assumes. `unknown` when the api predates the field or is
+    unreachable: a run that cannot name what it measured is not a measurement,
+    and `evals.acceptance_gate` fails it.
+    """
+    try:
+        response = await client.get("/healthz")
+        response.raise_for_status()
+        value = response.json().get("served_commit")
+    except (httpx.HTTPError, ValueError):
+        return "unknown"
+    return str(value) if value else "unknown"
+
+
 async def eval_sign_in(client: httpx.AsyncClient) -> tuple[str, str]:
     """Sign in as the fixed eval account; return (email, password).
 
@@ -239,6 +401,7 @@ async def run(
     pace: float = 0.0,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     set_file: Path | None = None,
+    summary_out: Path | None = None,
 ) -> None:
     path = set_file or SET_FILE
     dataset = json.loads(path.read_text())
@@ -253,17 +416,44 @@ async def run(
         connect=30.0, read=smoke_chat.RUN_TIMEOUT_SECONDS, write=60.0, pool=60.0
     )
     rows: list[dict[str, Any]] = []
+    served: str | None = None
     async with httpx.AsyncClient(base_url=smoke_chat.API_URL, timeout=timeout) as client:
         email, password = await eval_sign_in(client)
         print(f"run user {email} (fixed eval account; fresh chat per item)\n")
+        # Read once, before the first item, and record it in the summary: the
+        # served commit is a property of the process, and a run that measured
+        # the wrong checkout has to be able to say so after the fact.
+        served = await served_commit(client)
+        print(f"api {smoke_chat.API_URL} serving commit {served}\n")
+
+        # **One token, refreshed from its own expiry** — not a login per
+        # request. `RATE_LIMIT_LOGIN` is 10 per 60 s per address, and this
+        # runner used to log in twice per item (once for the chat, once per
+        # turn), so a 57-item run needed ~115 logins and died on item 5 with a
+        # 429. That is a harness fault dressed as a product failure: it is
+        # `probe_generator_latency.py`'s trap, hit again. The access token is a
+        # JWT, not a per-request nonce, so nothing is weakened by reusing it;
+        # the only question is when it expires, and the token says so in its own
+        # `exp` claim. Refreshed a minute early, because a token that expires
+        # mid-run produces a 401 that the turn runner cannot recover from.
+        #
+        # A token whose `exp` cannot be read falls back to logging in per call:
+        # slower, but it cannot be wrong about expiry.
+        token_state: dict[str, Any] = {"token": None, "expires_at": 0.0}
 
         async def fresh_token() -> str:
+            now = time.monotonic()
+            if token_state["token"] and now < token_state["expires_at"]:
+                return str(token_state["token"])
             response = await client.post("/auth/login", json={"email": email, "password": password})
             if response.status_code != 200:
                 raise SystemExit(
                     f"eval user login failed mid-run: {response.status_code} {response.text[:200]}"
                 )
-            return str(response.json()["access_token"])
+            token = str(response.json()["access_token"])
+            token_state["token"] = token
+            token_state["expires_at"] = now + _token_lifetime(token) - TOKEN_REFRESH_MARGIN_SECONDS
+            return token
 
         for item in items:
 
@@ -369,6 +559,17 @@ async def run(
     out.write_text(json.dumps({"ran_at": stamp, "items": rows}, indent=2))
     print(f"raw results: {out}")
 
+    if summary_out is not None:
+        # `--summary-out` rather than scraping the table above: stdout is the
+        # operator's log (LiteLLM and Langfuse both write to it), and a verdict
+        # read out of a printed table is a verdict read out of a stream — which
+        # is how lane B2's probe nearly reported a false failure rate, because
+        # a decline streams a delta too. The summary carries the run's own
+        # per-item result fields, and `evals.acceptance_gate` classifies from
+        # them (`make check-work` step 9).
+        write_summary(rows, summary_out, served_commit=served)
+        print(f"summary: {summary_out}")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -395,6 +596,15 @@ if __name__ == "__main__":
         help="a different set file (e.g. ../../evals/counterfactual/items.json). "
         "The scorer is shared; only the items and the corpus change.",
     )
+    parser.add_argument(
+        "--summary-out",
+        type=Path,
+        default=None,
+        help="write this run's counts (confident wrong, clean declines, false "
+        "abstentions, errors, and the api's served commit) here, for "
+        "`evals.acceptance_gate` to classify. `make check-work` step 9 reads it "
+        "from this path rather than scraping stdout.",
+    )
     args = parser.parse_args()
     only = args.only.split(",") if args.only else None
-    asyncio.run(run(only=only, pace=args.pace, set_file=args.set))
+    asyncio.run(run(only=only, pace=args.pace, set_file=args.set, summary_out=args.summary_out))

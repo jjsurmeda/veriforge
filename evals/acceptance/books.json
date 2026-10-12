@@ -1,5 +1,5 @@
 {
-  "about": "Usability acceptance set: questions a real user asks about the five Gutenberg books in the Shared library. Each item states the behaviour the user should get. expect: answer | library | not_in_sources | smalltalk. cite: at least one citation must come from a document whose name contains one of these. mention: the answer must contain at least one of these (case-insensitive). Multi-turn items send turns in order in one chat; checks apply to the last turn. Multilingual items (added 2026-09-29) ask in the book's own language; cross-language items ask in English about a non-English book. mention lists include the term in both languages where the answer may come back in either. ambiguity items: expect 'answer' with `mention_all` listing BOTH referents — the corpus answers the question two ways (KI-27's Wukong shape). They are expected to fail today and are marked pending_p2, so the scorer reports them separately and they do not count against today's pass rate. forbid: a real-world value the document deliberately contradicts; mentioning it fails the item.",
+  "about": "Usability acceptance set: questions a real user asks about the five Gutenberg books in the Shared library. Each item states the behaviour the user should get. expect: answer | library | not_in_sources | smalltalk. cite: at least one citation must come from a document whose name contains one of these. mention: the answer must contain at least one of these (case-insensitive). Multi-turn items send turns in order in one chat; checks apply to the last turn. Multilingual items (added 2026-09-29) ask in the book's own language; cross-language items ask in English about a non-English book. mention lists include the term in both languages where the answer may come back in either. ambiguity items: expect 'answer' with `mention_all` listing BOTH referents — the corpus answers the question two ways (KI-27's Wukong shape). They carried pending_p2 until P2 shipped (2026-10-12); the flag is cleared and they are scored normally now. forbid: a real-world value the document deliberately contradicts; mentioning it fails the item.",
   "corpus": [
     "Pride and Prejudice",
     "The Adventures of Sherlock Holmes",
@@ -542,7 +542,7 @@
     {
       "id": "xl-en-wukong-master",
       "turns": [
-        "Who is Sun Wukong's master in Journey to the West?"
+        "Who is Sun Wukong's master on the pilgrimage in Journey to the West?"
       ],
       "expect": "answer",
       "cite": [
@@ -555,8 +555,9 @@
         "Tripitaka",
         "Xuanzang"
       ],
-      "proof": "Audited by scripts/audit_labels.py over all 10733 passages the test user can retrieve (testing.md: 'Test data is audited like code'). Expect 'answer'. Query \"Who is Sun Wukong's master in Journey to the West?\" (content terms ['journey', 'master', 'wukong', 'west', 'sun']) hits 3+ passages; top hit 'The Time Machine.txt' ord 0 (score 13.42): \"marked. This puzzled me very much at first. The alternations of night and day grew slower and slower, and so did the passage of the sun across the sky, until they seemed to stretch through centuries. At last a steady twilight brooded over the earth, a twilight only broken now and then when a comet glared across the darkling sky. The band of light that had indicated the sun had long since disappea\" mention '唐僧' attested at '西遊記.txt' ord 0: \"悟空道：「你家姓甚？」老者道：「舍下姓 陳。」三藏聞言，即下來起手道：「老施主與貧僧是華宗。」行者道：「師父， 你是唐姓，怎的和他是華宗？」三藏道：「我俗家也姓陳，乃是唐朝海州弘農郡 聚賢莊人氏。我的法名叫做陳玄奘。只因我大唐太宗皇帝賜我做御弟三藏，指唐 為姓，故名唐僧也。」那老者見說同姓，又十分歡喜。  行者道：「老陳，左右打攪你家，我有五百多年不洗澡了，你可去燒些湯來，與 我師徒們洗浴洗浴，一發臨行謝你。」那老兒即令燒湯拿盆，掌上燈火。師徒浴 罷，坐在燈前。行者道：「老陳，還有一事累你：有針線借我用用。」那老兒道 ：「有，有，有。」即教媽媽取針線來，遞與行者。\" (attested in 1 document(s)) mention '三藏' attested at '西遊記.txt' ord 0: \"來講罷，對眾言曰：「我觀四大部洲，眾生善惡，各方不一：東勝神洲者，敬 天禮地，心爽氣平﹔北俱盧洲者，雖好殺生，只因糊口，性拙情疏，無多作踐﹔ 我西牛賀洲者，不貪不殺，養氣潛靈，雖無上真，人人固壽﹔但那南贍部洲者， 貪淫樂禍，多殺多爭，正所謂口舌兇場，是非惡海。我今有三藏真經，可以勸人 為善。」諸菩薩聞言，合掌皈依，向佛前問曰：「如來有那三藏真經？」如來曰 ：「我有法一藏，談天﹔論一藏，說地﹔經一藏，度鬼。三藏共計三十五部，該 一萬五千一百四十四卷，乃是修真之經，正善之門。\" (attested in 1 document(s))",
-      "corpus": "books"
+      "corpus": "books",
+      "note": "Reworded 2026-10-12 (owner decision, KI-27). Both Bodhi Patriarch and Tang Sanzang are Sun Wukong's master in the book, so the question had no single right answer and the check was a judgement call. The turn now names the pilgrimage, which is the referent the accepted mentions name. expect, cite and mention are unchanged; the accepted answers were not widened.",
+      "proof": "Audited by scripts/audit_labels.py over all 10704 passages the test user can retrieve (testing.md: 'Test data is audited like code'). Expect 'answer'. Query \"Who is Sun Wukong's master on the pilgrimage in Journey to the West?\" (content terms ['pilgrimage', 'journey', 'master', 'wukong', 'west', 'sun']) hits 3+ passages; top hit 'The Time Machine.txt' ord 0 (score 13.43): \"marked. This puzzled me very much at first. The alternations of night and day grew slower and slower, and so did the passage of the sun across the sky, until they seemed to stretch through centuries. At last a steady twilight brooded over the earth, a twilight only broken now and then when a comet glared across the darkling sky. The band of light that had indicated the sun had long since disappea\" mention '唐僧' attested at '西遊記.txt' ord 0: \"身又一變，還變做個蟭蟟蟲，釘在他耳朵後面，不離他身上。那獃子 入深山，又行有四五里，只見山凹中有桌面大的四四方方三塊青石頭。獃子放下 鈀，對石頭唱個大喏。行者暗笑道：「這獃子，石頭又不是人，又不會說話，又 不會還禮的，唱他喏怎的，可不是個瞎帳？」原來那獃子把石頭當著唐僧、沙 僧、行者三人，朝著他演習哩。他道：「我這回去，見了師父，若問有妖怪，就 說有妖怪。他問甚麼山，我若說是泥捏的、土做的、錫打的、銅鑄的、麵蒸的、 紙糊的、筆畫的，他們見說我獃哩，若講這話，一發說獃了。我只說是石頭山。 他問甚麼洞，也只說是石頭洞。他問甚麼門，卻說是釘釘的鐵葉門。\" (attested in 1 document(s)) mention '三藏' attested at '西遊記.txt' ord 0: \"畢竟不知此後又有甚事，孫大聖怎生保護唐僧，幾時得到西天，且聽下回分解。 卻說孫行者按落雲頭，對師父備言菩薩借童子，老君收去寶貝之事。三藏稱謝不 已，死心塌地辦虔誠，捨命投西，攀鞍上馬，豬八戒挑著行李，沙和尚攏著馬 頭，孫行者執了鐵棒，剖開路，徑下高山前進。說不盡那水宿風餐，披霜冒露。 　　師徒們行勾多時，前又一山阻路。三藏在那馬上高叫：「徒弟呵，你看那裏 山勢崔巍，須是要仔細隄防，恐又有魔障侵身也。」行者道：「師父休要胡思亂 想，只要定性存神，自然無事。」三藏道：「徒弟呀，西天怎麼這等難行？我記 得離了長安城，在路上春盡夏來，秋殘冬至，有四五個年頭，怎麼還不能得 到？」行者聞言，呵呵笑道：「早哩，早哩，還不曾出大門哩。」\" (attested in 1 document(s))"
     },
     {
       "id": "ml-es-outside",
@@ -782,10 +783,10 @@
         "sister",
         "Margaret"
       ],
-      "pending_p2": true,
       "why_ambiguous": "The corpus supports two valid answers to 'to whom'. Letter 1 opens 'my first task is to assure my dear sister', and ord 8 signs 'Your affectionate brother, Robert Walton ... My dear Sister'. So 'his sister' is right, and so is 'Margaret' — she is the name Walton uses for her in four other chunks of this same text. A model that picks one has not misread anything. This is KI-27's Wukong shape.",
       "proof": "Audited by scripts/audit_labels.py over all 10733 passages the test user can retrieve (testing.md: 'Test data is audited like code'). Expect 'answer'. Query 'Who is writing the letters at the start of Frankenstein, and who are they addressed to?' (content terms ['frankenstein', 'addressed', 'letters', 'writing', 'start']) hits 3+ passages; top hit 'Pride and Prejudice.txt' ord 0 (score 13.44): \"o mend; and, in the evening, Elizabeth joined their party in the drawing-room. The loo table, however, did not appear. Mr. Darcy was writing, and Miss Bingley, seated near him, was watching the progress of his letter, and repeatedly calling off his attention by messages to his sister. Mr. Hurst and Mr. Bingley were at piquet, and Mrs. Hurst was observing their game.  Elizabeth took up some needlew\"",
-      "corpus": "books"
+      "corpus": "books",
+      "note": "pending_p2 cleared 2026-10-12: P2 shipped (grounded_answer.md v4), so the item is scored normally."
     },
     {
       "id": "amb-alice-sister",
@@ -799,10 +800,10 @@
       "mention_all": [
         "sister"
       ],
-      "pending_p2": true,
       "why_ambiguous": "The corpus names the sister exactly once ('Alice was beginning to get very tired from sitting by her sister on the bank') and never gives her a name, so there is no second referent in the text — but 'sister' is a word the corpus uses for at least four different characters across the library, and the retrieval that has to resolve it is the same one that finds Eleanor in Pride and Prejudice. Included as the cheap half of an ambiguity item: the corpus's answer is thin enough that the wrong sister is easy to reach.",
       "proof": "Audited by scripts/audit_labels.py over all 10733 passages the test user can retrieve (testing.md: 'Test data is audited like code'). Expect 'answer'. Query 'Who is the sister Alice sits with on the riverbank at the start of her adventure?' (content terms ['adventure', 'riverbank', 'sister', 'alice', 'start', 'sits']) hits 3+ passages; top hit 'The Adventures of Sherlock Holmes.txt' ord 0 (score 14.44): \"f Identity    IV.    The Boscombe Valley Mystery    V.     The Five Orange Pips    VI.    The Man with the Twisted Lip    VII.   The Adventure of the Blue Carbuncle    VIII.  The Adventure of the Speckled Band    IX.    The Adventure of the Engineer’s Thumb    X.     The Adventure of the Noble Bachelor    XI.    The Adventure of the Beryl Coronet    XII.   The Adventure of the Copper Beeches\"",
-      "corpus": "books"
+      "corpus": "books",
+      "note": "pending_p2 cleared 2026-10-12: P2 shipped (grounded_answer.md v4), so the item is scored normally."
     },
     {
       "id": "amb-bovary-homais",
@@ -817,10 +818,10 @@
         "Homais",
         "médecin"
       ],
-      "pending_p2": true,
       "why_ambiguous": "Madame Bovary names two men who advise Emma about her eyes: Homais, the pharmacien who recommends and supplies the drops, and the médecin de campagne, Rouard, whom Emma runs to when the first fails. Both are in the corpus and both are correct answers to 'who advises her'. The item carries both referents in mention_all so P2 can tell whether the rewrite surfaces the ambiguity instead of picking one silently.",
       "proof": "Audited by scripts/audit_labels.py over all 10733 passages the test user can retrieve (testing.md: 'Test data is audited like code'). Expect 'answer'. Query 'Who advises Emma Bovary, and what does he advise her about her eyes?' (content terms ['advises', 'advise', 'bovary', 'emma', 'eyes']) hits 3+ passages; top hit 'Madame Bovary.txt' ord 5 (score 11.05): \"Madame Bovary mère, la veille au soir, en traversant le corridor, l’avait surprise dans la compagnie d’un homme, un homme à collier brun, d’environ quarante ans, et qui, au bruit de ses pas, s’était vite échappé de la cuisine. Alors Emma se prit à rire; mais la bonne dame s’emporta, déclarant qu’à moins de se moquer des mœurs, on devait surveiller celles des domestiques.  — De quel monde êtes-vous\"",
-      "corpus": "books"
+      "corpus": "books",
+      "note": "pending_p2 cleared 2026-10-12: P2 shipped (grounded_answer.md v4), so the item is scored normally."
     }
   ],
   "gate_subsets": {

@@ -37,6 +37,12 @@ class _Response:
         self.status_code = status_code
         self._payload = payload
 
+    def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            raise httpx.HTTPStatusError(
+                "boom", request=None, response=None  # type: ignore[arg-type]
+            )
+
     def json(self) -> Any:
         return self._payload
 
@@ -82,6 +88,14 @@ class FakeClient:
         raise AssertionError(f"unexpected POST {url}")
 
     async def get(self, url: str, **kwargs: Any) -> _Response:
+        # `/healthz` is the one GET the runner makes, and it carries no
+        # credential: it reads the served commit so the summary can name the
+        # api that answered (`make check-work` step 6 compares it with HEAD).
+        # Anything else is still a failure — in particular nothing that reads
+        # or writes another user's data.
+        if url == "/healthz":
+            self._record("GET", url, None)
+            return _Response(200, {"status": "ok", "served_commit": "a" * 40})
         raise AssertionError(f"acceptance must not GET anything, got {url}")
 
     async def patch(self, url: str, **kwargs: Any) -> _Response:
@@ -129,7 +143,17 @@ def wired_run(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]
     monkeypatch.setattr(acceptance, "SET_FILE", set_file)
     monkeypatch.setattr(acceptance, "OUT_DIR", tmp_path / "out")
     monkeypatch.setattr(acceptance.smoke_chat, "run_turn", run_turn)
-    fake_httpx = type("H", (), {"AsyncClient": lambda **_kw: client, "Timeout": httpx.Timeout})
+    # `HTTPError` is on the namespace `acceptance.served_commit` catches, so the
+    # stand-in has to carry it — not just AsyncClient and Timeout.
+    fake_httpx = type(
+        "H",
+        (),
+        {
+            "AsyncClient": lambda **_kw: client,
+            "Timeout": httpx.Timeout,
+            "HTTPError": httpx.HTTPError,
+        },
+    )
     monkeypatch.setattr(acceptance, "httpx", fake_httpx)
     return {"client": client, "items": items}
 

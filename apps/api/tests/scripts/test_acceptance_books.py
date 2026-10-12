@@ -28,7 +28,8 @@ VALID_EXPECTS = {"answer", "library", "not_in_sources", "smalltalk"}
 # `outside-whitman-lilacs` to replace the abstention coverage it gave up.
 # P1b item 3 adds 6 more not_in_sources near-misses (the prompt asks for 20/20,
 # and there are now 20) and 3 ambiguity items, which are `answer` but carry
-# `pending_p2` and are scored separately.
+# `mention_all`. Those three carried `pending_p2` until P2 shipped and are
+# scored normally now (2026-10-12).
 EXPECTED_CLASS_COUNTS = {
     "answer": 33,
     "not_in_sources": 20,
@@ -37,8 +38,8 @@ EXPECTED_CLASS_COUNTS = {
 }
 
 # P1b item 3: the ambiguity items the corpus answers two ways (KI-27's Wukong
-# shape). P2's prompt change is what makes them passable; until then they are
-# reported separately so they do not count against today's pass rate.
+# shape). P2's prompt change shipped, so they are scored like any other answer
+# item: a run that names one referent and misses the other fails them.
 AMBIGUITY_ITEMS = [
     "amb-frankenstein-addressee",
     "amb-alice-sister",
@@ -132,24 +133,29 @@ def test_the_abstain_class_reaches_twenty_with_two_non_english_near_misses() -> 
     assert len(multilingual) >= 2, multilingual
 
 
-def test_the_ambiguity_items_name_both_referents_and_are_pending_p2() -> None:
-    """KI-27's Wukong shape: the corpus answers two ways, so the item lists both
-    and is held back from today's pass rate until P2's prompt change."""
+def test_the_ambiguity_items_name_both_referents_and_are_scored_normally() -> None:
+    """KI-27's Wukong shape: the corpus answers two ways, so the item lists both.
+
+    They carried `pending_p2` until P2 shipped (2026-10-12) and are now scored
+    like any other answer item, so the flag is asserted *absent*: an item that
+    silently regains it stops counting against today's pass rate.
+    """
     by_id = {item["id"]: item for item in ITEMS}
     for id_ in AMBIGUITY_ITEMS:
         assert id_ in by_id, id_
         item = by_id[id_]
         assert item["expect"] == "answer", id_
-        assert item.get("pending_p2") is True, id_
+        assert "pending_p2" not in item, f"{id_}: P2 shipped; the flag is retired"
         assert len(item.get("mention_all", [])) >= 1, id_
         assert item.get("why_ambiguous"), f"{id_}: state why the corpus answers two ways"
 
 
-def test_only_the_ambiguity_items_are_pending_p2() -> None:
-    """`pending_p2` is a claim about an item, not a way to make a set look
-    better: if everything is pending, nothing is."""
+def test_no_item_is_pending_p2() -> None:
+    """The flag is retired set-wide. Reintroducing one is a label change that
+    has to be argued in the set file and here, not a way to make a set look
+    better."""
     pending = [item["id"] for item in ITEMS if item.get("pending_p2")]
-    assert sorted(pending) == sorted(AMBIGUITY_ITEMS)
+    assert pending == [], pending
 
 
 def test_the_stale_count_label_was_relabelled_to_the_corpus() -> None:

@@ -57,7 +57,11 @@ ACCEPTANCE_QUESTIONS = [
     ("ml-ja-rashomon-oldwoman", "羅生門で老婆は何をしていましたか？", "ja"),
     ("xl-en-bovary-death", "How does Emma Bovary die?", "en"),
     ("xl-en-samsa", "What does Gregor Samsa turn into?", "en"),
-    ("xl-en-wukong-master", "Who is Sun Wukong's master in Journey to the West?", "en"),
+    (
+        "xl-en-wukong-master",
+        "Who is Sun Wukong's master on the pilgrimage in Journey to the West?",
+        "en",
+    ),
     ("ml-es-outside", "¿Quién escribió Cien años de soledad?", "es"),
 ]
 

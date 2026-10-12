@@ -11,8 +11,10 @@
 #                      stored baselines, each on a fresh ephemeral database
 #   5. entity-mismatch 12/12 clean declines, 0 confident wrong, 0 errored,
 #                      on a fresh ephemeral database
+#   6. books acceptance  the 57-item usability set against an api pinned to
+#                      this checkout, at PRD §5's bar for one run
 #
-# Steps 4 and 5 SPEND PROVIDER CREDIT. They are the reason this is not a
+# Steps 4-6 SPEND PROVIDER CREDIT. They are the reason this is not a
 # three-minute command: a fast20 gate run with its retry-to-mean-of-3 is a few
 # live runs against OpenRouter, and entity-mismatch is 12 more. Check the
 # balance (`GET https://openrouter.ai/api/v1/credits`) before starting; the
@@ -43,6 +45,12 @@ export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-veriforge}"
 # so two lanes cannot collide on it.
 : "${EVAL_GATE_DB:=veriforge_eval_gate}"
 export EVAL_GATE_DB
+# Same for the acceptance step's library: it owns a whole corpus, an eval
+# account's quota ledger and a port, so two lanes cannot share one.
+: "${ACCEPTANCE_DB:=veriforge_accept}"
+export ACCEPTANCE_DB
+: "${ACCEPTANCE_PORT:=8123}"
+export ACCEPTANCE_PORT
 
 failed_step=""
 start_of_step=0
@@ -172,8 +180,18 @@ entity_mismatch_clean() {
   (cd "$api" && .venv/bin/python -m evals.entity_gate "$summary")
 }
 
+acceptance_books() {
+  # `scripts/acceptance_local.sh`, not `make acceptance`: the latter talks to
+  # the running dev stack, which serves the main checkout's code, so in a
+  # worktree it would score the wrong commit and report it as this branch. The
+  # script starts an api from this checkout against its own database, prints the
+  # commit that api serves, and fails when it is not HEAD. The pass/fail comes
+  # from `evals.acceptance_gate` reading the run's own summary fields.
+  "$root/scripts/acceptance_local.sh"
+}
+
 echo "check-work on $(git rev-parse --short HEAD 2>/dev/null || echo '?') (test db: ${TEST_DATABASE_URL##*/})"
-echo "Steps 4-5 spend OpenRouter credit."
+echo "Steps 4-6 spend OpenRouter credit."
 
 step "api: ruff check" api_ruff
 step "api: mypy --strict" api_mypy
@@ -183,5 +201,6 @@ step "web: codegen + vitest" web_vitest
 step "models: no :free default" no_free_defaults
 step "eval gate: fast20 + counterfactual" eval_gate_both_subsets
 step "eval: entity-mismatch 12/12" entity_mismatch_clean
+step "acceptance: books 57 items, PRD §5 bar" acceptance_books
 
 report
