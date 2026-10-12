@@ -32,7 +32,7 @@ Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 | post-beta | KI-8 | six Playwright specs make live LLM runs instead of replaying fixtures |
 | post-beta | KI-39 | web-chunk sweep undercounts deletions (return value only) |
 | post-beta | KI-69 | reasoning-mandatory retry in providers/llm.py only serves free endpoints; dead on supported config |
-| post-beta | KI-71 | ingress routes content questions to `chitchat`: ungrounded answer, no citations |
+| check-work (acceptance) | KI-71 | ingress routes content questions to `chitchat`: ungrounded answer, no citations |
 
 ---
 
