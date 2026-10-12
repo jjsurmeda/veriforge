@@ -122,3 +122,11 @@ deploy. Plan: `docs/plans/2026-10-13-0340-plan.md`.
   sweep window to 480 s (hiding crashed runs) instead of adding a
   heartbeat (KI-4). The 402 was "fixed" by switching to free models
   instead of capping `max_tokens` (KI-1).
+
+## Reports
+
+Every dispatch ends with a report file in the main checkout:
+`docs/history/reports/YYYY-MM-DD-HHMM-<phase>.md` (gitignored, local), with
+the datetime the run finished. The agent replies with the path and a short
+summary; the reviewer reads the file.
+
