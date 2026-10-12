@@ -115,6 +115,42 @@ def test_a_declined_answer_item_is_a_false_abstention() -> None:
     assert summary["detail"]["false_abstention_ids"] == ["rp77-torque"]
 
 
+def test_an_answered_item_with_no_citations_is_an_uncited_answer() -> None:
+    """KI-71: the item is `answer`, the run did not decline, and it cited
+    nothing — a reply from model memory. It is neither a false abstention
+    (nothing was declined) nor a confident wrong (that class is should-decline
+    items), so without its own count the shape is invisible to the gate."""
+    rows = [
+        _row(
+            "broad-sherlock",
+            "answer",
+            answer="The Adventures of Sherlock Holmes is a classic detective collection.",
+            citations=[],
+            ok=False,
+        )
+    ]
+
+    summary = acceptance.summarise(rows)
+
+    assert summary["counts"]["uncited_answers"] == 1
+    assert summary["detail"]["uncited_answer_ids"] == ["broad-sherlock"]
+    assert summary["counts"]["false_abstentions"] == 0
+    assert summary["counts"]["confident_wrong"] == 0
+
+
+def test_an_errored_item_is_never_an_uncited_answer_either() -> None:
+    """A failed item has no behaviour to grade, so it is counted once, as an
+    error — not as an ungrounded answer it never got to give."""
+    rows = [
+        _row("broad-sherlock", "answer", status="failed (provider)", answer="", citations=[])
+    ]
+
+    summary = acceptance.summarise(rows)
+
+    assert summary["counts"]["errored"] == 1
+    assert summary["counts"]["uncited_answers"] == 0
+
+
 def test_an_errored_item_is_never_a_decline() -> None:
     """The error is counted on its own and excluded from every rate: an errored
     abstain item has no behaviour to grade, so counting it as a decline would

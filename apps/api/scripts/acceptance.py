@@ -269,6 +269,12 @@ def summarise(
       against decline accuracy, not here.
     - `clean_decline` — abstained, or plainly said so, **with no citations**.
     - `false_abstention` — an answerable item the run declined on.
+    - `uncited_answer` (KI-71) — an answerable item that **did not decline and
+      cited nothing**. Every other class above would pass this: it is neither a
+      decline, nor an abstention, nor an error, and its text can be perfectly
+      correct. It is counted separately precisely because nothing else sees it —
+      a content question routed to `chitchat` skips retrieval and answers from
+      model memory, and that is the one behaviour this product does not ship.
     - `errored` — the run did not complete. Never a decline: an errored item
       has no behaviour to grade.
     """
@@ -277,6 +283,7 @@ def summarise(
         "clean_declines": 0,
         "unclean_declines": 0,
         "false_abstentions": 0,
+        "uncited_answers": 0,
         "errored": 0,
         "answer_items": 0,
         "abstain_items": 0,
@@ -289,6 +296,7 @@ def summarise(
         "clean_decline_ids": [],
         "unclean_decline_ids": [],
         "false_abstention_ids": [],
+        "uncited_answer_ids": [],
         "errored_ids": [],
         "failed_ids": [],
     }
@@ -333,6 +341,12 @@ def summarise(
             if declined:
                 counts["false_abstentions"] += 1
                 detail["false_abstention_ids"].append(str(row["id"]))
+            elif not cited:
+                # KI-71: answered, not declined, and nothing cited. Whether the
+                # text is right or wrong is not the question — an answer with no
+                # evidence behind it is a different product from this one.
+                counts["uncited_answers"] += 1
+                detail["uncited_answer_ids"].append(str(row["id"]))
         elif expect == "smalltalk":
             counts["smalltalk_items"] += 1
         elif expect == "library":

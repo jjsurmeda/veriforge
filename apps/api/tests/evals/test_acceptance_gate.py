@@ -36,6 +36,7 @@ def _summary(**overrides: Any) -> dict[str, Any]:
             "unclean_declines": 0,
             "confident_wrong": 0,
             "false_abstentions": 0,
+            "uncited_answers": 0,
             "errored": 0,
         },
         "detail": {
@@ -43,6 +44,7 @@ def _summary(**overrides: Any) -> dict[str, Any]:
             "clean_decline_ids": [],
             "unclean_decline_ids": [],
             "false_abstention_ids": [],
+            "uncited_answer_ids": [],
             "errored_ids": [],
             "failed_ids": [],
         },
@@ -69,26 +71,26 @@ def test_one_confident_wrong_fails() -> None:
     assert any("outside-study-in-scarlet" in failure for failure in failures)
 
 
-def test_seventeen_of_twenty_clean_declines_fails() -> None:
-    """17/20 = 85%, under PRD §5's 90%."""
-    summary = _summary(clean_declines=17, unclean_declines=3)
+def test_eighteen_of_twenty_one_clean_declines_fails() -> None:
+    """18/21 = 85.7%, under PRD §5's 90%."""
+    summary = _summary(clean_declines=18, unclean_declines=3)
     summary["detail"]["unclean_decline_ids"] = ["a", "b", "c"]
 
     failures = acceptance_failures(summary)
 
-    assert any("17 of 20 clean declines" in failure for failure in failures)
-    assert any("at least 18" in failure for failure in failures)
+    assert any("18 of 21 clean declines" in failure for failure in failures)
+    assert any("at least 19" in failure for failure in failures)
 
 
-def test_eighteen_of_twenty_clean_declines_passes() -> None:
-    """The boundary: 18/20 = exactly 90%, so it passes."""
-    assert acceptance_failures(_summary(clean_declines=18, unclean_declines=2)) == []
+def test_nineteen_of_twenty_one_clean_declines_passes() -> None:
+    """The boundary: -(-21 * 90 // 100) = 19, so 19/21 = 90.5% passes."""
+    assert acceptance_failures(_summary(clean_declines=19, unclean_declines=2)) == []
 
 
 def test_an_unclean_decline_fails_on_the_count_not_as_confident_wrong() -> None:
     """A prose "the sources don't cover that" with citations is a decline (PRD §5),
     not a confident wrong answer — but it is not clean either."""
-    summary = _summary(clean_declines=17, unclean_declines=3)
+    summary = _summary(clean_declines=18, unclean_declines=3)
 
     failures = acceptance_failures(summary)
 
@@ -96,19 +98,19 @@ def test_an_unclean_decline_fails_on_the_count_not_as_confident_wrong() -> None:
     assert not any("confident wrong" in failure for failure in failures)
 
 
-def test_two_of_thirty_three_false_abstentions_fails() -> None:
+def test_two_of_thirty_two_false_abstentions_fails() -> None:
     """KI-56's shape: two real answers the run declined on."""
     summary = _summary(false_abstentions=2)
     summary["detail"]["false_abstention_ids"] = ["rp77-torque", "other"]
 
     failures = acceptance_failures(summary)
 
-    assert any("2 of 33 answerable items declined" in failure for failure in failures)
+    assert any("2 of 32 answerable items declined" in failure for failure in failures)
     assert any("rp77-torque" in failure for failure in failures)
 
 
-def test_one_of_thirty_three_false_abstentions_passes() -> None:
-    """The boundary: 1/33 = 3%, under PRD §5's 5%."""
+def test_one_of_thirty_two_false_abstentions_passes() -> None:
+    """The boundary: 1/32 = 3%, under PRD §5's 5%."""
     assert acceptance_failures(_summary(false_abstentions=1)) == []
 
 
@@ -121,6 +123,34 @@ def test_one_errored_item_fails_as_an_error_not_a_decline() -> None:
 
     assert any("1 item(s) errored" in failure for failure in failures)
     assert any("never a decline" in failure for failure in failures)
+
+
+def test_an_uncited_answer_fails_even_when_the_text_is_right() -> None:
+    """KI-71's bar line. `broad-sherlock`'s run cleared every other clause —
+    20/20 clean declines, 0 confident wrong, 2 false abstentions of 33 — and
+    still answered a content question from model memory with nothing behind
+    it. The gate has to fail that, because the text being right is exactly
+    what makes the shape hard to notice."""
+    summary = _summary(uncited_answers=1)
+    summary["detail"]["uncited_answer_ids"] = ["broad-sherlock"]
+
+    failures = acceptance_failures(summary)
+
+    assert any("1 answer-class item(s) completed with zero citations" in f for f in failures)
+    assert any("broad-sherlock" in f for f in failures)
+
+
+def test_an_uncited_answer_is_not_a_false_abstention() -> None:
+    """The two counts are disjoint and the gate reports them apart: the run
+    did not decline, so calling it a false abstention would describe the wrong
+    behaviour as well as hide the right one."""
+    summary = _summary(uncited_answers=1)
+    summary["detail"]["uncited_answer_ids"] = ["broad-sherlock"]
+
+    failures = acceptance_failures(summary)
+
+    assert not any("false abstention" in f for f in failures)
+    assert not any("confident wrong" in f for f in failures)
 
 
 def test_a_failed_smalltalk_item_fails() -> None:
@@ -165,6 +195,8 @@ def test_the_bar_arithmetic_does_not_drift_on_float_error() -> None:
     """`math.ceil(20 * 0.90)` is 19, because 0.9 is inexact. The rate must not
     tighten itself by an item through a rounding accident."""
     assert min_clean_declines(20) == 18
+    assert min_clean_declines(21) == 19
+    assert max_false_abstentions(32) == 1
     assert max_false_abstentions(33) == 1
     assert max_false_abstentions(100) == 5
 
@@ -189,13 +221,42 @@ def test_usage_error_when_the_summary_path_is_wrong(argv: list[str]) -> None:
     assert acceptance_gate.main(argv) == 2
 
 
-def test_the_expected_counts_are_the_widened_set() -> None:
+def test_the_expected_counts_are_the_relabelled_set() -> None:
     """Pinned so a set edit that changes the mix has to change the bar in the
-    same commit, rather than silently passing against a stale expectation."""
+    same commit, rather than silently passing against a stale expectation.
+    32/21, not 33/20: `amb-bovary-homais` moved to `not_in_sources` on
+    2026-10-12 (phase 1c item 2) because its premise is not in this corpus."""
     assert EXPECTED_COUNTS == {
         "items": 57,
-        "answer_items": 33,
-        "abstain_items": 20,
+        "answer_items": 32,
+        "abstain_items": 21,
         "smalltalk_items": 2,
         "library_items": 2,
     }
+
+
+def test_the_set_file_agrees_with_the_pinned_counts() -> None:
+    """The pin above is a literal; this is the one that would catch it going
+    stale. Read the committed set rather than trusting the constant to describe
+    it, so a relabel that forgets the gate fails here rather than at 03:00 in a
+    gate run."""
+    from collections import Counter
+
+    path = Path(__file__).resolve().parents[4] / "evals" / "acceptance" / "books.json"
+    items = json.loads(path.read_text())["items"]
+    counts = Counter(str(item["expect"]) for item in items)
+
+    assert len(items) == EXPECTED_COUNTS["items"]
+    assert counts["answer"] == EXPECTED_COUNTS["answer_items"]
+    assert counts["not_in_sources"] == EXPECTED_COUNTS["abstain_items"]
+    assert counts["smalltalk"] == EXPECTED_COUNTS["smalltalk_items"]
+    assert counts["library"] == EXPECTED_COUNTS["library_items"]
+
+
+def test_every_item_id_in_the_set_is_unique() -> None:
+    """A duplicate id would make `detail`'s id lists point at two different
+    items at once, and `failed_ids` would name one of them twice."""
+    path = Path(__file__).resolve().parents[4] / "evals" / "acceptance" / "books.json"
+    ids = [str(item["id"]) for item in json.loads(path.read_text())["items"]]
+
+    assert len(ids) == len(set(ids))

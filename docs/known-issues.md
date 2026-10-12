@@ -33,6 +33,7 @@ Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 | post-beta | KI-39 | web-chunk sweep undercounts deletions (return value only) |
 | post-beta | KI-69 | reasoning-mandatory retry in providers/llm.py only serves free endpoints; dead on supported config |
 | check-work (acceptance) | KI-71 | ingress routes content questions to `chitchat`: ungrounded answer, no citations |
+| check-work (acceptance) | KI-72 | the entity Noul reads a compare question as a conjunction, so `compare-inventors` is a stable false abstention |
 
 ---
 
@@ -479,15 +480,68 @@ items declined; PRD §5 allows <= 1.
   step on this branch as one sample, not as the number.
 - **Done when:** the two broad items answer, `amb-bovary-homais` either answers
   or is relabelled against the corpus, and the whole step passes **twice**.
+- **The signals table, and the rule chosen from it (2026-10-12, phase 1c item
+  2).** Every recorded item of both runs, with its expected class, intent,
+  sufficiency and max post-sanitize rerank score per attempt, is committed at
+  **`docs/reviews/2026-10-12-2031-ki70-signals.md`** §1. Built from the two
+  phase-1b acceptance exports and the phase-1 gate summaries already on disk —
+  no run was spent to make it.
 
-## KI-71: `post-beta` -- ingress routes content questions to `chitchat`, which skips retrieval and answers ungrounded
+  **No threshold moves**, which the table confirms on this data: run-1
+  `not_in_sources` items reach relevance 0.71, 0.63 and 0.50 while the answer
+  items the gate loses sit at 0.35–0.57. The distributions overlap at every
+  cut-off. `rerank_abstain` stays 0.60.
 
-Logged 2026-10-12 (phase 1b, same run). **post-beta:** it fails two acceptance
-items but breaks no step, because the step's bar (PRD §5 as the brief takes it)
-covers confident wrong, decline accuracy, false abstention, smalltalk, library
-and errors -- not an answer-class item answered with no citations.
+  **The rule: a `summarize` question is not subject to the relevance veto;
+  sufficiency and the entity check decide it alone.** The gate measures
+  question-to-passage *lexical overlap*, and "give me the gist of X" matches no
+  single passage — which is why `broad-alice` scored 0.35 on the right passages
+  while KI-54's entity check scored 0.97 on those same passages. For a gist
+  question the overlap signal is not evidence of irrelevance. Keyed on what
+  the question **is**, so no new number is introduced.
 
-- **What:** `broad-sherlock` ("tell me something about the adventures of sherlock
+  **The proof the brief asks for** (§3 of the doc, replayed in
+  `apps/api/tests/graph/test_ki70_relevance_veto.py`): on every recorded item
+  of both runs — **0 of 20** should-decline items become answers; the rule
+  removes the false abstentions on `broad-alice` and `broad-bovary` and changes
+  nothing else. The replay carries the entity check, because
+  `outside-holmes-boston` clears both other floors (0.39 / 0.63) and is held
+  only by the entity check — a replay without it would report a confident
+  wrong answer the run never gave.
+
+  **`amb-bovary-homais` is an evidence failure and its label is wrong.**
+  `scripts/audit_labels.py` reports the item clean, but that checks the query
+  *terms* hit passages, not that the passages contain the answer. Reading the
+  corpus says the item's premise is false for this edition: **`Rouard` is 0
+  hits corpus-wide**, `médecin de la campagne` 0, and no sentence anywhere
+  pairs the pharmacist with Emma's eyes (`pharmacien[^.]{0,300}yeux` matches 0
+  times; `baume`, `collyre`, `drops` are all 0). Relabelled `answer` →
+  `not_in_sources`, labels only, with the measurement in the item. The run's
+  behaviour was right all along. Class counts move 33/20 → 32/21 and
+  `EXPECTED_COUNTS` moves with them.
+
+  **Still open until the gate agrees:** the change is proven against recorded
+  values and fakes; what proves it on the real corpus is `make check-work`
+  running green twice (phase 1c item 3).
+
+  **Still open, and not fixed by any of this:** the relevance gate still
+  measures the wrong thing for a broad question the intent classifier did not
+  call `summarize`. The table shows the shape — no signal in the recorded set
+  separates `broad-*` at 0.35–0.57 from `outside-*` at 0.63–0.71.
+
+  **Measured on the live corpus (2026-10-12, phase 1c item 3, commit
+  `72263cb`):** both broad items now answer. `broad-alice` at sufficiency
+  0.59 / relevance 0.32, `broad-bovary` at 0.42 / 0.56 — both would have been
+  vetoed at relevance 0.60 and neither is. The rule does what the replay said
+  it would.
+
+## KI-71: ingress routes content questions to `chitchat`, which skipped retrieval and answered ungrounded
+
+Logged 2026-10-12 (phase 1b, same run). Owner decision 2026-10-12: **not
+post-beta** — this is the one failure shape the product says it does not have,
+so it breaks `make check-work` step 9.
+
+- **What:** `broad-sherlock` ("tell me something about the sherlock
   holmes") and `ml-es-rocinante` ("\u00bfComo se llama el caballo de Don
   Quijote?") were classified `intent=chitchat`, took the `Small talk: skipped
   retrieval` path, and answered from model memory with **no citations** and no
@@ -505,6 +559,108 @@ and errors -- not an answer-class item answered with no citations.
 - **Done when:** the intent gate's `chitchat` option stops catching questions
   that name a document or a character, asserted in a test rather than measured
   in a run.
+- **FIXED (2026-10-12, phase 1c item 1).** Two changes, and the bar line came
+  first so the step could have caught it.
+
+  **The bar line.** `scripts/acceptance.summarise` now writes
+  `uncited_answers` / `uncited_answer_ids`: an `answer`-class item that did not
+  decline and cited nothing. `evals/acceptance_gate.py` fails on any of them
+  (`MAX_UNCITED_ANSWERS = 0`). It is a separate count from `false_abstentions`
+  on purpose — the run did not decline, so calling it that would describe the
+  wrong behaviour as well as hide this one — and from `confident_wrong`, which
+  is the should-decline class. `broad-sherlock`'s run held every other clause
+  (20/20 clean declines, 0 confident wrong, 2 false abstentions of 33) and
+  still failed here.
+
+  **The fix, structural.** `chitchat` no longer decides whether to retrieve.
+  In `graph/auto.py`, when ingress returns `chitchat` **and the user has
+  sources in scope**, the run retrieves anyway and the evidence decides:
+  enough of it and it is the ordinary grounded answer with citations; not
+  enough and it returns the chitchat reply, which `prompts/chitchat.md` (v3)
+  now explicitly bars from asserting anything about the sources. Whichever
+  way the classifier flips, a content question cannot be answered from memory.
+  With no sources in scope there is nothing to retrieve and the fast reply is
+  unchanged. The greeting fast path (CLAUDE.md's one carve-out) is untouched
+  and still skips everything, which is what keeps `"thanks!"` free.
+
+  Tests: `tests/graph/test_chitchat.py` — a chitchat-routed message naming a
+  book retrieves and answers with contexts (recorded values: sufficiency 0.61,
+  relevance 0.97); a chitchat-routed run whose evidence does not clear the
+  floors falls back to the sourceless reply with no contexts and no abstain
+  event; `"thanks!"` retrieves nothing and makes zero ingress calls; a
+  greeting-adjacent greeting with no sources still skips. Plus the gate and
+  summary cases in `tests/evals/test_acceptance_gate.py` and
+  `tests/scripts/test_acceptance_summary.py`. Fakes throughout; no live call.
+
+  The prompt bump is v2 → v3 and is gated by `make check-work` step 4 per
+  CLAUDE.md.
+
+  **Still open until the gate agrees.** The change is proven by fakes; what
+  proves it on the real corpus is `make check-work` running green twice
+  (phase 1c item 3). This entry moves to `known-issues-archive.md` in the
+  commit that does, not in this one.
+
+## KI-72: the entity Noul reads a compare question as a conjunction, so a compare item is a stable false abstention
+
+Logged 2026-10-12 (phase 1c item 3, commit `72263cb`, first full acceptance run
+since the KI-70 rule landed). **Breaks `make check-work` step 9**: 2 of 32
+answerable items declined, and PRD §5 allows 1.
+
+- **What:** `compare-inventors` ("Compare how Victor Frankenstein and the Time
+  Traveller deal with the consequences of their inventions") declines. It is
+  not the relevance gate and it is not sufficiency: relevance **0.97** on both
+  attempts (floor 0.60) and sufficiency **0.15 / 0.22** then **0.14 / 0.14** on
+  a rerun (floor 0.05). The signal that abstains it is KI-54's per-passage
+  entity check.
+- **The evidence, from the run's own `run_events`** (the acceptance database
+  survives the step's teardown, so this is read back rather than inferred).
+  Across two runs, all sixteen entity readings for this item:
+
+  | | readings | min | max | floor |
+  | --- | --- | --- | --- | --- |
+  | run 1 | 8 | 0.05 | **0.44** | 0.50 |
+  | rerun | 8 | 0.19 | **0.40** | 0.50 |
+
+  Not one passage clears the floor, in either run, and the band is narrow
+  (0.05–0.44). That is not jitter around a boundary; it is a signal that
+  consistently says no to evidence that is provably about the two named
+  characters — the same passages the reranker scored at 0.97, and the same
+  item that **answered** in phase 1b run 1.
+- **The mechanism, read from the code rather than inferred**
+  (`graph/auto.py::_entity_passage_questions`): one Noul is built per top-k
+  passage, asking "does this passage concern **that same entity or entities**"
+  — and for a `compare` question `named_entities` returns *both* characters, so
+  the prompt reads "concern 'Victor Frankenstein' and 'Time Traveller'". A
+  passage about the Time Machine is literally not about Victor Frankenstein, so
+  it scores low; a passage about Frankenstein is not about the Time Traveller,
+  so it scores low. `_rerank_candidates` deliberately splits a compare item's
+  top-k by entity (KI-12), which guarantees both halves are single-entity
+  passages and the conjunction can never be satisfied. The check asks "is this
+  passage about ALL the named entities" where the product needs "is this
+  passage about ANY of them".
+- **Why it is not fixed here.** This is KI-54's signal, it predates this lane,
+  and nothing in this lane touches it — both phase-1c items were proven
+  no-ops for this item from the run's own decisions: intent `compare`, so KI-70's
+  `summarize` exemption never applied, and relevance 0.97, so the veto was not
+  in force either. Fixing it means changing the question the Noul asks, and
+  that signal is what carries the **entity-mismatch set's 12/12 clean
+  declines** — a change to it invalidates the evidence for the whole class and
+  needs before/after on fast20, counterfactual and entity-mismatch together
+  (agents.md). Phase 1c had one run's budget left and no recorded entity values
+  from phase 1b to replay a candidate against — the same evidence gap KI-70's
+  doc records. Shipping an unproven change to the abstention signal to make a
+  gate pass is the mistake this file exists to prevent.
+- **Done when:** the entity Noul asks about each named entity separately (or
+  "any of them"), `compare-inventors` answers, and entity-mismatch is still 12/12
+  clean declines with 0 confident wrong on the same commit.
+- **Also noted, and NOT the same thing:** `amb-alice-sister` was the second
+  false abstention in that run (sufficiency 0.31, relevance 0.89, entity 0.96 —
+  all three clear) and it **passed on a rerun** at sufficiency 0.39. The
+  generator gave an honest decline and the P2a prose-decline Noul caught it: the
+  corpus names Alice's sister exactly once and never names her, so "she is
+  unnamed" is the true answer to "who is she?". That is an intermittent
+  generation miss, not a label defect — relabelling the item would have been
+  wrong, and it is not logged as one.
 
 ## KI-28: Jev reranker — switched to Jev (owner decision); abstention separation still open
 

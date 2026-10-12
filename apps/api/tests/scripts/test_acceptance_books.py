@@ -31,8 +31,8 @@ VALID_EXPECTS = {"answer", "library", "not_in_sources", "smalltalk"}
 # `mention_all`. Those three carried `pending_p2` until P2 shipped and are
 # scored normally now (2026-10-12).
 EXPECTED_CLASS_COUNTS = {
-    "answer": 33,
-    "not_in_sources": 20,
+    "answer": 32,
+    "not_in_sources": 21,
     "smalltalk": 2,
     "library": 2,
 }
@@ -43,8 +43,15 @@ EXPECTED_CLASS_COUNTS = {
 AMBIGUITY_ITEMS = [
     "amb-frankenstein-addressee",
     "amb-alice-sister",
-    "amb-bovary-homais",
 ]
+
+# P1b item 3 added three ambiguity items; phase 1c item 2 (2026-10-12) moved
+# `amb-bovary-homais` out of the answer class because its premise is not in
+# this corpus: the eye-consultation scene it depends on is not in this edition
+# of Madame Bovary, and 'Rouard' — the second referent — is 0 hits corpus-wide.
+# The item is kept in the set and is now a should-decline; see its `relabelled`
+# field and `docs/reviews/2026-10-12-2031-ki70-signals.md`.
+RELABELLED_TO_ABSTAIN = ["amb-bovary-homais"]
 
 # P1b item 3: six near-miss abstentions, two of them non-English (the prompt's
 # "including 2 non-English"). Each was spot-read against the corpus.
@@ -100,9 +107,35 @@ def test_the_answer_side_has_broad_items_in_at_least_two_languages() -> None:
     assert len(cited) == len(BROAD_ANSWER_ITEMS), cited
 
 
-def test_the_expect_class_totals_match_the_widened_set() -> None:
+def test_the_expect_class_totals_match_the_relabelled_set() -> None:
+    """33/20 became 32/21 on 2026-10-12 (phase 1c item 2): `amb-bovary-homais`
+    moved to `not_in_sources`. See `RELABELLED_TO_ABSTAIN`."""
     counts = Counter(item["expect"] for item in ITEMS)
     assert dict(counts) == EXPECTED_CLASS_COUNTS
+
+
+def test_the_relabelled_item_records_the_relabel_and_spot_reads() -> None:
+    """A relabel is a claim about the corpus, and the next person to touch this
+    set has to be able to check it without re-running the audit. Both fields are
+    required, and the relabel must name the item it came from."""
+    by_id = {item["id"]: item for item in ITEMS}
+    for id_ in RELABELLED_TO_ABSTAIN:
+        item = by_id[id_]
+        assert item["expect"] == "not_in_sources", id_
+        assert item.get("relabelled"), f"{id_}: a relabel must record why"
+        assert "2026-10-12" in item["relabelled"], id_
+        assert item.get("spot_read"), f"{id_}: a relabelled abstention needs its spot-read"
+        # An abstention is graded on declining, so it must not also carry the
+        # answer-class checks it had before.
+        assert "cite" not in item and "mention" not in item, id_
+
+
+def test_the_relabelled_item_is_still_in_the_set() -> None:
+    """Deleting the item would move the class counts the same way and quietly
+    shrink the set. The relabel has to keep it, reclassified."""
+    by_id = {item["id"]: item for item in ITEMS}
+    for id_ in RELABELLED_TO_ABSTAIN:
+        assert id_ in by_id, f"{id_}: relabelled, not removed"
 
 
 def test_the_abstain_class_is_wide_enough_to_score_stably() -> None:
@@ -114,9 +147,11 @@ def test_the_abstain_class_is_wide_enough_to_score_stably() -> None:
         assert "cite" not in item and "mention" not in item, item["id"]
 
 
-def test_the_abstain_class_reaches_twenty_with_two_non_english_near_misses() -> None:
-    """P1b item 3's target: 20 should-abstain items, of which the six added are
-    near-misses and at least two are asked in the book's own language."""
+def test_the_abstain_class_reaches_twenty_one_with_two_non_english_near_misses() -> None:
+    """P1b item 3's target was 20 should-abstain items, of which the six added
+    are near-misses and at least two are asked in the book's own language.
+    Phase 1c item 2 (2026-10-12) made it 21 by relabelling `amb-bovary-homais`
+    — the class got wider, not thinner, which is the direction KI-6 asked for."""
     by_id = {item["id"]: item for item in ITEMS}
     for id_ in NEAR_MISS_ITEMS:
         assert id_ in by_id, id_
@@ -139,6 +174,11 @@ def test_the_ambiguity_items_name_both_referents_and_are_scored_normally() -> No
     They carried `pending_p2` until P2 shipped (2026-10-12) and are now scored
     like any other answer item, so the flag is asserted *absent*: an item that
     silently regains it stops counting against today's pass rate.
+
+    `amb-bovary-homais` was the third and left this list on 2026-10-12 (phase 1c
+    item 2): the corpus does not answer it two ways, it does not answer it at
+    all. It is now in `RELABELLED_TO_ABSTAIN` and asserted there instead, so
+    "the third ambiguity item vanished" is not a state this suite can reach.
     """
     by_id = {item["id"]: item for item in ITEMS}
     for id_ in AMBIGUITY_ITEMS:
@@ -148,6 +188,8 @@ def test_the_ambiguity_items_name_both_referents_and_are_scored_normally() -> No
         assert "pending_p2" not in item, f"{id_}: P2 shipped; the flag is retired"
         assert len(item.get("mention_all", [])) >= 1, id_
         assert item.get("why_ambiguous"), f"{id_}: state why the corpus answers two ways"
+    assert "amb-bovary-homais" not in AMBIGUITY_ITEMS
+    assert "amb-bovary-homais" in RELABELLED_TO_ABSTAIN
 
 
 def test_no_item_is_pending_p2() -> None:

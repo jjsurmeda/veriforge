@@ -484,9 +484,11 @@ async def test_sanitize_asks_only_about_the_reranked_top_k(
     assert run.retrieval_events[0].chunks[0].rerank_score == 1.0
 
 
-async def test_chitchat_skips_retrieval_and_streams_a_direct_reply(
+async def test_chitchat_with_no_sources_in_scope_skips_retrieval(
     db: AsyncSession, user_a: User, no_llm: dict[str, list[str]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """With nothing to retrieve from, the fast reply is the whole answer and
+    nothing changes. KI-71 only moved the case where sources ARE in scope."""
     chat, assistant_message_id = await _seed_chat(db, user_a)
     streamed: list[str] = []
 
@@ -502,11 +504,10 @@ async def test_chitchat_skips_retrieval_and_streams_a_direct_reply(
 
     monkeypatch.setattr(auto_module, "stream_chitchat_reply", fake_chitchat)
 
-    run = await prepare_auto_run(
-        get_session_factory(),
-        await _params(db, chat, user_a, assistant_message_id),
-        _engine("chitchat"),
-    )
+    params = await _params(db, chat, user_a, assistant_message_id)
+    sourceless = AutoRunInput(**{**params.__dict__, "collection_ids": []})
+
+    run = await prepare_auto_run(get_session_factory(), sourceless, _engine("chitchat"))
 
     assert run.chitchat is True
     assert run.ingress.intent == "chitchat"
@@ -1012,6 +1013,17 @@ async def _gate_run(
         get_session_factory(),
         params,
         DecisionEngine(jev=_RelevanceJev("lookup", sufficient, passage_score), mode="jev_only"),
+    )
+
+
+async def _gate_run_intent(
+    params: AutoRunInput, *, intent: str, sufficient: float, passage_score: float | None
+) -> AutoRun:
+    """`_gate_run` with the intent under test, for the KI-70 veto exemption."""
+    return await prepare_auto_run(
+        get_session_factory(),
+        params,
+        DecisionEngine(jev=_RelevanceJev(intent, sufficient, passage_score), mode="jev_only"),
     )
 
 
@@ -1714,14 +1726,111 @@ async def test_an_off_topic_warn_does_not_divert_small_talk(
     A greeting that Jev also calls off-topic relative to the corpus must still
     be answered as small talk, or the most common opening turn breaks."""
     chat, assistant_message_id = await _seed_chat(db, user_a)
+    params = await _params(db, chat, user_a, assistant_message_id)
+    sourceless = AutoRunInput(**{**params.__dict__, "collection_ids": []})
 
     run = await prepare_auto_run(
-        get_session_factory(),
-        await _params(db, chat, user_a, assistant_message_id),
-        _engine("chitchat", off_topic=0.99),
+        get_session_factory(), sourceless, _engine("chitchat", off_topic=0.99)
     )
 
     assert run.ingress.off_topic == "warn"
     assert run.chitchat is True
     assert "Small talk: skipped retrieval" in run.latency_ms
     assert no_llm["retrieval"] == []
+
+
+# --- KI-71: `chitchat` no longer decides whether to retrieve ------------------
+#
+# The three cases below are the brief's, in order: a chitchat-classified
+# message that names a book, a pure greeting, and a "thanks!" turn. The first
+# and the last were the same code path before, and the difference between them
+# was nothing but the classifier's mood.
+
+
+async def test_chitchat_that_names_a_book_retrieves_and_answers_with_citations(
+    db: AsyncSession, user_a: User, no_llm: dict[str, list[str]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """KI-71's repro: `broad-sherlock` ("tell me something about the
+    adventures of sherlock holmes") routed `chitchat`, skipped retrieval and
+    came back with a warm, correct, uncited paragraph from model memory.
+
+    The route is the classifier's opinion about phrasing. With sources in scope
+    the run retrieves anyway, and the evidence decides: enough of it and this
+    is an ordinary grounded answer with citations."""
+    streamed: list[str] = []
+
+    async def fake_chitchat(**kwargs: Any) -> AsyncIterator[str]:
+        streamed.append(str(kwargs["message"]))
+        yield "A detective who solves crimes by deduction."  # pragma: no cover
+
+    monkeypatch.setattr(auto_module, "stream_chitchat_reply", fake_chitchat)
+    params = await _gate_params(db, user_a, no_llm, monkeypatch)
+    question = "tell me something about the AW-2000 blade warranty"
+    run = await prepare_auto_run(
+        get_session_factory(),
+        AutoRunInput(**{**params.__dict__, "question": question}),
+        DecisionEngine(jev=_RelevanceJev("chitchat", 0.61, 0.97), mode="jev_only"),
+    )
+
+    assert run.ingress.intent == "chitchat"
+    assert no_llm["retrieval"], "the chitchat route retrieved nothing"
+    assert run.chitchat is False
+    assert run.abstain_event is None
+    assert run.contexts, "a chitchat-routed run with support answers from evidence"
+    # The values are the recorded ones: broad-alice's sufficiency 0.61 and an
+    # entity match of 0.97 on the passages it retrieved.
+    assert run.sufficiency_p == pytest.approx(0.61)
+    assert _relevance_decisions(run)[-1].value == pytest.approx(0.97)
+    # And it went out through the grounded generator, never the chitchat one.
+    assert streamed == []
+
+
+async def test_chitchat_routed_run_with_no_support_falls_back_to_the_sourceless_reply(
+    db: AsyncSession, user_a: User, no_llm: dict[str, list[str]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The other half of the same rule. Retrieval ran and found nothing that
+    clears the floors, so the run says nothing rather than abstaining into a
+    template that names documents — and it certainly does not answer from
+    memory. No contexts, so nothing is cited: the acceptance gate reads an
+    `answer`-class item like this as `uncited_answers` and fails (KI-71)."""
+    streamed: list[str] = []
+
+    async def fake_chitchat(**kwargs: Any) -> AsyncIterator[str]:
+        streamed.append(str(kwargs["message"]))
+        yield "Your sources do not cover that."
+
+    monkeypatch.setattr(auto_module, "stream_chitchat_reply", fake_chitchat)
+    params = await _gate_params(db, user_a, no_llm, monkeypatch)
+    run = await prepare_auto_run(
+        get_session_factory(),
+        AutoRunInput(**{**params.__dict__, "question": "tell me something about the moon"}),
+        DecisionEngine(jev=_RelevanceJev("chitchat", 0.02, 0.11), mode="jev_only"),
+    )
+
+    assert run.ingress.intent == "chitchat"
+    assert no_llm["retrieval"], "the chitchat route retrieved nothing"
+    assert run.chitchat is True
+    assert run.abstain_event is None
+    assert run.contexts == []
+    assert run.kept_chunks == []
+    assert run.decision_events == []
+    tokens = [token async for token in run.stream_answer()]
+    assert tokens == ["Your sources do not cover that."]
+    assert streamed == ["tell me something about the moon"], "the raw question, not a rewrite"
+
+
+async def test_thanks_after_an_answer_does_not_retrieve(
+    db: AsyncSession, user_a: User, no_llm: dict[str, list[str]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """"thanks!" is the case that must NOT pay for the rule above. It is on
+    the greeting allowlist, so the fast path catches it before ingress and the
+    run makes no retrieval and no decision call at all (CLAUDE.md's one
+    carve-out, unchanged)."""
+    run, jev, _ = await _greeting_run(
+        db, user_a, monkeypatch, "thanks!", intent="chitchat"
+    )
+
+    assert jev.calls == 0
+    assert no_llm["retrieval"] == []
+    assert run.chitchat is True
+    assert "Greeting fast path: skipped ingress" in run.latency_ms

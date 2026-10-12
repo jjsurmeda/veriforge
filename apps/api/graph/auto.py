@@ -272,6 +272,40 @@ class AutoRun:
             yield token
 
 
+def _chitchat_run(
+    params: AutoRunInput,
+    history: list[tuple[str, str]],
+    ingress: IngressOutcome,
+    decision_events: list[Decision],
+    latency_ms: dict[str, int],
+) -> AutoRun:
+    """The small-talk reply: no contexts, no citations, nothing asserted.
+
+    A direct reply that says nothing checkable (TRD §7 ingress row). `decision`
+    events are kept where they exist so the trace shows the ingress questions
+    that produced this route; the greeting fast path passes none, because it
+    skipped ingress entirely.
+    """
+    return AutoRun(
+        params=params,
+        history=history,
+        contexts=[],
+        kept_chunks=[],
+        dropped_chunks=[],
+        # The RAW question, never a rewrite: the rewrite is a search query and
+        # the reply is a message to a person.
+        rewritten=params.question,
+        retrieval_events=[],
+        decision_events=decision_events,
+        conflict_event=None,
+        abstain_event=None,
+        latency_ms=latency_ms,
+        context_used=0,
+        ingress=ingress,
+        chitchat=True,
+    )
+
+
 async def _history(
     session: AsyncSession, chat_id: UUID, exclude_message_id: UUID
 ) -> list[tuple[str, str]]:
@@ -865,24 +899,28 @@ async def prepare_auto_run(
 
         ingress, rewritten = await _step("ingress+rewrite", ingress_and_rewrite)
 
-        if ingress.intent == "chitchat" and ingress.off_topic != "block":
+        # KI-71 (owner decision 2026-10-12). `chitchat` is the classifier's
+        # opinion about *phrasing*, and it is a coin-flip on any question that
+        # reads like a greeting with a topic attached: "tell me something about
+        # the adventures of sherlock holmes" and "¿Cómo se llama el caballo de
+        # Don Quijote?" both routed `chitchat` in phase 1b and were answered
+        # from model memory with nothing behind them.
+        #
+        # So the route no longer decides whether to retrieve. With sources in
+        # scope it retrieves, and the evidence decides: enough of it and the run
+        # answers the normal grounded way, with citations; not enough and it
+        # falls back to the chitchat reply, which is barred from asserting
+        # anything about the sources (`prompts/chitchat.md`). Either way the
+        # reply is grounded or it claims nothing, which is the property the
+        # classifier's answer cannot be trusted to supply.
+        #
+        # With no sources in scope there is nothing to retrieve, so the fast
+        # reply is the whole answer and stays. The greeting fast path above is
+        # untouched and still skips everything (CLAUDE.md's one exception).
+        chitchat_route = ingress.intent == "chitchat" and ingress.off_topic != "block"
+        if chitchat_route and not has_collections:
             await _step("Small talk: skipped retrieval", _no_call)
-            return AutoRun(
-                params=params,
-                history=history,
-                contexts=[],
-                kept_chunks=[],
-                dropped_chunks=[],
-                rewritten=params.question,
-                retrieval_events=[],
-                decision_events=decision_events,
-                conflict_event=None,
-                abstain_event=None,
-                latency_ms=latency_ms,
-                context_used=0,
-                ingress=ingress,
-                chitchat=True,
-            )
+            return _chitchat_run(params, history, ingress, decision_events, latency_ms)
 
         if ingress.intent == "library":
             await _step("Library: skipped retrieval", _no_call)
@@ -1156,6 +1194,27 @@ async def prepare_auto_run(
                     relevance_measured = True
                     relevance_threshold = threshold("rerank_abstain", relevance_engine)
                     relevance_ok = relevance_max >= relevance_threshold
+                    # KI-70 (phase 1c item 2). The gate measures
+                    # question-to-passage *lexical overlap*, and "give me the
+                    # gist of X" matches no single passage — which is why
+                    # `broad-alice` scored 0.35 on the right passages while
+                    # the KI-54 entity check scored 0.97 on those same
+                    # passages. For a gist question the overlap signal is not
+                    # evidence of irrelevance, so the veto is switched off and
+                    # `sufficient` and the entity check decide alone.
+                    #
+                    # Proven on every recorded item of both phase-1b runs
+                    # (57 + 5; `docs/reviews/2026-10-12-2031-ki70-signals.md`):
+                    # it turns **no** should-decline item into an answer, and
+                    # removes the false abstentions on `broad-alice` and
+                    # `broad-bovary`. It is keyed on what the question IS, so
+                    # there is no new threshold to tune. The cost is that it
+                    # trusts the intent classifier on exactly the questions
+                    # KI-71 shows it is worst at; `sufficient` and the entity
+                    # check both still apply, which is what bounds that.
+                    relevance_exempt = ingress.intent == "summarize"
+                    if relevance_exempt:
+                        relevance_ok = True
                     relevance_decision = Decision(
                         run_id=str(params.run_id),
                         name="relevance",
@@ -1169,6 +1228,12 @@ async def prepare_auto_run(
                         reasoning=(
                             "max rerank score of the post-sanitize winners "
                             f"({len(scores)} scored passages)"
+                            + (
+                                "; veto waived — a summarize question is judged "
+                                "by sufficiency and the entity check alone (KI-70)"
+                                if relevance_exempt
+                                else ""
+                            )
                         ),
                     )
                     decision_events.append(relevance_decision)
@@ -1309,6 +1374,14 @@ async def prepare_auto_run(
         contexts: list[ExpandedContext] = []
 
         if p_sufficient_final < abstain_threshold or not relevance_ok or not entity_ok:
+            if chitchat_route:
+                # KI-71: the run retrieved, the evidence did not support an
+                # answer, so it says so in its own words rather than by
+                # asserting something about the sources. The decision and
+                # retrieval events are dropped with the contexts: this reply
+                # cites nothing, so nothing here is evidence the user was
+                # shown.
+                return _chitchat_run(params, history, ingress, [], latency_ms)
             abstain_event = build_abstain_event(
                 str(params.run_id), kept, offered_actions=["web", "deep"]
             )
