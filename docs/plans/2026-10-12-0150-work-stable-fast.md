@@ -39,6 +39,38 @@ bump + gate rerun for changed prompts.
 once — server-buffered speculative generation (no retraction) or accept the
 measured speed in ADR-003. No new measurement lane either way.
 
+## Phase R: refactor + pluggable decisions and rerankers (owner, 2026-10-13)
+
+Inserted after phase 1e, before phase 2. Goal of the product: adaptive/hybrid
+RAG by default, agentic in Deep mode, built like proven RAG
+(`docs/conventions/rag-reference.md`), with Jev and other decision models
+pluggable and their differences shown.
+
+1. **Stages, not god functions.** `prepare_auto_run` (678 lines) and
+   `execute_run` (512) split into stage nodes: ingress, rewrite, retrieve,
+   rerank, evidence check, generate, review. No behaviour change: `check-work`
+   passes twice before and after. Issue history leaves code comments for
+   commit messages; one-off probe scripts archived.
+2. **`DecisionProvider` interface:** Jev, an LLM judge, and at least one other
+   decision model. Chosen per run (admin/showcase setting), thresholds per
+   provider (`thresholds.py`), fallback and breaker unchanged.
+3. **Rerankers on the same footing:** dedicated rerank models (Cohere, NVIDIA,
+   already in `get_reranker`), Jev rerank (answer-containment rubric), an LLM
+   judge, and plain fused order as the floor. Chosen per run.
+4. **One showcase benchmark, not measurement lanes:** a single script runs the
+   same labelled question set across each reranker and each decision
+   provider and writes `docs/benchmarks/` markdown tables (rerank: hit@k /
+   nDCG, latency p50/p95, cost per 1k queries; decisions: agreement, decline
+   accuracy, confident-wrong, latency, cost). README links the latest table.
+   Run at phase end and before release, not per fix.
+5. **Comparison view:** the same question replayed across providers, side by
+   side in the trace (verdicts, scores, latency, cost), using `decision_shadow`
+   and run events.
+
+Done when: `check-work` passes twice on the refactored code, every provider
+and reranker passes its contract tests, and the benchmark tables are in
+`docs/benchmarks/` and linked from the README.
+
 ## After
 
 UI redesign (owner) → `check-work`, `check-stable`, `check-fast` rerun →
@@ -69,5 +101,5 @@ day-2 checklist, PRD §5). Additions:
   0 confident-wrong, ≥ 90% clean declines, and no uncited answers (phase 1c).
   Stated in the beta notice.
 
-Remaining dispatches: phase 1c (running), phase 2, phase 3, deploy prep.
+Remaining dispatches: phase 1e, phase R, phase 2, phase 3, deploy prep.
 Each continues until its check passes twice; stops only on time box or credit.
