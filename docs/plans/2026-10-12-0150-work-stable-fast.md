@@ -1,5 +1,7 @@
 # Plan: working, stable, fast — then UI, then deploy
 
+**Superseded 2026-10-13 by `2026-10-13-0340-plan.md`.**
+
 Approved by the owner 2026-10-11/12. Replaces the deploy-first proposal in
 `docs/reviews/2026-10-11-1545-state-measurements-and-plan.md` §6.
 Rules that make this converge: `docs/conventions/agents.md`, "Finish lines and

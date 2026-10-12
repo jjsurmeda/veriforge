@@ -87,7 +87,7 @@ These rules stop that.
   lane doesn't start.
 
 Order (owner): work → stable → fast → UI redesign → rerun all checks →
-deploy. Plan: `docs/plans/2026-10-12-0150-work-stable-fast.md`.
+deploy. Plan: `docs/plans/2026-10-13-0340-plan.md`.
 
 ## Parallel work
 
