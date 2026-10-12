@@ -3,9 +3,7 @@ name: ci
 on:
   push:
     branches: [main]
-  # So a branch can be verified before it is merged — CLAUDE.md requires the
-  # eval gate on graph/prompt changes, and that has to be checkable on the
-  # branch, not only after the merge to main.
+  # Manual run: the only trigger for the paid eval gate.
   workflow_dispatch:
 
 jobs:
@@ -45,6 +43,9 @@ jobs:
       - run: git diff --exit-code ../web/openapi.json
 
   eval-gate:
+    # Paid (OpenRouter). Runs only when started by hand (Actions → ci → Run
+    # workflow) once a phase is finalized; pushes run the free jobs only.
+    if: github.event_name == 'workflow_dispatch'
     # TRD §15: 20-item fast subset on every push to main that touches
     # graph, retrieval, decisions or prompts. Skips cleanly when the
     # OpenRouter secret is absent (forks) or no baseline exists yet.
