@@ -1,20 +1,24 @@
-"""Seed the model catalogue and role bindings with free OpenRouter models.
+"""Seed the model catalogue and the role bindings with the one paid model the
+product runs on, `openai/gpt-4o-mini`.
 
-Every LLM call except Jev runs on a `:free` OpenRouter id, so the corpus can
-be demoed without a paid key. The catalogue is read live from
-`GET /api/v1/models` and filtered to ids whose prompt and completion prices are
-both 0, so a rerun after OpenRouter rotates its free pool is just a rerun.
+Every non-Jev LLM call runs on `DEFAULT_MODEL_ID`. That is not only a cost
+decision: the eval baselines were measured on it, and `evals.gate` refuses to
+compare runs whose models differ, so a fresh database that reached a `:free`
+id answered questions the gate could not judge at all. It spends credit.
 
-Free ids churn. Nothing outside config defaults and this script hardcodes one:
-the picks live in PREFERRED below and are re-resolved against the catalogue on
-every run, so a retired id falls back to the next best free model.
+`--free` (or `SEED_MODELS_FREE=1`) seeds OpenRouter's free pool instead — for
+local experiments and demos only. It fetches the catalogue live from
+`GET /api/v1/models` and keeps ids whose prompt and completion prices are both
+0, so a rerun after OpenRouter rotates its free pool is just a rerun. Free ids
+churn; nothing outside this script hardcodes one, so a retired id falls back to
+the next best free model. A production deployment refuses to boot with a free
+binding (`main.assert_no_free_models`), so this path cannot reach it.
 
-`--override-model` (or `SEED_MODELS_OVERRIDE`) points every non-Jev role at one
-explicit, already-`models`-enabled id instead, skipping the free catalogue
-entirely. **TEMPORARY, added 2026-09-29 (wave 1, KI-17/KI-2):** the free tier
-was unreliable (models 429ing or dying mid-stream), and reliability outranks
-cost while that holds. `openai/gpt-4o-mini` is not free, so this spends credit.
-Revert by rerunning with no override: `make seed-models` restores the free pool.
+`--override-model` (or `SEED_MODELS_OVERRIDE`) points every non-Jev role at
+another already-`models`-enabled id. It was added 2026-09-29 (wave 1,
+KI-17/KI-2) as a TEMPORARY escape from the unreliable free tier, and that
+escape is now the default: reliability outranked cost, and the eval baseline
+made the choice explicit.
 
 Usage: `uv run python scripts/seed_models.py` (or `make seed-models`).
 """
@@ -32,6 +36,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from config import DEFAULT_MODEL_ID
 from db.models import LlmProvider, Model, ModelRole
 from db.session import get_session_factory
 
@@ -115,35 +120,61 @@ def pick(
     return usable[0][1] if usable else None
 
 
-async def seed(catalogue: dict[str, FreeModel] | None = None, override: str | None = None) -> None:
-    factory = get_session_factory()
+def resolve_model_id(override: str | None = None, *, free: bool = False) -> str | None:
+    """The id every non-Jev role is bound to, or None for the free-pool path.
 
-    if override is not None:
+    One function so the CLI, the tests and `make check-work`'s "no :free
+    default" step all read the default from the same place: the default path is
+    the paid model the eval baselines were measured with, and `free=True` is
+    the local-experiment path.
+    """
+    if free:
+        return None
+    return override or DEFAULT_MODEL_ID
+
+
+async def seed(
+    catalogue: dict[str, FreeModel] | None = None,
+    override: str | None = None,
+    *,
+    free: bool = False,
+) -> None:
+    """Bind every non-Jev role to one model id.
+
+    The default is `DEFAULT_MODEL_ID`, the paid model the eval baselines were
+    measured with; `free=True` is the local-experiment path that binds the
+    free pool instead. `override` names a third id and is the default's
+    parameter, so both paid paths share one implementation.
+    """
+    factory = get_session_factory()
+    model_id = resolve_model_id(override, free=free)
+
+    if model_id is not None:
         async with factory() as session:
             row = (
                 await session.execute(
-                    select(Model.id).where(Model.model_id == override, Model.enabled.is_(True))
+                    select(Model.id).where(Model.model_id == model_id, Model.enabled.is_(True))
                 )
             ).scalar_one_or_none()
         if row is None:
             raise SystemExit(
-                f"{override} is not an enabled row in `models`; seed it before overriding roles"
+                f"{model_id} is not an enabled row in `models`; seed it before binding roles"
             )
-        print(f"override: every non-Jev role -> {override} (free catalogue skipped)")
+        print(f"every non-Jev role -> {model_id} (free catalogue skipped)")
         async with factory() as session, session.begin():
             for role, _tier, _candidates, _floor in ROLES:
                 await session.execute(
                     pg_insert(ModelRole)
-                    .values(role=role, model_id=override)
+                    .values(role=role, model_id=model_id)
                     .on_conflict_do_update(
-                        index_elements=[ModelRole.role], set_={"model_id": override}
+                        index_elements=[ModelRole.role], set_={"model_id": model_id}
                     )
                 )
         print(f"rebound {len(ROLES)} roles; decision_engine untouched")
         return
 
     catalogue = fetch_catalogue() if catalogue is None else catalogue
-    print(f"catalogue: {len(catalogue)} free models on OpenRouter")
+    print(f"catalogue: {len(catalogue)} free models on OpenRouter (--free: local only)")
 
     wanted: dict[str, FreeModel] = {JEV_MODEL_ID: {"context_window": 32_768, "name": "Jev"}}
     for role, _tier, candidates, floor in ROLES:
@@ -209,6 +240,15 @@ if __name__ == "__main__":
     parser.add_argument(
         "--override-model",
         default=os.environ.get("SEED_MODELS_OVERRIDE") or None,
-        help="TEMPORARY: bind every non-Jev role to this already-seeded model id",
+        help=f"bind every non-Jev role to this already-seeded model id "
+        f"(default: {DEFAULT_MODEL_ID})",
     )
-    asyncio.run(seed(override=parser.parse_args().override_model))
+    parser.add_argument(
+        "--free",
+        action="store_true",
+        default=os.environ.get("SEED_MODELS_FREE") == "1",
+        help="bind OpenRouter's free pool instead — local experiments only; "
+        "a production deployment refuses to boot with a free binding",
+    )
+    args = parser.parse_args()
+    asyncio.run(seed(override=args.override_model, free=args.free))

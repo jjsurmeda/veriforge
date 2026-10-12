@@ -777,6 +777,12 @@ def aggregate(results: list[tuple[EvalItem, EvalResult]]) -> dict[str, float | N
     }
 
 
+def _write_summary(path: str, summary_json: str) -> None:
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(summary_json + "\n")
+
+
 async def main() -> None:
     parser = argparse.ArgumentParser(description="Veriforge eval runner")
     parser.add_argument("--subset", choices=["fast20", "counterfactual_gate"], default=None)
@@ -801,6 +807,14 @@ async def main() -> None:
         "the rewriter, variants, extraction and decisions keep the default. "
         "Defaults to the configured generator.",
     )
+    parser.add_argument(
+        "--summary-out",
+        default=None,
+        help="write this run's summary JSON to this path as well as stdout. "
+        "LiteLLM and Langfuse log to stdout during a run, so a caller that "
+        "captures stdout gets JSON with log lines wrapped around it, not "
+        "JSON. This writes the summary itself.",
+    )
     args = parser.parse_args()
 
     eval_run, results = await run_eval(
@@ -813,7 +827,13 @@ async def main() -> None:
     )
     summary = aggregate(results)
     models = models_on_record(args.generator)
-    print(json.dumps({"eval_run": str(eval_run.id), "models": models, **summary}, indent=2))
+    summary_json = json.dumps({"eval_run": str(eval_run.id), "models": models, **summary}, indent=2)
+    print(summary_json)
+    if args.summary_out:
+        # to_thread: a blocking write in an async function, off the loop the
+        # way `evals.gate` reads its baseline files.
+        await asyncio.to_thread(_write_summary, args.summary_out, summary_json)
+        print(f"summary written to {args.summary_out}")
     if args.baseline:
         # `models` rides along in the baseline so evals.gate can refuse a
         # comparison against a run that used different models.

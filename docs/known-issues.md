@@ -30,6 +30,7 @@ Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 | post-beta | KI-49 | reviewer rarely makes an unsupported judgement itself |
 | post-beta | KI-51 | cf subset spread 0.0667 vs 0.06 band |
 | post-beta | KI-56 | RP-77 answer chunk carries an injection block, so it false-abstains |
+| post-beta | KI-69 | reasoning-mandatory retry in providers/llm.py only serves free endpoints; dead on supported config |
 
 ---
 
@@ -881,3 +882,23 @@ sufficiency before the sanitizer drops a flagged chunk, let the generator
 see flagged-but-not-dropped chunks, or re-chunk the corpus so the
 injection block does not swallow the fact. Not fixed in P2a.
 
+## KI-69: `post-beta` — the reasoning-mandatory retry in `providers/llm.py` exists only for free endpoints
+
+Logged 2026-10-12 (phase 1, `make check-work` on `beta/phase1-check-work`).
+**post-beta:** breaks no check, so it is a note and not a lane.
+
+- **What:** `_acomplete` (`apps/api/providers/llm.py:254`) retries once without
+  `extra_body.reasoning.enabled` when the provider answers "Reasoning is
+  mandatory". Its docstring names the only case it was written for:
+  `openrouter/free` resolving to `nemotron-3.5-lightning:free`.
+
+- **Why it matters now:** phase 1 made `openai/gpt-4o-mini` the model every
+  non-Jev role and both fallbacks resolve to, and made production refuse to
+  boot with a `:free` binding. So the branch is unreachable on any supported
+  configuration, and it is a retry that doubles a call on a paid model — dead
+  weight rather than a defect, which is why it breaks nothing.
+
+- **What to do:** delete it once nothing in `scripts/seed_models.py --free`
+  needs it, or keep it deliberately as a provider-compatibility retry and drop
+  the free-model sentence from its docstring. Cheap either way; not a phase-1
+  blocker and not a step-4/5 risk.

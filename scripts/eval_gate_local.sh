@@ -22,6 +22,14 @@
 #   make eval-gate-local                    # gate the fast20 subset
 #   make eval-gate-local BASELINE=1         # rewrite baseline_fast20.json from THIS run
 #   scripts/eval_gate_local.sh --items 47   # the full seed set instead of fast20
+#   scripts/eval_gate_local.sh --dataset entity_mismatch
+#
+# --dataset runs one dataset through `evals.runner` on the same fresh,
+# ephemeral database instead of gating, and writes that run's summary JSON to
+# $SUMMARY_OUT. `make check-work` step 5 needs exactly this: entity-mismatch
+# has no baseline to compare against (every item must decline, so there is
+# nothing to diff), but it needs the same corpus scope the gate measures —
+# the dev database would answer several of these items from the Shared library.
 #
 # BASELINE=1 is the *single-run* writer, and it is not how the fast20 baseline is
 # written any more (owner decision A8, 2026-10-02): it stores whichever run just
@@ -77,6 +85,26 @@ if [ ! -x .venv/bin/python ]; then
   exit 1
 fi
 
+DATASET=""
+SUMMARY_OUT=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --dataset)
+      DATASET="${2:-}"
+      SUMMARY_OUT="${SUMMARY_OUT:-${root}/.data/evals/summary-${DATASET}.json}"
+      shift 2
+      ;;
+    --summary-out)
+      SUMMARY_OUT="${2:-}"
+      shift 2
+      ;;
+    *)
+      echo "unknown argument: $1" >&2
+      exit 2
+      ;;
+  esac
+done
+
 psql_eval() {
   # The db service is the only thing in compose that has a psql client.
   docker compose -f "$root/compose.yaml" exec -T db \
@@ -109,7 +137,19 @@ echo "==> seed items + corpus (7 AW-2000 documents, eval user only)"
 DATABASE_URL="$DB_URL" .venv/bin/python -m evals.loader
 
 gate_status=0
-if [ "${BASELINE:-0}" = "1" ]; then
+if [ -n "$DATASET" ]; then
+  # One dataset, no baseline to compare: the runner's summary JSON is the
+  # artifact, and the caller classifies it (`evals.entity_gate` for
+  # entity-mismatch). `mkdir -p` before the tee because tee opens its file when
+  # the pipeline starts — CI's eval-gate job lost its log to exactly this.
+  echo "==> dataset: ${DATASET} (no baseline; summary -> ${SUMMARY_OUT})"
+  # `--summary-out` rather than capturing stdout: LiteLLM and Langfuse both
+  # log to stdout during a run, so `| tee summary.json` wrote 200 lines of
+  # provider log wrapped around the JSON and `json.load` refused it. The
+  # runner writes the summary itself; stdout stays the operator's log.
+  DATABASE_URL="$DB_URL" .venv/bin/python -m evals.runner --dataset "$DATASET" \
+    --summary-out "$SUMMARY_OUT" || gate_status=$?
+elif [ "${BASELINE:-0}" = "1" ]; then
   echo "==> writing baseline_fast20.json from this run"
   DATABASE_URL="$DB_URL" .venv/bin/python -m evals.runner --subset fast20 --baseline || gate_status=$?
 else

@@ -15,8 +15,8 @@ from admin import router as admin_router
 from auth import router as auth_router
 from auth.email import build_email_transport
 from chats import router as chats_router
-from config import get_settings
-from db.models import Run
+from config import DEFAULT_MODEL_ID, Settings, free_model_violations, get_settings
+from db.models import ModelRole, Run
 from db.session import SessionDep
 from decisions.breaker import BreakerState, get_breaker
 from demo import router as demo_router
@@ -35,6 +35,39 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+async def assert_no_free_models(
+    session_factory: async_sessionmaker[AsyncSession], settings: Settings
+) -> None:
+    """Refuse to boot in production with any free model reachable.
+
+    Two independent ways in, both named in the message: a role binding in
+    `model_roles` (which `scripts/seed_models.py --free` writes) and one of the
+    two config fallbacks. A deployment that reached a free id answers on a
+    model the eval baseline never saw, so the gate refuses the comparison
+    rather than reporting a regression, and free-tier rate limits turn a quiet
+    quality number into a 429. Cheap and total: one indexed read of a
+    configuration table, run once per boot.
+
+    Development and staging are untouched — the free pool is a legitimate local
+    experiment, which is why it is behind an explicit flag.
+    """
+    if settings.environment != "production":
+        return
+    async with session_factory() as session:
+        rows = (await session.execute(select(ModelRole.role, ModelRole.model_id))).all()
+    violations = free_model_violations(
+        settings, {role: model_id for role, model_id in rows}
+    )
+    if violations:
+        raise RuntimeError(
+            "refusing to serve in production with a free model reachable: "
+            + "; ".join(violations)
+            + ". Bind paid models (scripts/seed_models.py binds "
+            + f"{DEFAULT_MODEL_ID} by default) or set FALLBACK_MODEL and "
+            "LLM_FALLBACK_MODEL to paid OpenRouter ids."
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
@@ -47,6 +80,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     session_factory: async_sessionmaker[AsyncSession] = async_sessionmaker(
         engine, expire_on_commit=False
     )
+    # ...and the same refusal for a model we cannot bill or measure: a `:free`
+    # id in production runs on a model the eval baselines never saw, so the
+    # gate refuses the comparison and every quality number is unverifiable.
+    # The role bindings live in the database, so this is the first check that
+    # needs a session; it is still before the bus or any traffic.
+    await assert_no_free_models(session_factory, settings)
     bus = PostgresRunBus(session_factory, settings.database_url)
     await bus.start()
     runner.register_with_bus(bus)

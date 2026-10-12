@@ -1,7 +1,7 @@
 # Local task entry points. Apps run in Docker Compose; the scripts talk to the
 # same Postgres through DATABASE_URL in .env.
 
-.PHONY: seed-models seed-books seed-admin seed-eval-user seed-demo smoke acceptance eval-gate-local
+.PHONY: seed-models seed-books seed-admin seed-eval-user seed-demo smoke acceptance eval-gate-local check-work
 
 seed-models:
 	cd apps/api && .venv/bin/python scripts/seed_models.py
@@ -37,6 +37,22 @@ acceptance:
 # eval-gate job. Baselines are written only this way (D3 item 2).
 eval-gate-local:
 	./scripts/eval_gate_local.sh
+
+# --- phase 1 finish line: does the product work? ------------------------------
+# `make check-work` runs five steps in order and stops at the first failure,
+# printing one PASS/FAIL line per step with the number that decided it: the api
+# unit gate (ruff, mypy --strict, pytest), the web unit gate (vitest, OpenAPI
+# export + drift), a check that no config or seed default resolves to a `:free`
+# model, the TRD §15 eval gate against both stored baselines (fast20 AND the
+# counterfactual subset, each on a fresh ephemeral database), and the
+# entity-mismatch set at 12/12 clean declines with 0 confident wrong. It SPENDS
+# PROVIDER CREDIT in its last two steps — check the OpenRouter balance first
+# (docs/conventions/agents.md) — and is therefore not the three-minute command
+# the unit gate alone is. Every step is classified from the run's own recorded
+# fields, never inferred from a stream: a decline streams a delta too, and
+# lane B2's probe nearly reported a false failure rate for exactly that reason.
+check-work:
+	./scripts/check_work.sh
 
 # --- beta deployment images (lane A) ----------------------------------------
 # Tag by git SHA so a deployed artefact names its own commit. up.sh overrides

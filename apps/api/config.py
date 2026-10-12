@@ -1,5 +1,6 @@
 """Environment-driven app settings (TRD §6, §11)."""
 
+from collections.abc import Mapping
 from functools import lru_cache
 from typing import Literal
 
@@ -115,19 +116,23 @@ class Settings(BaseSettings):
     jev_model: str = "typesafe/jev-1.13"
     jev_timeout_ms: int = 2000
     jev_max_state_tokens: int = 28_000
-    # Every non-Jev LLM call runs on a free OpenRouter id (see
-    # scripts/seed_models.py). Free ids are rate-limited per minute and per
-    # day, so LiteLLM's own retry is capped rather than left unbounded.
-    fallback_model: str = "openrouter/nvidia/nemotron-3-super-120b-a12b:free"
+    # Every non-Jev LLM call runs on one OpenRouter id (see
+    # scripts/seed_models.py), and it is a paid one: the eval baselines were
+    # measured on it, and the gate refuses to compare across models, so a run
+    # that lands on a `:free` id is not a regression check. LiteLLM's retry is
+    # capped rather than unbounded because the endpoint is still per-minute
+    # limited.
+    fallback_model: str = "openrouter/openai/gpt-4o-mini"
     # One LiteLLM retry, then providers/llm.py fails over once to
     # llm_fallback_model on 429/5xx/timeout (known-issues KI-7). Retrying the
-    # same saturated free id four times only delayed the failure.
+    # same saturated id four times only delayed the failure.
     llm_max_retries: int = 1
     # A retry cap is meaningless without a per-attempt deadline: a saturated
-    # free endpoint can hold a streaming response open indefinitely.
+    # endpoint can hold a streaming response open indefinitely.
     llm_timeout_seconds: float = 90.0
-    llm_fallback_model: str = "openrouter/openrouter/free"
-    # Calls in flight per model per process; free ids allow ~20 req/min.
+    llm_fallback_model: str = "openrouter/openai/gpt-4o-mini"
+    # Calls in flight per model per process; OpenRouter allows ~20 req/min on
+    # a free id and more on a paid one.
     llm_max_concurrency: int = 4
     # Explicit output caps (KI-1): without one, LiteLLM asks for the model's
     # maximum and OpenRouter rejects the call with 402 on a low balance.
@@ -171,3 +176,46 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+# The model every non-Jev role runs on: the one the eval baselines were
+# measured with, spelled the way LiteLLM spells it everywhere else in this
+# package (`openrouter/` prefix). Seeded by `scripts/seed_models.py`.
+DEFAULT_MODEL_ID = "openai/gpt-4o-mini"
+
+
+def is_free_model(model_id: str) -> bool:
+    """Whether a model id is an OpenRouter free-tier id.
+
+    Two spellings reach us: the explicit `:free` suffix
+    (`nvidia/nemotron-3-super-120b-a12b:free`) and OpenRouter's free router,
+    which is the bare word `free` as its last path segment
+    (`openrouter/openrouter/free`). Both are free ids, and neither is a
+    product default.
+    """
+    return model_id.endswith(":free") or model_id.rpartition("/")[2] == "free"
+
+
+def free_model_violations(
+    settings: Settings, role_models: Mapping[str, str]
+) -> list[str]:
+    """Every way this configuration can reach a free model, named.
+
+    `role_models` is the role → model_id binding table as stored in
+    `model_roles`, so a binding seeded by `scripts/seed_models.py --free` is
+    reported against the role it affects rather than as a count. Pure — it
+    reads no database and calls no provider — because boot calls it before it
+    opens a connection, and because a check that can fail silently is how a
+    free tier reaches production (KI-17).
+    """
+    violations = [
+        f"role {role!r} is bound to the free model {model_id!r}"
+        for role, model_id in sorted(role_models.items())
+        if is_free_model(model_id)
+    ]
+    violations.extend(
+        f"{name} is the free model {getattr(settings, name)!r}"
+        for name in ("fallback_model", "llm_fallback_model")
+        if is_free_model(getattr(settings, name))
+    )
+    return violations
