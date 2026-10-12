@@ -34,19 +34,13 @@ and propose the change against the doc first.
 
 ## Build order
 
-Eleven vertical slices (TRD §17), each merged and demoable **locally**
-before the next starts. **No AWS deployment happens until slice 9** —
-slices 0–8 run entirely on the local Docker Compose stack, including
-auth, streaming, retrieval, Deep mode, the reviewer, quotas and admin.
-Slice 9 stands up AWS for the first time against the completed v1
-product; slice 10 (OCR) is v1.1 and ships through the pipeline slice 9
-establishes. Don't add CDK deploy steps, AWS credentials, or "first
-deploy" language to a slice-1-through-8 prompt — that's slice 9's job.
-
-Don't begin a slice until the previous one's acceptance criteria pass.
-**From slice 3 on, the eval gate (TRD §15) must pass before merge** —
-a 20-item fast subset run in CI against the stored baseline for faithfulness,
-abstention accuracy and p50 latency.
+Slices 0–8 are built. Remaining work follows
+`docs/plans/2026-10-13-0340-plan.md`, phase by phase: stage refactor,
+proven-RAG completion, pluggable providers and benchmark, stability,
+latency, UI redesign, then deployment. Everything runs on the local Docker
+Compose stack until the deploy phase; don't add AWS deploy steps or
+credentials to any earlier phase. A phase is done when its `make check-*`
+passes twice in a row; the eval gate (TRD §15) must pass before any merge.
 
 ## Non-negotiables
 
