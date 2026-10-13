@@ -10,16 +10,16 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from uuid import UUID
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from config import get_settings
-from db.models import Chat, Citation, Message
+from db.models import Chat, Citation
 from decisions import DecisionEngine
 from graph import rewrite as rewrite_node
 from graph.abstain import build_abstain_event, stream_abstention
 from graph.controller import controller_decide
 from graph.generate import stream_grounded_answer
+from graph.history import history_messages
 from graph.hop_retrieve import HopNote, ready_sub_questions, run_hop_batch
 from graph.ingress import IngressOutcome, run_ingress
 from graph.planner import generate_followup, plan_question
@@ -127,23 +127,6 @@ class DeepRun:
             await task
 
 
-async def _history(
-    session: AsyncSession, chat_id: UUID, exclude_message_id: UUID
-) -> list[tuple[str, str]]:
-    messages = (
-        (
-            await session.execute(
-                select(Message)
-                .where(Message.chat_id == chat_id, Message.id != exclude_message_id)
-                .order_by(Message.created_at)
-            )
-        )
-        .scalars()
-        .all()
-    )
-    return [(m.role, m.content) for m in messages if m.content]
-
-
 def _decision_event(run_id: UUID, name: str, answer: Answer) -> Decision:
     return Decision(
         run_id=str(run_id),
@@ -186,7 +169,7 @@ async def prepare_deep_run(
 
     async with session_factory() as session, session.begin():
         chat = await session.get(Chat, params.chat_id)
-        history = await _history(session, params.chat_id, params.message_id)
+        history = await history_messages(session, params.chat_id, params.message_id)
         summary = chat.summary if chat is not None else None
         has_collections = bool(params.collection_ids)
 

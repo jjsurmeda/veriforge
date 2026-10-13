@@ -23,31 +23,32 @@ import re
 import time
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
+from contextvars import Token
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from config import get_settings
+from config import Settings, get_settings
 from db.models import Citation, Claim, LlmProvider, Message, Model, ModelRole, Run
 from decisions import DecisionCall, DecisionEngine, display_threshold, make_shadow_writer
 from decisions.output_guard import OutputGuardResult, guard_output
 from decisions.thresholds import threshold
 from errors import AppError
 from graph.async_scoring import score_run_async
-from graph.auto import AutoRunInput, finalize_auto_run, prepare_auto_run
 from graph.chat_title import refine_chat_title
-from graph.deep import DeepRunInput, finalize_deep_run, prepare_deep_run
-from graph.fast import FastRunInput, finalize_fast_run, prepare_fast_run, to_client_filters
-from graph.generate import build_grounded_messages
+from graph.fast import to_client_filters
 from graph.review import (
     ReviewResult,
-    plan_delivery,
     review_answer,
 )
+from graph.stages.run_auto import run_auto
+from graph.stages.run_deep import run_deep
+from graph.stages.run_env import FinishRequest, RunEnv, RunState
+from graph.stages.run_fast import run_fast
 from graph.suggestions import generate_suggestions
-from graph.timing import make_step_timer
 from observability import signals
 from providers.credentials import decrypt_provider_key
 from providers.llm import classify_provider_error
@@ -66,7 +67,6 @@ from schemas.chats import RunFilters
 from schemas.decisions import Answer, Noul
 from schemas.events import (
     AnswerDelta,
-    AnswerHold,
     Decision,
     Heartbeat,
     Metrics,
@@ -76,9 +76,7 @@ from schemas.events import (
     RunCompleted,
     RunFailed,
     RunStarted,
-    RunStreamEvent,
     Suggestions,
-    ThinkingDelta,
 )
 
 logger = logging.getLogger(__name__)
@@ -724,57 +722,34 @@ async def execute_run(
     settings_version: int | None = None,
     instant_title: str | None = None,
 ) -> None:
-    text = ""
-    heartbeat_task: asyncio.Task[None] | None = None
+    """Run one chat turn: resolve the runtime, then hand it to the mode.
+
+    The mode does its own pipeline (`graph/stages/run_*.py`); this owns the
+    parts every run shares — the first-token clock, the heartbeat, the
+    terminal event, and the credits that are settled on every exit path.
+    """
     # TX-3: the clock for time-to-first-token starts here, before the runtime
     # and model roles are resolved, because everything from here on is latency
     # the person waiting on the chat experiences. It stops at the first
     # `answer.delta` published for this run.
-    run_started = time.monotonic()
-    first_delta_ms: int | None = None
-
-    def mark_first_delta() -> None:
-        nonlocal first_delta_ms
-        if first_delta_ms is None:
-            first_delta_ms = int((time.monotonic() - run_started) * 1000)
-
+    clock = _FirstTokenClock()
     try:
-        settings = get_settings()
-        runtime, model_roles, api_keys = await _runtime_context(session_factory, settings_version)
-        usage_context = UsageContext(
-            session_factory=session_factory,
-            user_id=user_id,
+        setup = await _setup_run(
+            session_factory,
             run_id=run_id,
-            model_roles=model_roles,
-            api_keys=api_keys,
-            remaining_5h=quota_remaining_5h,
+            user_id=user_id,
+            quota_remaining_5h=quota_remaining_5h,
+            settings_version=settings_version,
         )
-        runtime_token = set_runtime_settings(runtime)
-        usage_token = set_usage_context(usage_context)
-        engine = DecisionEngine(shadow_writer=make_shadow_writer(session_factory))
-        engine.configure(runtime)
     except asyncio.CancelledError:
         await _finalize(session_factory, run_id, message_id, status="cancelled", text="")
         raise
-    except AppError as exc:
-        await _finalize(session_factory, run_id, message_id, status="failed", text="")
-        await bus.publish(
-            run_id,
-            RunFailed(run_id=str(run_id), error_code=exc.error_code, message=exc.message),
-        )
+    except BaseException as exc:
+        await _fail_setup(bus, session_factory, run_id=run_id, message_id=message_id, exc=exc)
         return
-    except Exception:
-        logger.exception("run setup failed", extra={"run_id": str(run_id)})
-        await _finalize(session_factory, run_id, message_id, status="failed", text="")
-        await bus.publish(
-            run_id,
-            RunFailed(
-                run_id=str(run_id),
-                error_code="run_setup_failed",
-                message="The run could not be initialized",
-            ),
-        )
-        return
+
+    heartbeat_task: asyncio.Task[None] | None = None
+    state = RunState()
     try:
         await bus.publish(
             run_id,
@@ -788,358 +763,163 @@ async def execute_run(
         )
         await _touch_heartbeat(session_factory, run_id)
         heartbeat_task = asyncio.create_task(
-            _heartbeat_loop(bus, session_factory, run_id, settings.heartbeat_interval_seconds)
+            _heartbeat_loop(bus, session_factory, run_id, setup.settings.heartbeat_interval_seconds)
         )
-
-        async def publish_delta(chunk: str) -> None:
-            """Every `answer.delta` goes through here, in all three modes, so
-            the first-token clock cannot miss a path (a per-mode
-            `if first_token:` would eventually)."""
-            mark_first_delta()
-            await bus.publish(run_id, AnswerDelta(run_id=str(run_id), text=chunk))
-
-        async def emit_decision(name: str, answer: Answer, call: DecisionCall) -> None:
-            await bus.publish(
-                run_id,
-                Decision(
-                    run_id=str(run_id),
-                    name=name,
-                    value=answer.value,
-                    probability=answer.probability,
-                    probabilities=answer.probabilities,
-                    engine=answer.engine,
-                    latency_ms=answer.latency_ms,
-                    reasoning=answer.reasoning,
-                    stage=call.stage,
-                    call_id=call.call_id,
-                    batch_size=call.batch_size,
-                    threshold=display_threshold(name, answer.engine),
-                ),
-            )
-
-        if mode == "auto":
-            engine.set_event_emitter(emit_decision)
-
-            async def _publish_step(rid: UUID, event: RunStreamEvent) -> None:
-                await bus.publish(rid, event)
-
-            auto_run = await prepare_auto_run(
-                session_factory,
-                AutoRunInput(
-                    run_id=run_id,
-                    message_id=message_id,
-                    chat_id=chat_id,
-                    user_id=user_id,
-                    question=user_message,
-                    litellm_model=litellm_model,
-                    small_model=small_litellm_model,
-                    context_window=context_window,
-                    source=source,
-                    client_filters=to_client_filters(run_filters),
-                    collection_ids=collection_ids or [],
-                ),
-                engine,
-                # CH-5: Auto's steps used to be timed but never published, so
-                # the trace showed nothing until the run was already over.
-                # Deep has always passed this; Auto now does too.
-                publish=_publish_step,
-            )
-            for event in auto_run.retrieval_events:
-                await bus.publish(run_id, event)
-            # The relevance gate's Decision is computed in prepare_auto_run,
-            # not by an engine.decide call, so the DecisionEngine emitter
-            # never fires for it — publish it here or the trace can't show
-            # why the run abstained (KI-26, D2 item 4).
-            for decision in auto_run.decision_events:
-                if decision.name == "relevance":
-                    await bus.publish(run_id, decision)
-            if auto_run.conflict_event is not None:
-                await bus.publish(run_id, auto_run.conflict_event)
-            if auto_run.abstain_event is not None:
-                await bus.publish(run_id, auto_run.abstain_event)
-
-            plan = (
-                "stream"
-                # Small talk has no claims to review, so "hold" would park the
-                # reply in a branch that only publishes deltas after review.
-                if auto_run.abstain_event is not None
-                or auto_run.chitchat
-                or auto_run.library_names is not None
-                else plan_delivery(
-                    mode="auto",
-                    risk=auto_run.ingress.risk,
-                    sufficiency_p=auto_run.sufficiency_p,
-                    sufficient_threshold=threshold("sufficient_abstain", "jev"),
-                )
-            )
-            if plan == "hold":
-                await bus.publish(run_id, AnswerHold(run_id=str(run_id)))
-
-            batcher = _DeltaBatcher()
-            last_heartbeat = time.monotonic()
-            # KI-66: the generator published no step of its own. Lane B item 3
-            # labelled everything inside `retrieve` and stopped one function too
-            # early, which left the single longest wait a user sits through —
-            # time to first token — as the one stage with nothing on the stream
-            # during it. Measured on `main`: `step.completed: conflict` at
-            # 6869 ms, first `answer.delta` at 18778 ms, an 8145 ms silence with
-            # no event in it. One `_step` here makes that wait attributable
-            # rather than a residual.
-            #
-            # The duration is the SAME measurement as `generate_ms` — it is read
-            # back out of the node metrics rather than timed twice, so the two
-            # can never disagree.
-            generate_step = make_step_timer(
-                node="auto",
-                run_id=run_id,
-                latency_ms=auto_run.latency_ms,
-                publish=_publish_step,
-            )
-
-            async def _generate() -> None:
-                nonlocal last_heartbeat, text
-                async for token in auto_run.stream_answer():
-                    text += token
-                    batcher.add(token)
-                    if plan == "stream" and batcher.due():
-                        await publish_delta(batcher.take())
-                        if time.monotonic() - last_heartbeat >= settings.heartbeat_interval_seconds:
-                            await bus.publish(run_id, Heartbeat(run_id=str(run_id)))
-                            await _touch_heartbeat(session_factory, run_id)
-                            last_heartbeat = time.monotonic()
-
-            await generate_step("generate", _generate)
-            if plan == "stream" and batcher.buffer:
-                await publish_delta(batcher.take())
-
-            generate_ms = auto_run.latency_ms.get("generate", 0)
-            prompt_tokens = sum(
-                count_tokens(m["content"])
-                for m in build_grounded_messages(
-                    auto_run.rewritten, auto_run.contexts, auto_run.history
-                )
-            )
-            await finalize_auto_run(
-                session_factory,
-                auto_run,
-                generate_ms=generate_ms,
-                tokens_in=prompt_tokens,
-                tokens_out=count_tokens(text),
-            )
-            await _finish_answer(
-                bus=bus,
-                session_factory=session_factory,
-                engine=engine,
-                run_id=run_id,
-                message_id=message_id,
-                question=auto_run.rewritten,
-                text=text,
-                contexts=auto_run.contexts,
-                latency_ms=auto_run.latency_ms,
-                context_used=auto_run.context_used,
-                context_window=context_window,
-                litellm_model=litellm_model,
-                small_model=small_litellm_model,
-                tokens_in=prompt_tokens,
-                generate_ms=generate_ms,
-                abstained=auto_run.abstain_event is not None,
-                chitchat=auto_run.chitchat or auto_run.library_names is not None,
-                revert_title=auto_run.chitchat,
-                plan=plan,
-                chat_id=chat_id,
-                instant_title=instant_title,
-                mode=mode,
-                on_first_delta=mark_first_delta,
-                first_token_ms=lambda: first_delta_ms,
-            )
-            return
-
-        if mode == "deep":
-            engine.set_event_emitter(emit_decision)
-
-            async def _publish_step(rid: UUID, event: RunStreamEvent) -> None:
-                await bus.publish(rid, event)
-
-            deep_run = await prepare_deep_run(
-                session_factory,
-                DeepRunInput(
-                    run_id=run_id,
-                    message_id=message_id,
-                    chat_id=chat_id,
-                    user_id=user_id,
-                    question=user_message,
-                    litellm_model=litellm_model,
-                    small_model=small_litellm_model,
-                    context_window=context_window,
-                    source=source,
-                    client_filters=to_client_filters(run_filters),
-                    collection_ids=collection_ids or [],
-                ),
-                engine,
-                publish=_publish_step,
-            )
-            await bus.publish(run_id, deep_run.plan_event)
-            for event in deep_run.retrieval_events:
-                await bus.publish(run_id, event)
-            if deep_run.abstain_event is not None:
-                await bus.publish(run_id, deep_run.abstain_event)
-
-            plan = "stream" if deep_run.abstain_event is not None else "hold"
-            if plan == "hold":
-                await bus.publish(run_id, AnswerHold(run_id=str(run_id)))
-
-            batcher = _DeltaBatcher()
-            last_heartbeat = time.monotonic()
-            generate_start = time.monotonic()
-
-            async for kind, token in deep_run.stream_answer_with_thinking():
-                if kind == "thinking":
-                    await bus.publish(run_id, ThinkingDelta(run_id=str(run_id), text=token))
-                    continue
-                text += token
-                batcher.add(token)
-                if plan == "stream" and batcher.due():
-                    await publish_delta(batcher.take())
-                    if time.monotonic() - last_heartbeat >= settings.heartbeat_interval_seconds:
-                        await bus.publish(run_id, Heartbeat(run_id=str(run_id)))
-                        await _touch_heartbeat(session_factory, run_id)
-                        last_heartbeat = time.monotonic()
-            if plan == "stream" and batcher.buffer:
-                await publish_delta(batcher.take())
-
-            generate_ms = int((time.monotonic() - generate_start) * 1000)
-            prompt_tokens = sum(
-                count_tokens(m["content"])
-                for m in build_grounded_messages(
-                    deep_run.rewritten, deep_run.contexts, deep_run.history
-                )
-            )
-            await finalize_deep_run(
-                session_factory,
-                deep_run,
-                generate_ms=generate_ms,
-                tokens_in=prompt_tokens,
-                tokens_out=count_tokens(text),
-            )
-            await _finish_answer(
-                bus=bus,
-                session_factory=session_factory,
-                engine=engine,
-                run_id=run_id,
-                message_id=message_id,
-                question=deep_run.rewritten,
-                text=text,
-                contexts=deep_run.contexts,
-                latency_ms=deep_run.latency_ms,
-                context_used=deep_run.context_used,
-                context_window=context_window,
-                litellm_model=litellm_model,
-                small_model=small_litellm_model,
-                tokens_in=prompt_tokens,
-                generate_ms=generate_ms,
-                abstained=deep_run.abstain_event is not None,
-                plan=plan,
-                chat_id=chat_id,
-                instant_title=instant_title,
-                mode=mode,
-                on_first_delta=mark_first_delta,
-                first_token_ms=lambda: first_delta_ms,
-            )
-            return
-
-        fast_run = await prepare_fast_run(
-            session_factory,
-            FastRunInput(
-                run_id=run_id,
-                message_id=message_id,
-                chat_id=chat_id,
-                user_id=user_id,
-                question=user_message,
-                litellm_model=litellm_model,
-                small_model=small_litellm_model,
-                context_window=context_window,
-                source=source,
-                client_filters=to_client_filters(run_filters),
-                collection_ids=collection_ids or [],
-            ),
-        )
-        await bus.publish(run_id, fast_run.retrieval_event)
-
-        # Fast reviews async after delivery (TR-6): deltas stream now, the
-        # Reviewer runs in _finish_answer before the terminal event so chips
-        # recolour while the answer is on screen.
-        engine.set_event_emitter(emit_decision)
-
-        batcher = _DeltaBatcher()
-        last_heartbeat = time.monotonic()
-        generate_start = time.monotonic()
-
-        async for token in fast_run.stream_answer():
-            text += token
-            batcher.add(token)
-            if batcher.due():
-                await publish_delta(batcher.take())
-                if time.monotonic() - last_heartbeat >= settings.heartbeat_interval_seconds:
-                    await bus.publish(run_id, Heartbeat(run_id=str(run_id)))
-                    await _touch_heartbeat(session_factory, run_id)
-                    last_heartbeat = time.monotonic()
-        if batcher.buffer:
-            await publish_delta(batcher.take())
-
-        generate_ms = int((time.monotonic() - generate_start) * 1000)
-        prompt_tokens = sum(
-            count_tokens(m["content"])
-            for m in build_grounded_messages(
-                fast_run.rewritten, fast_run.contexts, fast_run.history
-            )
-        )
-        await finalize_fast_run(
-            session_factory,
-            fast_run,
-            generate_ms=generate_ms,
-            tokens_in=prompt_tokens,
-            tokens_out=count_tokens(text),
-        )
-        await _finish_answer(
+        env = _run_env(
             bus=bus,
             session_factory=session_factory,
-            engine=engine,
+            setup=setup,
             run_id=run_id,
             message_id=message_id,
-            question=fast_run.rewritten,
-            text=text,
-            contexts=fast_run.contexts,
-            latency_ms=fast_run.latency_ms,
-            context_used=fast_run.context_used,
-            context_window=context_window,
-            litellm_model=litellm_model,
-            small_model=small_litellm_model,
-            tokens_in=prompt_tokens,
-            generate_ms=generate_ms,
-            abstained=False,
-            plan="stream",
             chat_id=chat_id,
-            instant_title=instant_title,
+            user_id=user_id,
+            litellm_model=litellm_model,
+            small_litellm_model=small_litellm_model,
+            context_window=context_window,
             mode=mode,
-            on_first_delta=mark_first_delta,
-            first_token_ms=lambda: first_delta_ms,
+            source=source,
+            user_message=user_message,
+            run_filters=run_filters,
+            collection_ids=collection_ids or [],
+            instant_title=instant_title,
+            clock=clock,
+            state=state,
         )
-
+        await _dispatch(env)
     except asyncio.CancelledError:
-        await _finalize(session_factory, run_id, message_id, status="cancelled", text=text)
+        await _finalize(
+            session_factory, run_id, message_id, status="cancelled", text=state.text
+        )
         try:
             await bus.publish(run_id, RunCancelled(run_id=str(run_id), message_id=str(message_id)))
         finally:
             raise
-
-    except AppError as exc:
-        logger.error("run failed", extra={"run_id": str(run_id), "error_code": exc.error_code})
-        signals.emit(
-            signals.RUN_FAILED,
+    except (AppError, Exception) as exc:
+        await _fail_run(
+            bus,
+            session_factory,
             run_id=run_id,
+            message_id=message_id,
             user_id=user_id,
-            error_code=exc.error_code,
+            text=state.text,
+            exc=exc,
         )
+    finally:
+        if heartbeat_task is not None:
+            heartbeat_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await heartbeat_task
+        reset_usage_context(setup.usage_token)
+        reset_runtime_settings(setup.runtime_token)
+
+
+async def _dispatch(env: RunEnv) -> None:
+    """The mode picker (TRD §7 mode table)."""
+    if env.mode == "auto":
+        await run_auto(env)
+        return
+    if env.mode == "deep":
+        await run_deep(env)
+        return
+    await run_fast(env)
+
+
+class _FirstTokenClock:
+    """TX-3: time from the start of the run to its first `answer.delta`."""
+
+    def __init__(self) -> None:
+        self._started = time.monotonic()
+        self._first_delta_ms: int | None = None
+
+    def mark(self) -> None:
+        if self._first_delta_ms is None:
+            self._first_delta_ms = int((time.monotonic() - self._started) * 1000)
+
+    def elapsed_ms(self) -> int | None:
+        return self._first_delta_ms
+
+
+@dataclass(frozen=True)
+class _Setup:
+    """What a run needs before a mode can start: the settings it was launched
+    under, its decision engine, and the context tokens to reset on the way
+    out."""
+
+    settings: Settings
+    engine: DecisionEngine
+    runtime_token: Token[RuntimeSettings | None]
+    usage_token: Token[UsageContext | None]
+
+
+async def _setup_run(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    run_id: UUID,
+    user_id: UUID,
+    quota_remaining_5h: float | None,
+    settings_version: int | None,
+) -> _Setup:
+    settings = get_settings()
+    runtime, model_roles, api_keys = await _runtime_context(session_factory, settings_version)
+    usage_context = UsageContext(
+        session_factory=session_factory,
+        user_id=user_id,
+        run_id=run_id,
+        model_roles=model_roles,
+        api_keys=api_keys,
+        remaining_5h=quota_remaining_5h,
+    )
+    runtime_token = set_runtime_settings(runtime)
+    usage_token = set_usage_context(usage_context)
+    engine = DecisionEngine(shadow_writer=make_shadow_writer(session_factory))
+    engine.configure(runtime)
+    return _Setup(
+        settings=settings, engine=engine, runtime_token=runtime_token, usage_token=usage_token
+    )
+
+
+async def _fail_setup(
+    bus: PostgresRunBus,
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    run_id: UUID,
+    message_id: UUID,
+    exc: BaseException,
+) -> None:
+    """A run that never started: nothing streamed, nothing was reserved."""
+    if isinstance(exc, AppError):
+        await _finalize(session_factory, run_id, message_id, status="failed", text="")
+        await bus.publish(
+            run_id,
+            RunFailed(run_id=str(run_id), error_code=exc.error_code, message=exc.message),
+        )
+        return
+    logger.exception("run setup failed", extra={"run_id": str(run_id)})
+    await _finalize(session_factory, run_id, message_id, status="failed", text="")
+    await bus.publish(
+        run_id,
+        RunFailed(
+            run_id=str(run_id),
+            error_code="run_setup_failed",
+            message="The run could not be initialized",
+        ),
+    )
+
+
+async def _fail_run(
+    bus: PostgresRunBus,
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    run_id: UUID,
+    message_id: UUID,
+    user_id: UUID,
+    text: str,
+    exc: BaseException,
+) -> None:
+    """The one place every terminal failure lands (TRD §7)."""
+    if isinstance(exc, AppError):
+        logger.error("run failed", extra={"run_id": str(run_id), "error_code": exc.error_code})
+        signals.emit(signals.RUN_FAILED, run_id=run_id, user_id=user_id, error_code=exc.error_code)
         await _finalize(session_factory, run_id, message_id, status="failed", text=text)
         await bus.publish(
             run_id,
@@ -1150,55 +930,30 @@ async def execute_run(
                 reset_at=_reset_at(exc),
             ),
         )
+        return
+    await _fail_at_provider(bus, session_factory, run_id, message_id, user_id, text, exc)
 
-    except Exception as exc:
-        # KI-23: a provider failure is not an unknown failure. An invalid key,
-        # an exhausted balance and an unreachable provider each get their own
-        # code, because for all three "try again" is the wrong instruction and
-        # for two of them it is also the wrong audience. Classified here, at
-        # the one place every terminal failure lands, from the exception itself
-        # rather than by wrapping it at each call site.
-        provider_error = classify_provider_error(exc)
-        if provider_error is not None:
-            logger.error(
-                "run failed at the provider",
-                extra={"run_id": str(run_id), "error_code": provider_error.error_code},
-            )
-            signals.emit(
-                signals.RUN_FAILED,
-                run_id=run_id,
-                user_id=user_id,
-                error_code=provider_error.error_code,
-            )
-            # A provider that is out of credit is a separate alarm from a run
-            # that failed: one user is affected by `run.failed`, every user
-            # is blocked until it is topped up. `provider.credit_low` fires on
-            # the 402/quota codes only, so a provider being merely down does
-            # not page anyone about money.
-            if provider_error.error_code == "quota_exceeded":
-                signals.emit(
-                    signals.PROVIDER_CREDIT_LOW,
-                    run_id=run_id,
-                    user_id=user_id,
-                    error_code=provider_error.error_code,
-                )
-            await _finalize(session_factory, run_id, message_id, status="failed", text=text)
-            await bus.publish(
-                run_id,
-                RunFailed(
-                    run_id=str(run_id),
-                    error_code=provider_error.error_code,
-                    message=provider_error.message,
-                ),
-            )
-            return
+
+async def _fail_at_provider(
+    bus: PostgresRunBus,
+    session_factory: async_sessionmaker[AsyncSession],
+    run_id: UUID,
+    message_id: UUID,
+    user_id: UUID,
+    text: str,
+    exc: BaseException,
+) -> None:
+    """A provider failure is not an unknown failure.
+
+    An invalid key, an exhausted balance and an unreachable provider each get
+    their own code, because for all three "try again" is the wrong instruction
+    and for two of them it is also the wrong audience. Classified from the
+    exception itself rather than by wrapping it at each call site.
+    """
+    provider_error = classify_provider_error(exc)
+    if provider_error is None:
         logger.exception("run failed", extra={"run_id": str(run_id)})
-        signals.emit(
-            signals.RUN_FAILED,
-            run_id=run_id,
-            user_id=user_id,
-            error_code="run_error",
-        )
+        signals.emit(signals.RUN_FAILED, run_id=run_id, user_id=user_id, error_code="run_error")
         await _finalize(session_factory, run_id, message_id, status="failed", text=text)
         await bus.publish(
             run_id,
@@ -1208,14 +963,171 @@ async def execute_run(
                 message="The run failed before completing",
             ),
         )
+        return
+    logger.error(
+        "run failed at the provider",
+        extra={"run_id": str(run_id), "error_code": provider_error.error_code},
+    )
+    signals.emit(
+        signals.RUN_FAILED,
+        run_id=run_id,
+        user_id=user_id,
+        error_code=provider_error.error_code,
+    )
+    # A provider that is out of credit is a separate alarm from a run that
+    # failed: one user is affected by `run.failed`, every user is blocked until
+    # it is topped up. `provider.credit_low` fires on the 402/quota codes only,
+    # so a provider being merely down does not page anyone about money.
+    if provider_error.error_code == "quota_exceeded":
+        signals.emit(
+            signals.PROVIDER_CREDIT_LOW,
+            run_id=run_id,
+            user_id=user_id,
+            error_code=provider_error.error_code,
+        )
+    await _finalize(session_factory, run_id, message_id, status="failed", text=text)
+    await bus.publish(
+        run_id,
+        RunFailed(
+            run_id=str(run_id),
+            error_code=provider_error.error_code,
+            message=provider_error.message,
+        ),
+    )
 
-    finally:
-        if heartbeat_task is not None:
-            heartbeat_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await heartbeat_task
-        reset_usage_context(usage_token)
-        reset_runtime_settings(runtime_token)
+
+def _run_env(
+    *,
+    bus: PostgresRunBus,
+    session_factory: async_sessionmaker[AsyncSession],
+    setup: _Setup,
+    run_id: UUID,
+    message_id: UUID,
+    chat_id: UUID,
+    user_id: UUID,
+    litellm_model: str,
+    small_litellm_model: str,
+    context_window: int,
+    mode: str,
+    source: str,
+    user_message: str,
+    run_filters: RunFilters | None,
+    collection_ids: list[UUID],
+    instant_title: str | None,
+    clock: _FirstTokenClock,
+    state: RunState,
+) -> RunEnv:
+    """The environment a mode stage runs in."""
+    return RunEnv(
+        bus=bus,
+        session_factory=session_factory,
+        engine=setup.engine,
+        run_id=run_id,
+        message_id=message_id,
+        chat_id=chat_id,
+        user_id=user_id,
+        litellm_model=litellm_model,
+        small_model=small_litellm_model,
+        context_window=context_window,
+        mode=mode,
+        source=source,
+        user_message=user_message,
+        client_filters=to_client_filters(run_filters),
+        collection_ids=collection_ids,
+        instant_title=instant_title,
+        heartbeat_interval_seconds=setup.settings.heartbeat_interval_seconds,
+        coalesce_seconds=setup.settings.delta_coalesce_ms / 1000,
+        touch_heartbeat=lambda: _touch_heartbeat(session_factory, run_id),
+        emit_decision=_emit_decision(bus, run_id),
+        mark_first_delta=clock.mark,
+        first_token_ms=clock.elapsed_ms,
+        state=state,
+        finish=lambda request: _finish_run(
+            bus=bus,
+            session_factory=session_factory,
+            setup=setup,
+            run_id=run_id,
+            message_id=message_id,
+            chat_id=chat_id,
+            context_window=context_window,
+            litellm_model=litellm_model,
+            small_model=small_litellm_model,
+            instant_title=instant_title,
+            mode=mode,
+            clock=clock,
+            request=request,
+        ),
+    )
+
+
+def _emit_decision(
+    bus: PostgresRunBus, run_id: UUID
+) -> Callable[[str, Answer, DecisionCall], Awaitable[None]]:
+    async def emit(name: str, answer: Answer, call: DecisionCall) -> None:
+        await bus.publish(
+            run_id,
+            Decision(
+                run_id=str(run_id),
+                name=name,
+                value=answer.value,
+                probability=answer.probability,
+                probabilities=answer.probabilities,
+                engine=answer.engine,
+                latency_ms=answer.latency_ms,
+                reasoning=answer.reasoning,
+                stage=call.stage,
+                call_id=call.call_id,
+                batch_size=call.batch_size,
+                threshold=display_threshold(name, answer.engine),
+            ),
+        )
+
+    return emit
+
+
+async def _finish_run(
+    *,
+    bus: PostgresRunBus,
+    session_factory: async_sessionmaker[AsyncSession],
+    setup: _Setup,
+    run_id: UUID,
+    message_id: UUID,
+    chat_id: UUID,
+    context_window: int,
+    litellm_model: str,
+    small_model: str,
+    instant_title: str | None,
+    mode: str,
+    clock: _FirstTokenClock,
+    request: FinishRequest,
+) -> None:
+    """The shared tail for every mode, from one mode's finish request."""
+    await _finish_answer(
+        bus=bus,
+        session_factory=session_factory,
+        engine=setup.engine,
+        run_id=run_id,
+        message_id=message_id,
+        question=request.question,
+        text=request.text,
+        contexts=request.contexts,
+        latency_ms=request.latency_ms,
+        context_used=request.context_used,
+        context_window=context_window,
+        litellm_model=litellm_model,
+        small_model=small_model,
+        tokens_in=request.tokens_in,
+        generate_ms=request.generate_ms,
+        abstained=request.abstained,
+        chitchat=request.chitchat,
+        revert_title=request.revert_title,
+        plan=request.plan,
+        chat_id=chat_id,
+        instant_title=instant_title,
+        mode=mode,
+        on_first_delta=clock.mark,
+        first_token_ms=clock.elapsed_ms,
+    )
 
 
 async def sweep_stale_runs(

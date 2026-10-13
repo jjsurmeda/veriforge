@@ -1182,12 +1182,13 @@ async def test_relevance_decision_is_published_to_the_trace(
 
 
 def test_runner_publishes_the_relevance_decision() -> None:
-    """The runner is the only place with the bus; without this the gate's
+    """The run stage is the only place with the bus; without this the gate's
     decision never reaches run_events (found live: 8/8 items passed but the
-    trace had no `relevance` event)."""
-    from graph import runner as runner_module
+    trace had no `relevance` event). The golden trace for
+    `chitchat_with_sources` records the published event end to end."""
+    from graph.stages import run_auto
 
-    source = Path(runner_module.__file__).read_text()
+    source = Path(run_auto.__file__).read_text()
     assert 'if decision.name == "relevance":' in source
 
 

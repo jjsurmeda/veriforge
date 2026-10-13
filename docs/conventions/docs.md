@@ -7,8 +7,8 @@ Any document that records a moment gets a name of the form
 the document was created. Examples:
 
 - dispatch prompts: `docs/prompts/2026-09-30-0008-darcy-c1-unblock-measure.md`
-- reviews and reports: `docs/reviews/2026-09-29-2332-python-backend-code-review.md`
-- screenshots and design references: `docs/design-refs/2026-09-25-1547-grok-thread.png`
+- phase runbooks: `docs/ops/`
+- screenshots: `docs/media/evidence-gate-decline-dark.webp`
 
 Why: these accumulate, and nobody edits them after they're used. The
 prefix sorts them chronologically in any file listing, and shows at a

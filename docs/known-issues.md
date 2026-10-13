@@ -2,7 +2,6 @@
 
 Open defects only. Triaged 2026-10-12: every entry is either tied to the
 phase whose `make check-*` target it breaks, or tagged `post-beta`.
-Fixed and record-only entries live in `known-issues-archive.md`.
 The Phase column is authoritative; section placement below is from the first triage.
 
 Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
@@ -479,10 +478,8 @@ items declined; PRD §5 allows <= 1.
   or is relabelled against the corpus, and the whole step passes **twice**.
 - **The signals table, and the rule chosen from it (2026-10-12, phase 1c item
   2).** Every recorded item of both runs, with its expected class, intent,
-  sufficiency and max post-sanitize rerank score per attempt, is committed at
-  **`docs/reviews/2026-10-12-2031-ki70-signals.md`** §1. Built from the two
-  phase-1b acceptance exports and the phase-1 gate summaries already on disk —
-  no run was spent to make it.
+  sufficiency and max post-sanitize rerank score per attempt, is replayed from
+  the recorded acceptance exports.
 
   **No threshold moves**, which the table confirms on this data: run-1
   `not_in_sources` items reach relevance 0.71, 0.63 and 0.50 while the answer
@@ -594,8 +591,7 @@ so it breaks `make check-work` step 9.
 
   **Still open until the gate agrees.** The change is proven by fakes; what
   proves it on the real corpus is `make check-work` running green twice
-  (phase 1c item 3). This entry moves to `known-issues-archive.md` in the
-  commit that does, not in this one.
+  (phase 1c item 3).
 
 ## KI-32: Faithfulness moves between runs because the generator rewrites the answer, not because the judge disagrees
 

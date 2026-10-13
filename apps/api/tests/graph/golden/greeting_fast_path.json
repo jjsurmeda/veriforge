@@ -1,0 +1,82 @@
+[
+ {
+  "event": {
+   "mode": "auto",
+   "model": "openai/gpt-4o-mini",
+   "seq": 0,
+   "settings_version": null,
+   "source": "upload",
+   "type": "run.started"
+  },
+  "kind": "event"
+ },
+ {
+  "event": {
+   "label": "Greeting fast path: skipped ingress",
+   "node": "auto",
+   "seq": 0,
+   "type": "step.started"
+  },
+  "kind": "event"
+ },
+ {
+  "event": {
+   "label": "Greeting fast path: skipped ingress",
+   "node": "auto",
+   "seq": 0,
+   "type": "step.completed"
+  },
+  "kind": "event"
+ },
+ {
+  "event": {
+   "label": "generate",
+   "node": "auto",
+   "seq": 0,
+   "type": "step.started"
+  },
+  "kind": "event"
+ },
+ {
+  "kind": "llm",
+  "role": "chitchat"
+ },
+ {
+  "event": {
+   "label": "generate",
+   "node": "auto",
+   "seq": 0,
+   "type": "step.completed"
+  },
+  "kind": "event"
+ },
+ {
+  "event": {
+   "seq": 0,
+   "text": "Hello!",
+   "type": "answer.delta"
+  },
+  "kind": "event"
+ },
+ {
+  "event": {
+   "context_used": 0,
+   "context_window": 128000,
+   "faithfulness": null,
+   "min_support": null,
+   "seq": 0,
+   "tokens_in": 0,
+   "tokens_out": 0,
+   "type": "metrics"
+  },
+  "kind": "event"
+ },
+ {
+  "event": {
+   "seq": 0,
+   "status": "completed",
+   "type": "run.completed"
+  },
+  "kind": "event"
+ }
+]

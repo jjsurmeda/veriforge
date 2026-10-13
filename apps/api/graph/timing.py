@@ -72,3 +72,31 @@ def _mark_failed(handle: object, exc: BaseException) -> None:
         )
     except Exception:
         logger.warning("langfuse step span not marked failed", exc_info=True)
+
+
+def make_sub_step_timer(
+    publish: EventPublisher | None, *, node: str, run_id: UUID
+) -> Callable[[str, Callable[[], Awaitable[T]]], Awaitable[T]]:
+    """Like `make_step_timer`, but the duration is NOT added to `latency_ms`.
+
+    CH-5 (progress, live): the sub-steps inside one outer step exist so the
+    trace shows the work as it happens rather than after the fact. Their
+    labels name the query being run, and `latency_ms` is published as the
+    run's node metrics, so recording them there would put a query string into
+    a metric key and add one entry per variant per run. The outer `retrieve`
+    step still carries the total.
+    """
+
+    async def _sub_step(label: str, work: Callable[[], Awaitable[T]]) -> T:
+        if publish is None:
+            return await work()
+        await publish(run_id, StepStarted(node=node, label=label))
+        started = time.monotonic()
+        try:
+            result = await work()
+        finally:
+            duration = int((time.monotonic() - started) * 1000)
+            await publish(run_id, StepCompleted(node=node, label=label, duration_ms=duration))
+        return result
+
+    return _sub_step

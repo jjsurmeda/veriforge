@@ -35,9 +35,9 @@ and propose the change against the doc first.
 ## Build order
 
 Slices 0–8 are built. Remaining work follows
-`docs/plans/2026-10-13-0340-plan.md`, phase by phase: stage refactor,
-proven-RAG completion, pluggable providers and benchmark, stability,
-latency, UI redesign, then deployment. Everything runs on the local Docker
+`docs/plans/2026-10-13-0340-plan.md`, phase by phase: proven-RAG
+completion, pluggable providers and benchmark, stability, latency, UI
+redesign, then deployment. Everything runs on the local Docker
 Compose stack until the deploy phase; don't add AWS deploy steps or
 credentials to any earlier phase. A phase is done when its `make check-*`
 passes twice in a row; the eval gate (TRD §15) must pass before any merge.
@@ -51,11 +51,11 @@ passes twice in a row; the eval gate (TRD §15) must pass before any merge.
 - **All routing, classification, scoring and verification decisions go
   through `DecisionEngine`** over pluggable decision providers (Jev by
   default, LLM judge fallback, circuit breaker; ADR-005). Never call an LLM directly for something that
-  fits a `Noul`, `Choice` or `Score` question — see TRD §8. One approved
-  exception (batch A, 2026-09-28): the greeting fast path in
-  `graph/auto.py` skips ingress for a fixed allowlist of raw messages of
-  ≤ 40 chars that normalise to an exact greeting match; the generator
-  receives only the canonical phrase.
+  fits a `Noul`, `Choice` or `Score` question — see TRD §8. One
+  exception: the greeting fast path in `graph/stages/ingress_stage.py`
+  skips ingress for a fixed allowlist of raw messages of ≤ 40 chars that
+  normalise to an exact greeting match; the generator receives only the
+  canonical phrase.
 - **Every retrieval query gets its ownership filter injected server-side.**
   Client-supplied filters (collection, tags, date range, etc.) may only
   narrow results, never widen them. Write a test for this on every new
@@ -90,7 +90,8 @@ passes twice in a row; the eval gate (TRD §15) must pass before any merge.
 ```
 apps/web/            React SPA (Vite, TanStack, Tailwind, shadcn/ui)
 apps/api/
-  graph/              LangGraph nodes, agent graph wiring
+  graph/              Pipeline stages and wiring; `graph/stages/` holds the
+                      Auto pipeline and the per-mode run stages
   retrieval/          Hybrid search, fusion, rerank, small-to-big
   ingest/             Parsing, chunking, embedding, page-quality flags
   decisions/          DecisionEngine, Jev client, LLM fallback, breaker
@@ -111,7 +112,7 @@ docs/
 
 | Concept | Lives in |
 | --- | --- |
-| Agent graph nodes, mode routing | `apps/api/graph` |
+| Pipeline stages, mode routing | `apps/api/graph` |
 | `DecisionEngine`, Jev + fallback | `apps/api/decisions` |
 | Hybrid retrieval SQL, RRF, rerank | `apps/api/retrieval` |
 | Claim extraction, verification, faithfulness scoring | `apps/api/graph/review.py` |

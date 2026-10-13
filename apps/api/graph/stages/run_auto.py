@@ -1,0 +1,140 @@
+"""Auto mode's run stage: prepare, publish the trace, stream, finish.
+
+Same order as the pipeline it drives — `prepare_auto_run` returns the evidence
+and the contexts, this publishes what the trace needs, streams the generator
+behind a step of its own, and hands the answer to the shared review tail.
+"""
+
+from __future__ import annotations
+
+from uuid import UUID
+
+from decisions import threshold
+from graph.auto import AutoRun, AutoRunInput, finalize_auto_run, prepare_auto_run
+from graph.generate import build_grounded_messages
+from graph.review import plan_delivery
+from graph.stages.delivery import Delivery
+from graph.stages.run_env import FinishRequest, RunEnv
+from graph.timing import EventPublisher, make_step_timer
+from retrieval.context import count_tokens
+from schemas.events import AnswerHold, RunStreamEvent
+
+# Small talk has no claims to review, so a "hold" plan would park the reply in
+# a branch that only publishes deltas after the review.
+_ALWAYS_STREAM = "stream"
+
+
+async def run_auto(env: RunEnv) -> None:
+    env.engine.set_event_emitter(env.emit_decision)
+    run = await prepare_auto_run(
+        env.session_factory,
+        AutoRunInput(
+            run_id=env.run_id,
+            message_id=env.message_id,
+            chat_id=env.chat_id,
+            user_id=env.user_id,
+            question=env.user_message,
+            litellm_model=env.litellm_model,
+            small_model=env.small_model,
+            context_window=env.context_window,
+            source=env.source,
+            client_filters=env.client_filters,
+            collection_ids=env.collection_ids,
+        ),
+        env.engine,
+        # CH-5: Auto's steps used to be timed but never published, so the trace
+        # showed nothing until the run was already over.
+        publish=_publish_step(env),
+    )
+    await _publish_trace(env, run)
+    plan = _plan(run)
+    if plan == "hold":
+        await env.bus.publish(env.run_id, AnswerHold(run_id=str(env.run_id)))
+
+    # The generator gets a step of its own: it is the longest single wait a
+    # user sits through, and without a label it was the one stage with nothing
+    # on the stream during it. The duration is the SAME measurement as
+    # `generate_ms`, read back out of the node metrics rather than timed
+    # twice, so the two can never disagree.
+    generate_step = make_step_timer(
+        node="auto", run_id=env.run_id, latency_ms=run.latency_ms, publish=_publish_step(env)
+    )
+    delivery = Delivery(
+        bus=env.bus,
+        run_id=env.run_id,
+        heartbeat_interval_seconds=env.heartbeat_interval_seconds,
+        coalesce_seconds=env.coalesce_seconds,
+        on_heartbeat=env.touch_heartbeat,
+        mark_first_delta=env.mark_first_delta,
+        streamed=plan == _ALWAYS_STREAM,
+        state=env.state,
+    )
+
+    async def _generate() -> None:
+        async for token in run.stream_answer():
+            await delivery.push(token)
+
+    await generate_step("generate", _generate)
+    await delivery.flush()
+    text = env.state.text
+
+    generate_ms = run.latency_ms.get("generate", 0)
+    prompt_tokens = sum(
+        count_tokens(message["content"])
+        for message in build_grounded_messages(run.rewritten, run.contexts, run.history)
+    )
+    await finalize_auto_run(
+        env.session_factory,
+        run,
+        generate_ms=generate_ms,
+        tokens_in=prompt_tokens,
+        tokens_out=count_tokens(text),
+    )
+    await env.finish(
+        FinishRequest(
+            question=run.rewritten,
+            text=text,
+            contexts=run.contexts,
+            latency_ms=run.latency_ms,
+            context_used=run.context_used,
+            tokens_in=prompt_tokens,
+            generate_ms=generate_ms,
+            abstained=run.abstain_event is not None,
+            plan=plan,
+            chitchat=run.chitchat or run.library_names is not None,
+            revert_title=run.chitchat,
+        )
+    )
+
+
+def _publish_step(env: RunEnv) -> EventPublisher:
+    async def publish(run_id: UUID, event: RunStreamEvent) -> None:
+        await env.bus.publish(run_id, event)
+
+    return publish
+
+
+async def _publish_trace(env: RunEnv, run: AutoRun) -> None:
+    for event in run.retrieval_events:
+        await env.bus.publish(env.run_id, event)
+    # The relevance gate's Decision is computed in prepare_auto_run, not by an
+    # engine.decide call, so the DecisionEngine emitter never fires for it —
+    # publish it here or the trace can't show why the run abstained.
+    for decision in run.decision_events:
+        if decision.name == "relevance":
+            await env.bus.publish(env.run_id, decision)
+    if run.conflict_event is not None:
+        await env.bus.publish(env.run_id, run.conflict_event)
+    if run.abstain_event is not None:
+        await env.bus.publish(env.run_id, run.abstain_event)
+
+
+def _plan(run: AutoRun) -> str:
+    if run.abstain_event is not None or run.chitchat or run.library_names is not None:
+        return _ALWAYS_STREAM
+    return plan_delivery(
+        mode="auto",
+        risk=run.ingress.risk,
+        sufficiency_p=run.sufficiency_p,
+        sufficient_threshold=threshold("sufficient_abstain", "jev"),
+    )

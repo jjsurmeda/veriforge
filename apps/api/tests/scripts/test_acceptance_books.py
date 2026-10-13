@@ -50,7 +50,7 @@ AMBIGUITY_ITEMS = [
 # this corpus: the eye-consultation scene it depends on is not in this edition
 # of Madame Bovary, and 'Rouard' — the second referent — is 0 hits corpus-wide.
 # The item is kept in the set and is now a should-decline; see its `relabelled`
-# field and `docs/reviews/2026-10-12-2031-ki70-signals.md`.
+# field.
 RELABELLED_TO_ABSTAIN = ["amb-bovary-homais"]
 
 # P1b item 3: six near-miss abstentions, two of them non-English (the prompt's

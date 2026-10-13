@@ -219,10 +219,6 @@ class FallbackEngine:
             wrapped = FallbackError(f"fallback call failed: {type(exc).__name__}: {exc}")
             record(wrapped)
             raise wrapped from exc
-
-            if isinstance(exc, json.JSONDecodeError):
-                raise FallbackError(f"fallback returned non-JSON: {exc}") from exc
-            raise
         tracing.record_decision_call(
             engine="fallback",
             decision_names=list(questions),

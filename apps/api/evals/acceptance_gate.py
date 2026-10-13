@@ -52,7 +52,6 @@ from typing import Any
 # eye-consultation scene its label depends on is not in this edition of
 # Madame Bovary at all (`Rouard` is 0 hits corpus-wide). Labels only; the
 # reasoning and the measurement are in `evals/acceptance/books.json` and
-# `docs/reviews/2026-10-12-2031-ki70-signals.md`.
 EXPECTED_COUNTS = {
     "items": 57,
     "answer_items": 32,

@@ -1,0 +1,103 @@
+[
+ {
+  "event": {
+   "mode": "fast",
+   "model": "openai/gpt-4o-mini",
+   "seq": 0,
+   "settings_version": null,
+   "source": "upload",
+   "type": "run.started"
+  },
+  "kind": "event"
+ },
+ {
+  "kind": "llm",
+  "role": "rewriter"
+ },
+ {
+  "kind": "llm",
+  "n": 1,
+  "role": "embed"
+ },
+ {
+  "kind": "search",
+  "n": 1,
+  "query": "AW-2000 warranty length"
+ },
+ {
+  "event": {
+   "chunks": [
+    {
+     "bm25_score": null,
+     "document_name": "warranty.md",
+     "dropped": false,
+     "excerpt": "The AW-2000 warranty is 24 months from the date of purchase.",
+     "fused_score": 1.0,
+     "heading_path": "Section 0",
+     "page": null,
+     "rerank_score": 1.0,
+     "source_type": "document",
+     "vector_score": 1.0
+    }
+   ],
+   "hop": 0,
+   "query": "AW-2000 warranty length",
+   "seq": 0,
+   "type": "retrieval"
+  },
+  "kind": "event"
+ },
+ {
+  "kind": "llm",
+  "role": "generator"
+ },
+ {
+  "event": {
+   "seq": 0,
+   "text": "24 months.",
+   "type": "answer.delta"
+  },
+  "kind": "event"
+ },
+ {
+  "kind": "llm",
+  "role": "review"
+ },
+ {
+  "kind": "llm",
+  "role": "suggestions"
+ },
+ {
+  "kind": "llm",
+  "role": "guard"
+ },
+ {
+  "kind": "llm",
+  "role": "titler"
+ },
+ {
+  "event": {
+   "context_used": 2,
+   "context_window": 128000,
+   "faithfulness": null,
+   "min_support": null,
+   "seq": 0,
+   "tokens_in": 0,
+   "tokens_out": 0,
+   "type": "metrics"
+  },
+  "kind": "event"
+ },
+ {
+  "kind": "llm",
+  "role": "async_scoring"
+ },
+ {
+  "event": {
+   "seq": 0,
+   "status": "completed",
+   "type": "run.completed"
+  },
+  "kind": "event"
+ }
+]
