@@ -35,7 +35,7 @@ class UsageContext:
         if role == "generator":
             # The composer's pick wins. The role mapping is only the default,
             # and chats/router._default_model_id applies it when the chat has
-            # no model_id (KI-3).
+            # no model_id.
             return requested
         return self.model_roles.get(role, requested)
 

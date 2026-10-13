@@ -1,4 +1,4 @@
-"""KI-54 (P2a item 4): the entity gate.
+""" (P2a item 4): the entity gate.
 
 A question naming entity A must not be answered from passages about entity
 B with B's citations. The gate is a per-passage Noul — "is this passage
@@ -54,7 +54,7 @@ KESTREL_BATTERY = "The Kestrel K9 battery lasts 38 hours on a full charge."
 async def test_a_compare_question_with_one_passage_per_entity_answers(
     db: AsyncSession, user_a: Any, no_llm: dict[str, list[str]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """KI-72 end to end, through the real pipeline.
+    """ end to end, through the real pipeline.
 
     `compare-inventors` declined on all sixteen of its recorded entity readings
     across two runs because the Noul asked each passage whether it concerned
@@ -91,7 +91,7 @@ async def test_a_compare_question_with_one_passage_per_entity_answers(
     assert named_entities(
         "Compare how Victor Frankenstein and the Time Traveller deal with the "
         "consequences of their inventions"
-    ), "the compare question must still name entities for this to be a KI-72 test"
+    ), "the compare question must still name entities for this to be a  test"
     assert run.abstain_event is None, "a compare question with both sides covered must answer"
     assert len(run.contexts) == 2
 
@@ -201,7 +201,7 @@ class _EntityJev(_IngressJev):
 
 
 class _PerEntityJev(_EntityJev):
-    """KI-72: judge each (passage, entity) pair on whether the passage is about
+    """: judge each (passage, entity) pair on whether the passage is about
     THAT entity, which is what the fixed Noul now asks.
 
     `_EntityJev` matches the entity's marker anywhere in the passage, which is
@@ -322,7 +322,7 @@ def _patch_pipeline(
 async def test_kestrel_question_with_aw2000_passages_abstains(
     db: AsyncSession, user_a: Any, no_llm: dict[str, list[str]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The KI-54 shape: sufficient passes (passages exist), relevance is
+    """The  shape: sufficient passes (passages exist), relevance is
     fine, but every passage is about the AW-2000 while the question names
     the Kestrel — no passage matches, so the run abstains instead of
     substituting with citations."""

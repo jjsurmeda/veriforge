@@ -1,4 +1,4 @@
-"""KI-68: a run's event sequence is allocated by the database, not raced for.
+""": a run's event sequence is allocated by the database, not raced for.
 
 One turn in forty used to die outright. `PostgresRunBus.publish` chose `seq`
 as `SELECT COALESCE(MAX(seq),0)+1` in one statement and inserted in another,
@@ -16,7 +16,7 @@ row are written by the same statement, so Postgres — not a retry budget —
 decides who gets which number.
 
 **How the overlap is proved, and why the obvious version proves nothing.**
-KI-61 and `tests/demo/test_demo_mode.py` both record the same lesson, and
+ and `tests/demo/test_demo_mode.py` both record the same lesson, and
 this test is built the way they say to build it:
 
 - N `bus.publish(...)` calls under `asyncio.gather` is **not** enough. It
@@ -176,7 +176,7 @@ async def _collect(
 
 
 async def test_concurrent_publishers_are_serialised_not_raced(db: AsyncSession) -> None:
-    """THE KI-68 test: N publishers on one run, all inside the window at once.
+    """THE  test: N publishers on one run, all inside the window at once.
 
     Asserted both ways, so it cannot pass for the wrong reason:
 

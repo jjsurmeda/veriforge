@@ -1,11 +1,11 @@
-"""KI-72: the entity Noul asked a compare question as a conjunction.
+""": the entity Noul asked a compare question as a conjunction.
 
 `named_entities` returns BOTH characters for a compare question, and
 `_entity_passage_questions` built one prompt per passage naming "the entity or
 entities 'Victor Frankenstein' and 'Time Traveller'". But `_rerank_candidates`
-deliberately splits a compare item's top-k by entity (KI-12), so every passage
+deliberately splits a compare item's top-k by entity, so every passage
 is about exactly ONE of the two and the conjunction can never be satisfied.
-The recorded consequence (`docs/known-issues.md` KI-72): all sixteen entity
+The recorded consequence (`docs/known-issues.md` ): all sixteen entity
 readings for `compare-inventors` across two runs sat at 0.05-0.44 against a
 floor of 0.50 — not one passage cleared it in either run.
 
@@ -90,7 +90,7 @@ class TestEachQuestionNamesOneEntity:
             assert "Time Machine" in question.prompt
 
     def test_a_single_entity_question_is_unchanged(self) -> None:
-        """One entity means the same questions as before KI-72: one per passage,
+        """One entity means the same questions as before : one per passage,
         naming that one entity."""
         contexts = [_context("p0"), _context("p1"), _context("p2")]
         questions = _entity_passage_questions(
@@ -111,7 +111,7 @@ class TestEveryEntityMustBeCovered:
     `entity_1_0` is passage 1 / entity 0, and so on."""
 
     def test_a_compare_question_with_one_passage_per_entity_answers(self) -> None:
-        """The KI-72 shape that used to decline: passage 0 is about entity 0
+        """The  shape that used to decline: passage 0 is about entity 0
         only, passage 1 about entity 1 only. Under the conjunction no passage
         could pass; under "any entity, every entity covered" both are covered."""
         answers = _answers(
@@ -125,7 +125,7 @@ class TestEveryEntityMustBeCovered:
 
     def test_a_compare_question_where_one_entity_has_no_passage_declines(self) -> None:
         """Both passages are about entity 0. Answering would mean answering half
-        the comparison — the confident-wrong shape KI-54 exists to prevent."""
+        the comparison — the confident-wrong shape  exists to prevent."""
         answers = _answers(
             {"entity_0_0": 0.9, "entity_0_1": 0.05, "entity_1_0": 0.9, "entity_1_1": 0.05}
         )
@@ -135,7 +135,7 @@ class TestEveryEntityMustBeCovered:
         assert ok is False
 
     def test_a_single_entity_needs_only_one_matching_passage(self) -> None:
-        """Unchanged from before KI-72: any one passage about the entity is
+        """Unchanged from before : any one passage about the entity is
         enough, and the maximum reading is still reported for the retry skip."""
         answers = _answers({"entity_0_0": 0.05, "entity_1_0": 0.9})
         ok, entity_max = _entity_passage_decision(
@@ -174,7 +174,7 @@ class TestEveryEntityMustBeCovered:
 
 
 class TestRecordedKI72Values:
-    """KI-72's recorded readings: across two runs, sixteen entity readings for
+    """'s recorded readings: across two runs, sixteen entity readings for
     `compare-inventors`, min 0.05, max 0.44, floor 0.50. Not one cleared it.
     Replayed against the new rule, the same per-passage values that abstained
     the item under the conjunction answer it under "every entity covered" —

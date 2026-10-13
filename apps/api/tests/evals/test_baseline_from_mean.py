@@ -213,7 +213,7 @@ def test_the_written_baseline_is_one_the_gate_accepts_and_honours() -> None:
 
 def test_a_metric_no_run_recorded_stays_null_and_is_never_zero() -> None:
     """`p50_total_ms_unattributed_items` is null when every item attributed
-    (KI-31's withheld median). A fabricated 0.0 would read as "the excluded
+    ('s withheld median). A fabricated 0.0 would read as "the excluded
     items were instant" and would then be averaged into the baseline."""
     mean = mean_baseline(_runs())
     assert mean["p50_total_ms_unattributed_items"] is None

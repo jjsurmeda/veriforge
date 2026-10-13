@@ -1,5 +1,5 @@
 """Output caps, reasoning toggle, failover, concurrency cap and temperature
-threading on every LLM call (known-issues KI-1, KI-2, KI-7, KI-17, KI-32).
+threading on every LLM call (known-issues , , , , ).
 LiteLLM is faked at its boundary."""
 
 import asyncio
@@ -50,7 +50,7 @@ async def test_every_call_is_capped_per_role(monkeypatch: pytest.MonkeyPatch) ->
 async def test_the_decision_fallback_role_gets_a_batch_sized_cap(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """KI-57: the fallback engine answers the whole batched decide call in one
+    """: the fallback engine answers the whole batched decide call in one
     JSON object. Under the 512 default the largest batch (sufficiency plus the
     per-passage entity questions) truncated mid-JSON at the same offset on
     every degraded-jev run; the role therefore carries its own, larger cap.
@@ -277,7 +277,7 @@ FIRST_SURVIVOR = ("Hello", " there", ",", " friend", ".")
 async def test_mid_stream_death_restarts_on_the_fallback_model(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """KI-17: a provider that dies after 2 chunks restarts the whole request on
+    """: a provider that dies after 2 chunks restarts the whole request on
     llm_fallback_model. The caller sees one clean answer and no error."""
     opened: list[str] = []
     _first_dies_rest_survives(monkeypatch, opened)
@@ -359,7 +359,7 @@ async def test_a_dead_fallback_does_not_loop_forever(
     assert calls == [FREE, get_settings().llm_fallback_model]
 
 
-# Temperature threading (KI-32). `None` must mean "send nothing" so every
+# Temperature threading. `None` must mean "send nothing" so every
 # caller that predates the parameter keeps the provider default.
 
 
@@ -400,7 +400,7 @@ async def test_a_pinned_temperature_survives_the_open_failover_hop(
 ) -> None:
     """The failover leg rebuilds the kwargs from scratch, so a pinned
     temperature has to be re-applied there or the retry silently runs at the
-    provider default — the answer would vary again, which is the KI-32 symptom."""
+    provider default — the answer would vary again, which is the  symptom."""
     seen: list[dict[str, Any]] = []
 
     async def fake(**kwargs: Any) -> dict[str, Any]:
@@ -424,8 +424,8 @@ async def test_a_pinned_temperature_survives_the_open_failover_hop(
 async def test_a_pinned_temperature_survives_a_mid_stream_restart(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """KI-17's restart is a brand-new request to the fallback model, so it
-    carries the same pinned temperature (KI-32)."""
+    """'s restart is a brand-new request to the fallback model, so it
+    carries the same pinned temperature."""
     seen: list[dict[str, Any]] = []
 
     async def fake(**kwargs: Any) -> Any:

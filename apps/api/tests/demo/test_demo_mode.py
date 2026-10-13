@@ -149,7 +149,7 @@ class TestStartingADemo:
 
 
 class TestTheKillSwitch:
-    """KI-63. `DEMO_ENABLED`, default false.
+    """. `DEMO_ENABLED`, default false.
 
     The route is unauthenticated and spends money, so "off" has to mean off:
     404, no row, and no per-IP budget consumed — otherwise a disabled demo
@@ -283,7 +283,7 @@ class TestThePerIpLimit:
 
 
 class TestTheDailyCap:
-    """KI-63, the half of it a kill switch cannot do.
+    """, the half of it a kill switch cannot do.
 
     The per-IP limit is 5 per hour in process memory, so many addresses or a
     restart defeat it entirely. This cap is counted from the database, so

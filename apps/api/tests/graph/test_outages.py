@@ -206,7 +206,7 @@ class TestProviderCredit:
         assert error.status_code in (402, 503)
         # Whatever the class, the user-facing message must not say "try again":
         # for an exhausted balance a retry spends nothing and succeeds never,
-        # and sends them into a loop (KI-23).
+        # and sends them into a loop.
         assert "try again" not in error.message.lower()
 
     def test_an_invalid_key_is_a_different_code_from_an_empty_balance(self) -> None:

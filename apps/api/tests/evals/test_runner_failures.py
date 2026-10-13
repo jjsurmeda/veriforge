@@ -1,4 +1,4 @@
-"""A raising item is persisted, counted as failed, and kept out of p50 (KI-6).
+"""A raising item is persisted, counted as failed, and kept out of p50.
 
 The old `except` branch built an `EvalResult` and never added it to a
 session, so the row was lost and a `latency_ms=0` placeholder still reached

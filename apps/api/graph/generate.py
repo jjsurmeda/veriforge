@@ -77,7 +77,7 @@ async def stream_grounded_answer(
 
     The generator's temperature is read from the runtime setting
     `generation.temperature`, which is `null` by default, so nothing is sent
-    and the provider default applies byte-for-byte as before (KI-32). It is a
+    and the provider default applies byte-for-byte as before. It is a
     runtime setting and not an env-only `Settings` field because it is a
     product-quality decision to be made on the full eval sets, which is
     exactly what an admin needs to change without a redeploy; every other

@@ -1,4 +1,4 @@
-"""Fallback engine output cap (KI-57): the largest batched decide response
+"""Fallback engine output cap: the largest batched decide response
 must fit the decision_fallback role's cap, or every degraded-jev run of the
 entity-mismatch set fails its item — the batched JSON truncated mid-string
 at the same offset on every re-run. LiteLLM is faked (testing.md: no live
@@ -62,7 +62,7 @@ async def test_a_twelve_question_batch_round_trips() -> None:
 
 
 async def test_the_fallback_cap_covers_the_twelve_question_response() -> None:
-    """KI-57: the 12-answer JSON of the largest batch exceeds the 512-token
+    """: the 12-answer JSON of the largest batch exceeds the 512-token
     default that used to truncate it mid-JSON, and fits the
     decision_fallback role's cap. Mutation: delete the role entry and the
     cap falls back to the default — the second assert fails."""

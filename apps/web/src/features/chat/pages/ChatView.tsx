@@ -23,7 +23,7 @@ import { PanelNote } from '../../../components/ui/PanelNote'
 export function runFailureMessage(code: string, quotaResetAt?: string): string {
   if (code === 'web_search_unconfigured') return "Couldn't search the web because no web search provider is configured. Try your documents instead."
   if (code === 'web_search_failed') return 'The web search provider could not answer that question. Try again.'
-  // KI-23: a quota or provider-key failure cannot be retried away, so it
+  // : a quota or provider-key failure cannot be retried away, so it
   // must not send the user back in a loop that spends nothing and succeeds
   // never. These three codes are published by the API on run.failed.
   if (code === 'quota_exceeded') {

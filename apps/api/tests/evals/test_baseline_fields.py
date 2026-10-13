@@ -116,7 +116,7 @@ def test_a_one_item_answer_rate_drop_is_inside_the_gate() -> None:
 
 def test_the_gate_prefers_our_overhead_over_total_latency() -> None:
     """A 3x rise that is all provider time must not fail: only the attributed
-    remainder is this repo's to regress (KI-18). The rising figure is +42%
+    remainder is this repo's to regress. The rising figure is +42%
     because A6 moved the factor from 1.20 to 1.35 — 11000 was +30%, which the
     gate now passes on purpose."""
     assert (

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import litellm
 
 SECTION_TOKENS = 2000
-# Round 2 (KI-12): sentence-aware children of about 250–300 tokens with
+# Round 2: sentence-aware children of about 250–300 tokens with
 # 15% whole-sentence overlap replace the 500-token character windows —
 # a quote no longer sits buried at a chunk's tail (TRD §9.1 step 4,
 # amended 2026-09-29).

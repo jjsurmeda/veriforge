@@ -83,7 +83,7 @@ async def create_demo_user(session: AsyncSession, settings: DemoSettings) -> Use
     refresh cookie outlives the request. Failing the commit afterwards would
     hand a browser a session for a row that is not there.
 
-    **The cap check and the insert are one atomic step** (KI-63), and the
+    **The cap check and the insert are one atomic step**, and the
     mechanism is a `SELECT … FOR UPDATE` on the demo *plan* row. Why that row:
 
     - The cap is a single global number, so it needs a single global lock. A
@@ -108,7 +108,7 @@ async def create_demo_user(session: AsyncSession, settings: DemoSettings) -> Use
     measured on this branch and neither held: two HTTP requests passed 12 runs
     out of 12 without the lock, and two service-level sessions managed about
     6 in 8. A concurrency test that cannot fail without the fix is decoration
-    (KI-61).
+.
     """
     plan = (
         await session.execute(

@@ -21,7 +21,7 @@ DEFAULT_DATA: dict[str, Any] = {
         "lex_limit": 50,
         "rrf_k": 60,
         "rerank": True,
-        # Owner decision 2026-09-30 (KI-28): Jev reranks. "nvidia" is the
+        # Owner decision 2026-09-30: Jev reranks. "nvidia" is the
         # free, evaluation-only alternative.
         "reranker": "jev",
         "hop_limit": 4,
@@ -42,7 +42,7 @@ DEFAULT_DATA: dict[str, Any] = {
     "web_search_provider": "tavily",
     "web_search_keys": {},
     "source_priority": "documents_first",
-    # Generation (TRD §7, KI-32). `null` is the default and the point: it
+    # Generation (TRD §7, ). `null` is the default and the point: it
     # means send no temperature at all, so the provider default applies and
     # generation behaves exactly as it did before the setting existed.
     # Admin-tunable because the value is a product-quality decision to be made

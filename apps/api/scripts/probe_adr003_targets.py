@@ -23,7 +23,7 @@ Two classes, and why they are not the obvious choice:
 
 TTFT is measured from the moment the run request is sent to the first
 `answer.delta` arriving at the client — the number ADR-003 states its targets
-against — and the gap is measured the same way KI-66's test measures it, in
+against — and the gap is measured the same way 's test measures it, in
 **arrival time at the client**, so a publish that is stamped on time but
 arrives late still reads as late.
 

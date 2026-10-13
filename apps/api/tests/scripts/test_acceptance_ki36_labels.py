@@ -1,4 +1,4 @@
-"""KI-36: two acceptance items were wrong, not the pipeline. The labels are
+""": two acceptance items were wrong, not the pipeline. The labels are
 replayed against D4's *recorded* answers, so a future edit that makes one of
 these items unsatisfiable by a known-correct answer fails here instead of at
 the next $40 acceptance run.
@@ -45,7 +45,7 @@ def _reworded(item_id: str, **overrides: Any) -> dict[str, Any]:
 
 def test_outside_whitman_is_an_answer_item() -> None:
     """The Pride and Prejudice preface in the corpus states the distinction
-    verbatim, so abstaining was the wrong behaviour. KI-36."""
+    verbatim, so abstaining was the wrong behaviour. ."""
     assert ITEMS["outside-whitman"]["expect"] == "answer"
 
 
@@ -162,7 +162,7 @@ AUDITED_FIELDS = ("proof", "note", "why_both_checks", "why_mention_list", "rejec
 
 
 def test_every_relabelled_item_carries_its_proof() -> None:
-    """Every field KI-36 added is non-empty: an empty audit field is an
+    """Every field  added is non-empty: an empty audit field is an
     assertion wearing the costume of proof."""
     for id_ in ("outside-whitman", "outside-whitman-lilacs", "fact-weena"):
         found = [f for f in AUDITED_FIELDS if ITEMS[id_].get(f)]

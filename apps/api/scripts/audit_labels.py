@@ -9,7 +9,7 @@ records the proof that its label is right, or the finding that it is wrong:
   string is actually attested in the corpus.
 - `not_in_sources` items: the zero-hit queries over **every chunk the test
   user can retrieve**, with the false hits spot-read and named.
-- every item: the second-referent check (KI-27) — does the corpus support a
+- every item: the second-referent check — does the corpus support a
   second valid answer?
 
 The rule this script exists to enforce: **a label that contradicts the
@@ -506,16 +506,16 @@ def audit_items(
                         f"(content terms: {terms!r}).",
                     )
                 )
-            # The second-referent check (KI-27). What the script can honestly decide is
+            # The second-referent check. What the script can honestly decide is
             # narrower than "is this ambiguous": it cannot read the passages
             # and tell that the corpus answers the question two ways. What it
             # CAN see is whether the item pins the source at all. Mentions
             # attested in several documents, with no `cite` list to say which
             # document the answer must come from, leave the item satisfied by
             # a passage from the wrong book — that is the mechanism behind
-            # KI-36, where the cite check alone was too weak. So this is a
+            # , where the cite check alone was too weak. So this is a
             # finding about the item's checks, and the cross-document map goes
-            # in the proof for a human to judge the KI-27 question.
+            # in the proof for a human to judge the  question.
             source_documents = sorted({p.document for _, p in attested})
             if (
                 len(attested) > 1
@@ -534,7 +534,7 @@ def audit_items(
                         f"accepted mentions are attested in {len(source_documents)} documents "
                         f"({source_documents!r}) and the item declares no `cite`, so nothing "
                         "stops a passage from the wrong book satisfying it. Name the source, or "
-                        "check whether the corpus answers this two ways (KI-27).",
+                        "check whether the corpus answers this two ways ().",
                     )
                 )
             proof = _proof_answer(item, expect, ranked, attested, corpus, terms)

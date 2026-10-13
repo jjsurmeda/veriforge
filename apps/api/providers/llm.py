@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 _callbacks_configured = False
 
-# Transient provider failures worth one hop to llm_fallback_model (KI-7).
+# Transient provider failures worth one hop to llm_fallback_model.
 _FAILOVER_ERRORS = (
     RateLimitError,
     ServiceUnavailableError,
@@ -47,7 +47,7 @@ _slots: dict[tuple[int, str], asyncio.Semaphore] = {}
 _SENTENCE_END = re.compile(r"[.!?\n]")
 
 
-# --- terminal provider failures (KI-23) -----------------------------------
+# --- terminal provider failures -----------------------------------
 #
 # A run's terminal failure used to collapse to one code, so a provider whose
 # key is invalid, a provider that is out of credit and a provider that is
@@ -110,7 +110,7 @@ def classify_provider_error(exc: BaseException) -> AppError | None:
     `ProviderQuotaExhausted` (402) rather than `ProviderUnavailable` (503),
     because a 429 from a provider that has run out of credit does not fix
     itself and telling the user to try again sends them into a retry loop that
-    spends nothing and succeeds never — KI-23's exact complaint.
+    spends nothing and succeeds never — 's exact complaint.
     """
     if isinstance(exc, _PROVIDER_KEY_ERRORS):
         return ProviderKeyInvalid(
@@ -188,7 +188,7 @@ def _api_key(model: str) -> str | None:
 def _trace_id(metadata: dict[str, str]) -> str | None:
     """The Langfuse trace id for this call, or None to let LiteLLM choose.
 
-    KI-21's empty-id bug lived here. `trace_id` was
+    's empty-id bug lived here. `trace_id` was
     `metadata.get("job", metadata.get("run_id", ""))`, which is wrong twice
     over: a caller that passes a `job` label (`"decision_fallback"`,
     `"claim_extraction"`) got that *label* as its trace id, so its
@@ -238,7 +238,7 @@ def _request_kwargs(
     }
     # Absent (None) means "send nothing", so the provider's own default applies
     # and every caller that predates this parameter behaves exactly as before
-    # (KI-32). A pinned value is rebuilt here rather than carried in `extra` so
+    #. A pinned value is rebuilt here rather than carried in `extra` so
     # the one-hop failover gets the same one.
     if temperature is not None:
         kwargs["temperature"] = temperature
@@ -282,7 +282,7 @@ async def _open(
     The cap covers opening the call, not reading a stream: provider limits
     count requests started. A stream never fails over after its first token.
     `temperature` is re-applied on the failover attempt: a request that
-    restarts on llm_fallback_model must not silently lose it (KI-32).
+    restarts on llm_fallback_model must not silently lose it.
     """
     kwargs = _request_kwargs(model, metadata, reasoning=reasoning, temperature=temperature)
     try:
@@ -309,7 +309,7 @@ def _configure_langfuse() -> None:
     if _callbacks_configured:
         return
     if observability.tracing.enabled():
-        # Exports all three, LANGFUSE_HOST included (KI-21): the callback
+        # Exports all three, LANGFUSE_HOST included: the callback
         # below reads only the environment, so without the host the SDK
         # falls back to the EU default and the JP project's keys fail to
         # authenticate silently — the trace stream just stops.
@@ -331,7 +331,7 @@ async def _stream_once(
 ) -> AsyncIterator[tuple[str, str]]:
     """One streamed attempt. Yields (model that answered, content delta). A
     provider error raised while iterating surfaces to the caller, which is what
-    lets `stream_completion` restart the request (KI-17)."""
+    lets `stream_completion` restart the request."""
     answered, response = await _open(
         model,
         messages,
@@ -380,13 +380,13 @@ async def stream_completion(
 
     `temperature` is `None` by default, which sends nothing at all and leaves
     the provider's own default in place; a number is passed through unchanged,
-    including onto the restart after a mid-stream death (KI-32). Pinning it
+    including onto the restart after a mid-stream death. Pinning it
     where a call's output has to be reproducible — claim extraction, whose
     claim list feeds the faithfulness mean — is a caller decision, not a
     default here.
 
     A provider that dies after its first chunk restarts the whole request on
-    llm_fallback_model rather than killing the run (KI-17). Partial output is
+    llm_fallback_model rather than killing the run. Partial output is
     never spliced: the first sentence is withheld until it completes so the
     common early-death case costs the user nothing, and a death after that
     restarts silently and accepts a visible hiccup. Reasoning deltas are sent
@@ -406,7 +406,7 @@ async def stream_completion(
                 metadata,
                 on_reasoning=on_reasoning,
                 # Re-applied on every restart: the retry is a new request to a
-                # new model, so it carries the same pinned temperature (KI-32).
+                # new model, so it carries the same pinned temperature.
                 temperature=temperature,
             ):
                 current = answered
@@ -449,7 +449,7 @@ async def complete(
 
     `temperature` is `None` by default, which sends nothing and leaves the
     provider's default in place; a number is pinned on both the first attempt
-    and the one-hop failover to llm_fallback_model (KI-32). Claim extraction
+    and the one-hop failover to llm_fallback_model. Claim extraction
     pins 0 because a parsing call whose claim list feeds a mean has no reason
     to be stochastic; every other caller stays unpinned until measured.
     """

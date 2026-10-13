@@ -16,7 +16,7 @@ binding (`main.assert_no_free_models`), so this path cannot reach it.
 
 `--override-model` (or `SEED_MODELS_OVERRIDE`) points every non-Jev role at
 another already-`models`-enabled id. It was added 2026-09-29 (wave 1,
-KI-17/KI-2) as a TEMPORARY escape from the unreliable free tier, and that
+/) as a TEMPORARY escape from the unreliable free tier, and that
 escape is now the default: reliability outranked cost, and the eval baseline
 made the choice explicit.
 
@@ -51,7 +51,7 @@ FAST: list[str] = [SUPER]
 DEEP: list[str] = [ULTRA, SUPER]
 
 # Each entry is (role, tier, [candidate ids], context floor). Chosen by a live
-# check on 2026-09-26 (docs/known-issues.md KI-2): Super answered JSON and cited
+# check on 2026-09-26 (docs/known-issues.md ): Super answered JSON and cited
 # tasks cleanly in 1-2 s, Ultra matched it at 4-6 s, and nemotron-3.5-lightning
 # spent 50-170 s printing its reasoning, so it is not used. When a preferred id
 # retires, pick() falls back to the largest-context free model.

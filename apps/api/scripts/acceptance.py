@@ -6,7 +6,7 @@ Reuses smoke_chat's run_turn / SSE reading (same HTTP surface as `make smoke`);
 one fresh chat per item, turns in order, source "upload", mode "auto". Writes
 raw results to .data/acceptance/<timestamp>.json.
 
-**The run user is a fixed account, not a signup** (KI-24). The books stay
+**The run user is a fixed account, not a signup**. The books stay
 `visibility='shared'` and every fresh user sees them, so the demo corpus is
 unchanged; but the eval-only corpora (AW-2000 seed, counterfactual) are private
 collections owned by `evals@veriforge.local`, and a throwaway signup has no
@@ -61,7 +61,7 @@ EVAL_PLAN_NAME = "internal-eval"
 
 NO_EVAL_USER = (
     "acceptance signs in as the fixed eval account so it can see the eval "
-    "corpora it is scored against (KI-24). Set EVAL_USER_EMAIL and "
+    "corpora it is scored against (). Set EVAL_USER_EMAIL and "
     "EVAL_USER_PASSWORD in .env, then run `make seed-eval-user` to create the "
     "account and put it on the "
     f"{EVAL_PLAN_NAME} plan. Refusing to sign up a throwaway user instead — it "
@@ -269,7 +269,7 @@ def summarise(
       against decline accuracy, not here.
     - `clean_decline` — abstained, or plainly said so, **with no citations**.
     - `false_abstention` — an answerable item the run declined on.
-    - `uncited_answer` (KI-71) — an answerable item that **did not decline and
+    - `uncited_answer` — an answerable item that **did not decline and
       cited nothing**. Every other class above would pass this: it is neither a
       decline, nor an abstention, nor an error, and its text can be perfectly
       correct. It is counted separately precisely because nothing else sees it —
@@ -342,7 +342,7 @@ def summarise(
                 counts["false_abstentions"] += 1
                 detail["false_abstention_ids"].append(str(row["id"]))
             elif not cited:
-                # KI-71: answered, not declined, and nothing cited. Whether the
+                # : answered, not declined, and nothing cited. Whether the
                 # text is right or wrong is not the question — an answer with no
                 # evidence behind it is a different product from this one.
                 counts["uncited_answers"] += 1
@@ -535,7 +535,7 @@ async def run(
 
     ttfts = [r["ttft_ms"] for r in rows if r["ttft_ms"] is not None]
     p50 = int(statistics.median(ttfts)) if ttfts else 0
-    # `pending_p2` items are the corpus answering a question two ways (KI-27).
+    # `pending_p2` items are the corpus answering a question two ways.
     # They are expected to fail until P2's prompt change, so counting them in
     # today's headline would report a regression that is a known, recorded gap.
     scored = [r for r in rows if not r["pending_p2"]]
@@ -559,7 +559,7 @@ async def run(
         print(f"  failed {reason}: {[r['id'] for r in scored if r['reason'] == reason]}")
     if pending:
         # P2's input, not a defect: what the ambiguity items actually said.
-        print("\n  pending P2 (ambiguity items, KI-27 — corpus answers two ways):")
+        print("\n  pending P2 (ambiguity items,  — corpus answers two ways):")
         for r in pending:
             print(
                 f"    {r['id']}: {'pass' if r['pass'] else 'FAIL'}"

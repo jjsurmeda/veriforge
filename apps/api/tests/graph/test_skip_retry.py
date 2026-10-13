@@ -142,7 +142,7 @@ class _AbsentJev(_IngressJev):
     second pass cannot rescue evidence that is not there.
 
     Rerank passages go through the real `JevRerank`, because the relevance
-    gate applies only to Jev-scaled scores (KI-26): a fake reranker of our own
+    gate applies only to Jev-scaled scores: a fake reranker of our own
     would leave the gate — and so the skip — unexercised."""
 
     def __init__(self, relevance: float = 0.10) -> None:
@@ -270,7 +270,7 @@ async def test_a_clearly_absent_run_declines_in_one_attempt(
     assert len(jev.sufficient_calls) == 1, "the rewrite + full re-retrieve was skipped"
     assert run.retry_skipped is True
     assert run.abstain_event is not None, "it still declines — faster, not differently"
-    assert run.contexts == [], "an abstention carries no citations (KI-25)"
+    assert run.contexts == [], "an abstention carries no citations ()"
 
 
 async def test_the_skip_is_recorded_in_the_trace(

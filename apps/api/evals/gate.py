@@ -4,7 +4,7 @@ falls below the absolute floor of 0.90, the count of items classified
 correctly drops by 2 or more, or the gated latency rises by more than its
 factor.
 
-Since KI-18 the gated latency is `p50_our_overhead_ms` — wall clock minus the
+Since  the gated latency is `p50_our_overhead_ms` — wall clock minus the
 generation time OpenRouter reports for the same calls — because a slow
 provider is not a regression in this repo. The total is still reported; see
 TRD §15 for the full rule and the fallback when nothing could be attributed.
@@ -43,8 +43,8 @@ from evals.runner import (
 # spread of **0.05625** — wider than the 0.03 this gate allowed, so the
 # baseline D6 wrote from the median of the first three (0.98333) sat 0.039
 # above the fourth and the gate failed on variance alone. The spread is not
-# judge noise: KI-32 measured Jev's `claim_verdict` as stable on identical
-# claim text across 64 repeated claims, and KI-37 (the filename-list answer)
+# judge noise:  measured Jev's `claim_verdict` as stable on identical
+# claim text across 64 repeated claims, and  (the filename-list answer)
 # is fixed and scores 1.000 in every run. It is the generator at the
 # provider's default temperature of 1.0 on four multi-claim product
 # questions, each asserting a different number of checkable claims on a
@@ -63,7 +63,7 @@ FAITHFULNESS_DROP = 0.06
 # 0.88 forever. So the floor is absolute and fails whatever the baseline says,
 # which is what makes the wider tolerance above defensible.
 FAITHFULNESS_FLOOR = 0.90
-# Owner decision A6 (2026-10-02, KI-6/A6): the gated overhead key gets its
+# Owner decision A6 (2026-10-02, /A6): the gated overhead key gets its
 # own, wider factor than the total-latency fallback. Evidence, all on the
 # unchanged commit 692f073: the three fast20 runs the baseline was written
 # from measured p50_our_overhead_ms 2317.5 / 2632.5 / 2348.5 ms (+13.6% from
@@ -79,11 +79,11 @@ FAITHFULNESS_FLOOR = 0.90
 # The point of P3 is to move the number down; the widening is buying the gate
 # back its authority, not lowering the bar permanently.
 OVERHEAD_RISE_FACTOR = 1.35
-# The fallback keeps 1.20: it is the pre-KI-18 behaviour, reached only when
+# The fallback keeps 1.20: it is the pre- behaviour, reached only when
 # neither run attributed a call at all, so it is a floor that stops the check
 # being silently disabled rather than a measured tolerance.
 LATENCY_RISE_FACTOR = 1.20
-# Owner decision A7 (2026-10-02, KI-6/A7): abstention accuracy and answer
+# Owner decision A7 (2026-10-02, /A7): abstention accuracy and answer
 # rate are compared as item counts, not percentage points. Evidence: fast20
 # holds 8 should-abstain items and 12 answerable items, so ONE item flipping
 # moves the two rates by 12.5 and 8.3 points respectively — each more than
@@ -376,11 +376,11 @@ def check(
         failures=failures,
         warnings=warnings,
     )
-    # KI-18: gate on latency we introduced, not the provider's. OpenRouter's
+    # : gate on latency we introduced, not the provider's. OpenRouter's
     # share varies by seconds between runs and is not something this repo can
     # regress, so only the attributed remainder is strictly gated. The total is
     # still reported above; it only fails the gate when no run could be
-    # attributed at all, which is the pre-KI-18 behaviour.
+    # attributed at all, which is the pre- behaviour.
     # The key and its factor are chosen together, so the factor always belongs
     # to the figure it is applied to and the failure can name which.
     if (

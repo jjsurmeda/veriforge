@@ -39,7 +39,7 @@ from schemas.decisions import Answer, Choice, Noul, Question, Score
 
 logger = logging.getLogger(__name__)
 
-# Eval-only seam (KI-18, D2 2c): Jev uses raw httpx, not litellm, so
+# Eval-only seam (, D2 2c): Jev uses raw httpx, not litellm, so
 # `evals.attribution.record_generation_ids` could never see Jev time and
 # every Jev millisecond was counted as "our overhead". When the sink is
 # set, each call's OpenRouter `x-generation-id` header is reported, the

@@ -3,7 +3,7 @@
 Order of operations is the whole design here, and it is deliberate:
 
 0. **The kill switch first**, before the limiter and before any database
-   work. `DEMO_ENABLED` defaults to false (KI-63), and a demo that is off has
+   work. `DEMO_ENABLED` defaults to false, and a demo that is off has
    to cost a visitor nothing at all — not even one of their five hourly tries.
 1. **Then the rate limit**, before any database work. A throttled request
    must cost nothing beyond the counter, exactly as `chats/router.py` does it
@@ -49,7 +49,7 @@ class DemoNotSeeded(AppError):
 
 
 class DemoDisabled(AppError):
-    """404 — the route is not there while the kill switch is off (KI-63).
+    """404 — the route is not there while the kill switch is off.
 
     404 rather than 403 or 503: a visitor should not be able to tell "the
     demo is off" from "this deployment has no demo at all", and an operator
@@ -62,7 +62,7 @@ class DemoDisabled(AppError):
 
 
 class DemoCapacity(AppError):
-    """429 — the rolling 24 h cap on new demo accounts is spent (KI-63).
+    """429 — the rolling 24 h cap on new demo accounts is spent.
 
     429, not 503: nothing is broken and retrying in a moment will not help,
     but it is a condition with an obvious resolution — the window rolls. The

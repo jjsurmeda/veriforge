@@ -417,7 +417,7 @@ async def test_a_non_jev_reranker_is_unaffected_on_a_gist_question(
 
 def test_the_relabelled_item_is_not_in_the_answer_class() -> None:
     """`amb-bovary-homais` is a should-decline from 2026-10-12 (phase 1c item
-    2). Pinned here as well as in the set's own test, because the KI-70 table
+    2). Pinned here as well as in the set's own test, because the  table
     above lists it and the two must not tell different stories."""
     path = Path(__file__).resolve().parents[4] / "evals" / "acceptance" / "books.json"
     items = {item["id"]: item for item in json.loads(path.read_text())["items"]}

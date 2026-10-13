@@ -3,7 +3,7 @@
 The runner exits 0 whatever happens, which is correct for an operator reading a
 table and wrong for a `make check-work` step: someone has to decide pass/fail
 from the run's own result fields. These pin that classification — including the
-distinctions that decide KI-28 and KI-56 — without a stack, because
+distinctions that decide  and  — without a stack, because
 `summarise` is pure over the rows the run recorded.
 """
 
@@ -41,7 +41,7 @@ def _row(
 
 
 def test_an_answering_should_decline_item_is_a_confident_wrong() -> None:
-    """KI-28's shape: the run answered *with citations* instead of declining.
+    """'s shape: the run answered *with citations* instead of declining.
 
     Citations are the normal shape of a confident wrong answer, and they must not
     be what makes it an unclean decline — the difference is whether the reply
@@ -106,7 +106,7 @@ def test_a_prose_decline_without_citations_is_clean() -> None:
 
 
 def test_a_declined_answer_item_is_a_false_abstention() -> None:
-    """KI-56's shape: the answer was in the sources and the run declined on it."""
+    """'s shape: the answer was in the sources and the run declined on it."""
     rows = [_row("rp77-torque", "answer", answer="", message_status="abstained", citations=[])]
 
     summary = acceptance.summarise(rows)
@@ -116,7 +116,7 @@ def test_a_declined_answer_item_is_a_false_abstention() -> None:
 
 
 def test_an_answered_item_with_no_citations_is_an_uncited_answer() -> None:
-    """KI-71: the item is `answer`, the run did not decline, and it cited
+    """: the item is `answer`, the run did not decline, and it cited
     nothing — a reply from model memory. It is neither a false abstention
     (nothing was declined) nor a confident wrong (that class is should-decline
     items), so without its own count the shape is invisible to the gate."""

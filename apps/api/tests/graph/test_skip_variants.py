@@ -1,4 +1,4 @@
-"""KI-67: lane B item 6 is removed, and cannot be turned on by accident.
+""": lane B item 6 is removed, and cannot be turned on by accident.
 
 TRD §7.1 lists "skip query variants on simple single-hop lookups" among P3's
 structural changes, and lane B shipped it behind
@@ -106,14 +106,19 @@ def test_no_module_in_the_package_reads_the_setting() -> None:
     import pathlib
 
     offenders: list[str] = []
-    for path in sorted(pathlib.Path(auto_module.__file__).parent.glob("*.py")):
-        tree = ast.parse(path.read_text())
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Constant) and node.value == SETTING_KEY:
-                offenders.append(f"{path.name}:{node.lineno}")
-                break
+    roots = [
+        pathlib.Path(auto_module.__file__).parent,
+        pathlib.Path(auto_module.__file__).parent / "stages",
+    ]
+    for root in roots:
+        for path in sorted(root.glob("*.py")):
+            tree = ast.parse(path.read_text())
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Constant) and node.value == SETTING_KEY:
+                    offenders.append(f"{path.name}:{node.lineno}")
+                    break
     assert offenders == [], (
-        f"{offenders} still read {SETTING_KEY!r}; KI-67 measured it collapsing "
+        f"{offenders} still read {SETTING_KEY!r};  measured it collapsing "
         "fast20 from 11/12 answered to 1/12"
     )
 
@@ -264,7 +269,7 @@ async def test_a_multi_part_question_still_asks_for_its_parts(
 ) -> None:
     """The regression item 6 risked, now unrecoverable: a multi-part question
     retrieves on each part, and losing them means abstaining on a question the
-    corpus can answer (KI-12). Per-part queries were never phrasings, so they
+    corpus can answer. Per-part queries were never phrasings, so they
     were never candidates for skipping."""
     _, calls = await _run(db, user_a, monkeypatch, intent="multi-part")
 

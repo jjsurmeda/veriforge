@@ -113,7 +113,7 @@ def test_text_with_no_language_signal_is_undetectable(text: str, expected: None)
     assert detect_language(text) is expected
 
 
-# KI-33: short questions, one captured set per language the detector claims
+# : short questions, one captured set per language the detector claims
 # to know. Captured 2026-10-02 from the acceptance corpus questions and the
 # styles of question the product is actually asked, before the fix — not
 # invented to fit the new table. `None` is a legitimate expectation: a short
@@ -121,7 +121,7 @@ def test_text_with_no_language_signal_is_undetectable(text: str, expected: None)
 # "no signal", never a wrong language. `expected` may be a set, in which case
 # None is always also allowed.
 #
-# The two at the top of the French block are the KI-33 cases: the Bovary
+# The two at the top of the French block are the  cases: the Bovary
 # question detected as `es` ("tu" is in the es, fr, pt and pl tables alike, and
 # `es` was written first) and the Monte Cristo question as `fr` (only "il"
 # matched, and "il" is in the fr table alone). Both are wrong in the direction
@@ -163,7 +163,7 @@ SHORT_QUESTIONS: list[tuple[str, str, str | set[str | None] | None]] = [
 def test_short_questions_detect_correctly_or_as_none(
     language: str, question: str, expected: str | set[str | None] | None
 ) -> None:
-    """KI-33: never a wrong language. A short question either detects as its
+    """: never a wrong language. A short question either detects as its
     own language or comes back None; the detector is not allowed to pick a
     language on a tie."""
     got = detect_language(question)

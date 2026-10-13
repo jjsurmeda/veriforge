@@ -154,7 +154,7 @@ def test_gate_missing_metrics_do_not_fail() -> None:
 
 
 def test_gate_gates_our_overhead_not_the_providers_time() -> None:
-    """KI-18: a 3x rise in wall clock that is all upstream must not fail the
+    """: a 3x rise in wall clock that is all upstream must not fail the
     gate, because nothing in this repo regressed."""
     baseline = {
         "faithfulness": 0.96,

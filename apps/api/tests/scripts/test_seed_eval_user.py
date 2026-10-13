@@ -1,5 +1,5 @@
 """`seed_eval_user` must commit, must verify the password, and must assign the
-`internal-eval` plan once (KI-24).
+`internal-eval` plan once.
 
 The AW-2000 and counterfactual corpora are private collections owned by
 `evals@example.com`, so acceptance signs in as that account. The account has
@@ -69,7 +69,7 @@ async def test_seeding_creates_a_committed_account_whose_password_verifies(
 
 
 async def test_the_plan_is_the_seeded_internal_eval_row(db: AsyncSession) -> None:
-    """Not `free` and not `pro`: those are rows real users are on (KI-20)."""
+    """Not `free` and not `pro`: those are rows real users are on ()."""
     from db.session import get_session_factory
 
     await seed_eval_user.seed()

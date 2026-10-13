@@ -1,7 +1,7 @@
 """Seed loader (TRD §15): evals/seed/items.json → eval_datasets/eval_items,
 and the seed corpus → a ready corpus collection owned by the eval user.
 
-The corpus collections are `visibility='private'` (KI-24): the AW-2000 fixture
+The corpus collections are `visibility='private'`: the AW-2000 fixture
 is not product content, and a benchmark corpus every real user searches is not
 a benchmark. `build_scope` admits a private collection to the user who owns it,
 so the eval runner reaches its own corpus by passing the collection ids; the
@@ -45,7 +45,7 @@ ITEMS_FILE = SEED_DIR / "items.json"
 CORPUS_DIR = SEED_DIR / "corpus"
 STATE_FILE = SEED_DIR / ".loaded.json"
 # The account that owns the eval corpora, and the identity the eval and
-# acceptance runners authenticate as (KI-24).
+# acceptance runners authenticate as.
 #
 # `example.com`, not a `.local` or `.test` address: the product's own email
 # validator (email_validator, via auth/router.py) rejects special-use and
@@ -58,7 +58,7 @@ EVAL_USER_EMAIL = "evals@example.com"
 CORPUS_NAME = "eval-seed-corpus"
 
 # The counterfactual set (P1b item 2). Its own directory, its own collection,
-# its own dataset — never Shared (KI-24). The documents state deliberately
+# its own dataset — never Shared. The documents state deliberately
 # altered facts, so a model answering them from memory is the failure this set
 # exists to catch, and a real user must never be able to read them at all.
 COUNTERFACTUAL_DIR = Path(__file__).resolve().parents[3] / "evals" / "counterfactual"
@@ -70,7 +70,7 @@ COUNTERFACTUAL_DATASET = "counterfactual"
 # runner summarises per corpus (PRD v3 §5).
 COUNTERFACTUAL_CORPUS_KEY = "counterfactual"
 
-# The entity-mismatch set (P2a item 0, KI-54): items only — its two corpora
+# The entity-mismatch set (P2a item 0, ): items only — its two corpora
 # are the seed and counterfactual corpora above, and each item's
 # `scope_corpus` field says which one is in scope for that item (the runner
 # reads the mapping from the set file, not the database). Items are loaded so
@@ -86,7 +86,7 @@ async def ensure_eval_user(session: AsyncSession, *, password: str | None = None
     """The one account that owns the eval corpora. Created on `free`.
 
     `password` is the sign-in credential for the eval and acceptance runners
-    (KI-24). It is optional because the loader itself never signs in — it talks
+. It is optional because the loader itself never signs in — it talks
     to the database — so a CI run needs no credential at all, while
     `scripts/seed_eval_user.py` passes one to make the account usable over HTTP.
     """
@@ -190,7 +190,7 @@ async def load_corpus(
 ) -> UUID:
     """Idempotent: skips when the corpus collection already has chunks.
 
-    The collection is `visibility='private'` and owned by the eval user (KI-24).
+    The collection is `visibility='private'` and owned by the eval user.
     An existing collection is demoted to private on every run, so a database
     seeded before the move is corrected by re-running the loader rather than
     needing a hand edit — otherwise the eval corpus would stay in every real

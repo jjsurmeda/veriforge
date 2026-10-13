@@ -1,4 +1,4 @@
-"""`scripts/send_test_email.py` against a real socket (item 3, KI-35).
+"""`scripts/send_test_email.py` against a real socket (item 3, ).
 
 The existing transport tests fake `smtplib` at its own boundary, which
 proves the code builds and hands off a message but never touches a socket.
@@ -219,7 +219,7 @@ class TestSendTestEmail:
     ) -> None:
         """A relay that refuses the message is a failure the runbook needs to
         see as a non-zero exit, because the alternative — password reset
-        returning 202 either way — is how KI-35 stayed invisible."""
+        returning 202 either way — is how  stayed invisible."""
         from scripts import send_test_email
 
         configure(monkeypatch, smtp_server)

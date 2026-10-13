@@ -1,4 +1,4 @@
-"""P2a item 2 measurement (KI-52): atomic extraction, strictness on the
+"""P2a item 2 measurement: atomic extraction, strictness on the
 15 seeded negatives, no drop on the 30 real claims.
 
 Extends P1b's `scripts/review_seeded_claims.py`:

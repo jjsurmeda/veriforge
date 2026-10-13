@@ -1,4 +1,4 @@
-"""Attribute end-to-end LLM latency to us vs. the provider (known-issues KI-18).
+"""Attribute end-to-end LLM latency to us vs. the provider (known-issues ).
 
 Runs N live streaming calls through the app's own `providers.llm.stream_completion`
 and, for each, compares our measured wall clock against the figure OpenRouter

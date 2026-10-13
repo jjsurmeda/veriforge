@@ -622,7 +622,7 @@ class TestRunRateLimit:
     These do NOT drive `POST /chats/{id}/runs` end to end: that route starts a
     real background run, whose worker holds database locks, and the next
     test's `TRUNCATE` then deadlocks against them — measured, not assumed,
-    and the same shape as KI-15. The limiter's semantics for the `run` scope
+    and the same shape as . The limiter's semantics for the `run` scope
     are covered directly, and the wiring is covered by the source assertion
     below.
     """

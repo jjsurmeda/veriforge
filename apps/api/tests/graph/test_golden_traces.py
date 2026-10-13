@@ -35,7 +35,7 @@ from decisions.output_guard import OutputGuardResult
 from graph.chat_title import DEFAULT_CHAT_TITLE
 from graph.generate import stream_chitchat_reply, stream_grounded_answer, stream_library_reply
 from graph.review import ExtractedClaim, ReviewResult, ReviewScores, VerifiedClaim
-from graph.runner import execute_run
+from graph.runner import RunSpec, execute_run
 from providers.llm import complete as real_complete
 from retrieval.hybrid import ScoredChunk, hybrid_search
 from retrieval.web import ensure_web_chunks
@@ -630,20 +630,22 @@ async def run_scenario(
     patch_seams(monkeypatch, trace, scenario, chunks)
 
     await execute_run(
-        bus=cast("PostgresRunBus", RecordingBus(trace)),
-        session_factory=get_session_factory(),
-        run_id=run_id,
-        message_id=assistant_message_id,
-        chat_id=chat_id,
-        user_id=user_id,
-        litellm_model="openai/gpt-4o-mini",
-        small_litellm_model="anthropic/claude-haiku-4.5",
-        model_id="openai/gpt-4o-mini",
-        context_window=128000,
-        mode=scenario.mode,
-        source=scenario.source,
-        user_message=scenario.question,
-        collection_ids=[collection_id] if collection_id is not None else [],
+        RunSpec(
+            bus=cast("PostgresRunBus", RecordingBus(trace)),
+            session_factory=get_session_factory(),
+            run_id=run_id,
+            message_id=assistant_message_id,
+            chat_id=chat_id,
+            user_id=user_id,
+            litellm_model="openai/gpt-4o-mini",
+            small_litellm_model="anthropic/claude-haiku-4.5",
+            model_id="openai/gpt-4o-mini",
+            context_window=128000,
+            mode=scenario.mode,
+            source=scenario.source,
+            user_message=scenario.question,
+            collection_ids=[collection_id] if collection_id is not None else [],
+        )
     )
     from graph.runner import drain_background_tasks
 

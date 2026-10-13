@@ -1,4 +1,4 @@
-"""Critical tier: the eval corpora are invisible to real users (KI-24).
+"""Critical tier: the eval corpora are invisible to real users.
 
 The AW-2000 seed corpus and the counterfactual corpus are
 `visibility='private'` collections owned by `evals@example.com`. Before

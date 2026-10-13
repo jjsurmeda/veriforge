@@ -73,7 +73,7 @@ async def assert_no_free_models(
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     # First thing, before any connection is opened: refuse to serve traffic we
-    # cannot fulfil. KI-35's dev-log email transport passes every health check
+    # cannot fulfil. 's dev-log email transport passes every health check
     # and silently breaks password recovery for every user, so it must not be
     # reachable in production at all.
     build_email_transport(settings)

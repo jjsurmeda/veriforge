@@ -1,4 +1,4 @@
-"""P2a item 1 measurement (KI-53): re-score the 30 recorded proxy-labelled
+"""P2a item 1 measurement: re-score the 30 recorded proxy-labelled
 answers through the new reviewer (extraction + absence-claim verification,
 no revision pass), and compare reviewer faithfulness against the proxy
 "grounded" label.

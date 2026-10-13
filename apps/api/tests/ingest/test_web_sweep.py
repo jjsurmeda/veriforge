@@ -104,7 +104,7 @@ async def test_the_sweep_deletes_expired_rows_and_keeps_live_ones(
     assert not (expired_chunk_ids & remaining_chunks), "an expired chunk survived"
     # The count is pages + the orphaned-chunk delete; the chunks reached
     # through a page row are deleted by the per-page statement and not counted
-    # (KI-39). What matters is that rows are gone and the hourly log line says
+    #. What matters is that rows are gone and the hourly log line says
     # so, so an operator can see the sweep is doing something.
     swept = [r for r in caplog.records if r.message == "expired web chunks swept"]
     assert swept, "the sweep must report what it deleted"

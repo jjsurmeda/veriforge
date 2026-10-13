@@ -1,4 +1,4 @@
-"""KI-3: the composer's model pick has to reach the generator.
+""": the composer's model pick has to reach the generator.
 
 `resolve_model` used to return `model_roles.get(role, requested)` for every
 role, so the admin's `generator` mapping silently overrode whatever the

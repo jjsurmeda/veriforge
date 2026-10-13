@@ -42,7 +42,7 @@ BOOKS: list[tuple[int, str]] = [
     (84, "Frankenstein"),
     (11, "Alice's Adventures in Wonderland"),
     (35, "The Time Machine"),
-    # Round 2 (KI-12): multilingual corpus. Document names must contain
+    # Round 2: multilingual corpus. Document names must contain
     # the acceptance set's `cite` substrings (evals/acceptance/books.json).
     (2000, "Don Quijote"),
     (14155, "Madame Bovary"),

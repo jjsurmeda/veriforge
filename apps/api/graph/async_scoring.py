@@ -25,7 +25,7 @@ def _push_scores(trace_id: str, scores: dict[str, float]) -> None:
     # `observability.tracing` owns the client, so the host is configured the
     # same way here as for the spans. This used to build `Langfuse()` with no
     # arguments, which read LANGFUSE_HOST from the environment — a variable
-    # nothing in the app ever set (KI-21), so scores went to the EU default
+    # nothing in the app ever set, so scores went to the EU default
     # and failed there exactly as the generations did.
     tracing.score(trace_id, scores)
 

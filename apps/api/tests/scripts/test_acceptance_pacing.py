@@ -124,7 +124,7 @@ def paced_run(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> PacedRun:
         item = next(i for i in items if i["turns"] == [turn])
         return _result_for(item)
 
-    # The eval-user sign-in is KI-24 and has its own tests
+    # The eval-user sign-in is  and has its own tests
     # (test_acceptance_eval_user.py); pacing is not where it belongs.
     async def eval_sign_in(_client: Any) -> tuple[str, str]:
         return "evals@example.com", "EvalUser!234"

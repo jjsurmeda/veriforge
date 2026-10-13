@@ -177,7 +177,7 @@ class JevRerank:
     def __init__(self, engine: DecisionEngine, run_id: str) -> None:
         self._engine = engine
         self._run_id = run_id
-        # Which engines actually answered (KI-26, D2 item 4): the relevance
+        # Which engines actually answered (, D2 item 4): the relevance
         # gate keys its threshold by this, and an outage (no passage got a
         # real answer) must skip the gate rather than abstain. Accumulated
         # across batches, so a breaker trip mid-run is visible.

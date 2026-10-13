@@ -1,8 +1,8 @@
 """The books-acceptance verdict classifies a run from the summary's own fields.
 
 `make check-work` step 9 exists because the eval gate and entity-mismatch pass
-without ever replaying `evals/acceptance/books.json`, which left KI-28 (a
-should-decline question answered) and KI-56 (a real answer lost) unchecked. These
+without ever replaying `evals/acceptance/books.json`, which left  (a
+should-decline question answered) and  (a real answer lost) unchecked. These
 cases pin the PRD §5 classification to the counts `scripts.acceptance.summarise`
 writes, so the gate cannot pass by scraping a printed table or by tolerating a
 partial run.
@@ -61,7 +61,7 @@ def test_a_clean_run_passes() -> None:
 
 
 def test_one_confident_wrong_fails() -> None:
-    """KI-28's shape: a should-decline item the run answered instead."""
+    """'s shape: a should-decline item the run answered instead."""
     summary = _summary(confident_wrong=1, clean_declines=19)
     summary["detail"]["confident_wrong_ids"] = ["outside-study-in-scarlet"]
 
@@ -99,7 +99,7 @@ def test_an_unclean_decline_fails_on_the_count_not_as_confident_wrong() -> None:
 
 
 def test_two_of_thirty_two_false_abstentions_fails() -> None:
-    """KI-56's shape: two real answers the run declined on."""
+    """'s shape: two real answers the run declined on."""
     summary = _summary(false_abstentions=2)
     summary["detail"]["false_abstention_ids"] = ["rp77-torque", "other"]
 
@@ -126,7 +126,7 @@ def test_one_errored_item_fails_as_an_error_not_a_decline() -> None:
 
 
 def test_an_uncited_answer_fails_even_when_the_text_is_right() -> None:
-    """KI-71's bar line. `broad-sherlock`'s run cleared every other clause —
+    """'s bar line. `broad-sherlock`'s run cleared every other clause —
     20/20 clean declines, 0 confident wrong, 2 false abstentions of 33 — and
     still answered a content question from model memory with nothing behind
     it. The gate has to fail that, because the text being right is exactly

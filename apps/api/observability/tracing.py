@@ -1,4 +1,4 @@
-"""Langfuse tracing seam (TRD §15, KI-21).
+"""Langfuse tracing seam (TRD §15, ).
 
 Everything here is best-effort. A trace that cannot be pushed is a missing
 line in a dashboard; a run that cannot answer because a tracing client threw
@@ -6,7 +6,7 @@ is a lost user. So every function in this module swallows its own failures,
 logs them at `warning`, and returns None — the one rule that keeps
 observability from becoming an outage cause.
 
-Why a module of its own (KI-21's host half): the pinned SDK (`langfuse<3`)
+Why a module of its own ('s host half): the pinned SDK (`langfuse<3`)
 reads `LANGFUSE_HOST` from the environment, not from `config.py`, and the
 three places that used to talk to Langfuse each built a client differently
 — `_configure_langfuse` exported only the two keys onto `os.environ`, so
@@ -170,7 +170,7 @@ def record_decision_call(
 
     Jev uses raw `httpx`, not LiteLLM, so before this nothing about a
     decision reached Langfuse: the trace showed the LLM generations and
-    nothing that decided anything (KI-21). A span rather than a generation
+    nothing that decided anything. A span rather than a generation
     because there is no completion to bill — `engine`, `latency_ms`, the
     decision names and their probabilities are the payload.
     """

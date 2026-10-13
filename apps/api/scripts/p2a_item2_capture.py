@@ -1,4 +1,4 @@
-"""P2a item 2 capture (KI-52): run the committed claim-extraction prompt over
+"""P2a item 2 capture: run the committed claim-extraction prompt over
 the four seeded compound claims (the P1b misses) and check the outputs into
 tests/fixtures/p2a_item2_captures.json for the tests.
 
@@ -28,7 +28,7 @@ DEFAULT_SHEET = (
 OUT_FILE = Path(__file__).resolve().parents[3] / "apps" / "api" / "tests" / "fixtures" / (
     "p2a_item2_captures.json"
 )
-# claims_proxy.csv rows 23/27/35/40 — the four seeded misses (KI-52).
+# claims_proxy.csv rows 23/27/35/40 — the four seeded misses.
 SEED_IDS = [
     "20261003-seeded:c5",
     "20261003-seeded:c3",

@@ -2,7 +2,7 @@
 mode's prepare_*_run wraps timed sub-steps with this so StepStarted/
 StepCompleted events and latency_ms are recorded the same way everywhere.
 
-Each step also opens a Langfuse span under the run's trace (KI-21). This is
+Each step also opens a Langfuse span under the run's trace. This is
 the one place a stage passes through on every mode's path, so it is where
 node-level spans belong: TRD §15 promises them, and until now only the LLM
 generations and the post-hoc scores reached Langfuse, so a run's trace

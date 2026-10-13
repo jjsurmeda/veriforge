@@ -1,4 +1,4 @@
-"""Langfuse tracing (KI-21).
+"""Langfuse tracing.
 
 The claim under test is TRD §15's: "decision calls appear as spans with
 their probabilities", and "the LangGraph callback traces every run with node
@@ -91,7 +91,7 @@ class TestLangfuseHost:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # `.env` has always carried LANGFUSE_BASE_URL; an existing deployment
-        # must not need a rename to start sending traces (KI-21).
+        # must not need a rename to start sending traces.
         monkeypatch.delenv("LANGFUSE_HOST", raising=False)
         monkeypatch.setenv("LANGFUSE_BASE_URL", "https://jp.cloud.langfuse.com")
         get_settings.cache_clear()
@@ -364,7 +364,7 @@ class TestStageSpans:
 
 
 class TestEmptyTraceIds:
-    """KI-21's second half: `Langfuse trace_id mismatch: set ,` (1374 times)."""
+    """'s second half: `Langfuse trace_id mismatch: set ,` (1374 times)."""
 
     def test_no_trace_id_is_invented_without_a_run(
         self, monkeypatch: pytest.MonkeyPatch

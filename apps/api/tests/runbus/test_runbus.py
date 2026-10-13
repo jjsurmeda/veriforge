@@ -119,7 +119,7 @@ async def test_publish_assigns_monotonic_seq(db: AsyncSession, bus: PostgresRunB
 async def test_two_concurrent_subscribes_do_not_collide(
     db: AsyncSession, bus: PostgresRunBus
 ) -> None:
-    """KI-16: every subscribe shares one LISTEN connection, so two overlapping
+    """: every subscribe shares one LISTEN connection, so two overlapping
     streams used to run add_listener concurrently and raise InterfaceError."""
     first, _ = await make_run_row(db)
     second, _ = await make_run_row(db)

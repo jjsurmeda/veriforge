@@ -1,7 +1,7 @@
 """Send one real message through the configured email transport, and exit
 non-zero if it did not go out.
 
-Why this exists (KI-35, item 3): every check we have of the mail path is a
+Why this exists (, item 3): every check we have of the mail path is a
 unit test with `smtplib` faked at its own boundary. That proves the code
 hands the message to the socket; it cannot prove SES accepts the
 credentials, that the from-address is verified, or that the relay is

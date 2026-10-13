@@ -1,6 +1,6 @@
-"""KI-31: one unresolved generation id must not discard the whole item.
+""": one unresolved generation id must not discard the whole item.
 
-The recorded shape (docs/known-issues.md, KI-31, evidence from D3 run 3): four
+The recorded shape (docs/known-issues.md, , evidence from D3 run 3): four
 items each carried a real `provider_ms` of 3481 / 6202 / 3622 / 3472 ms and a
 null `our_overhead_ms`, because `Attribution.complete` required
 `unattributed == 0` — so ONE id that never came back threw away the provider
@@ -63,7 +63,7 @@ class TestPartialAttributionKeepsWhatResolved:
     async def test_one_unresolved_id_keeps_the_other_ids_provider_time(
         self, stats_answers: StatsAnswers
     ) -> None:
-        """KI-31's recorded shape: 3 ids resolve, 1 does not. The resolved
+        """'s recorded shape: 3 ids resolve, 1 does not. The resolved
         provider time is kept rather than discarded with the unresolved one."""
         stats_answers({"gen-a": 1000.0, "gen-b": 2000.0, "gen-c": 3000.0})
         provider_ms, attributed, unresolved = await _attribute_ids(
@@ -106,12 +106,12 @@ class TestPartialAttributionKeepsWhatResolved:
 
 
 class TestTheGatedFigureIsWithheldOnAPartialItem:
-    """The direction the brief cares about, and the one KI-31's own note
+    """The direction the brief cares about, and the one 's own note
     insists on: `our_overhead_ms` is still withheld when an id is unresolved,
     because a partial provider sum UNDERSTATES provider time and would
     OVERSTATE our overhead — flattering the number the gate hard-limits.
 
-    What changed for KI-31 is that the provider time that DID resolve is kept
+    What changed for  is that the provider time that DID resolve is kept
     and reported, and the gap is visible, rather than the whole item's figure
     being thrown away silently.
     """
@@ -162,7 +162,7 @@ class TestUnresolvedIdsAreDiagnosable:
         assert "404" in described
 
     def test_a_transport_failure_is_its_own_class(self) -> None:
-        """KI-31 could not tell "404 forever" from "the request never got an
+        """ could not tell "404 forever" from "the request never got an
         answer"; `last_status=None` is that difference."""
         entry = Unresolved(
             ref=GenerationRef(generation_id="gen-y", source="jev"),
@@ -195,7 +195,7 @@ class TestNoFigureIsInvented:
     async def test_an_item_where_nothing_resolved_gets_no_provider_time(
         self, stats_answers: StatsAnswers
     ) -> None:
-        """The rule from KI-18, which KI-31 must not erode: a miss contributes
+        """The rule from , which  must not erode: a miss contributes
         zero, never a guess."""
         stats_answers({})
         provider_ms, attributed, unresolved = await _attribute_ids(

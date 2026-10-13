@@ -22,7 +22,7 @@ _DEFAULTS: dict[str, dict[Engine, float]] = {
     "guard_pii_warn": {"jev": 0.70, "fallback": 0.70},
     "off_topic_warn": {"jev": 0.80, "fallback": 0.80},
     "choice_min_confidence": {"jev": 0.50, "fallback": 0.50},
-    # KI-37: `library` is the one intent that skips retrieval and answers from
+    # : `library` is the one intent that skips retrieval and answers from
     # the document list, so a merely probable `library` is the expensive kind
     # of wrong. "What does the AW-2000 package contain?" scored 0.6-0.95 as
     # `library` across three fast20 runs and was answered with the corpus's
@@ -38,7 +38,7 @@ _DEFAULTS: dict[str, dict[Engine, float]] = {
     # (thin margin — rerank score is the fallback second signal if it
     # closes). sufficient_retry is removed: with one retry there is one bar.
     "sufficient_abstain": {"jev": 0.05, "fallback": 0.05},
-    # The second signal closed (KI-26, D2 item 4). `sufficient` alone can't
+    # The second signal closed (, D2 item 4). `sufficient` alone can't
     # separate answer from should-abstain (margin -0.06 in both D1
     # acceptance runs), but the max Jev rerank score of the post-sanitize
     # winners can. Offline replay of D1's two runs (max rerank score in the
@@ -51,7 +51,7 @@ _DEFAULTS: dict[str, dict[Engine, float]] = {
     # 0.60 clears both sides in both runs (0.10-0.13 above the answer min,
     # 0.08-0.11 below the abstain max); 0.50 loses ml-fr-outside in 184634
     # (0.52 answers). Offline replay: 40/41 at 0.50-0.65 in run 183311 and
-    # 0.55-0.65 in 184634, only xl-en-wukong-master (KI-27, content) left.
+    # 0.55-0.65 in 184634, only xl-en-wukong-master left.
     # The fallback cell is UNMEASURED — only Jev-answered scores were seen;
     # it mirrors jev because Jev is the reference scale. Applies only to
     # scores JevRerank answered (NVIDIA/Cohere use other scales; fused
@@ -70,7 +70,7 @@ _DEFAULTS: dict[str, dict[Engine, float]] = {
     # partial answers that state what is missing (TR-4) answer "no" and
     # never reach the bar.
     "prose_decline": {"jev": 0.70, "fallback": 0.70},
-    # P2a item 4 (KI-54): a per-passage Noul asks "is this passage about the
+    # P2a item 4: a per-passage Noul asks "is this passage about the
     # entity the question names?", batched into the post-sanitize
     # sufficiency call. 0.50 is the generic pick floor: a passage matches
     # the entity when the judge is at least as likely to say yes as no, and
@@ -118,10 +118,10 @@ def display_threshold(name: str, engine: Engine) -> float | None:
     if threshold_name is None and name.startswith("chunk_injection_"):
         threshold_name = "chunk_injection_drop"
     # P2a item 4: one Noul per (passage, entity) pair, named entity_<passage>_<entity>
-    # (the second index is KI-72's). The prefix test covers both.
+    # (the second index is 's). The prefix test covers both.
     if threshold_name is None and name.startswith("entity_"):
         threshold_name = "entity_match"
-    # KI-34, lane E item 1: the conflict check asks one question per candidate
+    # , lane E item 1: the conflict check asks one question per candidate
     # PAIR of passages, named conflict_<i>. `DISPLAY_THRESHOLDS` only carries
     # the bare `conflict`, so every real conflict decision resolved to None and
     # reached the trace with a value and no threshold — the one gate row in the

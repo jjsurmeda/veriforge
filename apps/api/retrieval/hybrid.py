@@ -31,7 +31,7 @@ LEX_LIMIT = 50
 FUSED_LIMIT = 40
 RRF_K = 60
 
-# KI-19: must stay in step with the `text` tokenizer in migration 0013. The
+# : must stay in step with the `text` tokenizer in migration 0013. The
 # query side has to name the tokenizer explicitly — `paradedb.parse` always
 # tokenises with the default one, so against an icu index it still treats a
 # whole CJK question as a single unsegmented token and matches nothing.

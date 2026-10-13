@@ -178,7 +178,7 @@ class FallbackEngine:
         started = time.monotonic()
 
         def record(exc: BaseException) -> None:
-            # KI-21: the fallback runs through LiteLLM so its *generation*
+            # : the fallback runs through LiteLLM so its *generation*
             # was traced, but nothing said it was a decision or which one —
             # and a fallback that fails is exactly when that matters. The
             # span is recorded here so a degraded decision engine reads as a

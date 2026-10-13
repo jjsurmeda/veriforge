@@ -250,7 +250,7 @@ async def test_decision_stats_use_call_latency_and_collapse_dynamic_names(
     assert by_decision["claim_verdicts"]["count"] == 1
     # Lane E item 3: the per-passage families collapse to one row each. A
     # screenshot of the panel as a real run showed the table as a wall of
-    # `passage_0`, `passage_1`, … which is the KI-22 "mostly Jev calls"
+    # `passage_0`, `passage_1`, … which is the  "mostly Jev calls"
     # reading, in the one place an operator looks for totals.
     assert "passage_0" not in by_decision
     assert by_decision["passage_relevance"]["count"] >= 1
@@ -484,7 +484,7 @@ async def test_the_generator_temperature_is_admin_tunable(
     assert ok.json()["data"]["generation"]["temperature"] == 0.35
 
     # `null` is the default and is accepted: it means "send no temperature",
-    # so the provider default applies (KI-32).
+    # so the provider default applies.
     cleared = await client.patch(
         "/admin/settings", headers=headers, json={"generation": {"temperature": None}}
     )

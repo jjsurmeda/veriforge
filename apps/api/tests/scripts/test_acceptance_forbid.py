@@ -14,7 +14,7 @@ Two of them make an item checkable that was not checkable before:
 
 The word-boundary cases are the point of two of these tests: a bare substring
 check would make `IP68` fail an `IP69K` answer and `330` fail a `3300` one,
-which is the same defect as KI-36 — a check stricter than the corpus.
+which is the same defect as  — a check stricter than the corpus.
 """
 
 from typing import Any

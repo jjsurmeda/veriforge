@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { runFailureMessage } from './ChatView'
 
-// KI-23: each terminal code gets copy that tells the user whether retrying
+// : each terminal code gets copy that tells the user whether retrying
 // can help. Quota and provider failures must never say "try again".
 describe('runFailureMessage', () => {
   it('quota_exceeded names the limit and the reset, never "try again"', () => {

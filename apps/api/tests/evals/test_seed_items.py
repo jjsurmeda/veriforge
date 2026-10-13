@@ -1,4 +1,4 @@
-"""Shape and class balance of the seed dataset (KI-6, D3 item 2).
+"""Shape and class balance of the seed dataset (, D3 item 2).
 
 The fast20 subset carried only 4 should-abstain items, so its
 abstention_accuracy could only move in quarters. These pin the file's
@@ -19,9 +19,9 @@ FAST20: list[str] = DATASET["fast20_ids"]
 REQUIRED_FIELDS = {"id", "category", "question", "should_abstain"}
 
 
-# KI-37's containment class: "what does X contain / include / come with".
+# 's containment class: "what does X contain / include / come with".
 # These are questions about a document's or product's contents, which the
-# pre-KI-37 intent prompt read as a `library` question, so the run answered
+# pre- intent prompt read as a `library` question, so the run answered
 # with the corpus's internal filenames instead of the passage. Each item
 # carries a label audit (testing.md: the query that finds the answering
 # passage, hit score, and the passage quoted).
@@ -34,7 +34,7 @@ CONTAINMENT_VERBS = ("contain", "include", "come with")
 
 
 def test_the_containment_class_is_covered_and_audited() -> None:
-    """KI-37's suggested next step (c): the gate must fail on this class in
+    """'s suggested next step (c): the gate must fail on this class in
     future rather than contributing it to a spread. Three answer items, each
     with a proof field, so an unaudited label cannot be added here."""
     by_id = {item["id"]: item for item in ITEMS}
@@ -69,7 +69,7 @@ def test_fast20_has_exactly_20_ids_all_present_in_items() -> None:
 
 
 def test_fast20_carries_at_least_8_should_abstain_items() -> None:
-    """The reason for KI-6: 4 abstains made the fast subset's abstention
+    """The reason for : 4 abstains made the fast subset's abstention
     accuracy step 0.00/0.00/0.25."""
     by_id = {item["id"]: item for item in ITEMS}
     abstains = [id_ for id_ in FAST20 if by_id[id_]["should_abstain"]]
@@ -80,7 +80,7 @@ def test_fast20_carries_at_least_8_should_abstain_items() -> None:
 # The book twins (abstain-11..20) are questions about Gutenberg literature. The
 # seed corpus is 7 AW-2000 documents, so in CI they are near-misses against an
 # empty topic and decline trivially; the eval user only saw a real Moriarty
-# passage locally because the Shared library was in scope (KI-24). fast20 must
+# passage locally because the Shared library was in scope. fast20 must
 # therefore depend on the seed corpus alone -- books belong to acceptance.
 BOOK_TWINS = {
     "abstain-11",  # Professor Moriarty / Reichenbach

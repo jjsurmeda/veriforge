@@ -31,7 +31,7 @@ class _AllowAllJev:
 
 
 class _CountingJev:
-    """KI-11: counts chunk_injection questions and flags the injected chunk
+    """: counts chunk_injection questions and flags the injected chunk
     (answer ≥ the 0.7 drop threshold) while allowing every other chunk.
     The marker must not appear in the sanitizer's prompt template, whose
     own examples include phrases like 'ignore previous instructions'."""
@@ -106,7 +106,7 @@ async def test_run_hop_returns_kept_chunks_and_note(db: AsyncSession, user_a: Us
 async def test_run_hop_sanitizes_only_the_reranked_top_k(
     db: AsyncSession, user_a: User
 ) -> None:
-    """KI-11: chunk_injection questions cover exactly the chunks that reach
+    """: chunk_injection questions cover exactly the chunks that reach
     generation (the reranked top-k), not the whole fused set; an injected
     chunk inside the top-k is still dropped and flagged in the event."""
     collection = await make_collection(db, user_a, "docs-ki11")

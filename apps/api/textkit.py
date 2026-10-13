@@ -932,7 +932,7 @@ _LATIN_STOP_WORDS: dict[str, frozenset[str]] = {
 _WORD = re.compile(r"[^\W\d_]+", re.UNICODE)
 
 # Markers that belong to exactly one of the Latin-script languages above
-# (KI-33). A stop word alone is weak evidence on a short question: "tu" is in
+#. A stop word alone is weak evidence on a short question: "tu" is in
 # the es, fr, pt and pl tables alike and "il" in the fr table alone, so a
 # question like "Peux-tu résumer Madame Bovary ?" or "Chi è il conte di
 # montecristo?" produced a four-way (or one-way, wrong) tie that `max()`
@@ -1121,7 +1121,7 @@ def _latin_language(text: str) -> str | None:
 
     One weighted score per language: a stop-word hit is 1, a distinctive
     marker is `_MARKER_WEIGHT`, so language-exclusive evidence outranks the
-    shared vocabulary that produced KI-33's wrong answers. English is the
+    shared vocabulary that produced 's wrong answers. English is the
     template's own language and wins by default — a non-English language has
     to out-score it, never merely match it.
 
@@ -1163,7 +1163,7 @@ def detect_language(text: str) -> str | None:
 
     None means "don't act on it" — an empty question, a bare number or
     product code, or a short question whose only evidence is shared between
-    several languages (KI-33) — not "English". A renderer must not offer to
+    several languages — not "English". A renderer must not offer to
     translate into a language it guessed, so callers check for None before
     using the result.
     """

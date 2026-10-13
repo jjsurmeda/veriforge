@@ -1,4 +1,4 @@
-"""KI-14: writes must be committed before the response is sent.
+""": writes must be committed before the response is sent.
 
 `get_session` used to commit in dependency teardown, which on FastAPI 0.141
 runs after the response has left the server. A signup that returns 201 can

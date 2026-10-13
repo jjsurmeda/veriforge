@@ -29,7 +29,7 @@ async def resolve_scope(
     the schema but is no longer read.
 
     `extra_collection_ids` is the one caller-side exception, and it exists for
-    KI-24: the eval corpora are private collections owned by the eval user, so
+    : the eval corpora are private collections owned by the eval user, so
     only a caller that already knows their ids can reach them — the eval runner,
     which loaded them. The HTTP chat path never passes it, which is what keeps
     the ADR-002 rule intact for real users. `build_scope` re-checks ownership in

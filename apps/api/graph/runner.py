@@ -90,7 +90,7 @@ _active_tasks: dict[UUID, asyncio.Task[None]] = {}
 # Per-run work that outlives the response on purpose (async judge, then the
 # usage settle). Nothing awaits it, so it has to be tracked to be drainable at
 # shutdown and between tests — otherwise the settle is lost and the ledger row
-# stays `reserved` (KI-15).
+# stays `reserved`.
 _background_tasks: set[asyncio.Task[None]] = set()
 
 
@@ -405,7 +405,7 @@ def _prose_decline_question(question: str, reply: str) -> Noul:
 async def _drop_citations(
     session_factory: async_sessionmaker[AsyncSession], message_id: UUID
 ) -> None:
-    """P2a item 3 (KI-25 shape): a prose decline is recorded as an
+    """P2a item 3 ( shape): a prose decline is recorded as an
     abstention, and an abstention carries no citations."""
 
     async def work(session: AsyncSession) -> None:
@@ -414,51 +414,32 @@ async def _drop_citations(
     await _with_session(session_factory, work)
 
 
-def start_run(
-    *,
-    bus: PostgresRunBus,
-    session_factory: async_sessionmaker[AsyncSession],
-    run_id: UUID,
-    message_id: UUID,
-    chat_id: UUID,
-    user_id: UUID,
-    litellm_model: str,
-    small_litellm_model: str,
-    model_id: str,
-    context_window: int,
-    mode: str,
-    source: str,
-    user_message: str,
-    run_filters: RunFilters | None = None,
-    collection_ids: list[UUID] | None = None,
-    quota_remaining_5h: float | None = None,
-    settings_version: int | None = None,
-    instant_title: str | None = None,
-) -> None:
-    task = asyncio.create_task(
-        execute_run(
-            bus=bus,
-            session_factory=session_factory,
-            run_id=run_id,
-            message_id=message_id,
-            chat_id=chat_id,
-            user_id=user_id,
-            litellm_model=litellm_model,
-            small_litellm_model=small_litellm_model,
-            model_id=model_id,
-            context_window=context_window,
-            mode=mode,
-            source=source,
-            user_message=user_message,
-            run_filters=run_filters,
-            collection_ids=collection_ids or [],
-            quota_remaining_5h=quota_remaining_5h,
-            settings_version=settings_version,
-            instant_title=instant_title,
-        )
-    )
-    _active_tasks[run_id] = task
-    task.add_done_callback(lambda _: _active_tasks.pop(run_id, None))
+@dataclass
+class RunSpec:
+    bus: PostgresRunBus
+    session_factory: async_sessionmaker[AsyncSession]
+    run_id: UUID
+    message_id: UUID
+    chat_id: UUID
+    user_id: UUID
+    litellm_model: str
+    small_litellm_model: str
+    model_id: str
+    context_window: int
+    mode: str
+    source: str
+    user_message: str
+    run_filters: RunFilters | None = None
+    collection_ids: list[UUID] | None = None
+    quota_remaining_5h: float | None = None
+    settings_version: int | None = None
+    instant_title: str | None = None
+
+
+def start_run(spec: RunSpec) -> None:
+    task = asyncio.create_task(execute_run(spec))
+    _active_tasks[spec.run_id] = task
+    task.add_done_callback(lambda _: _active_tasks.pop(spec.run_id, None))
 
 
 async def _settle_after_scoring(
@@ -701,33 +682,31 @@ def _reset_at(exc: AppError) -> str | None:
     return reset_at if isinstance(reset_at, str) else None
 
 
-async def execute_run(
-    *,
-    bus: PostgresRunBus,
-    session_factory: async_sessionmaker[AsyncSession],
-    run_id: UUID,
-    message_id: UUID,
-    chat_id: UUID,
-    user_id: UUID,
-    litellm_model: str,
-    small_litellm_model: str,
-    model_id: str,
-    context_window: int,
-    mode: str,
-    source: str,
-    user_message: str,
-    run_filters: RunFilters | None = None,
-    collection_ids: list[UUID] | None = None,
-    quota_remaining_5h: float | None = None,
-    settings_version: int | None = None,
-    instant_title: str | None = None,
-) -> None:
+async def execute_run(spec: RunSpec) -> None:
     """Run one chat turn: resolve the runtime, then hand it to the mode.
 
     The mode does its own pipeline (`graph/stages/run_*.py`); this owns the
     parts every run shares — the first-token clock, the heartbeat, the
     terminal event, and the credits that are settled on every exit path.
     """
+    bus = spec.bus
+    session_factory = spec.session_factory
+    run_id = spec.run_id
+    message_id = spec.message_id
+    chat_id = spec.chat_id
+    user_id = spec.user_id
+    litellm_model = spec.litellm_model
+    small_litellm_model = spec.small_litellm_model
+    model_id = spec.model_id
+    context_window = spec.context_window
+    mode = spec.mode
+    source = spec.source
+    user_message = spec.user_message
+    run_filters = spec.run_filters
+    collection_ids = spec.collection_ids
+    quota_remaining_5h = spec.quota_remaining_5h
+    settings_version = spec.settings_version
+    instant_title = spec.instant_title
     # TX-3: the clock for time-to-first-token starts here, before the runtime
     # and model roles are resolved, because everything from here on is latency
     # the person waiting on the chat experiences. It stops at the first

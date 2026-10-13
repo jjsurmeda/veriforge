@@ -1,4 +1,4 @@
-"""P2a item 3: a prose decline becomes an abstention (KI-25 shape).
+"""P2a item 3: a prose decline becomes an abstention ( shape).
 
 When the generated reply itself says the sources cannot answer (the
 `says_not_in_sources` shape), the auto-mode run is recorded as `abstained`
@@ -205,7 +205,7 @@ async def _citation_rows(message_id: UUID) -> list[Citation]:
 async def test_full_decline_is_abstained_with_no_citations(
     monkeypatch: pytest.MonkeyPatch, db: AsyncSession, user_a: User
 ) -> None:
-    """The KI-25 shape: the reply text still lands (hold plan), but the run
+    """The  shape: the reply text still lands (hold plan), but the run
     is an abstention — no citations, no scores, no scoring task, no chips."""
     bus, seen, message = await _finish(
         monkeypatch, db, user_a, text=FULL_DECLINE, engine=_DeclineEngine(p=0.92)

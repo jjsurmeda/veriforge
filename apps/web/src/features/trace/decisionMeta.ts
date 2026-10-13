@@ -44,7 +44,7 @@ const STAGE_LABELS: Record<string, string> = {
 export function decisionLabel(name: string, stage?: string | null): string {
   if (stage === 'claim_verdict' || name.startsWith('claim_')) return 'Claim verdicts'
   if (name.startsWith('chunk_injection_')) return 'Chunk checks'
-  // One Noul per top-k passage (KI-54), so there are as many of these as
+  // One Noul per top-k passage, so there are as many of these as
   // passages. The gate card folds them into a single "Entity match" row and
   // the timeline collapses them; naming the family once here is what makes
   // both read as one check instead of N.

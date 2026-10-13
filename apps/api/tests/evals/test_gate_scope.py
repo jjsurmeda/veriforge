@@ -179,7 +179,7 @@ def test_a_push_whose_parent_is_absent_fails_loudly(repo: Path) -> None:
     """Not decidable is not the same as false, and it must not be silent.
 
     A shallow clone cannot resolve `before`. The old one-liner read that
-    failure as "no gated paths changed" and went green (KI-6); here it exits
+    failure as "no gated paths changed" and went green; here it exits
     non-zero, which fails the job loudly instead of skipping quietly.
     """
     sha = _commit(repo, "apps/api/retrieval/hybrid.py")

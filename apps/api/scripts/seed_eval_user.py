@@ -1,6 +1,6 @@
 """Give the eval owner account a password, so acceptance can sign in as it.
 
-KI-24: the AW-2000 seed corpus and the counterfactual corpus are
+: the AW-2000 seed corpus and the counterfactual corpus are
 `visibility='private'` collections owned by `evals@veriforge.local`. A private
 collection is in scope only for the user that owns it, so the eval and
 acceptance runners have to *be* that user — a throwaway signup has no access to

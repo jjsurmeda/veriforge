@@ -26,7 +26,7 @@ REPLAY_BATCH = 500
 POLL_FALLBACK_SECONDS = 15.0
 SEQ_RACE_RETRIES = 3
 
-# KI-68. The number and the row are written by ONE statement, so the
+# . The number and the row are written by ONE statement, so the
 # database decides who gets which `seq` instead of a retry budget deciding
 # it afterwards.
 #
@@ -96,7 +96,7 @@ class PostgresRunBus:
         self._dsn = dsn.replace("postgresql+asyncpg://", "postgresql://")
         self._listener: asyncpg.Connection | None = None
         # One connection serves every channel, and asyncpg refuses concurrent
-        # use of one connection, so (LISTEN|UNLISTEN) is serialised (KI-16).
+        # use of one connection, so (LISTEN|UNLISTEN) is serialised.
         self._listener_lock = asyncio.Lock()
         self._subscriber_queues: dict[UUID, set[asyncio.Queue[int]]] = {}
         self._cancel_handlers: list[Callable[[UUID], None]] = []
@@ -145,7 +145,7 @@ class PostgresRunBus:
         """Append to run_events, NOTIFY the seq, return the stamped event.
 
         seq is allocated by the increment in the same transaction as the
-        insert (KI-68), so the stored payload carries its own seq and two
+        insert, so the stored payload carries its own seq and two
         publishers on one run cannot choose the same number. The retry is a
         backstop for anything else that can violate the primary key.
         """

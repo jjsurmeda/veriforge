@@ -30,7 +30,7 @@ async def get_session() -> AsyncIterator[AsyncSession]:
             raise
 
 
-# KI-14: scope="function" ends the dependency (and its commit) before the
+# : scope="function" ends the dependency (and its commit) before the
 # response is sent; the default teardown runs after, so a client's next
 # request could beat the commit.
 SessionDep = Annotated[AsyncSession, Depends(get_session, scope="function")]

@@ -448,23 +448,25 @@ async def create_run(
     await session.commit()
 
     runner.start_run(
-        bus=request.app.state.bus,
-        session_factory=request.app.state.session_factory,
-        run_id=run.id,
-        message_id=assistant_message.id,
-        chat_id=chat.id,
-        user_id=user.id,
-        litellm_model=f"{provider.kind}/{model_id}",
-        small_litellm_model=small_litellm_model,
-        model_id=model_id,
-        context_window=model.context_window or 128_000,
-        mode=body.mode,
-        source=body.source,
-        user_message=body.message,
-        run_filters=body.filters,
-        collection_ids=scope,
-        quota_remaining_5h=reservation.remaining_5h,
-        settings_version=runtime.version,
-        instant_title=instant_title,
+        runner.RunSpec(
+            bus=request.app.state.bus,
+            session_factory=request.app.state.session_factory,
+            run_id=run.id,
+            message_id=assistant_message.id,
+            chat_id=chat.id,
+            user_id=user.id,
+            litellm_model=f"{provider.kind}/{model_id}",
+            small_litellm_model=small_litellm_model,
+            model_id=model_id,
+            context_window=model.context_window or 128_000,
+            mode=body.mode,
+            source=body.source,
+            user_message=body.message,
+            run_filters=body.filters,
+            collection_ids=scope,
+            quota_remaining_5h=reservation.remaining_5h,
+            settings_version=runtime.version,
+            instant_title=instant_title,
+        )
     )
     return RunCreateResponse(run_id=str(run.id), message_id=str(assistant_message.id))

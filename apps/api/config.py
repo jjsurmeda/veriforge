@@ -49,7 +49,7 @@ class Settings(BaseSettings):
     rate_limit_run: int = 60
     rate_limit_run_window_seconds: float = 60.0
 
-    # Email (AC-1 password reset, KI-35). `dev_log` writes the message to the
+    # Email (AC-1 password reset, ). `dev_log` writes the message to the
     # log instead of sending it, and is refused when ENVIRONMENT=production.
     # `smtp` sends for real; AWS SES publishes an SMTP endpoint, so slice 9
     # points these at SES with no code change.
@@ -68,7 +68,7 @@ class Settings(BaseSettings):
     # The pinned SDK (`langfuse<3`) reads `LANGFUSE_HOST`, and with no host
     # it falls back to the EU default — where a JP project's keys silently
     # fail to authenticate, so traces stop arriving with no error anywhere
-    # (KI-21: 301 traces, then nothing). `LANGFUSE_BASE_URL` is accepted as an
+    # (: 301 traces, then nothing). `LANGFUSE_BASE_URL` is accepted as an
     # alias because that is the name already in `.env`; both names work and
     # the SDK's own name wins when both are set.
     langfuse_host: str = Field(
@@ -124,7 +124,7 @@ class Settings(BaseSettings):
     # limited.
     fallback_model: str = "openrouter/openai/gpt-4o-mini"
     # One LiteLLM retry, then providers/llm.py fails over once to
-    # llm_fallback_model on 429/5xx/timeout (known-issues KI-7). Retrying the
+    # llm_fallback_model on 429/5xx/timeout (known-issues ). Retrying the
     # same saturated id four times only delayed the failure.
     llm_max_retries: int = 1
     # A retry cap is meaningless without a per-attempt deadline: a saturated
@@ -134,7 +134,7 @@ class Settings(BaseSettings):
     # Calls in flight per model per process; OpenRouter allows ~20 req/min on
     # a free id and more on a paid one.
     llm_max_concurrency: int = 4
-    # Explicit output caps (KI-1): without one, LiteLLM asks for the model's
+    # Explicit output caps: without one, LiteLLM asks for the model's
     # maximum and OpenRouter rejects the call with 402 on a low balance.
     llm_default_max_tokens: int = 512
     llm_max_tokens: dict[str, int] = {
@@ -148,7 +148,7 @@ class Settings(BaseSettings):
         # call with its per-passage entity questions (8-12 Noul answers,
         # each with reasoning), whose response exceeds the 512 default:
         # when jev was degraded, every such batch truncated mid-JSON at
-        # the same offset and failed the item (KI-57). 4096 leaves wide
+        # the same offset and failed the item. 4096 leaves wide
         # headroom over the largest observed response.
         "decision_fallback": 4096,
     }
@@ -166,7 +166,7 @@ class Settings(BaseSettings):
     # change it from the admin API without a redeploy — it is a product-quality
     # decision made on the full eval sets, like every other tunable
     # (reranker, thresholds, top_k). `None` there means "send no temperature",
-    # so the provider default applies and generation is unchanged (KI-32).
+    # so the provider default applies and generation is unchanged.
 
     # Environment fallback; active runtime settings can override these values.
     deep_max_hops: int = 4
@@ -206,7 +206,7 @@ def free_model_violations(
     reported against the role it affects rather than as a count. Pure — it
     reads no database and calls no provider — because boot calls it before it
     opens a connection, and because a check that can fail silently is how a
-    free tier reaches production (KI-17).
+    free tier reaches production.
     """
     violations = [
         f"role {role!r} is bound to the free model {model_id!r}"

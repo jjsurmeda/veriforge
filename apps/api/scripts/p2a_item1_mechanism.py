@@ -1,4 +1,4 @@
-"""P2a item 1 mechanism proof (KI-53): v3 vs candidate v4 on the proxy-labelled
+"""P2a item 1 mechanism proof: v3 vs candidate v4 on the proxy-labelled
 false-absence and 5 GHz rows.
 
 Takes the 8 rows the proxy flagged (six false absence sentences + the two

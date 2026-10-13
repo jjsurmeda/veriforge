@@ -1,4 +1,4 @@
-"""Attribution seams (KI-18, D2 2c): Jev ids recorded, lookups deferred.
+"""Attribution seams (, D2 2c): Jev ids recorded, lookups deferred.
 
 Jev uses raw httpx, not litellm.acompletion, so before D2 every Jev
 millisecond was counted as "our overhead". Jev's OpenRouter response
@@ -77,7 +77,7 @@ async def test_jev_client_reports_nothing_without_a_sink(
 
 async def test_record_generation_ids_collects_jev_calls_and_restores_the_sink() -> None:
     """A Jev call is recorded with the id *and* enough of a call site to tell
-    it from a chat completion's — KI-31 cannot be diagnosed on a bare id."""
+    it from a chat completion's —  cannot be diagnosed on a bare id."""
     original_sink = jev.generation_id_sink
     async with record_generation_ids() as refs:
         assert jev.generation_id_sink is not original_sink
@@ -182,7 +182,7 @@ async def test_run_eval_defers_attribution_and_persists_overhead(
     _, results = await run_eval(subset=None, baseline=False)
 
     # Deferred: exactly one attribution pass, after the item finished, with the
-    # call sites still attached (KI-31).
+    # call sites still attached.
     assert [total for total, _ in attribute_calls] == [5000]
     assert [ref.generation_id for _, refs in attribute_calls for ref in refs] == [
         "gen-1",

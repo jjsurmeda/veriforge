@@ -1,11 +1,11 @@
-"""Chunk sanitizer (TRD §11 layer 4, amended for KI-11): a
+"""Chunk sanitizer (TRD §11 layer 4, amended for ): a
 `chunk_injection` Noul over every chunk that reaches the generator (the
 post-rerank top-k) and every web page used. Chunks scoring at or above
 the drop threshold are **redacted**, and only dropped when redaction cannot
 save them; they are kept in the Retrieval event with `dropped=True` so the
 Sources tab can show them greyed.
 
-**Redact, don't drop (KI-56).** Dropping the whole chunk took the answer with
+**Redact, don't drop.** Dropping the whole chunk took the answer with
 it: the only chunk carrying RP-77's "torque the retaining screw to 4 Nm"
 embeds an injection block, the sanitizer scored it `chunk_injection_0` 0.96 and
 dropped it before the sufficiency judge ever saw it, so the judge scored
@@ -101,7 +101,7 @@ def redact_injection_spans(text: str) -> tuple[str, int]:
     — losing evidence is a wrong answer, leaking an instruction is a security
     defect, and the layers above the sanitizer (delimited sources, the
     sources-are-data policy, the reviewer) still apply. In practice the fact
-    precedes the injection, which is how KI-56's own corpus chunk is written.
+    precedes the injection, which is how 's own corpus chunk is written.
 
     Returns the text unchanged and 0 when no cue is present: an untouched chunk
     comes back byte-identical, because the generator's evidence is otherwise
@@ -195,7 +195,7 @@ async def sanitize_chunks(
             continue
 
         # Tripped. Redact the instruction span and keep the rest of the chunk
-        # (KI-56) rather than dropping a fact along with it.
+        # rather than dropping a fact along with it.
         redacted_text, spans = redact_injection_spans(chunk.text)
         if spans and _keeps_evidence(redacted_text, chunk.text):
             redacted[i] = (chunk, replace(chunk, text=redacted_text))

@@ -192,7 +192,7 @@ def reset_default_breaker() -> Iterator[None]:
 async def clean_db() -> AsyncIterator[None]:
     # A finished run leaves the async judge and the usage settle pending on the
     # session-scoped loop. TRUNCATE takes an exclusive lock on every table, so
-    # draining first keeps a leaked task from racing the next test (KI-15).
+    # draining first keeps a leaked task from racing the next test.
     from graph.runner import drain_background_tasks
 
     await drain_background_tasks()

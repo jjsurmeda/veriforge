@@ -240,7 +240,7 @@ async def test_unsearchable_documents_are_not_listed(
 async def test_a_barely_confident_library_intent_retrieves_instead(
     db: AsyncSession, user_a: User, no_llm: dict[str, list[str]]
 ) -> None:
-    """KI-37: p(library) = 0.6 is above the generic pick floor (0.50) and
+    """: p(library) = 0.6 is above the generic pick floor (0.50) and
     below `library_min_confidence` (0.70), so the run must take the retrieval
     path. This is the defect: "What does the AW-2000 package contain?" scored
     0.6 as `library` in two of three fast20 runs and was answered with the
@@ -275,7 +275,7 @@ async def test_a_clearly_confident_library_intent_still_lists(
 
 
 def test_the_intent_prompt_forbids_library_for_a_containment_question() -> None:
-    """The prompt half of KI-37. Stated as a test because a prompt that goes
+    """The prompt half of . Stated as a test because a prompt that goes
     back to saying 'library' when the user asks what is in their sources
     silently reinstates the defect at the classifier, where the threshold
     cannot see it."""
