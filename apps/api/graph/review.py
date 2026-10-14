@@ -33,7 +33,7 @@ _CHUNK_CAP = 2000
 
 _FENCE_RE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
 _CITATION_RE = re.compile(r"\[(\d{1,2})\]")
-# : a claim that asserts the sources LACK something ("the sources do
+# A claim that asserts the sources LACK something ("the sources do
 # not say X", "no mention of X in the sources"). Such a claim is verified
 # the other way round — the passages are the evidence, and any passage that
 # states X contradicts the claim. English phrasings only: the proxy-labelled
@@ -143,7 +143,7 @@ def plan_delivery(
     return "stream"
 
 
-# : with the v2 extraction prompt's worked example, gpt-4o-mini
+# With the v2 extraction prompt's worked example, gpt-4o-mini
 # sometimes echoes the "[JSON claims]" completion marker from the template
 # ahead of the list. That prefix silently parsed to zero claims — an empty
 # extraction scores a perfect 1.0 faithfulness, so the label is stripped.
@@ -231,7 +231,7 @@ def _absence_question(
     contexts: list[ExpandedContext],
     answer: str = "",
 ) -> Choice:
-    """: verify an absence claim against ALL the passages, not just the
+    """Verify an absence claim against ALL the passages, not just the
     cited ones — the claimed absence is about the whole evidence, and the
     citation marker on such a sentence is unreliable (the false absences in
     the P1b sheet all cited the passage they summarised, while the missing
@@ -249,7 +249,7 @@ def _absence_question(
     is checkable. Without an answer, the original question is unchanged."""
     passages = _sources_block(contexts) or "(no sources retrieved)"
     if not answer:
-        # Byte-identical to the original  question, so callers that
+        # Byte-identical to the original KI-53 question, so callers that
         # verify individual claims without the reply (item-2 measure, the
         # seeded-claims script) keep their baselines unperturbed.
         return Choice(
@@ -324,7 +324,7 @@ def batch_claims(
     """Split into batches whose question text fits one Jev call (<28K
     tokens, TRD §10 step 2). A single claim larger than the budget gets
     its own batch — truncation already caps each chunk. Token counts are
-    measured on the question that will actually be sent (: an
+    measured on the question that will actually be sent (KI-53: an
     absence claim carries every passage, not just the cited ones; P2a
     item 1: it also carries the answer when one is given)."""
     batches: list[list[ExtractedClaim]] = []
@@ -355,7 +355,7 @@ async def verify_claims(
     step 3); cited factual claims go through batched `claim_verdict`
     Choices. Non-factual claims pass through unscored.
 
-    : an absence claim ("the sources do not say X") is the one factual
+    An absence claim ("the sources do not say X") is the one factual
     claim that is checked even without a citation — the passages are its
     evidence, and a false absence is exactly what the citation cannot
     surface. It rides the same batched `decide` call, so an answer without

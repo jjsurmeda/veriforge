@@ -306,7 +306,7 @@ class _FixedScoreRerank:
 
 class _PassThroughRerank:
     """Identity reranker: fused order, score 1 - i/100. Pin get_reranker
-    with this in tests that aren't about rerank or the  relevance
+    with this in tests that aren't about rerank or the KI-26 relevance
     gate (the gate applies only to JevRerank scores)."""
 
     def __init__(self, *_args: object) -> None:
@@ -370,7 +370,7 @@ async def test_sanitize_asks_only_about_the_reranked_top_k(
     no_llm: dict[str, list[str]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """: the sanitizer's chunk_injection questions equal the chunks
+    """The sanitizer's chunk_injection questions equal the chunks
     that reach generation (post-rerank top-k), not the fused set; an
     injected chunk in the top-k is dropped without backfill."""
 
@@ -487,7 +487,7 @@ async def test_chitchat_with_no_sources_in_scope_skips_retrieval(
     db: AsyncSession, user_a: User, no_llm: dict[str, list[str]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """With nothing to retrieve from, the fast reply is the whole answer and
-    nothing changes.  only moved the case where sources ARE in scope."""
+    nothing changes. KI-71 only moved the case where sources ARE in scope."""
     chat, assistant_message_id = await _seed_chat(db, user_a)
     streamed: list[str] = []
 
@@ -810,7 +810,7 @@ async def test_answerless_but_topical_evidence_abstains(
     no_llm: dict[str, list[str]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """ repro: the captured `outside-study-in-scarlet` top-k never
+    """KI-26 repro: the captured `outside-study-in-scarlet` top-k never
     states the answer — no chunk mentions Afghanistan — yet it reads as
     sufficient, so the run must abstain, not answer."""
 
@@ -872,7 +872,7 @@ async def test_answerless_but_topical_evidence_abstains(
 
     class _TopicalJev(_IngressJev):
         """Sufficient at 0.10 and rerank relevance at 0.28 — the values live
-        Jev returns for the captured  evidence (`.data/ki26/
+        Jev returns for the captured KI-26 evidence (`.data/ki26/
         capture.json`): sufficient clears the 0.05 floor, but the max
         rerank score sits under the 0.60 relevance gate."""
 
@@ -953,7 +953,7 @@ async def _gate_params(
     reranker_factory: object | None = None,
 ) -> AutoRunInput:
     """Seed four answerable chunks and patch retrieval, with the reranker
-    pinned to the real JevRerank (so the  relevance gate runs) unless a
+    pinned to the real JevRerank (so the KI-26 relevance gate runs) unless a
     test overrides the factory. Reusable across prepare_auto_run calls."""
     from db.models import Chunk
 
@@ -1018,7 +1018,7 @@ async def _gate_run(
 async def _gate_run_intent(
     params: AutoRunInput, *, intent: str, sufficient: float, passage_score: float | None
 ) -> AutoRun:
-    """`_gate_run` with the intent under test, for the  veto exemption."""
+    """`_gate_run` with the intent under test, for the KI-70 veto exemption."""
     return await prepare_auto_run(
         get_session_factory(),
         params,
@@ -1051,7 +1051,7 @@ async def test_relevance_gate_abstains_below_the_rerank_floor(
     no_llm: dict[str, list[str]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """ gate: sufficient 0.2 clears the 0.05 floor, but a max rerank
+    """KI-26 gate: sufficient 0.2 clears the 0.05 floor, but a max rerank
     score of 0.3 sits under rerank_abstain 0.60 — topically adjacent,
     answerless evidence must abstain. One retry, then abstain."""
     run = await _run_gate_check(db, user_a, no_llm, monkeypatch, sufficient=0.2, passage_score=0.3)
@@ -1268,7 +1268,7 @@ async def test_abstention_persists_no_citations(
     no_llm: dict[str, list[str]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """: an abstention has nothing to support, so it must not attach
+    """An abstention has nothing to support, so it must not attach
     the chunks it failed to answer from. The old abstain tests all stubbed
     retrieval to return zero candidates, so the rows the run *did* persist
     went unasserted."""
@@ -1448,7 +1448,7 @@ async def test_compare_keeps_both_books_when_the_reranker_prefers_one(
     no_llm: dict[str, list[str]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """: a global rerank hands every top-k slot to the book it prefers,
+    """A global rerank hands every top-k slot to the book it prefers,
     so the other book vanishes from the final contexts. Each entity gets an
     equal share of the top-k instead."""
 
@@ -1561,7 +1561,7 @@ async def test_multi_part_retrieves_one_query_per_part(
     no_llm: dict[str, list[str]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """: a two-part question retrieves on the whole question as one
+    """A two-part question retrieves on the whole question as one
     query, so one part's chunks never surface. Each part gets its own
     retrieval and its own share of the top-k."""
 
@@ -1728,7 +1728,7 @@ async def test_an_off_topic_warn_does_not_divert_small_talk(
     assert no_llm["retrieval"] == []
 
 
-# --- : `chitchat` no longer decides whether to retrieve ------------------
+# --- KI-71: `chitchat` no longer decides whether to retrieve ------------------
 #
 # The three cases below are the brief's, in order: a chitchat-classified
 # message that names a book, a pure greeting, and a "thanks!" turn. The first
@@ -1739,7 +1739,7 @@ async def test_an_off_topic_warn_does_not_divert_small_talk(
 async def test_chitchat_that_names_a_book_retrieves_and_answers_with_citations(
     db: AsyncSession, user_a: User, no_llm: dict[str, list[str]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """'s repro: `broad-sherlock` ("tell me something about the
+    """KI-71's repro: `broad-sherlock` ("tell me something about the
     adventures of sherlock holmes") routed `chitchat`, skipped retrieval and
     came back with a warm, correct, uncited paragraph from model memory.
 

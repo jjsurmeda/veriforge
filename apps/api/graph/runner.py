@@ -425,7 +425,7 @@ def _prose_decline_question(question: str, reply: str) -> Noul:
 async def _drop_citations(
     session_factory: async_sessionmaker[AsyncSession], message_id: UUID
 ) -> None:
-    """P2a item 3 ( shape): a prose decline is recorded as an
+    """P2a item 3 (KI-25 shape): a prose decline is recorded as an
     abstention, and an abstention carries no citations."""
 
     async def work(session: AsyncSession) -> None:

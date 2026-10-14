@@ -62,7 +62,7 @@ async def test_a_twelve_question_batch_round_trips() -> None:
 
 
 async def test_the_fallback_cap_covers_the_twelve_question_response() -> None:
-    """: the 12-answer JSON of the largest batch exceeds the 512-token
+    """The 12-answer JSON of the largest batch exceeds the 512-token
     default that used to truncate it mid-JSON, and fits the
     decision_fallback role's cap. Mutation: delete the role entry and the
     cap falls back to the default — the second assert fails."""

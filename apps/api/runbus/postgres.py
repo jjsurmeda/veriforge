@@ -26,7 +26,7 @@ REPLAY_BATCH = 500
 POLL_FALLBACK_SECONDS = 15.0
 SEQ_RACE_RETRIES = 3
 
-# . The number and the row are written by ONE statement, so the
+# The number and the row are written by ONE statement, so the
 # database decides who gets which `seq` instead of a retry budget deciding
 # it afterwards.
 #

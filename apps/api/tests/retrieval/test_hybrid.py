@@ -235,7 +235,7 @@ async def test_cjk_question_retrieves_through_the_bm25_leg(
     user_a: User,
     seed_document: Callable[..., Awaitable[tuple[Document, Section]]],
 ) -> None:
-    """: with the default tokenizer a whole CJK question is one
+    """With the default tokenizer a whole CJK question is one
     unsegmented token and the lexical leg returns nothing, so CJK
     retrieval was silently pure-vector. Migration 0013 re-tokenises the
     index with `icu` and hybrid_search names that tokenizer per query."""

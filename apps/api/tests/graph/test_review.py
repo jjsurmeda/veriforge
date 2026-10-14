@@ -171,7 +171,7 @@ class TestParseClaims:
         assert parse_claims('[{"no_claim": true}]') == []
 
     def test_echoed_json_claims_label_does_not_zero_the_extraction(self) -> None:
-        """: gpt-4o-mini with the v2 prompt sometimes echoes the
+        """Gpt-4o-mini with the v2 prompt sometimes echoes the
         '[JSON claims]' template marker before the list. That must parse
         like the bare list — an empty parse would score a perfect
         faithfulness for an answer the extractor never read."""
@@ -412,7 +412,7 @@ def test_make_diff() -> None:
 
 
 class TestClaimExtractionTemperature:
-    """: extraction runs at temperature 0. It is a parsing call whose
+    """Extraction runs at temperature 0. It is a parsing call whose
     claim list is the denominator of the faithfulness mean, so leaving it at
     the provider default made 4 of 20 fast20 items re-split their claims
     between runs (claim counts 2/5/4, 5/4/6, 1/1/3, 3/1/1)."""
@@ -484,7 +484,7 @@ class TestClaimExtractionTemperature:
 
 
 class TestAbsenceClaimDetection:
-    """: recognise the claim shape "the sources do not say X" so it is
+    """Recognise the claim shape "the sources do not say X" so it is
     verified against the passages instead of passing through unscored."""
 
     def test_flagged_shapes(self) -> None:
@@ -703,7 +703,7 @@ class TestAbsenceVerification:
         assert scores.faithfulness == pytest.approx(1.0)
 
     async def test_answer_without_absence_claim_makes_no_extra_call(self) -> None:
-        """The  routing must be invisible to clean answers: same number
+        """The KI-53 routing must be invisible to clean answers: same number
         of decide calls and the same standard question text as before the
         fix (one batched question per cited factual claim)."""
         engine = _CapturingEngine()
@@ -774,7 +774,7 @@ class TestAbsenceVerification:
 
 
 class TestGroundedAnswerV4Captures:
-    """, mechanism proof (live capture 2026-10-04, gpt-4o-mini, the
+    """KI-53, mechanism proof (live capture 2026-10-04, gpt-4o-mini, the
     exact P1b passages): grounded_answer.md v3 still emits the false
     absence on at least one flagged row, v4 does not emit an unconditional
     absence sentence on any single-part row, and the 5 GHz rows may only
@@ -828,7 +828,7 @@ class TestGroundedAnswerV4Captures:
 
 
 class TestClaimExtractionV2Captures:
-    """, mechanism proof (live capture 2026-10-04, gpt-4o-mini,
+    """KI-52, mechanism proof (live capture 2026-10-04, gpt-4o-mini,
     claim_extraction.md v2): each of the four P1b-miss seeded compound
     claims extracts >= 2 claims with the invented addition split out as
     its own claim. Captured in scripts/p2a_item2_capture.py; the test

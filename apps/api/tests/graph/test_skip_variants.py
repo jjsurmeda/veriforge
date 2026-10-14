@@ -1,4 +1,4 @@
-""": lane B item 6 is removed, and cannot be turned on by accident.
+"""Lane B item 6 is removed, and cannot be turned on by accident.
 
 TRD §7.1 lists "skip query variants on simple single-hop lookups" among P3's
 structural changes, and lane B shipped it behind
@@ -118,7 +118,7 @@ def test_no_module_in_the_package_reads_the_setting() -> None:
                     offenders.append(f"{path.name}:{node.lineno}")
                     break
     assert offenders == [], (
-        f"{offenders} still read {SETTING_KEY!r};  measured it collapsing "
+        f"{offenders} still read {SETTING_KEY!r} measured it collapsing "
         "fast20 from 11/12 answered to 1/12"
     )
 

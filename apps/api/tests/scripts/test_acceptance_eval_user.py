@@ -3,7 +3,7 @@
 The AW-2000 seed corpus and the counterfactual corpus are `visibility='private'`
 collections owned by `evals@example.com`. A private collection is in scope
 only for its owner, so a throwaway signup cannot see the corpus it is being
-scored against — which is precisely the leak  recorded: the fixture was
+scored against — which is precisely the leak KI-24 recorded: the fixture was
 reachable by every user because it sat in Shared. Acceptance therefore
 authenticates as that account. The books stay `visibility='shared'`, so the
 demo library a real user sees is unchanged.

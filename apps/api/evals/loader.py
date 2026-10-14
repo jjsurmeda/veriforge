@@ -70,7 +70,7 @@ COUNTERFACTUAL_DATASET = "counterfactual"
 # runner summarises per corpus (PRD v3 §5).
 COUNTERFACTUAL_CORPUS_KEY = "counterfactual"
 
-# The entity-mismatch set (P2a item 0, ): items only — its two corpora
+# The entity-mismatch set (P2a item 0): items only — its two corpora
 # are the seed and counterfactual corpora above, and each item's
 # `scope_corpus` field says which one is in scope for that item (the runner
 # reads the mapping from the set file, not the database). Items are loaded so

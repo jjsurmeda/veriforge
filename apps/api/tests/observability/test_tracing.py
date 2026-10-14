@@ -364,7 +364,7 @@ class TestStageSpans:
 
 
 class TestEmptyTraceIds:
-    """'s second half: `Langfuse trace_id mismatch: set ,` (1374 times)."""
+    """KI-21's second half: `Langfuse trace_id mismatch: set ,` (1374 times)."""
 
     def test_no_trace_id_is_invented_without_a_run(
         self, monkeypatch: pytest.MonkeyPatch

@@ -70,7 +70,7 @@ def test_answer_item_proof_quotes_the_answering_passage(corpus: Corpus) -> None:
 
 
 def test_answer_item_demanding_an_unattested_mention_is_flagged(corpus: Corpus) -> None:
-    """The  shape: a correct-sounding item whose mention is not in the corpus."""
+    """The KI-36 shape: a correct-sounding item whose mention is not in the corpus."""
     items = [
         {
             "id": "fact-bad",
@@ -89,7 +89,7 @@ def test_answer_item_demanding_an_unattested_mention_is_flagged(corpus: Corpus) 
 def test_item_whose_mentions_span_documents_and_pin_no_source_is_flagged(
     corpus: Corpus,
 ) -> None:
-    """/: nothing stops a passage from the wrong book satisfying it."""
+    """Nothing stops a passage from the wrong book satisfying it."""
     items = [
         {
             "id": "amb",
@@ -101,7 +101,7 @@ def test_item_whose_mentions_span_documents_and_pin_no_source_is_flagged(
     audit = audit_items(items, corpus)[0]
     assert "underdetermined_source" in [f.code for f in audit.findings]
     # The cross-document map goes in the proof too, so a human can judge the
-    #  question the script cannot decide: each mention names the document
+    # KI-27 question the script cannot decide: each mention names the document
     # that attests it, which here are two different books.
     assert "'Jane' attested at 'Pride and Prejudice.txt'" in audit.proof
     assert "'Victor' attested at 'frankeNstein.txt'" in audit.proof

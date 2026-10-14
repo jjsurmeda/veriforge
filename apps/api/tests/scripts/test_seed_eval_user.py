@@ -69,7 +69,7 @@ async def test_seeding_creates_a_committed_account_whose_password_verifies(
 
 
 async def test_the_plan_is_the_seeded_internal_eval_row(db: AsyncSession) -> None:
-    """Not `free` and not `pro`: those are rows real users are on ()."""
+    """Not `free` and not `pro`: those are rows real users are on."""
     from db.session import get_session_factory
 
     await seed_eval_user.seed()

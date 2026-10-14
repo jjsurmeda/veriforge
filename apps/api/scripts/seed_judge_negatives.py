@@ -1,4 +1,4 @@
-"""Add 15 seeded negatives to claims.csv (P1b Phase 2 item 0, ).
+"""Add 15 seeded negatives to claims.csv (P1b Phase 2 item 0).
 
 Real claims rewritten so the cited passage does not support them:
 8 `unsupported` (a fact the passage doesn't contain), 7 `contradicted`

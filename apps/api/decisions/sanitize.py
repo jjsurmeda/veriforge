@@ -1,4 +1,4 @@
-"""Chunk sanitizer (TRD §11 layer 4, amended for ): a
+"""Chunk sanitizer (TRD §11 layer 4, amended for KI-11): a
 `chunk_injection` Noul over every chunk that reaches the generator (the
 post-rerank top-k) and every web page used. Chunks scoring at or above
 the drop threshold are **redacted**, and only dropped when redaction cannot
@@ -101,7 +101,7 @@ def redact_injection_spans(text: str) -> tuple[str, int]:
     — losing evidence is a wrong answer, leaking an instruction is a security
     defect, and the layers above the sanitizer (delimited sources, the
     sources-are-data policy, the reviewer) still apply. In practice the fact
-    precedes the injection, which is how 's own corpus chunk is written.
+    precedes the injection, which is how KI-56's own corpus chunk is written.
 
     Returns the text unchanged and 0 when no cue is present: an untouched chunk
     comes back byte-identical, because the generator's evidence is otherwise

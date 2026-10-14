@@ -61,7 +61,7 @@ EVAL_PLAN_NAME = "internal-eval"
 
 NO_EVAL_USER = (
     "acceptance signs in as the fixed eval account so it can see the eval "
-    "corpora it is scored against (). Set EVAL_USER_EMAIL and "
+    "corpora it is scored against. Set EVAL_USER_EMAIL and "
     "EVAL_USER_PASSWORD in .env, then run `make seed-eval-user` to create the "
     "account and put it on the "
     f"{EVAL_PLAN_NAME} plan. Refusing to sign up a throwaway user instead — it "
@@ -342,7 +342,7 @@ def summarise(
                 counts["false_abstentions"] += 1
                 detail["false_abstention_ids"].append(str(row["id"]))
             elif not cited:
-                # : answered, not declined, and nothing cited. Whether the
+                # Answered, not declined, and nothing cited. Whether the
                 # text is right or wrong is not the question — an answer with no
                 # evidence behind it is a different product from this one.
                 counts["uncited_answers"] += 1
@@ -559,7 +559,7 @@ async def run(
         print(f"  failed {reason}: {[r['id'] for r in scored if r['reason'] == reason]}")
     if pending:
         # P2's input, not a defect: what the ambiguity items actually said.
-        print("\n  pending P2 (ambiguity items,  — corpus answers two ways):")
+        print("\n  pending P2 (ambiguity items — corpus answers two ways):")
         for r in pending:
             print(
                 f"    {r['id']}: {'pass' if r['pass'] else 'FAIL'}"

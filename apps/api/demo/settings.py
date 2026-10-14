@@ -100,7 +100,7 @@ class DemoSettings:
     #:
     #: Counted from rows, not from a counter, because a counter in memory is
     #: reset by a restart and not shared with a second process — which is
-    #: exactly the defeat  describes. The rows are already there (an
+    #: exactly the defeat KI-63 describes. The rows are already there (an
     #: account has to exist to spend anything), so the count costs one
     #: indexed SELECT and cannot drift from reality.
     daily_cap: int

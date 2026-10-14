@@ -110,7 +110,7 @@ def classify_provider_error(exc: BaseException) -> AppError | None:
     `ProviderQuotaExhausted` (402) rather than `ProviderUnavailable` (503),
     because a 429 from a provider that has run out of credit does not fix
     itself and telling the user to try again sends them into a retry loop that
-    spends nothing and succeeds never — 's exact complaint.
+    spends nothing and succeeds never — KI-23's exact complaint.
     """
     if isinstance(exc, _PROVIDER_KEY_ERRORS):
         return ProviderKeyInvalid(
@@ -188,7 +188,7 @@ def _api_key(model: str) -> str | None:
 def _trace_id(metadata: dict[str, str]) -> str | None:
     """The Langfuse trace id for this call, or None to let LiteLLM choose.
 
-    's empty-id bug lived here. `trace_id` was
+    KI-21's empty-id bug lived here. `trace_id` was
     `metadata.get("job", metadata.get("run_id", ""))`, which is wrong twice
     over: a caller that passes a `job` label (`"decision_fallback"`,
     `"claim_extraction"`) got that *label* as its trace id, so its

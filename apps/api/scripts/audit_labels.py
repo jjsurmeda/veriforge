@@ -513,9 +513,9 @@ def audit_items(
             # attested in several documents, with no `cite` list to say which
             # document the answer must come from, leave the item satisfied by
             # a passage from the wrong book — that is the mechanism behind
-            # , where the cite check alone was too weak. So this is a
+            # KI-36, where the cite check alone was too weak. So this is a
             # finding about the item's checks, and the cross-document map goes
-            # in the proof for a human to judge the  question.
+            # in the proof for a human to judge the KI-27 question.
             source_documents = sorted({p.document for _, p in attested})
             if (
                 len(attested) > 1
@@ -534,7 +534,7 @@ def audit_items(
                         f"accepted mentions are attested in {len(source_documents)} documents "
                         f"({source_documents!r}) and the item declares no `cite`, so nothing "
                         "stops a passage from the wrong book satisfying it. Name the source, or "
-                        "check whether the corpus answers this two ways ().",
+                        "check whether the corpus answers this two ways.",
                     )
                 )
             proof = _proof_answer(item, expect, ranked, attested, corpus, terms)

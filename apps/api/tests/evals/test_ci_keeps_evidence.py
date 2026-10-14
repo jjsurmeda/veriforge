@@ -1,13 +1,13 @@
 """A CI eval-gate run has to leave the evidence behind, pass or fail.
 
- is what happens when it does not. CI scored 0.90833 against a
+KI-42 is what happens when it does not. CI scored 0.90833 against a
 0.97556 local baseline and the run could say nothing more than that the
 number differed: `scripts/eval_dump_stages.py` — the export carrying each
 item's answer, its extracted claims with their verdicts, the retrieved
 contexts and `stage_ms` — did not run in the eval-gate job at all. So the
 claims and verdicts that would have said *which* items moved were discarded
 with the runner, and the only remaining move was to re-argue whether 0.90833
-was the tail of the distribution or a different one. ,  and D6
+was the tail of the distribution or a different one. KI-32, KI-37 and D6
 each warn that guessing "just variance" is how that question has been got
 wrong before.
 
@@ -17,7 +17,7 @@ instrument this repo has for the question the gate raises by failing.
 
 These tests read `ci.yml`. A workflow cannot report a missing artifact — an
 upload step that silently uploads nothing looks exactly like one that worked,
-which is the  failure mode one level up. So the assertions are on the
+which is the KI-42 failure mode one level up. So the assertions are on the
 configuration that produces the evidence.
 
 What is pinned:
@@ -90,7 +90,7 @@ def test_the_export_runs_in_the_eval_gate_job(job: Job) -> None:
     body = str(job["body"])
     assert "scripts/eval_dump_stages.py" in body, (
         "the per-item export no longer runs in CI: a failing gate would again "
-        "report only that the number moved, not which items moved ()"
+        "report only that the number moved, not which items moved"
     )
 
 
@@ -228,7 +228,7 @@ def test_the_evidence_is_uploaded_on_the_failure_path(job: Job) -> None:
 
 def test_an_empty_upload_is_an_error_not_a_success(job: Job) -> None:
     """An upload step that finds nothing reports success with nothing in it,
-    which is 's failure mode one level up: a green step that means there
+    which is KI-42's failure mode one level up: a green step that means there
     is no evidence."""
     body = str(job["body"])
     upload_step = next(text for _, text in _steps(body) if "actions/upload-artifact" in text)

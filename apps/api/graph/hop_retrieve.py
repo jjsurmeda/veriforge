@@ -72,7 +72,7 @@ async def run_hop(
             chunks=fused,
         )
     )
-    # Sanitize after rerank (TRD §11 layer 4, amended for ): only the
+    # Sanitize after rerank (TRD §11 layer 4, amended for KI-11): only the
     # chunks that can reach the generator are asked about; a dropped chunk
     # is not backfilled from beyond the reranked set.
     winners, dropped, answers = await sanitize_chunks(

@@ -8,7 +8,7 @@ rate as item counts because fast20 holds 8 should-abstain and 12 answerable
 items, so one flip is 12.5 and 8.3 percentage points against a 5-point
 tolerance; A9 widens the faithfulness drop from 0.03 to 0.06 because four
 runs on an unchanged commit spread 0.05625. See `evals.gate`, TRD §15 and
-.
+KI-6.
 
 A10 is the limit that makes A9 safe to widen: faithfulness also has to clear an
 absolute floor of 0.90 (PRD v3 §5), so the wider tolerance buys the gate its

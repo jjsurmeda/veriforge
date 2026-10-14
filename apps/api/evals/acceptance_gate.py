@@ -2,7 +2,7 @@
 
 The eval gate and the entity-mismatch set both pass today without ever
 replaying `evals/acceptance/books.json`, which has not run since 2026-10-01 —
-so  (a should-decline question answered) and  (a real answer lost)
+so KI-28 (a should-decline question answered) and KI-56 (a real answer lost)
 were not checked by anything. This is the pass/fail for that set, from the
 numbers PRD §5 states for one run:
 
@@ -14,7 +14,7 @@ numbers PRD §5 states for one run:
   this, not against confident wrong.
 - **False abstention ≤ 5%** of answerable items — 1 of 33.
 - **An `answer`-class item that completed with zero citations fails**, whether
-  its text was right or wrong. This is : ingress can classify a content
+  its text was right or wrong. This is KI-71: ingress can classify a content
   question as `chitchat`, the run skips retrieval and answers from model
   memory, and every other clause above passes — a correct, warm, uncited
   reply is the failure shape this product exists not to ship. Answering a
@@ -69,7 +69,7 @@ EXPECTED_COUNTS = {
 MIN_CLEAN_DECLINE_PERCENT = 90  # ≥ 90% of should-decline items → 19 of 21
 MAX_FALSE_ABSTENTION_PERCENT = 5  # ≤ 5% of answerable items → 1 of 32
 MAX_CONFIDENT_WRONG = 0  # PRD §5 allows ≤1 per 100; on 21 items, 0
-#  (owner decision 2026-10-12): answering a content question from model
+# KI-71 (owner decision 2026-10-12): answering a content question from model
 # memory is the one thing this product says it does not do, so an `answer`
 # item that completed with no citation is a failure at any text quality. Not a
 # rate: one is one.
@@ -179,7 +179,7 @@ def acceptance_failures(summary: Mapping[str, Any]) -> list[str]:
             f"{_ids(summary, 'uncited_answer_ids')} — an answer with no evidence "
             "behind it. The text may be right; the reply is still ungrounded, and "
             "answering a content question from memory is the one thing this "
-            "product does not do ()"
+            "product does not do"
         )
 
     # The two small classes are pass/fail in full: they exist to catch a

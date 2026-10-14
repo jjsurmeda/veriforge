@@ -85,7 +85,7 @@ def _guard_verdict(
 # Per-option confidence floors, on top of the generic `choice_min_confidence`.
 # An option listed here is only picked when the engine is clearly sure: a
 # probable-but-not-clear answer to that option is treated as the default, so
-# the run takes the ordinary path instead of the option's shortcut (:
+# the run takes the ordinary path instead of the option's shortcut (KI-37:
 # `library` skips retrieval and answers with the file list).
 CHOICE_MIN_CONFIDENCE: dict[str, str] = {"library": "library_min_confidence"}
 

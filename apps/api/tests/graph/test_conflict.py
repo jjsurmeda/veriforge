@@ -1,4 +1,4 @@
-""": conflict disclosure names the two passages that disagree.
+"""Conflict disclosure names the two passages that disagree.
 
 Before this, the conflict branch asked one question ("do ANY two of these
 chunks disagree?") and then split the document ids of the top 5 at the
@@ -214,7 +214,7 @@ async def _fake_complete(**kwargs: Any) -> str:
 async def test_two_passages_with_different_values_land_on_opposite_sides(
     db: AsyncSession, user_a: Any, no_llm: dict[str, list[str]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """'s stated test. The 24-month and 12-month passages disagree about
+    """KI-34's stated test. The 24-month and 12-month passages disagree about
     the warranty, so they are the two sides — not a midpoint split of three
     document ids, which would have put two of the three on one side."""
     chat, message_id = await _seed_chat(db, user_a)
@@ -259,7 +259,7 @@ async def test_agreeing_passages_produce_no_conflict(
 async def test_the_conflict_call_is_one_batched_decide_and_is_timed(
     db: AsyncSession, user_a: Any, no_llm: dict[str, list[str]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """'s second half: the call was outside `_step`, so it appeared in
+    """KI-34's second half: the call was outside `_step`, so it appeared in
     no latency figure. It is also one call for every pair, not one per pair
     (TRD §8 batches, and ingress already relies on it).
 
@@ -289,7 +289,7 @@ async def test_the_conflict_call_is_one_batched_decide_and_is_timed(
 def test_each_pair_gets_its_own_question_naming_both_passages() -> None:
     """The attribution, stated on the question itself: a question about the
     whole evidence set cannot say WHICH two disagree, which is the whole of
-    ."""
+    KI-34."""
     sides = [
         ScoredChunk(
             chunk_id=UUID(int=1),

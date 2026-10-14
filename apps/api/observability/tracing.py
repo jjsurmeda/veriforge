@@ -1,4 +1,4 @@
-"""Langfuse tracing seam (TRD §15, ).
+"""Langfuse tracing seam (TRD §15).
 
 Everything here is best-effort. A trace that cannot be pushed is a missing
 line in a dashboard; a run that cannot answer because a tracing client threw
@@ -6,7 +6,7 @@ is a lost user. So every function in this module swallows its own failures,
 logs them at `warning`, and returns None — the one rule that keeps
 observability from becoming an outage cause.
 
-Why a module of its own ('s host half): the pinned SDK (`langfuse<3`)
+Why a module of its own (KI-21's host half): the pinned SDK (`langfuse<3`)
 reads `LANGFUSE_HOST` from the environment, not from `config.py`, and the
 three places that used to talk to Langfuse each built a client differently
 — `_configure_langfuse` exported only the two keys onto `os.environ`, so

@@ -1,4 +1,4 @@
-"""Email transport selection and the production refusal.
+"""Email transport selection and the production refusal (AC-1).
 
 `auth/router.py` used to hard-wire `DevLogEmailTransport`, so the
 password-reset email was written to the log and never sent. A real transport

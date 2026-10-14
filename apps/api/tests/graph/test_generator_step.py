@@ -1,4 +1,4 @@
-""": the generator's time to first token is labelled, not a silence.
+"""The generator's time to first token is labelled, not a silence.
 
 Lane B item 3 labelled every step inside `retrieve` and stopped one function
 too early. `runner.py` published no `step.started` for the generator, so the
@@ -57,7 +57,7 @@ def _unlabelled_gaps(
 ) -> list[tuple[str, float]]:
     """Every silent interval over `limit` that no step was open across.
 
-    This is the check  asks for, and it is deliberately NOT "largest gap
+    This is the check KI-66 asks for, and it is deliberately NOT "largest gap
     anywhere in the run": a run ends with the reviewer re-reading every claim,
     and a silence after the user already has their text is a different thing
     from a silence they are waiting through. What must not exist is a long
@@ -162,7 +162,7 @@ class TestGeneratorStep:
     async def test_no_gap_over_two_seconds_is_left_without_a_step_to_explain_it(
         self, client: AsyncClient, db: AsyncSession, monkeypatch: Any
     ) -> None:
-        """The trace gap check  asks for.
+        """The trace gap check KI-66 asks for.
 
         Measured on `main` with this fixture: one silence of 2.40 s between
         `step.completed: conflict` and the first `answer.delta`, with no step

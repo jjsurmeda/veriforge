@@ -1121,7 +1121,7 @@ def _latin_language(text: str) -> str | None:
 
     One weighted score per language: a stop-word hit is 1, a distinctive
     marker is `_MARKER_WEIGHT`, so language-exclusive evidence outranks the
-    shared vocabulary that produced 's wrong answers. English is the
+    shared vocabulary that produced KI-33's wrong answers. English is the
     template's own language and wins by default — a non-English language has
     to out-score it, never merely match it.
 

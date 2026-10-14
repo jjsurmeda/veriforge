@@ -275,7 +275,7 @@ class TestDisplayThresholds:
 
     def test_display_threshold_resolves_the_numbered_conflict_pairs(self) -> None:
         """Lane E item 1. Every conflict decision is published as
-        `conflict_<i>` ( asks one question per candidate pair), so the
+        `conflict_<i>` (KI-34 asks one question per candidate pair), so the
         bare `conflict` entry alone left every real conflict decision with no
         threshold to show beside its value in the evidence-gate card."""
         assert display_threshold("conflict_0", "jev") == pytest.approx(0.60)

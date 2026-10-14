@@ -452,7 +452,7 @@ async def test_active_run_id_surfaces_on_chat(client: AsyncClient, fake_llm: Non
 async def test_completed_run_leaves_no_unowned_background_work(
     client: AsyncClient, fake_llm: None
 ) -> None:
-    """: the async judge and the usage settle are fire-and-forget, and
+    """The async judge and the usage settle are fire-and-forget, and
     `run.completed` is published before either finishes. Nothing held a handle,
     so a shutdown dropped the settle and the ledger row stayed `reserved`
     (TRD §14), and a leaked task raced the next test's TRUNCATE."""

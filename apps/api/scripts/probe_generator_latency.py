@@ -10,7 +10,7 @@ Per run it records, from the real HTTP/SSE stream:
 * **client TTFT** — POST sent -> first `answer.delta`, the number ADR-003
   states its targets against;
 * **generate start -> first token** — the generator's own share, split out of
-  the client number by the `step.started: generate` event  added;
+  the client number by the `step.started: generate` event KI-66 added;
 * **input tokens sent to the generator** (`tokens_in` on the metrics event)
   and the **model**, because a latency question is not answerable without
   them;

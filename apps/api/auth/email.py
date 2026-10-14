@@ -1,7 +1,7 @@
 """Email transport seam (AC-1 password reset).
 
 `EmailTransport` is the interface `auth/router.py` depends on; this module
-owns the implementations and the choice between them. : `auth/router.py`
+owns the implementations and the choice between them. KI-35: `auth/router.py`
 hard-wired `DevLogEmailTransport`, so the password-reset email was written to
 the log and never sent — invisible locally, where the log is right there, and
 a production blocker for AC-1, because a user who forgets their password

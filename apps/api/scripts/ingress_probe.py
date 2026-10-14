@@ -1,4 +1,4 @@
-"""The  routing probe: call ingress N times on one question and print
+"""The KI-37 routing probe: call ingress N times on one question and print
 the intent distribution (D6 Phase 2).
 
 Read-only: no database writes and no run is started. It builds one
@@ -8,7 +8,7 @@ probabilities are the ones the product would act on.
     docker compose cp apps/api/scripts/ingress_probe.py api:/app/scripts/ingress_probe.py
     docker compose exec -T api /app/.venv/bin/python /app/scripts/ingress_probe.py
 
- is the generator answering a containment question with the corpus's
+KI-37 is the generator answering a containment question with the corpus's
 internal filenames, because the run was routed to the `library` shortcut,
 which skips retrieval. The probe is how you tell whether that is fixed:
 `library` should never be chosen for a containment question, and p(library)

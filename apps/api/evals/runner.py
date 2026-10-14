@@ -71,7 +71,7 @@ BASELINE_FAST20_FILE = SEED_DIR / "baseline_fast20.json"
 BASELINE_CF_GATE_FILE = (
     Path(__file__).resolve().parents[3] / "evals" / "counterfactual" / "baseline_gate.json"
 )
-# The entity-mismatch set (P2a item 0, ). Its items name entity A while
+# The entity-mismatch set (P2a item 0). Its items name entity A while
 # only entity B's corpus is in scope, so the set runs PER ITEM over one of
 # the two eval corpora — `scope_corpus` in the set file decides which. The
 # gate does not run this set (P2a item 6); it is a measurement set.
@@ -322,7 +322,7 @@ async def _run_item(
             abstained = run.abstain_event is not None
             contexts = run.contexts
 
-    #  (D2 2c): the generation ids are collected here but the stats
+    # KI-18 (D2 2c): the generation ids are collected here but the stats
     # lookups are deferred to run_eval — a generation's record lands ~20 s
     # after the call, so a per-item wait cost ~20 s per item; one wait at
     # the end covers the whole run. stage_ms gets provider_ms /
@@ -449,7 +449,7 @@ async def run_eval(
     if not state.get("corpus_collection_id"):
         raise SystemExit("seed corpus missing: run `uv run python -m evals.loader` first")
 
-    # : both eval corpora are private collections owned by the eval user,
+    # Both eval corpora are private collections owned by the eval user,
     # so neither is in a chat's default scope and both have to be handed to
     # `resolve_scope` by id. `build_scope` still checks ownership in SQL, so a
     # wrong id here retrieves nothing rather than leaking.
@@ -480,7 +480,7 @@ async def run_eval(
         payload = json.loads(PROXY30_ITEMS.read_text(encoding="utf-8"))
         fast20 = set()
         seed_ids = _seed_ids(payload)
-    #  (P2a item 0): each entity-mismatch item runs with only its
+    # KI-54 (P2a item 0): each entity-mismatch item runs with only its
     # `scope_corpus` in scope — the mismatch IS the label, so a run that
     # carried both corpora could retrieve the answer from the other one.
     # Read from the set file, not the database, for the same reason
@@ -594,7 +594,7 @@ async def run_eval(
             },
         )
 
-    #  (D2 2c): split each item's measured wall clock into the part
+    # KI-18 (D2 2c): split each item's measured wall clock into the part
     # OpenRouter spent generating and the part that is ours, now that the
     # whole run has finished — the stats record lands ~20 s after each
     # call, so one wait here covers every item instead of ~20 s per item.
@@ -616,7 +616,7 @@ async def run_eval(
             "provider_ms": attribution.provider_ms,
             "generations_attributed": attribution.attributed,
         }
-        # : a partial attribution is reported, not discarded. The
+        # A partial attribution is reported, not discarded. The
         # provider time that did resolve stays on the item, the count of ids
         # that did not is recorded next to it, and `our_overhead_ms` is still
         # withheld because a partial sum understates provider time and would
@@ -749,7 +749,7 @@ def aggregate(results: list[tuple[EvalItem, EvalResult]]) -> dict[str, float | N
     abstention_accuracy = (
         mean([1.0 if r.abstained else 0.0 for _, r in abstain_items]) if abstain_items else None
     )
-    # Owner decision A7 (2026-10-02, ): the gate compares these counts,
+    # Owner decision A7 (2026-10-02): the gate compares these counts,
     # not the rates above. With 8 should-abstain items in fast20, one flip is
     # 12.5 points — twice the gate's old 5-point tolerance — so a rate
     # comparison fails on a single item. The count says what actually changed.
@@ -769,7 +769,7 @@ def aggregate(results: list[tuple[EvalItem, EvalResult]]) -> dict[str, float | N
         for _, r in scored
         if r.stage_ms and r.stage_ms.get("our_overhead_ms") is not None
     ]
-    # : `p50_our_overhead_ms` is a median over the attributed items only,
+    # KI-31: `p50_our_overhead_ms` is a median over the attributed items only,
     # and the slow items are the ones that fail to attribute, so that median
     # is biased *downward* — the gate compares a flattering subset. This is
     # the median wall clock of exactly those excluded items, so the size of
@@ -865,7 +865,7 @@ async def main() -> None:
         choices=["seed", "counterfactual", "entity_mismatch", "proxy30"],
         default="seed",
         help="which dataset to run. 'counterfactual' is the P1b item-2 set, whose "
-        "corpus states deliberately altered facts. 'entity_mismatch' (P2a, ) "
+        "corpus states deliberately altered facts. 'entity_mismatch' (P2a) "
         "runs each item over its own scope_corpus only. 'proxy30' (P2a item 5, "
         "the bake-off) is the 30 proxy-labelled answers' questions; it runs over "
         "the default scope and is a measurement set only.",

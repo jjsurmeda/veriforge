@@ -2,7 +2,7 @@
 
 The conflict pairs used to be a SECOND `decide` call after the sufficiency
 call: two sequential round trips per attempt, the second one about 0.4 s (and,
-before , untimed so its cost appeared in no latency figure at all).
+before KI-34, untimed so its cost appeared in no latency figure at all).
 
 The pairs now ride the existing post-sanitize call — but only when the
 sanitizer dropped nothing. When it dropped something, the kept set changed

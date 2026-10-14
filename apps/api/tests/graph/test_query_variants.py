@@ -1,4 +1,4 @@
-""" item 1: MULTI_PARTS decomposition parses into separate parts on
+"""KI-12 item 1: MULTI_PARTS decomposition parses into separate parts on
 both small-model shapes (captured live 2026-09-29, see known-issues)."""
 
 from collections.abc import Awaitable, Callable

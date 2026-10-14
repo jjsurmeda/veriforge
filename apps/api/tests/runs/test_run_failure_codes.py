@@ -1,4 +1,4 @@
-"""Terminal run failures carry a real code (, backend half).
+"""Terminal run failures carry a real code (backend half).
 
 Every terminal failure the run cannot fix used to reach the client as
 `error_code="run_error"` and "The run could not finish. Try again." A
@@ -155,7 +155,7 @@ def test_the_provider_codes_carry_no_reset_time() -> None:
 def test_the_apps_own_quota_failure_carries_its_reset_time() -> None:
     """`quota/service.py` is the one failure that knows when the window rolls
     over, and the user needs it: "try again" with no time is the complaint
-     was filed about."""
+    KI-23 was filed about."""
     exc = QuotaExceeded(
         "quota_exceeded",
         "Your credit limit has been reached for this window",

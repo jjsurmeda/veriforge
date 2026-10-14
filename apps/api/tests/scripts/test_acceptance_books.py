@@ -1,4 +1,4 @@
-"""Shape and class balance of the acceptance set itself (, D3 item 3).
+"""Shape and class balance of the acceptance set itself (D3 item 3).
 
 With only four `not_in_sources` items the abstention metric swung
 0.00/0.00/0.25 between runs. These pin the file's loadability, the item
@@ -21,9 +21,9 @@ ITEMS: list[dict[str, Any]] = json.loads(ACCEPTANCE.read_text(encoding="utf-8"))
 REQUIRED_FIELDS = {"id", "expect", "turns"}
 VALID_EXPECTS = {"answer", "library", "not_in_sources", "smalltalk"}
 
-# The counts the  widening leaves behind, plus D3 item 3's six broad /
+# The counts the KI-6 widening leaves behind, plus D3 item 3's six broad /
 # summarize answer items: 10 new not_in_sources and 6 new answer on top of the
-# original 31-item set.  then moved `outside-whitman` from
+# original 31-item set. KI-36 then moved `outside-whitman` from
 # not_in_sources to answer (its answer was in the corpus all along) and added
 # `outside-whitman-lilacs` to replace the abstention coverage it gave up.
 # P1b item 3 adds 6 more not_in_sources near-misses (the prompt asks for 20/20,
@@ -37,7 +37,7 @@ EXPECTED_CLASS_COUNTS = {
     "library": 2,
 }
 
-# P1b item 3: the ambiguity items the corpus answers two ways ('s Wukong
+# P1b item 3: the ambiguity items the corpus answers two ways (KI-27's Wukong
 # shape). P2's prompt change shipped, so they are scored like any other answer
 # item: a run that names one referent and misses the other fails them.
 AMBIGUITY_ITEMS = [
@@ -139,7 +139,7 @@ def test_the_relabelled_item_is_still_in_the_set() -> None:
 
 
 def test_the_abstain_class_is_wide_enough_to_score_stably() -> None:
-    """The reason for : 4 items made abstention accuracy step in quarters."""
+    """The reason for KI-6: 4 items made abstention accuracy step in quarters."""
     abstains = [item for item in ITEMS if item["expect"] == "not_in_sources"]
     assert len(abstains) >= 12
     # Abstain items are checked on declining, not on citing or mentioning.
@@ -151,7 +151,7 @@ def test_the_abstain_class_reaches_twenty_one_with_two_non_english_near_misses()
     """P1b item 3's target was 20 should-abstain items, of which the six added
     are near-misses and at least two are asked in the book's own language.
     Phase 1c item 2 (2026-10-12) made it 21 by relabelling `amb-bovary-homais`
-    — the class got wider, not thinner, which is the direction  asked for."""
+    — the class got wider, not thinner, which is the direction KI-6 asked for."""
     by_id = {item["id"]: item for item in ITEMS}
     for id_ in NEAR_MISS_ITEMS:
         assert id_ in by_id, id_
@@ -169,7 +169,7 @@ def test_the_abstain_class_reaches_twenty_one_with_two_non_english_near_misses()
 
 
 def test_the_ambiguity_items_name_both_referents_and_are_scored_normally() -> None:
-    """'s Wukong shape: the corpus answers two ways, so the item lists both.
+    """KI-27's Wukong shape: the corpus answers two ways, so the item lists both.
 
     They carried `pending_p2` until P2 shipped (2026-10-12) and are now scored
     like any other answer item, so the flag is asserted *absent*: an item that

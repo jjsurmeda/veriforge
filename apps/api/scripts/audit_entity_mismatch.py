@@ -1,4 +1,4 @@
-"""Label audit for the entity-mismatch set (P2a item 0, ).
+"""Label audit for the entity-mismatch set (P2a item 0).
 
 The label of an entity-mismatch item is the *scope*, not the text: the
 question names entity A while only entity B's documents are in scope, so a

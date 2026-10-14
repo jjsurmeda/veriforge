@@ -50,7 +50,7 @@ CHAT_RECORD = {"api_type": "chat", "generation_time": 1234}
 
 
 def test_the_lookup_budget_covers_the_measured_landing_tail() -> None:
-    """The  cause, pinned as arithmetic rather than as a comment.
+    """The KI-31 cause, pinned as arithmetic rather than as a comment.
 
     Measured 2026-10-02 over four consecutive calls: 0.4 s, 0.4 s, 0.4 s and
     **123.6 s** for the record to land. The budget was 8 x 3.0 s ~= 21 s, which
@@ -84,7 +84,7 @@ def _stats_from(
 async def test_a_synthetic_item_with_one_unresolved_id_keeps_its_resolved_provider_ms(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The case  describes: two calls, one resolves. The 240 ms that did
+    """The case KI-31 describes: two calls, one resolves. The 240 ms that did
     resolve is real provider time and must not be thrown away with the miss."""
     monkeypatch.setattr(
         "evals.attribution._stats",
@@ -112,7 +112,7 @@ async def test_a_synthetic_item_with_one_unresolved_id_keeps_its_resolved_provid
 async def test_an_unresolved_id_is_named_with_its_call_site_and_final_status(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The diagnosis  could not make: the id alone cannot say whether it
+    """The diagnosis KI-31 could not make: the id alone cannot say whether it
     was a Jev call, a dead stream or the reviewer's revision."""
     monkeypatch.setattr("evals.attribution._stats", _stats_from({"gen-jev-1": JEV_RECORD}))
     refs = [

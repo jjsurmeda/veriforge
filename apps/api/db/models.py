@@ -203,7 +203,7 @@ class RunEvent(Base):
 
 
 class RunSeqCounter(Base):
-    """: the per-run `run_events.seq` counter, incremented in the same
+    """The per-run `run_events.seq` counter, incremented in the same
     transaction as the event it numbers. See migration 0018 for why it is a
     column on a row rather than a Postgres sequence — the rollback behaviour
     (gapless) and the commit ordering (replay order) both come from that."""
@@ -665,7 +665,7 @@ class EvalResult(Base):
     # Per-stage breakdown of the same item (graph/timing.make_step_timer), so a
     # red p50 can be attributed to a stage instead of guessed at. Every
     # value is a millisecond count except `unresolved_generation_ids`, a list of
-    # one-line descriptions of the generation ids that never resolved — 
+    # one-line descriptions of the generation ids that never resolved — KI-31
     # needs the call site to diagnose them, and the run is dropped after the
     # summary is printed. JSONB, so no migration: the Python type widens, not
     # the column.

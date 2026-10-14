@@ -49,7 +49,7 @@ class Settings(BaseSettings):
     rate_limit_run: int = 60
     rate_limit_run_window_seconds: float = 60.0
 
-    # Email (AC-1 password reset, ). `dev_log` writes the message to the
+    # Email (AC-1 password reset). `dev_log` writes the message to the
     # log instead of sending it, and is refused when ENVIRONMENT=production.
     # `smtp` sends for real; AWS SES publishes an SMTP endpoint, so slice 9
     # points these at SES with no code change.
@@ -68,7 +68,7 @@ class Settings(BaseSettings):
     # The pinned SDK (`langfuse<3`) reads `LANGFUSE_HOST`, and with no host
     # it falls back to the EU default — where a JP project's keys silently
     # fail to authenticate, so traces stop arriving with no error anywhere
-    # (: 301 traces, then nothing). `LANGFUSE_BASE_URL` is accepted as an
+    # (KI-21: 301 traces, then nothing). `LANGFUSE_BASE_URL` is accepted as an
     # alias because that is the name already in `.env`; both names work and
     # the SDK's own name wins when both are set.
     langfuse_host: str = Field(
@@ -124,7 +124,7 @@ class Settings(BaseSettings):
     # limited.
     fallback_model: str = "openrouter/openai/gpt-4o-mini"
     # One LiteLLM retry, then providers/llm.py fails over once to
-    # llm_fallback_model on 429/5xx/timeout (known-issues ). Retrying the
+    # llm_fallback_model on 429/5xx/timeout (known-issues KI-7). Retrying the
     # same saturated id four times only delayed the failure.
     llm_max_retries: int = 1
     # A retry cap is meaningless without a per-attempt deadline: a saturated

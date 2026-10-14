@@ -81,7 +81,7 @@ describe('Try the demo', () => {
 
   it('says something useful when the per-IP limit refuses it', async () => {
     // "Try again" is the one thing that does not help here, and it is what
-    //  is about: the message has to name the actual obstacle.
+    // KI-23 is about: the message has to name the actual obstacle.
     mocks.startDemo.mockResolvedValue({
       error: { error_code: 'rate_limited', message: 'Too many attempts.' },
     })
@@ -109,7 +109,7 @@ describe('Try the demo', () => {
   })
 
   it('says the demo is not available when the kill switch is off', async () => {
-    // : DEMO_ENABLED defaults to false, so on any deployment that has
+    // DEMO_ENABLED defaults to false, so on any deployment that has
     // not turned it on this button is the first thing a visitor presses. A
     // generic "could not start the demo" reads as a broken product, not a
     // switched-off one.

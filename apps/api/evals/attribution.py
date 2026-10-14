@@ -1,4 +1,4 @@
-"""Attribute a measured wall clock to us vs. the provider (known-issues ).
+"""Attribute a measured wall clock to us vs. the provider (known-issues KI-18).
 
 OpenRouter reports, per generation, the time it spent generating. Reading it
 back lets the eval gate separate "the provider was slow" from "we added
@@ -55,7 +55,7 @@ STATS_URL = "https://openrouter.ai/api/v1/generation?id={generation_id}"
 # In a fast20 run three ids 404'd for the whole 21 s budget at ages 36-39 s, and
 # all three answered 200 on a manual `GET /generation?id=…` a minute later, with
 # their durations intact (`generation_time` 681 / 2392 / 0 + `latency` 306).
-# That is the  cause: not a class of call that is never indexed, and not an
+# That is the KI-31 cause: not a class of call that is never indexed, and not an
 # id recorded for a call that was not made — a budget shorter than the tail.
 #
 # The lookups all run at the end of a run and concurrently, so a larger budget
@@ -73,7 +73,7 @@ STATS_BACKOFF_SECONDS = 12.0
 class GenerationRef:
     """One LLM call, and where it came from.
 
-    The id alone cannot be diagnosed:  spent three dispatches on "2-4 ids
+    The id alone cannot be diagnosed: KI-31 spent three dispatches on "2-4 ids
     per fast20 run never resolve" with nothing but a count to go on. The call
     site is what separates the candidate classes — a Jev call, a stream that
     died and restarted, the reviewer's revision — so it is recorded at the same
@@ -217,7 +217,7 @@ def _get(generation_id: str) -> tuple[dict[str, Any] | None, int | None]:
     """The stats record, and the HTTP status of the lookup that produced it.
 
     The status is returned rather than swallowed because "404 forever" and
-    "404 then 200" and "500" are different failures, and  could not tell
+    "404 then 200" and "500" are different failures, and KI-31 could not tell
     them apart. `None` status means the request never got an answer.
     """
     key = os.environ.get("OPENROUTER_API_KEY")

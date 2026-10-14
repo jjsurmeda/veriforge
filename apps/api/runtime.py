@@ -42,7 +42,7 @@ DEFAULT_DATA: dict[str, Any] = {
     "web_search_provider": "tavily",
     "web_search_keys": {},
     "source_priority": "documents_first",
-    # Generation (TRD §7, ). `null` is the default and the point: it
+    # Generation (TRD §7). `null` is the default and the point: it
     # means send no temperature at all, so the provider default applies and
     # generation behaves exactly as it did before the setting existed.
     # Admin-tunable because the value is a product-quality decision to be made

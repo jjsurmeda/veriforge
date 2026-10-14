@@ -190,7 +190,7 @@ function isDynamicDecision(decision: Decision): boolean {
   // The entity family is one Noul per top-k passage and the conflict family
   // one per candidate pair, so both arrive as a run of decisions that mean a
   // single gate. Collapsed like the chunk checks, they read as one check each;
-  // left flat they are exactly the "mostly Jev calls" reading  names.
+  // left flat they are exactly the "mostly Jev calls" reading KI-22 names.
   return (
     decision.stage === 'claim_verdict' ||
     decision.name.startsWith('chunk_injection_') ||

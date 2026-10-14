@@ -270,7 +270,7 @@ async def test_a_clearly_absent_run_declines_in_one_attempt(
     assert len(jev.sufficient_calls) == 1, "the rewrite + full re-retrieve was skipped"
     assert run.retry_skipped is True
     assert run.abstain_event is not None, "it still declines — faster, not differently"
-    assert run.contexts == [], "an abstention carries no citations ()"
+    assert run.contexts == [], "an abstention carries no citations"
 
 
 async def test_the_skip_is_recorded_in_the_trace(

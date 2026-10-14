@@ -2,7 +2,7 @@
 
 Every item in `evals/entity_mismatch/items.json` asks about an entity that is
 attested only in a corpus that is deliberately out of scope, so the correct
-answer to all 12 is a decline, and anything else is the  failure: the run
+answer to all 12 is a decline, and anything else is the KI-54 failure: the run
 asserting the in-scope manual's answer to a question the sources cannot answer.
 
 The verdict is computed from the run summary's own fields, never inferred from

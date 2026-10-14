@@ -59,7 +59,7 @@ def test_the_balance_is_six_each_way_with_two_non_english() -> None:
 
 
 def test_the_two_observed_failures_are_the_first_items() -> None:
-    # cf-k9-ingress and cf-k9-charge are the answers  quoted; keeping
+    # cf-k9-ingress and cf-k9-charge are the answers KI-54 quoted; keeping
     # them first keeps the report's before/after comparable across runs.
     assert [item["id"] for item in ITEMS[:2]] == ["cf-k9-ingress", "cf-k9-charge"]
 
