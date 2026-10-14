@@ -275,6 +275,14 @@ def summarise(
       correct. It is counted separately precisely because nothing else sees it —
       a content question routed to `chitchat` skips retrieval and answers from
       model memory, and that is the one behaviour this product does not ship.
+    - `content_miss` — an answer-class item that **answered** (did not decline)
+      and cited, but whose answer does not state the strings the item
+      requires. Every other class here would pass it: it is not a decline, not
+      an abstention, not an error, not uncited, and it cited a plausible book.
+      The content check the plan's bar names ("≤ 1 content miss of 32
+      answerables", KI-75) has to be its own count, because a run that holds
+      decline accuracy *and* false abstention *and* citations can still be
+      wrong about the thing it was asked.
     - `errored` — the run did not complete. Never a decline: an errored item
       has no behaviour to grade.
     """
@@ -284,6 +292,7 @@ def summarise(
         "unclean_declines": 0,
         "false_abstentions": 0,
         "uncited_answers": 0,
+        "content_misses": 0,
         "errored": 0,
         "answer_items": 0,
         "abstain_items": 0,
@@ -297,6 +306,7 @@ def summarise(
         "unclean_decline_ids": [],
         "false_abstention_ids": [],
         "uncited_answer_ids": [],
+        "content_miss_ids": [],
         "errored_ids": [],
         "failed_ids": [],
     }
@@ -347,6 +357,12 @@ def summarise(
                 # evidence behind it is a different product from this one.
                 counts["uncited_answers"] += 1
                 detail["uncited_answer_ids"].append(str(row["id"]))
+            elif not bool(row.get("mention_hit")):
+                # Answered, cited, and did not state the thing the item asked
+                # for. The other answer-class counts all pass this item, which
+                # is why correctness needs a count of its own (KI-75).
+                counts["content_misses"] += 1
+                detail["content_miss_ids"].append(str(row["id"]))
         elif expect == "smalltalk":
             counts["smalltalk_items"] += 1
         elif expect == "library":
@@ -492,12 +508,20 @@ async def run(
                 result = await play()
             got = observed_class(item, result)
             ok = passes(item, result)
+            mention_hit = mentions_hit(item, result.get("answer") or "")
             rows.append(
                 {
                     "id": item["id"],
                     "expect": item["expect"],
                     "got": got,
                     "pass": ok,
+                    # Carried, not recomputed in `summarise`: the item's
+                    # `mention`/`mention_all`/`alt_mention` lists stay in
+                    # `books.json`, so the row records the one boolean the
+                    # content-miss count needs (KI-75). `mentions_hit` is a
+                    # pure function of the item and the answer, so scoring it
+                    # once at play time and reading it here cannot disagree.
+                    "mention_hit": mention_hit,
                     "pending_p2": bool(item.get("pending_p2")),
                     "reason": failure_reason(item, result),
                     "q_language": detect_language(item["turns"][-1]),

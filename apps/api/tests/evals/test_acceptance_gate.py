@@ -37,6 +37,7 @@ def _summary(**overrides: Any) -> dict[str, Any]:
             "confident_wrong": 0,
             "false_abstentions": 0,
             "uncited_answers": 0,
+            "content_misses": 0,
             "errored": 0,
         },
         "detail": {
@@ -45,6 +46,7 @@ def _summary(**overrides: Any) -> dict[str, Any]:
             "unclean_decline_ids": [],
             "false_abstention_ids": [],
             "uncited_answer_ids": [],
+            "content_miss_ids": [],
             "errored_ids": [],
             "failed_ids": [],
         },
@@ -150,6 +152,45 @@ def test_an_uncited_answer_is_not_a_false_abstention() -> None:
     failures = acceptance_failures(summary)
 
     assert not any("false abstention" in f for f in failures)
+    assert not any("confident wrong" in f for f in failures)
+
+
+def test_two_content_misses_fail() -> None:
+    """KI-75. Two answer-class items answered, cited the right book, and still
+    did not state what the item asked for. Nothing above this line can see
+    that: the run held decline accuracy, false abstention and citations."""
+    summary = _summary(content_misses=2)
+    summary["detail"]["content_miss_ids"] = ["plot-speckled-band", "broad-time-machine"]
+
+    failures = acceptance_failures(summary)
+
+    assert any("2 of 32 answerable items answered but did not state" in f for f in failures)
+    assert any("plot-speckled-band" in f for f in failures)
+    assert any("broad-time-machine" in f for f in failures)
+    assert any("≤ 1 content miss" in f for f in failures)
+
+
+def test_one_content_miss_passes() -> None:
+    """The bar line: ≤ 1 of 32 answerables, the same arithmetic as the false
+    abstention rate at this mix."""
+    summary = _summary(content_misses=1)
+    summary["detail"]["content_miss_ids"] = ["plot-speckled-band"]
+
+    assert acceptance_failures(summary) == []
+
+
+def test_a_content_miss_is_not_any_of_the_other_classes() -> None:
+    """The three answer-class counts are disjoint and the gate reports them
+    apart. A cited, non-declining reply is not an abstention, not an uncited
+    answer, and (for an answer-class item) not a confident wrong — calling it
+    any of those hides the one that is true."""
+    summary = _summary(content_misses=1)
+    summary["detail"]["content_miss_ids"] = ["plot-speckled-band"]
+
+    failures = acceptance_failures(summary)
+
+    assert not any("false abstention" in f for f in failures)
+    assert not any("uncited" in f for f in failures)
     assert not any("confident wrong" in f for f in failures)
 
 

@@ -14,4 +14,4 @@ list, not only against open known issues.
 | Generator prompt | Sources first, question last, numbered citations; read all sources; combine stated facts; resolve conflicts (later explanation wins); per-intent instructions | ⚠️ layout ✅, rules guardrail-only, static (phase 1e) |
 | Abstention | One clear sufficiency signal; few independent vetoes | ⚠️ several model-judged vetoes in series (sufficiency, relevance, entity) |
 | Verification | Post-hoc claim check against cited passages | ✅ reviewer |
-| Evaluation | Answer correctness and context recall on a labelled set, not only safety | ⚠️ content check planned in R2; context recall deferred |
+| Evaluation | Answer correctness and context recall on a labelled set, not only safety | ✅ content misses are a counted class, `MAX_CONTENT_MISSES = 1` (KI-75); context recall deferred to v1 |

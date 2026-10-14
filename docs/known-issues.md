@@ -31,6 +31,7 @@ Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 | post-beta | KI-69 | reasoning-mandatory retry in providers/llm.py only serves free endpoints; dead on supported config |
 | check-work (acceptance) | KI-71 | ingress routes content questions to `chitchat`: ungrounded answer, no citations |
 | check-work (acceptance) | KI-73 | the rewriter's prose becomes the retrieval query, so a message with no question can answer |
+| check-work (acceptance) | KI-75 | an answer that cites the right book and states the wrong content is a failure no count caught |
 
 ---
 
@@ -45,6 +46,39 @@ an active transaction/session, racing `TRUNCATE`. Fix in `graph/runner.py`:
 `_shadow_tasks`) as well as the settle/judge tails. Commit f821d09.
 Guards added: per-test `faulthandler_timeout = 60` in pyproject,
 `SET lock_timeout = '5s'` before TRUNCATE.
+
+## CLOSED KI-75: an answer that cites the right book and states the wrong content is a failure no count caught
+
+Logged 2026-10-14 (phase R2a item 1, the bar line for the R2 row of the
+plan), closed in the same commit.
+
+- **What:** the gate measured decline accuracy, false abstention and
+  citations. It never measured whether the answer was **right**.
+  `scripts/acceptance.py` computed `mention_hit` per item and `passes()`
+  required it, so a content miss was visible only as a name in `failed_ids` —
+  which nothing counted and no clause read. A run could hold every number,
+  cite the right document on every answerable item, and be wrong about all of
+  them. `rag-reference.md`'s Evaluation row said the same thing in one line:
+  "not only safety".
+- **Fix:** `content_misses` / `content_miss_ids` in `summarise()`, counted
+  for an answer-class item that **answered, cited, and did not state the
+  required content**. `MAX_CONTENT_MISSES = 1` in `evals/acceptance_gate.py`,
+  which is the plan's bar line ("≤ 1 content miss of 32 answerables") and the
+  same arithmetic as the false-abstention rate at this mix.
+- **Not a rate, deliberately:** `content_miss` is disjoint from
+  `false_abstention` (which did not answer), `uncited_answers` (cited
+  nothing) and `confident_wrong` (a should-decline item that answered). One
+  item is counted once, in the class that describes what the run did.
+- **`mention_hit` moved onto the row.** The item's `mention` / `mention_all` /
+  `alt_mention` lists stay in `books.json`; the runner scores them once at
+  play time against the answer and records the boolean, so the number the gate
+  reads cannot disagree with `passes()`.
+- **Tests:** `tests/scripts/test_acceptance_summary.py` — a cited answer that
+  misses its content is a content miss and no other class; a declined answer
+  item is a false abstention and *not* also a content miss; a cited answer
+  that states the content is clean. `tests/evals/test_acceptance_gate.py` —
+  2 fails with both ids named, 1 passes (the boundary), and a content miss is
+  none of the other three classes. Fakes only; no provider call.
 
 ## KI-15: `tests/chats/test_chats_runs.py` hangs when its tests run in sequence
 

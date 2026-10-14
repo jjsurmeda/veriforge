@@ -12,7 +12,7 @@ numbers PRD §5 states for one run:
 - **Clean declines ≥ 90%** of should-decline items — 18 of 20. A prose "not in
   the sources" reply with citations is an unclean decline and counts against
   this, not against confident wrong.
-- **False abstention ≤ 5%** of answerable items — 1 of 33.
+- **False abstention ≤ 5%** of answerable items — 1 of 32.
 - **An `answer`-class item that completed with zero citations fails**, whether
   its text was right or wrong. This is KI-71: ingress can classify a content
   question as `chitchat`, the run skips retrieval and answers from model
@@ -20,6 +20,11 @@ numbers PRD §5 states for one run:
   reply is the failure shape this product exists not to ship. Answering a
   content question from memory is the one thing the product says it doesn't
   do, so the bar is a count like the others, not a note.
+- **≤ 1 content miss of the answerable items.** An `answer`-class item that
+  answered, cited, and still did not state the strings the item requires. The
+  plan's bar names it, and nothing else here can see it: such an item is not a
+  decline, not an abstention, not an error, not uncited, and it cited the right
+  book.
 - **Smalltalk and library items pass.**
 - **An errored item is a failure**, never a decline.
 
@@ -74,6 +79,15 @@ MAX_CONFIDENT_WRONG = 0  # PRD §5 allows ≤1 per 100; on 21 items, 0
 # item that completed with no citation is a failure at any text quality. Not a
 # rate: one is one.
 MAX_UNCITED_ANSWERS = 0
+# KI-75 / the plan's bar line: "≤ 1 content miss of 32 answerables". A content
+# miss is an answer-class item that answered, cited, and still did not state the
+# strings the item requires. Every other clause above passes such an item — it
+# is not a decline, not an abstention, not an error, not uncited, and the book
+# it cited is the right one — so without this clause a run that is confidently
+# wrong about the thing it was asked passes the whole gate. PRD §5's 1 is the
+# bar, and it is the same arithmetic as `MAX_FALSE_ABSTENTION_PERCENT` at this
+# mix (32 * 5% = 1).
+MAX_CONTENT_MISSES = 1
 
 
 def min_clean_declines(abstain_items: int) -> int:
@@ -182,6 +196,19 @@ def acceptance_failures(summary: Mapping[str, Any]) -> list[str]:
             "product does not do"
         )
 
+    # Content correctness, checked last because it is the clause a run can pass
+    # everything else on. A cited answer that does not state the required
+    # mention is not a decline, an abstention, an error or an uncited answer;
+    # before KI-75 it was visible only as a name in `failed_ids`, which nothing
+    # counted.
+    content_misses = _count(summary, "content_misses")
+    if content_misses > MAX_CONTENT_MISSES:
+        failures.append(
+            f"{content_misses} of {answer_items} answerable items answered but did not "
+            f"state the required content: {_ids(summary, 'content_miss_ids')}; the bar "
+            f"allows ≤ {MAX_CONTENT_MISSES} content miss"
+        )
+
     # The two small classes are pass/fail in full: they exist to catch a
     # regression in chitchat handling and in the library answer, where a rate
     # over two items means nothing.
@@ -232,6 +259,7 @@ def main(argv: list[str]) -> int:
         f"{counts.get('confident_wrong')} confident wrong, "
         f"{counts.get('false_abstentions')}/{counts.get('answer_items')} false abstentions, "
         f"{counts.get('uncited_answers', 0)} uncited answers, "
+        f"{counts.get('content_misses', 0)} content misses, "
         "smalltalk and library pass, 0 errored"
     )
     print(f"  api served commit: {served}")
