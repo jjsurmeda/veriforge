@@ -11,29 +11,41 @@ import re
 from collections.abc import Iterable
 from itertools import combinations
 
-from decisions.thresholds import Engine
 from retrieval.expand import ExpandedContext
 from retrieval.hybrid import ScoredChunk
 from runtime import runtime_value
 from schemas.decisions import Answer, Choice, Noul, Score
-from schemas.events import Decision
 
 TOP_CHUNKS_FOR_SUFFICIENT = 5
 SUFFICIENT_EVIDENCE_CHARS = 9_000
 
-# When the evidence is clearly absent, the rewrite + retry is another 13-15 s
-# to reach the same abstention, so it is skipped. Both bounds sit far below
-# their floors because the failure direction of a skip is a decline that could
-# have been an answer.
+# When the evidence is clearly absent, the corrective re-query is another
+# 13-15 s to reach the same abstention, so it is skipped. Both bounds sit far
+# below their floors because the failure direction of a skip is a decline that
+# could have been an answer.
 #
-# The two bounds come from a replay of the recorded runs, not from taste: among
-# the runs the retry RESCUED, sufficiency went as low as 0.01, so sufficiency
-# alone decides nothing and the skip needs BOTH readings far below their floors.
-# A run with no relevance reading never skips; a run with no entity reading is
-# not blocked by it either, because only a handful of runs carry one. The bounds
-# are admin-overridable (`retrieval.retry_skip_*`); a null disables the skip.
-RETRY_SKIP_SUFFICIENT_MAX = 0.02
-RETRY_SKIP_RELEVANCE_MAX = 0.40
+# The sufficiency bound is 0.005 and that number comes from the replay table
+# in KI-70, not from taste: of 238 recorded Auto runs that took the corrective
+# retrieval, 231 still abstained, and **among the 7 the correction rescued,
+# sufficiency went as low as 0.01**. So 0.01 is the lowest reading the
+# correction has been known to rescue, and the skip must not fire at or above
+# it. It was 0.02 until the relevance reading came out of this test (ADR-006,
+# R2a item 4): the old test demanded a corroborating relevance score as well as
+# a low sufficiency, and that second reading is what kept the bound from being
+# the last word. With it gone, the bound has to carry the whole decision on its
+# own and has to sit below the lowest recorded rescue.
+#
+# The consequence is that the skip is now nearly inert, which is the honest
+# price of not having a second signal: almost nothing scores below 0.005.
+# Removing the skip altogether is the ADR-006-pure option and costs one extra
+# 13-15 s pass on every decline; that is a latency decision for phase 3, not
+# one to make silently here.
+#
+# The entity bound keeps its value and its job: a matched entity still blocks
+# the skip outright, which is the reading that directly contradicts "clearly
+# absent". Both bounds are admin-overridable (`retrieval.retry_skip_*`); a null
+# disables that half of the test.
+RETRY_SKIP_SUFFICIENT_MAX = 0.005
 RETRY_SKIP_ENTITY_MAX = 0.50
 
 # The conflict check asks one question per candidate PAIR of passages, batched
@@ -255,26 +267,26 @@ def _entity_passage_decision(
 def _evidence_clearly_absent(
     *,
     p_sufficient: float,
-    relevance_max: float | None,
-    relevance_measured: bool,
     entity_max: float | None,
     entity_measured: bool,
     entity_ok: bool,
 ) -> bool:
-    """Is the evidence CLEARLY absent, so the rewrite + retry is pointless?
+    """Is the evidence CLEARLY absent, so the corrective re-query is pointless?
 
-    Every signal must be far below its floor, and a signal that was not
-    measured blocks the skip:
+    Two readings, and both must be far below their floor:
 
-    * A relevance reading is required, not optional. The replay of the
-      recorded runs says plainly that sufficiency alone cannot decide this,
-      and no run with a relevance reading inside the skip band was rescued by
-      a retry.
-    * A matched entity blocks the skip too: it is the one signal that
-      contradicts "clearly absent" directly.
+    * Sufficiency is the evidence check itself (ADR-006), and its bound sits
+      below the lowest reading the correction has ever been known to rescue.
+    * A matched entity blocks the skip: it is the one signal that contradicts
+      "clearly absent" directly, and it is the guard that catches a question
+      whose evidence is all about the wrong thing.
+
+    The third reading this used to need — a relevance score — is gone with the
+    relevance floor (ADR-006, R2a item 4). It was a lexical-overlap number
+    standing in for "is this evidence relevant", which for a gist question it
+    demonstrably cannot be: the recorded `broad-alice` run scored the correct
+    passages 0.36 on relevance and 0.97 on the entity check.
     """
-    if not relevance_measured or relevance_max is None:
-        return False
     if entity_measured and entity_ok:
         return False
     entity_bound = runtime_value("retrieval.retry_skip_entity_max", RETRY_SKIP_ENTITY_MAX)
@@ -283,11 +295,10 @@ def _evidence_clearly_absent(
     sufficient_bound = runtime_value(
         "retrieval.retry_skip_sufficient_max", RETRY_SKIP_SUFFICIENT_MAX
     )
-    relevance_bound = runtime_value("retrieval.retry_skip_relevance_max", RETRY_SKIP_RELEVANCE_MAX)
-    # An admin can turn the skip off by setting either bound to null.
-    if sufficient_bound is None or relevance_bound is None:
+    # An admin can turn the skip off by setting the bound to null.
+    if sufficient_bound is None:
         return False
-    return p_sufficient <= float(sufficient_bound) and relevance_max <= float(relevance_bound)
+    return p_sufficient <= float(sufficient_bound)
 
 
 def _conflict_sides(winners: list[ScoredChunk]) -> list[ScoredChunk]:
@@ -348,36 +359,3 @@ def _conflict_pair_questions(
             )
         )
     return questions
-
-
-def relevance_decision_event(
-    run_id: str,
-    *,
-    relevance_max: float,
-    engine: Engine,
-    threshold_value: float,
-    scored: int,
-    exempt: bool,
-) -> Decision:
-    """The trace row for the relevance veto, which is read off the rerank
-    scores rather than asked as its own question."""
-    return Decision(
-        run_id=run_id,
-        name="relevance",
-        value=relevance_max,
-        probability=None,
-        probabilities=None,
-        engine=engine,
-        latency_ms=0,
-        stage="rerank",
-        threshold=threshold_value,
-        reasoning=(
-            f"max rerank score of the post-sanitize winners ({scored} scored passages)"
-            + (
-                "; veto waived — a summarize question is judged by sufficiency "
-                "and the entity check alone (KI-70)"
-                if exempt
-                else ""
-            )
-        ),
-    )

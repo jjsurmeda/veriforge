@@ -634,6 +634,64 @@ items declined; PRD §5 allows <= 1.
   vetoed at relevance 0.60 and neither is. The rule does what the replay said
   it would.
 
+- **The relevance veto itself is GONE (2026-10-14, phase R2a item 4, ADR-006),
+  and removing it does not hold. This is now the open question in this entry,
+  and it is the owner's.**
+  `_apply_relevance_gate`, `Attempt.relevance_ok` / `relevance_max` /
+  `relevance_measured`, `relevance_decision_event`, the `relevance` Decision and
+  its hand-published trace row in `run_auto._publish_trace`, the
+  `rerank_abstain` threshold, `RETRY_SKIP_RELEVANCE_MAX` and the
+  `retrieval.retry_skip_relevance_max` setting are all deleted. `sufficient` is
+  the one evidence check; the entity guard stays as ADR-006 keeps it; the
+  corrective retrieval is one pass.
+
+  **The replay that says why, in `apps/api/tests/graph/test_one_evidence_check.py`**
+  (replaces `test_summarize_relevance_veto.py`, same recorded table):
+  **ADR-006's stated consequence does not hold.** With the veto gone, the run
+  is decided by `sufficient >= sufficient_abstain` (0.05) and the entity guard,
+  and replaying all 57 recorded rows of the two phase-1b runs turns **12
+  `not_in_sources` rows into confident wrong answers**: `outside-study-in-
+  scarlet`, `outside-emma`, `outside-looking-glass`, `ml-fr-outside`,
+  `ml-ja-outside`, `outside-holmes-mycroft`, `ml-de-bovary-animal`,
+  `ml-fr-noli-baiser`, `ml-zh-xiyou-nezha`, `ml-ja-rashomon-rokuro`, and
+  `amb-bovary-homais` twice. Not a tolerance question: the worst is 0.29,
+  nearly six times the floor.
+
+  **No threshold on this signal satisfies both PRD §5 clauses.** 0 confident
+  wrong needs ~0.30, and 0.30 already costs two recorded answers
+  (`compare-inventors` 0.13, `outside-whitman` 0.14). There is no value that
+  reaches (0 confident wrong, ≤ 1 false abstention). This is KI-28's finding
+  for the sufficiency signal and the reason this entry says **no threshold
+  moves** — a threshold move needs before/after on fast20, counterfactual and
+  entity-mismatch, which is provider credit this lane did not have.
+
+  **Why 0.05 was never decision-grade.** It was calibrated as one of three
+  signals in series: the comment above it records answer items at 0.06-0.49 and
+  not-in-sources at 0.01-0.04, which separates cleanly **as a third veto with
+  the other two beside it**. Alone it has no margin. The relevance veto was
+  doing real work on ten of the twelve — every one of them sat under 0.60 on
+  relevance, and most sat near the 0.30-0.40 band where `outside-*` and `broad-*`
+  overlap (the table in the note above is that overlap).
+
+  **What the recorded data cannot say.** For each of the twelve the veto was
+  the deciding signal, so the entity check never ran as the decider on any of
+  them and the recorded evidence says nothing about what it would have said.
+  Several are entity questions about other characters, which is exactly what
+  the guard exists for — but "the guard might hold them" is a hypothesis, and
+  the replay file says so rather than assuming it. Resolving it needs one live
+  run of the 21 `not_in_sources` ids and the 12 entity-mismatch items.
+
+  **A second-order change that was not in the brief.** `_evidence_clearly_absent`
+  previously required a corroborating relevance reading before it would skip
+  the corrective retrieval, and required a run with no relevance reading to
+  never skip. With that reading gone the sufficiency bound became the last word,
+  so `RETRY_SKIP_SUFFICIENT_MAX` moved **0.02 → 0.005**: the KI-70 replay
+  above records that among the 7 of 238 runs the correction rescued, the lowest
+  sufficiency was **0.01**, so a bound at or above 0.01 would skip exactly the
+  runs it exists to save. The skip is now nearly inert, which is the honest
+  price of one signal. Removing it entirely is the ADR-006-pure option and
+  costs one extra 13-15 s pass per decline; that is a phase-3 latency call.
+
 ## KI-71: ingress routes content questions to `chitchat`, which skipped retrieval and answered ungrounded
 
 Logged 2026-10-12 (phase 1b, same run). Owner decision 2026-10-12: **not

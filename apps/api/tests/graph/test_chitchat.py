@@ -27,7 +27,7 @@ from graph.auto import (
 from retrieval.expand import ExpandedContext
 from retrieval.filters import ClientFilters
 from retrieval.hybrid import ScoredChunk
-from retrieval.rerank import JevRerank
+from retrieval.rerank import ANSWER_LEVEL_VALUE, ANSWER_LEVELS, JevRerank
 from runtime import RuntimeSettings, reset_runtime_settings, set_runtime_settings
 from schemas.decisions import Answer, Question
 from schemas.events import Decision
@@ -810,9 +810,18 @@ async def test_answerless_but_topical_evidence_abstains(
     no_llm: dict[str, list[str]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """KI-26 repro: the captured `outside-study-in-scarlet` top-k never
-    states the answer — no chunk mentions Afghanistan — yet it reads as
-    sufficient, so the run must abstain, not answer."""
+    """KI-26's captured evidence, and what R2a does to it.
+
+    The captured `outside-study-in-scarlet` top-k never states the answer — no
+    chunk mentions Afghanistan — yet sufficiency reads 0.10, over its floor.
+    The relevance veto held it, at rerank 0.28. ADR-006 removed that veto, so
+    the run now answers from evidence that does not contain the answer.
+
+    **The assertion below is the regression, stated rather than hidden.** It is
+    the reason `tests/graph/test_one_evidence_check.py` exists and why item 4's
+    acceptance test fails on the recorded runs: the sufficiency floor of 0.05
+    was calibrated as one of three signals, and it is not decision-grade on its
+    own."""
 
     chat, assistant_message_id = await _seed_chat(db, user_a)
 
@@ -910,12 +919,27 @@ async def test_answerless_but_topical_evidence_abstains(
         DecisionEngine(jev=_TopicalJev(), mode="jev_only"),
     )
 
-    assert run.abstain_event is not None
+    assert run.abstain_event is None, (
+        "ADR-006 removed the relevance veto (R2a item 4), so the captured KI-26 "
+        "evidence — sufficient 0.10 over its 0.05 floor, rerank 0.28 — now "
+        "answers. This is the shape of the regression that removal costs, and it "
+        "is not hypothetical: `outside-study-in-scarlet` recorded at sufficient "
+        "0.07 / relevance 0.26 is one of the twelve rows "
+        "`tests/graph/test_one_evidence_check.py` flips to confident wrong, and "
+        "that file's acceptance test is the reason item 4 needs the owner's "
+        "threshold decision rather than a silent merge."
+    )
+    assert not any(d.name == "relevance" for d in run.decision_events)
 
 
 class _RelevanceJev(_IngressJev):
-    """Sufficient pinned; rerank passages answered at `passage_score`, or
-    left unanswered when None (JevRerank then defaults them to 0.0)."""
+    """Sufficient pinned; rerank passages graded on the answer-containment
+    rubric (TRD §9.6), or left unanswered when `passage_score` is None (a
+    reranker outage: JevRerank then defaults them to 0.0).
+
+    The 0-1 `passage_score` is translated to the rubric level whose expected
+    value is closest, so a test can still say "a passage scoring 0.2" and mean
+    the same thing the trace shows."""
 
     def __init__(self, intent: str, sufficient: float, passage_score: float | None) -> None:
         super().__init__(intent)
@@ -931,9 +955,7 @@ class _RelevanceJev(_IngressJev):
                 if self._passage_score is None:
                     answers.pop(name, None)
                 else:
-                    answers[name] = Answer(
-                        engine="jev", latency_ms=1, value=self._passage_score, probability=None
-                    )
+                    answers[name] = _rubric_answer(self._passage_score)
         if "sufficient" in answers:
             answers["sufficient"] = Answer(
                 engine="jev",
@@ -942,6 +964,21 @@ class _RelevanceJev(_IngressJev):
                 probability=self._sufficient_value,
             )
         return answers
+
+
+def _rubric_answer(score: float) -> Answer:
+    """The answer-containment `Answer` whose normalised expected level is
+    closest to `score`, so a test's 0-1 number and the trace's level agree."""
+    level = min(ANSWER_LEVELS, key=lambda name: abs(ANSWER_LEVEL_VALUE[name] - score))
+    probabilities = {name: 0.0 for name in ANSWER_LEVELS}
+    probabilities[level] = 1.0
+    return Answer(
+        engine="jev",
+        latency_ms=1,
+        value=level,
+        probability=1.0,
+        probabilities=probabilities,
+    )
 
 
 async def _gate_params(
@@ -1040,57 +1077,83 @@ async def _run_gate_check(
     return await _gate_run(params, sufficient=sufficient, passage_score=passage_score)
 
 
+def _max_rerank_score(run: AutoRun) -> float | None:
+    """The best answer-containment score the reranker gave, over every
+    retrieval event's chunks. This is what the removed relevance Decision used
+    to report, and it is still on the chunks — the veto is gone, the ranking is
+    not."""
+    scores = [
+        chunk.rerank_score
+        for event in run.retrieval_events
+        for chunk in event.chunks
+        if chunk.rerank_score is not None
+    ]
+    return max(scores) if scores else None
+
+
 def _relevance_decisions(run: AutoRun) -> list[Decision]:
+    """There is no such event any more.
+
+    The relevance floor went with ADR-006's single evidence check (R2a item 4),
+    and this helper exists so the tests below can assert that: a run that still
+    emits a `relevance` Decision is reading a signal the code no longer
+    produces."""
     return [d for d in run.decision_events if d.name == "relevance"]
 
 
 @pytest.mark.asyncio
-async def test_relevance_gate_abstains_below_the_rerank_floor(
+async def test_the_evidence_check_alone_decides_a_topically_adjacent_answer(
     db: AsyncSession,
     user_a: User,
     no_llm: dict[str, list[str]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """KI-26 gate: sufficient 0.2 clears the 0.05 floor, but a max rerank
-    score of 0.3 sits under rerank_abstain 0.60 — topically adjacent,
-    answerless evidence must abstain. One retry, then abstain."""
-    run = await _run_gate_check(db, user_a, no_llm, monkeypatch, sufficient=0.2, passage_score=0.3)
+    """What replaced the relevance gate, in the shape KI-26's gate was written
+    for: topically adjacent, answerless evidence with sufficiency 0.2 over its
+    0.05 floor.
 
-    assert run.abstain_event is not None
-    decisions = _relevance_decisions(run)
-    assert decisions, "the trace must show why the run abstained"
-    assert decisions[-1].value == pytest.approx(0.3)
-    assert decisions[-1].threshold == pytest.approx(0.6)
-    assert decisions[-1].engine == "jev"
-    # initial retrieve + the single rewrite-retry
-    assert len(no_llm["retrieval"]) == 2
-
-
-@pytest.mark.asyncio
-async def test_relevance_gate_answers_above_the_rerank_floor(
-    db: AsyncSession,
-    user_a: User,
-    no_llm: dict[str, list[str]],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    run = await _run_gate_check(db, user_a, no_llm, monkeypatch, sufficient=0.2, passage_score=0.8)
+    Under the old rule the rerank score of 0.2 would have abstained this. Under
+    the new one sufficiency decides, and at 0.2 it clears — which is correct for
+    this reading and is exactly the flip `tests/graph/test_one_evidence_check.py`
+    replays across every recorded item. The two together are the change: the
+    shape is unchanged, the bar is a single decision-grade signal instead of a
+    lexical-overlap proxy."""
+    run = await _run_gate_check(
+        db, user_a, no_llm, monkeypatch, sufficient=0.2, passage_score=0.2
+    )
 
     assert run.abstain_event is None
-    assert run.contexts, "a gated-in run still generates from its contexts"
-    decisions = _relevance_decisions(run)
-    assert decisions[-1].value == pytest.approx(0.8)
+    assert run.contexts, "a run that cleared the check still generates from evidence"
+    assert _relevance_decisions(run) == []
 
 
 @pytest.mark.asyncio
-async def test_relevance_gate_skipped_for_a_non_jev_provider(
+async def test_the_evidence_check_alone_declines_thin_evidence(
     db: AsyncSession,
     user_a: User,
     no_llm: dict[str, list[str]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """NVIDIA/Cohere/fused-order scores are on other scales (fused order's
-    top is always 1.0), so the gate must not read them: this provider
-    scores 0.3 — under the floor — and the run still answers."""
+    """The same question with sufficiency under its floor. The rerank score is
+    irrelevant to the verdict now, and the trace must not offer it as a
+    reason."""
+    run = await _run_gate_check(db, user_a, no_llm, monkeypatch, sufficient=0.02, passage_score=0.9)
+
+    assert run.abstain_event is not None
+    assert _relevance_decisions(run) == [], "the trace must show why the run abstained"
+
+
+@pytest.mark.asyncio
+async def test_a_reranker_on_another_scale_changes_nothing(
+    db: AsyncSession,
+    user_a: User,
+    no_llm: dict[str, list[str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """NVIDIA/Cohere/fused-order scores live on other scales (fused order's top
+    is always 1.0), and the old gate had to special-case them because it read
+    their numbers. A verdict built from a decision-grade check has no such
+    coupling: this provider scores 0.3 everywhere and changes nothing."""
 
     class _LowScoringProvider:
         def __init__(self, *_args: object) -> None:
@@ -1106,24 +1169,24 @@ async def test_relevance_gate_skipped_for_a_non_jev_provider(
         user_a,
         no_llm,
         monkeypatch,
-        sufficient=0.2,
+        sufficient=0.02,
         passage_score=0.3,
         reranker_factory=_LowScoringProvider,
     )
 
-    assert run.abstain_event is None
+    assert run.abstain_event is not None, "sufficiency is the only evidence check"
     assert _relevance_decisions(run) == []
 
 
 @pytest.mark.asyncio
-async def test_relevance_gate_skipped_when_no_passage_got_a_real_answer(
+async def test_a_reranker_outage_still_never_abstains(
     db: AsyncSession,
     user_a: User,
     no_llm: dict[str, list[str]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """An outage must not abstain: when every passage defaulted to 0.0
-    (nothing answered), the gate is skipped and sufficiency decides."""
+    """Every passage defaulted to 0.0 — no passage got a real answer, i.e. a
+    reranker outage, which degrades to fused order and never fails the run."""
     run = await _run_gate_check(db, user_a, no_llm, monkeypatch, sufficient=0.2, passage_score=None)
 
     assert run.abstain_event is None
@@ -1131,40 +1194,39 @@ async def test_relevance_gate_skipped_when_no_passage_got_a_real_answer(
 
 
 @pytest.mark.asyncio
-async def test_relevance_threshold_override_is_honoured(
+async def test_the_sufficient_abstain_threshold_is_still_admin_overridable(
     db: AsyncSession,
     user_a: User,
     no_llm: dict[str, list[str]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """AD-4: 0.3 fails the default 0.60 gate but clears an admin override."""
+    """AD-4, on the signal that decides a run. 0.02 is under the shipped 0.05
+    floor and clears an override to 0.0."""
     params = await _gate_params(db, user_a, no_llm, monkeypatch)
-    blocked = await _gate_run(params, sufficient=0.2, passage_score=0.3)
+    blocked = await _gate_run(params, sufficient=0.02, passage_score=0.3)
     assert blocked.abstain_event is not None
 
     token = set_runtime_settings(
-        RuntimeSettings.from_data(11, {"thresholds": {"rerank_abstain": {"jev": 0.2}}})
+        RuntimeSettings.from_data(11, {"thresholds": {"sufficient_abstain": {"jev": 0.0}}})
     )
     try:
-        answered = await _gate_run(params, sufficient=0.2, passage_score=0.3)
+        answered = await _gate_run(params, sufficient=0.02, passage_score=0.3)
     finally:
         reset_runtime_settings(token)
     assert answered.abstain_event is None
-    assert _relevance_decisions(answered)[-1].threshold == pytest.approx(0.2)
 
 
 @pytest.mark.asyncio
-async def test_relevance_decision_is_published_to_the_trace(
+async def test_no_relevance_decision_reaches_the_trace(
     db: AsyncSession,
     user_a: User,
     no_llm: dict[str, list[str]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """No engine.decide call makes the relevance decision, so the
-    DecisionEngine emitter never fires for it — graph/runner.py publishes
-    it from `auto_run.decision_events` instead. Pinned here on the run's own
-    decision list, which is what the runner iterates: one per attempt
-    (initial + the single retry)."""
+    """The whole trace surface of the removed veto. It was computed in the
+    evidence stage rather than asked as a question, which is why
+    `run_auto._publish_trace` used to publish it by hand; both halves are gone,
+    and the rerank step now reports only the ranking it actually produced."""
     params = await _gate_params(db, user_a, no_llm, monkeypatch)
     run = await prepare_auto_run(
         get_session_factory(),
@@ -1172,12 +1234,15 @@ async def test_relevance_decision_is_published_to_the_trace(
         DecisionEngine(jev=_RelevanceJev("lookup", 0.2, 0.3), mode="jev_only"),
     )
 
-    relevance = _relevance_decisions(run)
-    assert run.abstain_event is not None
-    assert len(relevance) == 2
-    assert all(event.value == pytest.approx(0.3) for event in relevance)
-    assert all(event.threshold == pytest.approx(0.6) for event in relevance)
-    assert all(event.stage == "rerank" for event in relevance)
+    assert _relevance_decisions(run) == []
+    assert all(d.name != "relevance" for d in run.decision_events)
+    # The rerank scores themselves are still reported per chunk, so the trace
+    # still shows what the rubric said.
+    assert any(
+        chunk.rerank_score is not None
+        for event in run.retrieval_events
+        for chunk in event.chunks
+    )
 
 
 async def test_retry_count_never_exceeds_one(
@@ -1199,7 +1264,7 @@ async def test_retry_count_never_exceeds_one(
             answers = await super().decide(state=state, questions=questions)
             if "sufficient" in answers:
                 answers["sufficient"] = Answer(
-                    engine="jev", latency_ms=1, value=0.02, probability=0.02
+                    engine="jev", latency_ms=1, value=0.03, probability=0.03
                 )
             return answers
 
@@ -1212,7 +1277,10 @@ async def test_retry_count_never_exceeds_one(
     )
 
     assert run.abstain_event is not None
-    # the clamp holds: one retrieve + one retry despite retry_limit=5
+    # the clamp holds: one retrieve + one retry despite retry_limit=5. 0.03 is
+    # chosen to sit above `RETRY_SKIP_SUFFICIENT_MAX` (0.02), because with the
+    # relevance reading gone from the skip test, a run at or below 0.02 skips
+    # the correction instead of clamping it.
     assert len(no_llm["retrieval"]) == 2
 
 
@@ -1766,10 +1834,11 @@ async def test_chitchat_that_names_a_book_retrieves_and_answers_with_citations(
     assert run.chitchat is False
     assert run.abstain_event is None
     assert run.contexts, "a chitchat-routed run with support answers from evidence"
-    # The values are the recorded ones: broad-alice's sufficiency 0.61 and an
-    # entity match of 0.97 on the passages it retrieved.
+    # Sufficiency is the recorded broad-alice value (0.61), and the reranker
+    # graded the passages as fully answering — the level the old 0.97 relevance
+    # score maps to now that the rubric replaces it.
     assert run.sufficiency_p == pytest.approx(0.61)
-    assert _relevance_decisions(run)[-1].value == pytest.approx(0.97)
+    assert _max_rerank_score(run) == pytest.approx(1.0)
     # And it went out through the grounded generator, never the chitchat one.
     assert streamed == []
 

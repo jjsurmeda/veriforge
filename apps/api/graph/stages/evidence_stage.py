@@ -1,10 +1,17 @@
 """Evidence stage (TRD §7): does the retrieved evidence answer the question?
 
-One attempt is rerank → sanitize → relevance veto → sufficiency → entity
-check, with the conflict pairs batched into the same DecisionEngine call as
-sufficiency. Below the floors the run retries once with a fresh rewrite and a
-full re-retrieve — answer-first, so never more than one — and skips the retry
-only when every signal sits far below its floor.
+**One** evidence check (ADR-006): the `sufficient` decision over the reranked
+evidence, with the entity guard beside it as a mismatch guard rather than a
+third veto. The relevance floor that used to sit between rerank and sufficiency
+is gone — the reranker's answer-containment rubric (TRD §9.6) already ranks
+passages by whether they answer, so a separate relevance score was a second,
+separately calibrated judgement of the same thing, and the one ADR-006 removes.
+
+Below the floor the run makes **one** corrective retrieval — a rewritten or
+decomposed query, and the section summaries from TRD §9.1 step 6 for a gist
+question — checks again, and then answers or abstains. Answer-first, so never
+more than one. The corrective pass is skipped only when the evidence is clearly
+absent, and that now needs the sufficiency and entity readings alone.
 """
 
 from __future__ import annotations
@@ -26,7 +33,6 @@ from graph.stages.checks import (
     _evidence_clearly_absent,
     _sufficient_question,
     named_entities,
-    relevance_decision_event,
 )
 from graph.stages.common import decision_event
 from graph.stages.rerank_stage import add_rerank_scores
@@ -35,13 +41,13 @@ from graph.stages.sanitize_stage import sanitize
 from graph.stages.state import AutoRunState, StageEnv
 from retrieval.expand import ExpandedContext, dedupe_adjacent, expand_context
 from retrieval.hybrid import ScoredChunk
-from retrieval.rerank import RERANK_TOP_N, JevRerank, RerankProvider
+from retrieval.rerank import RERANK_TOP_N, RerankProvider
 from schemas.decisions import Answer, Noul
 from schemas.events import Decision, Retrieval
 
 # Answer-first: one retrieve, and below the sufficient_abstain floor exactly
-# one rewrite + retry before abstaining. The retry loop clamps any admin
-# override to this.
+# one corrective retrieval before abstaining. The corrective loop clamps any
+# admin override to this.
 MAX_SUFFICIENT_RETRIES = 1
 
 
@@ -60,28 +66,19 @@ class Attempt:
     p_sufficient: float = 0.0
     abstain_threshold: float = 0.0
     sufficient_engine: Literal["jev", "fallback"] = "jev"
-    relevance_ok: bool = True
-    relevance_max: float | None = None
-    relevance_measured: bool = False
     entity_ok: bool = True
     entity_max: float | None = None
     entity_names: list[str] = field(default_factory=list)
 
     @property
     def enough(self) -> bool:
-        """One bar: every signal must clear."""
-        return (
-            self.p_sufficient >= self.abstain_threshold
-            and self.relevance_ok
-            and self.entity_ok
-        )
+        """One evidence check and one mismatch guard (ADR-006)."""
+        return self.p_sufficient >= self.abstain_threshold and self.entity_ok
 
     @property
     def clearly_absent(self) -> bool:
         return _evidence_clearly_absent(
             p_sufficient=self.p_sufficient,
-            relevance_max=self.relevance_max,
-            relevance_measured=self.relevance_measured,
             entity_max=self.entity_max,
             entity_measured=bool(self.entity_names),
             entity_ok=self.entity_ok,
@@ -157,7 +154,6 @@ async def _evaluate_attempt(
         # what survived, in their own call after the loop.
         batched_pairs=not sanitize_dropped,
     )
-    _apply_relevance_gate(env, state, loop, attempt)
     attempt.expanded = await expand_context(env.session, attempt.winners)
     top_for_check = attempt.expanded[
         : int(env.seams.runtime_value("retrieval.top_k", TOP_CHUNKS_FOR_SUFFICIENT))
@@ -185,49 +181,6 @@ async def _evaluate_attempt(
     )
     _read_answers(env, state, attempt, answers, entity_questions)
     return attempt
-
-
-def _apply_relevance_gate(
-    env: StageEnv, state: AutoRunState, loop: _Loop, attempt: Attempt
-) -> None:
-    """The second abstain signal, read off the rerank scores.
-
-    `sufficient` can't separate answerable from unanswerable evidence, but the
-    max rerank score of the post-sanitize winners can. Gated only on scores
-    JevRerank answered: NVIDIA/Cohere use other scales, and fused order's top
-    score is always 1.0. An outage (no passage got a real answer) skips the
-    gate so it can never abstain.
-    """
-    reranker = loop.reranker
-    if not isinstance(reranker, JevRerank):
-        return
-    relevance_engine = reranker.relevance_engine()
-    if relevance_engine is None:
-        return
-    scores = [c.rerank_score for c in attempt.winners if c.rerank_score is not None]
-    if not scores:
-        return
-    attempt.relevance_max = max(scores)
-    attempt.relevance_measured = True
-    relevance_threshold = threshold("rerank_abstain", relevance_engine)
-    attempt.relevance_ok = attempt.relevance_max >= relevance_threshold
-    # The gate measures question-to-passage *lexical overlap*, and "give me the
-    # gist of X" matches no single passage. For a gist question the overlap
-    # signal is not evidence of irrelevance, so the veto is waived and
-    # `sufficient` and the entity check decide alone.
-    exempt = state.ingress.intent == "summarize"
-    if exempt:
-        attempt.relevance_ok = True
-    state.decision_events.append(
-        relevance_decision_event(
-            str(env.params.run_id),
-            relevance_max=attempt.relevance_max,
-            engine=relevance_engine,
-            threshold_value=relevance_threshold,
-            scored=len(scores),
-            exempt=exempt,
-        )
-    )
 
 
 def _read_answers(
@@ -269,9 +222,8 @@ def _retry_skipped_event(env: StageEnv, attempt: Attempt) -> Decision:
         stage="sufficient",
         threshold=RETRY_SKIP_SUFFICIENT_MAX,
         reasoning=(
-            "sufficiency, relevance and the entity check were all far below "
-            f"their floors (relevance {attempt.relevance_max}); the rewrite + "
-            "retry would not change the outcome"
+            "sufficiency and the entity check were both far below their "
+            "floors; the corrective re-query would not change the outcome"
         ),
     )
 

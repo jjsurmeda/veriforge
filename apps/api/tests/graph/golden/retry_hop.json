@@ -392,7 +392,7 @@
      "fused_score": 1.0,
      "heading_path": "Section 0",
      "page": null,
-     "rerank_score": 0.1,
+     "rerank_score": 0.0,
      "source_type": "document",
      "vector_score": 1.0
     }
@@ -415,7 +415,7 @@
      "fused_score": 1.0,
      "heading_path": "Section 0",
      "page": null,
-     "rerank_score": 0.9,
+     "rerank_score": 1.0,
      "source_type": "document",
      "vector_score": 1.0
     }
@@ -424,38 +424,6 @@
    "query": "AW-2000 warranty length",
    "seq": 0,
    "type": "retrieval"
-  },
-  "kind": "event"
- },
- {
-  "event": {
-   "batch_size": null,
-   "engine": "jev",
-   "name": "relevance",
-   "probabilities": null,
-   "probability": null,
-   "reasoning": "max rerank score of the post-sanitize winners (1 scored passages)",
-   "seq": 0,
-   "stage": "rerank",
-   "threshold": 0.6,
-   "type": "decision",
-   "value": 0.1
-  },
-  "kind": "event"
- },
- {
-  "event": {
-   "batch_size": null,
-   "engine": "jev",
-   "name": "relevance",
-   "probabilities": null,
-   "probability": null,
-   "reasoning": "max rerank score of the post-sanitize winners (1 scored passages)",
-   "seq": 0,
-   "stage": "rerank",
-   "threshold": 0.6,
-   "type": "decision",
-   "value": 0.9
   },
   "kind": "event"
  },

@@ -8,10 +8,10 @@ list, not only against open known issues.
 | Chunking | Small chunks for search, larger parent for context (small-to-big), overlap | ✅ 300-token children, 45 overlap, 2000-token sections |
 | Retrieval | Hybrid BM25 + vector, fused (RRF), wide candidate pool | ✅ 50 + 50, fused 40 |
 | Query | Rewrite and variants; validate the rewrite is a query | ✅ `is_query_shape` gates the rewrite and every variant line; a `chitchat` turn that names nothing does not retrieve (KI-73) |
-| Rerank | Ask whether the passage **answers** the question, graded (off-topic / related / partly / fully), batched | ❌ plain "how relevant" 0–1 (phase 1e) |
+| Rerank | Ask whether the passage **answers** the question, graded (off-topic / related / partly / fully), batched | ✅ the answer-containment rubric, ranked by expected level (`retrieval/rerank.py`) |
 | Context order | Best passages at the start **and** end (lost in the middle) | ❌ rank order only |
 | Whole-document questions | Document or section summaries retrieved for gist questions (RAPTOR / summary index) | ❌ none; gist questions see only the passages that match |
 | Generator prompt | Sources first, question last, numbered citations; read all sources; combine stated facts; resolve conflicts (later explanation wins); per-intent instructions | ⚠️ layout ✅, rules guardrail-only, static (phase 1e) |
-| Abstention | One clear sufficiency signal; few independent vetoes | ⚠️ several model-judged vetoes in series (sufficiency, relevance, entity) |
+| Abstention | One clear sufficiency signal; few independent vetoes | ⚠️ one evidence check + the entity guard, and **the recorded runs say the check alone does not hold** — 12 confident wrong (KI-70) |
 | Verification | Post-hoc claim check against cited passages | ✅ reviewer |
 | Evaluation | Answer correctness and context recall on a labelled set, not only safety | ✅ content misses are a counted class, `MAX_CONTENT_MISSES = 1` (KI-75); context recall deferred to v1 |

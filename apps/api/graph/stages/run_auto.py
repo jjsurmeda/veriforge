@@ -117,12 +117,6 @@ def _publish_step(env: RunEnv) -> EventPublisher:
 async def _publish_trace(env: RunEnv, run: AutoRun) -> None:
     for event in run.retrieval_events:
         await env.bus.publish(env.run_id, event)
-    # The relevance gate's Decision is computed in prepare_auto_run, not by an
-    # engine.decide call, so the DecisionEngine emitter never fires for it —
-    # publish it here or the trace can't show why the run abstained.
-    for decision in run.decision_events:
-        if decision.name == "relevance":
-            await env.bus.publish(env.run_id, decision)
     if run.conflict_event is not None:
         await env.bus.publish(env.run_id, run.conflict_event)
     if run.abstain_event is not None:

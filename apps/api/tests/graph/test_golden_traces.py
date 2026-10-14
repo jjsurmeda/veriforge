@@ -166,6 +166,26 @@ def jev(value: Any, *, probability: float | None = 0.9) -> Answer:
     return Answer(engine="jev", latency_ms=1, value=value, probability=probability)
 
 
+def rubric(score: float) -> Answer:
+    """A rerank answer in the shape the rubric is answered (TRD §9.6): the
+    chosen answer-containment level plus the distribution over all four, which
+    is what the ranking reads. A scenario still writes `0.9` and gets the level
+    whose expected value is nearest, so the scenario table stays readable in
+    the units it was written in."""
+    from retrieval.rerank import ANSWER_LEVEL_VALUE, ANSWER_LEVELS
+
+    level = min(ANSWER_LEVELS, key=lambda name: abs(ANSWER_LEVEL_VALUE[name] - score))
+    probabilities = {name: 0.0 for name in ANSWER_LEVELS}
+    probabilities[level] = 1.0
+    return Answer(
+        engine="jev",
+        latency_ms=1,
+        value=level,
+        probability=1.0,
+        probabilities=probabilities,
+    )
+
+
 class ScriptedEngine:
     """A DecisionEngine that records every call and answers from a Script."""
 
@@ -266,7 +286,13 @@ class Scenario:
 
 
 _DEFAULT_SUFFICIENT: Any = jev(0.9)
-_DEFAULT_RERANK: Any = jev(0.9)
+_DEFAULT_RERANK: Any = 0.9
+
+
+def _last(rerank: Any) -> Any:
+    """The last answer of a sequence, or the answer itself. Rerank answers are
+    rubric-shaped, so a scenario passes the level it means as a 0-1 number."""
+    return rubric(rerank[-1] if isinstance(rerank, list) else rerank)
 _DEFAULT_SANITIZE: Any = jev(0.01)
 _DEFAULT_CONTROLLER: Any = jev("sufficient")
 _DEFAULT_PROSE_DECLINE: Any = jev(0.01)
@@ -291,7 +317,7 @@ def script(
     built = Script(
         by_question=ingress_script(intent, source=source),
         by_kind={
-            "rerank": rerank[-1] if isinstance(rerank, list) else rerank,
+            "rerank": _last(rerank),
             "sanitize": sanitize,
             "sufficient": sufficient[-1] if isinstance(sufficient, list) else sufficient,
             "conflict": conflict or jev(0.01),
@@ -302,7 +328,7 @@ def script(
     if isinstance(sufficient, list):
         built.sequences[("sufficient", "sufficient")] = list(sufficient)
     if isinstance(rerank, list):
-        built.sequences[("rerank", "passage_0")] = list(rerank)
+        built.sequences[("rerank", "passage_0")] = [rubric(value) for value in rerank]
     if entity is not None:
         for index in range(8):
             for side in range(8):
@@ -330,10 +356,12 @@ SCENARIOS: list[Scenario] = [
         question="Give me the gist of the AW-2000 warranty terms",
         script=script(
             intent="summarize",
-            # Below the rerank_abstain floor on purpose: a summarize question
-            # is exempt from the relevance veto (sufficiency decides alone).
+            # A gist question decided by the one evidence check. The relevance
+            # exemption KI-70 added is gone with the veto it applied to
+            # (ADR-006, R2a item 4): nothing about this scenario is special
+            # any more, which is the point of the change.
             sufficient=jev(0.4),
-            rerank=jev(0.3),
+            rerank=0.3,
         ),
     ),
     Scenario(
@@ -375,17 +403,13 @@ SCENARIOS: list[Scenario] = [
         mode="auto",
         question="Is the AW-2000 waterproof?",
         script=script(
-            # Both signals far below their floors, so the rewrite + retry is
-            # skipped as pointless and the run declines on the first attempt.
-            sufficient=jev(0.01),
-            rerank=jev(0.1),
+            # Below `RETRY_SKIP_SUFFICIENT_MAX` (0.005 — the bound sits under
+            # the lowest sufficiency the corrective retrieval has been
+            # recorded rescuing), so the correction is skipped as pointless and
+            # the run declines on the first attempt.
+            sufficient=jev(0.002),
+            rerank=0.1,
         ),
-    ),
-    Scenario(
-        name="decline_relevance",
-        mode="auto",
-        question="Is the AW-2000 waterproof?",
-        script=script(sufficient=jev(0.9), rerank=jev(0.1)),
     ),
     Scenario(
         name="decline_entity",
@@ -397,7 +421,15 @@ SCENARIOS: list[Scenario] = [
         name="retry_hop",
         mode="auto",
         question="Is the AW-2000 waterproof?",
-        script=script(sufficient=[jev(0.1), jev(0.9)], rerank=[jev(0.1), jev(0.9)]),
+        script=script(
+            # The first attempt is under the 0.05 evidence-check floor, so the
+            # corrective retrieval runs and asks again. It used to be the
+            # relevance veto (rerank 0.1 under 0.60) that failed this attempt;
+            # with the veto gone the sufficiency reading has to be the thing
+            # that does, which is the whole of ADR-006's corrective shape.
+            sufficient=[jev(0.03), jev(0.9)],
+            rerank=[0.1, 0.9],
+        ),
     ),
     Scenario(
         name="sanitizer_redaction",
