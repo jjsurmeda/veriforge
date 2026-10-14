@@ -73,7 +73,7 @@ async def assert_no_free_models(
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     # First thing, before any connection is opened: refuse to serve traffic we
-    # cannot fulfil. 's dev-log email transport passes every health check
+    # cannot fulfil. The dev-log email transport passes every health check
     # and silently breaks password recovery for every user, so it must not be
     # reachable in production at all.
     build_email_transport(settings)
@@ -93,7 +93,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.session_factory = session_factory
     app.state.bus = bus
     sweep = asyncio.create_task(runner.sweep_loop(bus, session_factory))
-    # Item 4: expired demo accounts and their chats, on the same in-process
+    # Expired demo accounts and their chats, on the same in-process
     # footing as the heartbeat sweeper (ADR-001 — no new service for this).
     demo_sweep = asyncio.create_task(sweep_demo_accounts(session_factory))
     await queue_app.open_async()

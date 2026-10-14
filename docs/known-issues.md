@@ -36,6 +36,16 @@ Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 
 # check-stable
 
+## CLOSED KI-15: `tests/chats/test_chats_runs.py` hangs when its tests run in sequence (fixed f821d09)
+
+Moved out of the open list: root cause found for the reproducible deadlock —
+an in-flight `execute_run` task stayed pending across `clean_db` and held
+an active transaction/session, racing `TRUNCATE`. Fix in `graph/runner.py`:
+`drain_background_tasks` now cancels and awaits `_active_tasks` (and
+`_shadow_tasks`) as well as the settle/judge tails. Commit f821d09.
+Guards added: per-test `faulthandler_timeout = 60` in pyproject,
+`SET lock_timeout = '5s'` before TRUNCATE.
+
 ## KI-15: `tests/chats/test_chats_runs.py` hangs when its tests run in sequence
 
 - **What:** running the file as a whole hangs indefinitely partway through;

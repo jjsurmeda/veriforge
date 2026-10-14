@@ -188,19 +188,53 @@ def reset_default_breaker() -> Iterator[None]:
     yield
 
 
+OPEN_WORK_SQL = text(
+    """
+    SELECT a.pid, a.state, left(a.query, 120) AS query
+    FROM pg_stat_activity a
+    WHERE a.datname = current_database()
+      AND a.pid <> pg_backend_pid()
+      AND a.backend_type = 'client backend'
+      AND (
+        a.state LIKE 'idle in transaction%'
+        OR EXISTS (
+          SELECT 1 FROM pg_locks l JOIN pg_class c ON c.oid = l.relation
+          WHERE l.pid = a.pid AND c.relnamespace = 'public'::regnamespace
+        )
+      )
+    """
+)
+
+
+async def assert_no_open_db_work(session: AsyncSession) -> None:
+    """Fail when another client session holds a transaction open or a lock on
+    an app table: either one blocks the next test's TRUNCATE. Autovacuum and
+    the RunBus LISTEN connection hold neither and pass."""
+    rows = (await session.execute(OPEN_WORK_SQL)).all()
+    if rows:
+        found = "; ".join(f"pid {r.pid} {r.state}: {r.query}" for r in rows)
+        pytest.fail(f"database work left open after the test: {found}", pytrace=False)
+
+
 @pytest.fixture(autouse=True)
 async def clean_db() -> AsyncIterator[None]:
-    # A finished run leaves the async judge and the usage settle pending on the
-    # session-scoped loop. TRUNCATE takes an exclusive lock on every table, so
-    # draining first keeps a leaked task from racing the next test.
+    # Every run task, shadow comparison and settle/judge tail is drained before
+    # the TRUNCATE, which takes an exclusive lock on every table. After the
+    # test, the same drain runs and any session still holding a transaction or
+    # a table lock fails *that* test by name, so a leak shows up in one run
+    # instead of as a later deadlock or hang.
     from graph.runner import drain_background_tasks
 
     await drain_background_tasks()
     factory = get_session_factory()
     async with factory() as session:
+        await session.execute(text("SET lock_timeout = '5s'"))
         await session.execute(text(f"TRUNCATE {ALL_TABLES} CASCADE"))
         await seed_base_rows(session)
     yield
+    await drain_background_tasks()
+    async with factory() as session:
+        await assert_no_open_db_work(session)
 
 
 @pytest.fixture
@@ -214,9 +248,20 @@ async def server() -> AsyncIterator[str]:
     """Real uvicorn on a socket — ASGITransport buffers SSE, sockets stream.
 
     Port 0, not a fixed one: two suites in two worktrees must not collide on
-    it (D5 review). The kernel picks a free port and we read it back off the
+    it. The kernel picks a free port and we read it back off the
     bound socket, so every session gets its own.
     """
+    # The periodic sweepers query the test database on their own clock and
+    # would race a test's TRUNCATE; tests call the sweep functions directly.
+    import main
+    from graph import runner
+
+    async def _no_sweep(*_args: object, **_kwargs: object) -> None:
+        await asyncio.Event().wait()
+
+    patches = pytest.MonkeyPatch()
+    patches.setattr(runner, "sweep_loop", _no_sweep)
+    patches.setattr(main, "sweep_demo_accounts", _no_sweep)
     config = uvicorn.Config(app, host="127.0.0.1", port=0, log_level="error")
     instance = uvicorn.Server(config)
     serve = asyncio.create_task(instance.serve())
@@ -234,6 +279,7 @@ async def server() -> AsyncIterator[str]:
     yield f"http://127.0.0.1:{port}"
     instance.should_exit = True
     await serve
+    patches.undo()
 
 
 @pytest.fixture

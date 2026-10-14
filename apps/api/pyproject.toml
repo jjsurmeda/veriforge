@@ -34,6 +34,7 @@ dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.25",
     "asgi-lifespan>=2.1",
+    "pytest-timeout>=2.4.0",
 ]
 
 [tool.uv]
@@ -94,3 +95,4 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
 testpaths = ["tests"]
+timeout = 120

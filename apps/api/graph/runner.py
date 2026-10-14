@@ -101,8 +101,28 @@ def _track_background(task: asyncio.Task[None]) -> asyncio.Task[None]:
 
 
 async def drain_background_tasks() -> None:
-    """Await every tracked per-run tail. Loops because a drained task can
-    register another one before it returns."""
+    """Drain every run still in flight or settling.
+
+    `_active_tasks` holds the main `execute_run` task for each started run;
+    leaving one running across a truncate (or at shutdown) is what pins a
+    connection or a transaction to the database. Cancel and await them here
+    along with the tracked settle/judge tails, looping because a cancelled
+    or finished run can register another task before it returns.
+    """
+    # Cancel the main run tasks first, then await them so their finally
+    # blocks (heartbeat, usage context, runtime context) can clean up.
+    for task in list(_active_tasks.values()):
+        if not task.done():
+            task.cancel()
+    if _active_tasks:
+        await asyncio.gather(*list(_active_tasks.values()), return_exceptions=True)
+    from decisions.engine import _shadow_tasks
+
+    for task in list(_shadow_tasks):
+        if not task.done():
+            task.cancel()
+    if _shadow_tasks:
+        await asyncio.gather(*list(_shadow_tasks), return_exceptions=True)
     while _background_tasks:
         await asyncio.gather(*list(_background_tasks), return_exceptions=True)
 
