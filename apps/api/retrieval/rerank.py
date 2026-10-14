@@ -14,11 +14,10 @@ import httpx
 
 from config import get_settings
 from decisions.engine import DecisionEngine, DecisionUnavailable
-from decisions.thresholds import Engine
 from retrieval.context import count_tokens
 from retrieval.hybrid import ScoredChunk
 from runtime import runtime_value
-from schemas.decisions import Question, Score
+from schemas.decisions import Answer, Choice, Question
 
 logger = logging.getLogger(__name__)
 
@@ -135,26 +134,103 @@ JEV_BATCH_TOKEN_BUDGET = 28_000
 _PASSAGE_CHARS = 2_000
 
 
-def _relevance_question(query: str, passage: str) -> Score:
-    return Score(
+# The answer-containment rubric (TRD §9.6, `docs/conventions/rag-reference.md`
+# "Rerank").
+#
+# The question this replaces asked how *relevant* a passage was and wanted a
+# 0-1 number. That is a lexical-overlap judgement wearing a confidence
+# costume, and KI-70 measured what it costs: on a gist question it scored the
+# correct passages 0.35-0.36 while the entity check scored the *same* passages
+# 0.95-0.97. A passage can be perfectly on-topic and still answer nothing —
+# that is the normal state of the third-best chunk in a fan-out — so a
+# relevance score is asked to carry a distinction it cannot see.
+#
+# The rubric asks the question the reranker is actually for: does this passage
+# CONTAIN the information needed to answer or verify. Four levels, in the
+# jev-rerank-bench order, graded as a `Choice` so the grader returns a
+# distribution over them rather than a bare label.
+ANSWER_LEVELS: tuple[str, ...] = (
+    "off-topic",
+    "related but does not answer the question",
+    "partly answers the question",
+    "fully answers the question",
+)
+# The value each level contributes to the passage's expected level, so a
+# graded distribution ranks by its mean rather than by its argmax. Index 0 is
+# off-topic and index 3 fully answers; the expectation is then divided by
+# (len-1) to land back in 0-1, which is the range `ScoredChunk.rerank_score`,
+# the citation row and the trace all already speak.
+ANSWER_LEVEL_VALUE: dict[str, float] = {
+    "off-topic": 0.0,
+    "related but does not answer the question": 1 / 3,
+    "partly answers the question": 2 / 3,
+    "fully answers the question": 1.0,
+}
+
+
+def answer_containment_question(query: str, passage: str) -> Choice:
+    """The TRD §9.6 rerank question, graded on the four answer levels."""
+    return Choice(
         prompt=(
-            "How relevant is this passage to the question? Answer 0 for "
-            "irrelevant and 1 for directly on point.\n\n"
+            "Does the passage contain the information needed to answer or "
+            "verify the question?\n\n"
             f"[Question]\n{query}\n\n[Passage]\n{passage}"
         ),
-        min=0.0,
-        max=1.0,
+        options=list(ANSWER_LEVELS),
+        criteria=(
+            "Choose the highest level the passage reaches. A passage is "
+            "'off-topic' if it is about something else; 'related but does not "
+            "answer' if it is on the subject but states none of the "
+            "information the question asks for; 'partly answers' if it "
+            "contains some of what is needed; 'fully answers' if the question "
+            "can be answered from it alone."
+        ),
     )
+
+
+def answer_containment_score(answer: Answer | None) -> float:
+    """A passage's score under the rubric: its EXPECTED level, normalised to
+    0-1.
+
+    Ranked by the expectation rather than by the chosen label because the
+    grader returns a distribution: a passage graded 60/40 across "partly" and
+    "fully" is more useful evidence than one graded 51/49 the other way, and
+    the argmax throws that away into a tie. The same distribution is why this
+    is a mean and not a count of levels.
+
+    Degrades to the chosen level's own value when no distribution came back
+    (the LLM fallback engine, or a grader that answered with a bare label), and
+    to 0.0 when nothing came back at all — the run must not fail on one
+    unanswered passage, which is the contract `JevRerank` has always had.
+    """
+    if answer is None:
+        return 0.0
+    probabilities = answer.probabilities or {}
+    if probabilities:
+        expected = sum(
+            ANSWER_LEVEL_VALUE.get(level, 0.0) * probability
+            for level, probability in probabilities.items()
+        )
+        total = sum(probabilities.values())
+        if total > 0:
+            return min(max(expected / total, 0.0), 1.0)
+    return ANSWER_LEVEL_VALUE.get(str(answer.value), 0.0)
 
 
 def batch_passages(query: str, documents: list[str]) -> list[list[int]]:
     """Split passages into batches whose question text fits one Jev call
-    (<28K tokens). Returns the document indices per batch."""
+    (<28K tokens). Returns the document indices per batch.
+
+    Measured against the question that is actually sent, so the budget cannot
+    drift from the prompt if the rubric is reworded.
+    """
     batches: list[list[int]] = []
     current: list[int] = []
     current_tokens = 0
     for i, document in enumerate(documents):
-        tokens = count_tokens(_relevance_question(query, document[:_PASSAGE_CHARS]).prompt)
+        tokens = count_tokens(
+            answer_containment_question(query, document[:_PASSAGE_CHARS]).prompt
+        )
         if current and current_tokens + tokens > JEV_BATCH_TOKEN_BUDGET:
             batches.append(current)
             current, current_tokens = [], 0
@@ -166,7 +242,8 @@ def batch_passages(query: str, documents: list[str]) -> list[list[int]]:
 
 
 class JevRerank:
-    """Rerank by asking Jev one batched `Score` per candidate passage.
+    """Rerank by asking Jev one batched answer-containment question per
+    candidate passage, graded on the four levels in `ANSWER_LEVELS` (TRD §9.6).
 
     Goes through DecisionEngine like every other decision (CLAUDE.md), so it
     inherits the breaker and the LLM fallback. A passage Jev fails to answer
@@ -177,27 +254,18 @@ class JevRerank:
     def __init__(self, engine: DecisionEngine, run_id: str) -> None:
         self._engine = engine
         self._run_id = run_id
-        # Which engines actually answered (D2 item 4): the relevance
-        # gate keys its threshold by this, and an outage (no passage got a
-        # real answer) must skip the gate rather than abstain. Accumulated
-        # across batches, so a breaker trip mid-run is visible.
+        # Which engines actually answered. Not a gate any more — the relevance
+        # floor that keyed off it is gone (ADR-006, R2a item 4) — but it is how
+        # the trace and the ops log report that a reranker outage degraded the
+        # order to fused order without failing the run, which is the difference
+        # between a degraded run and a mystery.
         self.answered_by: set[str] = set()
-
-    def relevance_engine(self) -> Engine | None:
-        """The engine the relevance gate should key by: "jev" if any passage
-        was Jev-answered (Jev is the reference scale), else "fallback", else
-        None when no passage got a real answer (skip the gate)."""
-        if "jev" in self.answered_by:
-            return "jev"
-        if self.answered_by:
-            return "fallback"
-        return None
 
     async def rerank(self, *, query: str, documents: list[str], top_n: int) -> RerankResult:
         pairs: list[tuple[int, float]] = []
         for batch in batch_passages(query, documents):
             questions: dict[str, Question] = {
-                f"passage_{i}": _relevance_question(query, documents[i][:_PASSAGE_CHARS])
+                f"passage_{i}": answer_containment_question(query, documents[i][:_PASSAGE_CHARS])
                 for i in batch
             }
             answers = await self._engine.decide(
@@ -207,11 +275,11 @@ class JevRerank:
                 answer = answers.get(f"passage_{i}")
                 if answer is not None:
                     self.answered_by.add(answer.engine)
-                try:
-                    score = float(answer.value) if answer is not None else 0.0
-                except (TypeError, ValueError):
-                    score = 0.0
-                pairs.append((i, min(max(score, 0.0), 1.0)))
+                pairs.append((i, answer_containment_score(answer)))
+        # Ranked by expected level, not by argmax (see ANSWER_LEVELS). Ties are
+        # broken by the fused order the chunks arrived in, which `sort` already
+        # gives us: `pairs` is built in document order and Python's sort is
+        # stable.
         pairs.sort(key=lambda pair: pair[1], reverse=True)
         return pairs[:top_n]
 
