@@ -7,7 +7,7 @@ list, not only against open known issues.
 | --- | --- | --- |
 | Chunking | Small chunks for search, larger parent for context (small-to-big), overlap | ✅ 300-token children, 45 overlap, 2000-token sections |
 | Retrieval | Hybrid BM25 + vector, fused (RRF), wide candidate pool | ✅ 50 + 50, fused 40 |
-| Query | Rewrite and variants; validate the rewrite is a query | ⚠️ rewrite not validated (KI-73) |
+| Query | Rewrite and variants; validate the rewrite is a query | ✅ `is_query_shape` gates the rewrite and every variant line; a `chitchat` turn that names nothing does not retrieve (KI-73) |
 | Rerank | Ask whether the passage **answers** the question, graded (off-topic / related / partly / fully), batched | ❌ plain "how relevant" 0–1 (phase 1e) |
 | Context order | Best passages at the start **and** end (lost in the middle) | ❌ rank order only |
 | Whole-document questions | Document or section summaries retrieved for gist questions (RAPTOR / summary index) | ❌ none; gist questions see only the passages that match |

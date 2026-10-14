@@ -1823,3 +1823,243 @@ async def test_thanks_after_an_answer_does_not_retrieve(
     assert no_llm["retrieval"] == []
     assert run.chitchat is True
     assert "Greeting fast path: skipped ingress" in run.latency_ms
+
+
+# --- KI-73: "thanks" must not retrieve on the rewriter's prose ---------------
+#
+# Both layers, in the order they are read in the run. The recorded failure had
+# ingress classify the turn `chitchat` correctly, `named_entities` return `[]`
+# so the entity guard was skipped, and the *rewriter* answer the instruction
+# instead of following it — "I understand. You're correct—there is no question
+# to rewrite in your message." That prose became retrieval query #1 and every
+# variant beside it, the nonsense retrieval cleared sufficiency, and the turn
+# answered with eight citations instead of taking the chitchat reply.
+#
+# The two layers are independent and both are needed: the rewrite contract is
+# the root fix and covers any future phrasing, the `names_a_subject` gate stops
+# the fan-out for a message that has nothing to look up.
+
+
+def test_names_a_subject_reads_the_recorded_turns_the_right_way_round() -> None:
+    """The recorded strings, verbatim. `broad-sherlock` is the reason this is
+    not `named_entities` on its own: the item is lowercased throughout
+    ("the adventures of sherlock holmes"), so a capitalisation heuristic
+    alone would stop it retrieving and turn a cited answer into the uncited
+    reply this product does not ship."""
+    from graph.stages.ingress_stage import names_a_subject
+
+    # content questions: retrieve, whatever their casing
+    assert names_a_subject("tell me something about the adventures of sherlock holmes")
+    assert names_a_subject("¿Cómo se llama el caballo de Don Quijote?")
+    assert names_a_subject("tell me something about the AW-2000 blade warranty")
+    assert names_a_subject("tell me something about the moon")
+    # acknowledgements: do not. The first is the failing item verbatim.
+    assert not names_a_subject("thanks, that's helpful!")
+    assert not names_a_subject("thanks, that's helpful")
+    assert not names_a_subject("awesome, thanks so much for that")
+    assert not names_a_subject("much appreciated")
+    assert not names_a_subject("cheers, all the best to you")
+
+
+def test_names_a_subject_agrees_with_the_greeting_allowlist() -> None:
+    """Every phrase the fast path short-circuits is also a message the
+    chitchat gate declines. They are reached by different code paths, and a
+    disagreement between the two lists would be a trap for the next reader."""
+    from graph.stages.ingress_stage import GREETING_ALLOWLIST, names_a_subject
+
+    assert GREETING_ALLOWLIST
+    for phrase in GREETING_ALLOWLIST:
+        assert not names_a_subject(phrase), phrase
+
+
+def test_the_rewriter_contract_is_about_shape_not_phrasings() -> None:
+    """KI-73's output contract. A reply that asks is a query however long it
+    is — the follow-up path depends on long rewrites being kept — and a reply
+    that never asks is a query only while it stays in one sentence. The
+    recorded failure's prose has three sentence terminators and no "?"."""
+    from graph.rewrite import is_query_shape
+
+    # queries
+    assert is_query_shape("What is the name of Don Quixote's horse?")
+    assert is_query_shape("What is Rocinante? And who rides him?")
+    assert is_query_shape("Rocinante Don Quixote horse")
+    assert is_query_shape("the bandage manufacturer in the AW-2000 manual")
+    # prose that answered the instruction instead of following it — both are
+    # verbatim from the recorded run's `retrieve:` lines.
+    assert not is_query_shape(
+        "I understand. You're correct—there is no question to rewrite in your "
+        "message. I'm ready to help when you provide:"
+    )
+    assert not is_query_shape(
+        "I appreciate the message, but there's no actual question to rewrite here. "
+        "The user's statement \"thanks, that's helpful!\" is simply an acknow..."
+    )
+    assert not is_query_shape("")
+    assert not is_query_shape("   ")
+
+
+def test_a_single_unmarked_clause_is_read_as_a_query_and_that_is_deliberate() -> None:
+    """The honest edge of a structural check. One declarative sentence with no
+    "?" is genuinely ambiguous — "Rocinante Don Quixote horse" is a keyword
+    query and "I appreciate the message" is prose — and no shape test can tell
+    them apart without becoming the phrase list the contract exists to avoid.
+
+    Reading it as a query is the safe direction: a nonsense query retrieves
+    nothing and the sufficiency check abstains, while prose read as a query is
+    exactly the KI-73 failure. The recorded failure had *three* sentences, so
+    it is caught, and the two-way cost above says this is where the line goes.
+    """
+    from graph.rewrite import is_query_shape
+
+    assert is_query_shape("I appreciate the message")
+    assert is_query_shape("A conversation context")
+    assert is_query_shape("Rocinante Don Quixote horse")
+
+
+async def test_thanks_with_sources_in_scope_retrieves_nothing_and_cites_nothing(
+    db: AsyncSession, user_a: User, no_llm: dict[str, list[str]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The failing item, verbatim, with sources in scope. `smalltalk-thanks` is
+    "thanks, that's helpful!" — off the greeting allowlist (it is five words),
+    so ingress runs, and on the recorded run the turn then retrieved and
+    answered with 8 citations. Now: no retrieval, no contexts, the plain
+    small-talk reply, and the RAW message to the generator."""
+    streamed: list[str] = []
+
+    async def fake_chitchat(**kwargs: Any) -> AsyncIterator[str]:
+        streamed.append(str(kwargs["message"]))
+        yield "You're welcome!"  # pragma: no cover
+
+    monkeypatch.setattr(auto_module, "stream_chitchat_reply", fake_chitchat)
+    params = await _gate_params(db, user_a, no_llm, monkeypatch)
+    question = "thanks, that's helpful!"
+    run = await prepare_auto_run(
+        get_session_factory(),
+        AutoRunInput(**{**params.__dict__, "question": question}),
+        DecisionEngine(jev=_RelevanceJev("chitchat", 0.61, 0.97), mode="jev_only"),
+    )
+
+    assert run.ingress.intent == "chitchat"
+    assert no_llm["retrieval"] == [], "a message that names nothing must not pay for the fan-out"
+    assert run.chitchat is True
+    assert run.contexts == []
+    assert run.kept_chunks == []
+    assert run.abstain_event is None
+    tokens = [token async for token in run.stream_answer()]
+    assert tokens == ["You're welcome!"]
+    assert streamed == [question], "the raw message, never the rewriter's prose"
+
+
+async def _recorded_chitchat_content_run(
+    db: AsyncSession,
+    user_a: User,
+    no_llm: dict[str, list[str]],
+    monkeypatch: pytest.MonkeyPatch,
+    question: str,
+) -> AutoRun:
+    """A `chitchat`-routed run over evidence that clears the floors, seeded
+    fresh per call — one seed per run, because two runs on one assistant
+    message collide on `citations_message_id_n_key`."""
+    params = await _gate_params(db, user_a, no_llm, monkeypatch)
+    return await prepare_auto_run(
+        get_session_factory(),
+        dc_replace(params, question=question),
+        DecisionEngine(jev=_RelevanceJev("chitchat", 0.61, 0.97), mode="jev_only"),
+    )
+
+
+async def test_broad_sherlock_still_retrieves_and_cites_through_the_new_gate(
+    db: AsyncSession, user_a: User, no_llm: dict[str, list[str]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The regression the gate could have caused, and the reason
+    `names_a_subject` is not `named_entities` alone. This is `broad-sherlock`
+    verbatim: ingress routes it `chitchat` (it did in KI-71's recorded run),
+    and it is lowercased throughout, so a capitalisation-only test would have
+    stopped it retrieving and produced exactly the uncited reply KI-71's fix
+    exists to prevent.
+
+    The sufficiency and passage scores are the recorded ones — 0.61 and 0.97 —
+    so the evidence clears the floors and the run answers from it."""
+    run = await _recorded_chitchat_content_run(
+        db, user_a, no_llm, monkeypatch, "tell me something about the adventures of sherlock holmes"
+    )
+
+    assert run.ingress.intent == "chitchat"
+    assert no_llm["retrieval"], "the chitchat route retrieved nothing"
+    assert run.chitchat is False
+    assert run.abstain_event is None
+    assert run.contexts, "answered with no evidence behind it"
+
+
+async def test_ml_es_rocinante_still_retrieves_and_cites_through_the_new_gate(
+    db: AsyncSession, user_a: User, no_llm: dict[str, list[str]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The second recorded turn, and the other branch of `names_a_subject`: a
+    capitalised proper name inside a non-English question. KI-71 recorded this
+    one routing `chitchat` in one run and `lookup` in the next; either way it
+    has to retrieve and cite."""
+    run = await _recorded_chitchat_content_run(
+        db, user_a, no_llm, monkeypatch, "¿Cómo se llama el caballo de Don Quijote?"
+    )
+
+    assert run.ingress.intent == "chitchat"
+    assert no_llm["retrieval"], "the chitchat route retrieved nothing"
+    assert run.chitchat is False
+    assert run.abstain_event is None
+    assert run.contexts, "answered with no evidence behind it"
+
+
+async def test_a_rewriter_that_answers_the_instruction_falls_back_to_the_message(
+    db: AsyncSession, user_a: User, no_llm: dict[str, list[str]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The root fix, on its own, without the chitchat gate in the way.
+
+    This turn routes `lookup`, so the gate above never applies and the run
+    goes straight to retrieval — and the rewriter, seeing a follow-up with no
+    question in it, replies with prose. The retrieval queries must be built
+    from the user's own message, not from that prose."""
+    from graph.rewrite import rewrite_query
+
+    prose = (
+        "I understand. You're correct—there is no question to rewrite in your "
+        "message. I'm ready to help when you provide:"
+    )
+
+    async def fake_complete(**kwargs: Any) -> str:
+        return prose
+
+    monkeypatch.setattr(auto_module, "complete", fake_complete)
+    rewritten = await rewrite_query(
+        question="thanks, that's helpful!",
+        history=[("user", "what is rocinante"), ("assistant", "Don Quixote's horse")],
+        summary=None,
+        small_model="openrouter/some-small-model",
+        complete_fn=fake_complete,
+    )
+
+    assert rewritten == "thanks, that's helpful!", "the prose was used as the query"
+    assert prose not in rewritten
+
+
+async def test_retrieval_uses_the_original_message_when_the_rewrite_is_prose(
+    db: AsyncSession, user_a: User, no_llm: dict[str, list[str]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The same thing through the whole run, so the fallback is proved where it
+    is consumed. A `lookup` turn whose history makes the rewriter answer with
+    prose: the recorded queries must be built from the user's message."""
+    async def fake_complete(**kwargs: Any) -> str:
+        return "I understand. There's no question to rewrite in your message."
+
+    monkeypatch.setattr(auto_module, "complete", fake_complete)
+    params = await _gate_params(db, user_a, no_llm, monkeypatch)
+    chat = await db.get(Chat, params.chat_id)
+    assert chat is not None
+    run = await prepare_auto_run(
+        get_session_factory(),
+        AutoRunInput(**{**params.__dict__, "question": "what is the AW-2000 blade warranty"}),
+        DecisionEngine(jev=_RelevanceJev("lookup", 0.61, 0.97), mode="jev_only"),
+    )
+
+    assert run.rewritten == "what is the AW-2000 blade warranty"
+    assert no_llm["retrieval"], "nothing was retrieved"
+    assert not any("no question to rewrite" in query for query in no_llm["retrieval"])

@@ -17,7 +17,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from graph.ingress import IngressOutcome
-from graph.rewrite import CompleteFn
+from graph.rewrite import CompleteFn, is_query_shape
 from graph.stages.state import AutoRunInput, AutoRunState, StageEnv
 from retrieval.cache import get_query_embeddings
 from retrieval.filters import Ownership
@@ -195,7 +195,12 @@ async def _generate_query_variants(
     variants = [question] if instruction is None else []
     for line in response.strip().splitlines():
         line = line.strip().lstrip("0123456789.-) ")
-        if line and line not in variants:
+        # Every line of a rewriter reply is rewriter output, so the rewrite's
+        # output contract (graph/rewrite.is_query_shape) applies to each of
+        # them. KI-73's run put TWO prose replies into the retrieval set from
+        # this parser, not one from `rewrite_query` alone, so checking only the
+        # rewrite would have left the recorded failure half-open.
+        if line and is_query_shape(line) and line not in variants:
             variants.append(line)
         if len(variants) >= n:
             break

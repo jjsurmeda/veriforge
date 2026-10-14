@@ -444,6 +444,66 @@ is pass/fail in full, not a rate, so one item is the whole verdict.
 - **Done when:** a message containing no question never produces an
   `answer`-class reply with citations, and `smalltalk-thanks` passes.
 
+- **FIXED (2026-10-14, phase R2a item 2).** Both layers, root first. The
+  greeting allowlist is untouched (CLAUDE.md's one exception).
+
+  **Layer 1 — the rewriter's output contract.** `graph/rewrite.py` gains
+  `is_query_shape`: a reply that asks a question is a query however long it is
+  ("What is Rocinante? And who rides him?" is a two-sentence multi-part query,
+  and the follow-up path depends on long rewrites being kept); a reply that
+  never asks is a query only while it stays inside one sentence. Two sentence
+  terminators with no `?` means the model opened a *reply*, so it is dropped
+  and the run uses the user's own message. This is a test of the reply's
+  shape, not a list of phrasings.
+
+  **The variants parser needed it too, and that is the part this entry did
+  not guess.** KI-73's recorded run put **two** prose replies into the
+  retrieval set, both from `_generate_query_variants`
+  (`graph/stages/retrieve_stage.py`), not one from `rewrite_query`. Checking
+  only the rewrite would have left the recorded failure half-open. Every
+  parsed variant line now goes through the same check.
+
+  **Layer 2 — a `chitchat` routing that names nothing does not retrieve.**
+  `graph/stages/ingress_stage.py` gains `names_a_subject`. The brief specifies
+  `named_entities(message)` non-empty, and on its own that is **wrong**, with
+  the recorded item as the counter-example: `broad-sherlock` is *"tell me
+  something about the adventures of sherlock holmes"*, lowercased throughout,
+  so a capitalisation heuristic returns `[]`, the run skips retrieval, and
+  KI-71's cited answer becomes the uncited reply this product does not ship.
+  `names_a_subject` is therefore `named_entities(message)` **or** a trailing
+  non-stop word — a trailing lowercase noun phrase, which is what a lowercase
+  proper name looks like.
+
+  The bar is one word and not two, because the two failure directions are not
+  symmetric: saying "no" to a content question is an uncited answer and an
+  acceptance-gate failure (KI-75 now counts it), while saying "yes" to a social
+  turn costs one wasted fan-out and sufficiency still sends the run to the
+  same small-talk reply. The stop list is a list of function, question and
+  social **words** — it delimits the trailing noun phrase, and it is not the
+  greeting allowlist. It does contain every `GREETING_ALLOWLIST` phrase, and a
+  test asserts the two agree: they are reached by different code paths and a
+  disagreement would be a trap for the next reader.
+
+  **The honest edge, stated because it is a judgement and not a proof.** One
+  declarative sentence with no `?` passes: "I appreciate the message" is prose
+  and "Rocinante Don Quixote horse" is a keyword query, and no shape test
+  separates them without becoming the phrase list the contract exists to
+  avoid. Reading it as a query is the safe direction (a nonsense query
+  retrieves nothing; prose read as a query is this bug). The recorded failure
+  had three sentences and is caught.
+
+  **Tests** (`tests/graph/test_chitchat.py`, fakes throughout, no provider
+  call): the recorded strings read the right way round by
+  `names_a_subject`; the stop list and `GREETING_ALLOWLIST` agree; the
+  `is_query_shape` contract on both recorded prose replies and on both query
+  shapes; the one-sentence edge pinned as deliberate; `"thanks, that's
+  helpful!"` **with sources in scope** retrieves nothing, cites nothing and
+  streams the plain reply with the raw message; `broad-sherlock` and
+  `ml-es-rocinante` still retrieve and answer from evidence; a prose rewrite
+  is discarded for the original message, both as a unit and through a whole
+  run whose recorded queries carry no prose. 47 in the file, 1341 in the
+  suite.
+
 # post-beta
 
 ## KI-8: Six Playwright specs drive live LLM runs
