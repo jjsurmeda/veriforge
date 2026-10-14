@@ -43,11 +43,11 @@ def test_decision_event_accepts_optional_call_context() -> None:
     assert event.batch_size == 9
     assert event.threshold == 0.85
 
-    legacy = Decision(name="intent", value="lookup", engine="fallback", latency_ms=8)
-    assert legacy.stage is None
-    assert legacy.call_id is None
-    assert legacy.batch_size is None
-    assert legacy.threshold is None
+    bare = Decision(name="intent", value="lookup", engine="fallback", latency_ms=8)
+    assert bare.stage is None
+    assert bare.call_id is None
+    assert bare.batch_size is None
+    assert bare.threshold is None
 
 
 async def test_publish_then_replay_from_zero(db: AsyncSession, bus: PostgresRunBus) -> None:

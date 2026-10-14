@@ -1,8 +1,7 @@
 # RAG reference checklist
 
 Every design review and every quality brief checks the pipeline against this
-list, not only against open known issues. Added 2026-10-13 after reviews
-missed a plain-relevance rerank prompt and a one-size generator prompt.
+list, not only against open known issues.
 
 | Stage | Proven practice | Veriforge (2026-10-13) |
 | --- | --- | --- |
@@ -15,4 +14,4 @@ missed a plain-relevance rerank prompt and a one-size generator prompt.
 | Generator prompt | Sources first, question last, numbered citations; read all sources; combine stated facts; resolve conflicts (later explanation wins); per-intent instructions | ⚠️ layout ✅, rules guardrail-only, static (phase 1e) |
 | Abstention | One clear sufficiency signal; few independent vetoes | ⚠️ several model-judged vetoes in series (sufficiency, relevance, entity) |
 | Verification | Post-hoc claim check against cited passages | ✅ reviewer |
-| Evaluation | Answer correctness and context recall on a labelled set, not only safety | ⚠️ content check added phase 1e; context recall deferred |
+| Evaluation | Answer correctness and context recall on a labelled set, not only safety | ⚠️ content check planned in R2; context recall deferred |

@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, func, or_, select
+from sqlalchemy import ColumnElement, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import Chunk, Collection, Document, Section, User
@@ -9,19 +9,6 @@ from db.models import Chunk, Collection, Document, Section, User
 
 def _visible_to(user: User) -> ColumnElement[bool]:
     return or_(Collection.owner_id == user.id, Collection.visibility == "shared")
-
-
-async def visible_collections(
-    session: AsyncSession, user: User
-) -> Sequence[tuple[Collection, int]]:
-    rows = await session.execute(
-        select(Collection, func.count(Document.id))
-        .outerjoin(Document, Document.collection_id == Collection.id)
-        .where(Collection.kind == "library", _visible_to(user))
-        .group_by(Collection.id)
-        .order_by(Collection.created_at.desc())
-    )
-    return [(collection, count) for collection, count in rows.all()]
 
 
 async def get_visible_collection(

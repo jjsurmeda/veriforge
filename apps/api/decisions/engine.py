@@ -94,9 +94,6 @@ class DecisionEngine:
     def mode(self) -> EngineMode:
         return self._mode
 
-    def set_mode(self, mode: EngineMode) -> None:
-        self._mode = mode
-
     def configure(self, settings: RuntimeSettings) -> None:
         mode = settings.get("decision_engine_mode", "auto")
         if mode in {"auto", "jev_only", "fallback_only"}:

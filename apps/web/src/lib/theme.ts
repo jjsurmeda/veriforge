@@ -1,6 +1,6 @@
 export type Theme = 'light' | 'dark' | 'system'
 
-export const THEME_STORAGE_KEY = 'veriforge-theme'
+const THEME_STORAGE_KEY = 'veriforge-theme'
 
 function systemTheme(): 'light' | 'dark' {
   return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'

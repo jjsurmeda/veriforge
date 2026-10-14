@@ -27,47 +27,6 @@ class FallbackError(Exception):
     """The fallback LLM returned unparseable or out-of-schema output."""
 
 
-def _schema_for(questions: dict[str, Question]) -> dict[str, Any]:
-    properties: dict[str, Any] = {}
-    for name, q in questions.items():
-        if isinstance(q, Noul):
-            properties[name] = {
-                "type": "object",
-                "properties": {
-                    "probability": {"type": "number", "minimum": 0, "maximum": 1},
-                    "reasoning": {"type": "string"},
-                },
-                "required": ["probability"],
-            }
-        elif isinstance(q, Choice):
-            properties[name] = {
-                "type": "object",
-                "properties": {
-                    "probabilities": {
-                        "type": "object",
-                        "properties": {opt: {"type": "number"} for opt in q.options},
-                        "required": list(q.options),
-                    },
-                    "reasoning": {"type": "string"},
-                },
-                "required": ["probabilities"],
-            }
-        elif isinstance(q, Score):
-            properties[name] = {
-                "type": "object",
-                "properties": {
-                    "value": {"type": "number", "minimum": q.min, "maximum": q.max},
-                    "reasoning": {"type": "string"},
-                },
-                "required": ["value"],
-            }
-    return {
-        "type": "object",
-        "properties": properties,
-        "required": list(questions.keys()),
-    }
-
-
 def _render_prompt(state: str, questions: dict[str, Question]) -> str:
     lines = [
         "You are a structured decision engine. Answer every question below "

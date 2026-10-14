@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
 
-export const TEST_PASSWORD = 'VeriforgeE2E-password-42!'
+const TEST_PASSWORD = 'VeriforgeE2E-password-42!'
 
 export interface TestUser {
   email: string
@@ -16,7 +16,7 @@ export function makeTestUser(domain = process.env.VERIFORGE_TEST_EMAIL_DOMAIN ??
 }
 
 export const repoRoot = path.resolve(process.cwd(), '..', '..')
-export const docentUploadRoot =
+const docentUploadRoot =
   process.env.DOCENT_UPLOAD_ROOT ?? path.resolve(repoRoot, '..', 'docent', 'data', 'local-uploads')
 
 export const docentFixtures = {

@@ -12,7 +12,7 @@ export function setAccessToken(token: string | null): void {
   accessToken = token
 }
 
-export async function refreshSession(): Promise<boolean> {
+async function refreshSession(): Promise<boolean> {
   if (refreshFlight) return refreshFlight
   refreshFlight = (async () => {
     try {

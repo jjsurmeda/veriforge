@@ -232,16 +232,13 @@ class TestIngestSignal:
 
 class TestHealthz:
     @pytest.mark.asyncio
-    async def test_old_shape_still_present_and_values_unchanged(self, breaker_closed: Any) -> None:
-        body = await healthz_body()
-        assert {key: body[key] for key in ("status", "db")} == {"status": "ok", "db": "ok"}
-
-    @pytest.mark.asyncio
-    async def test_new_fields_present(self, breaker_closed: Any) -> None:
+    async def test_body_reports_status_db_breaker_jev_and_heartbeat(
+        self, breaker_closed: Any
+    ) -> None:
         body = await healthz_body()
         assert set(body) >= {"status", "db", "breaker", "jev", "worker_heartbeat_age_s"}
-        assert body["breaker"] == "closed"
-        assert body["jev"] == "ok"
+        summary = (body["status"], body["db"], body["breaker"], body["jev"])
+        assert summary == ("ok", "ok", "closed", "ok")
 
     @pytest.mark.asyncio
     async def test_jev_degraded_when_breaker_open(self, breaker_open: Any) -> None:
@@ -257,16 +254,6 @@ class TestHealthz:
     async def test_heartbeat_age_is_none_or_a_number(self, breaker_closed: Any) -> None:
         value = (await healthz_body())["worker_heartbeat_age_s"]
         assert value is None or isinstance(value, (int, float))
-
-    @pytest.mark.asyncio
-    async def test_a_body_without_the_new_fields_would_still_pass_the_old_check(
-        self, breaker_closed: Any
-    ) -> None:
-        # The old check keyed on `{"status": "ok", "db": "ok"}`. Both keys
-        # keep their values whatever else the body grows — this is that
-        # assertion, kept as a statement about the contract.
-        body = await healthz_body()
-        assert body["status"] == "ok" and body["db"] == "ok"
 
     @pytest.mark.asyncio
     async def test_heartbeat_age_is_a_real_number_against_a_real_session(

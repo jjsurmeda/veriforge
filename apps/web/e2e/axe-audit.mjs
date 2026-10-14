@@ -1,5 +1,5 @@
 /**
- * The accessibility audit for lane E item 6: axe over the main screens, in
+^ * The accessibility audit: axe over the main screens, in
  * both themes, reporting the real violation count.
  *
  * Run against a running stack:

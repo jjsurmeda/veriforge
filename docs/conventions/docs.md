@@ -34,6 +34,6 @@ code and commit messages. **No prefix:**
 - `docs/adr/ADR-NNN.md`: ADRs use their own numbering, and the date lives
   in each ADR's status line
 
-A living document records dates *inside* it, in dated notes or amendment
-markers (for example the TRD's `*(amended 2026-09-28, batch A)*`), not
-in its filename.
+A living document states the current design only: no amendment markers,
+dated change notes or superseded alternatives. History lives in git and in
+the local `docs/history/`.

@@ -12,7 +12,7 @@ export interface DeclineReason {
 /** The nouns a decline names: the thing the question asked about, and the
  *  thing the sources turned out to be about. Present on the retrieval event
  *  either way, so a decline that had nothing to retrieve still reads right. */
-export interface DeclineNouns {
+interface DeclineNouns {
   entity?: string
   passage?: string
 }

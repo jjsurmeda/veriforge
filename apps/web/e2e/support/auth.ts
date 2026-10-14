@@ -47,7 +47,7 @@ export async function openNavigation(page: Page): Promise<void> {
   await expect(sidebar(page)).toBeVisible()
 }
 
-export async function closeNavigation(page: Page): Promise<void> {
+async function closeNavigation(page: Page): Promise<void> {
   const close = page.getByRole('button', { name: 'Close navigation' })
   if (!(await close.isVisible().catch(() => false))) return
   await close.click()

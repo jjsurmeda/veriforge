@@ -44,10 +44,6 @@ INVALID_INVITE_CODE = "invite_invalid"
 INVALID_INVITE_MESSAGE = "This invite code is not valid"
 
 
-class InviteRequired(AppError):
-    status_code = 400
-
-
 class InviteInvalid(AppError):
     status_code = 400
 

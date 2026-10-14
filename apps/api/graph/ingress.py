@@ -11,7 +11,6 @@ stays warn-only — TRD §11: "PII in the user's own documents is not
 blocked", and redacting the question would corrupt retrieval.
 """
 
-import asyncio
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Literal
@@ -248,18 +247,3 @@ async def run_ingress(
     )
     return interpret_answers(answers)
 
-
-async def run_ingress_and_rewrite(
-    engine: DecisionEngine,
-    *,
-    run_id: UUID,
-    user_message: str,
-    has_collections: bool,
-    rewrite_coro: Any,
-) -> tuple[IngressOutcome, Any]:
-    """Run ingress + rewrite in parallel — one round trip (TRD §7)."""
-    ingress_task = run_ingress(
-        engine, run_id=run_id, user_message=user_message, has_collections=has_collections
-    )
-    ingress, rewritten = await asyncio.gather(ingress_task, rewrite_coro)
-    return ingress, rewritten

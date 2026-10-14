@@ -125,7 +125,7 @@ and tests. All are v1 unless marked.
 | TR-2 | Each claim gets a verdict: supported, partial, unsupported or contradicted. Citation chips are coloured green, amber or red. |
 | TR-3 | Each answer shows faithfulness (share of claims supported) and minimum claim support. |
 | TR-4 | In Auto, **one corrective evidence check** decides: do the reranked passages together answer the question? If not, the system corrects once (a rewritten or decomposed query, and section summaries for gist questions) and checks again; if still not, it abstains. A **named-entity guard** stays separate: passages about a different entity than the one asked about never count as evidence. When the generated reply itself declines, the run is recorded as an abstention and its citations are dropped. An abstention states what was found and what is missing, **carries no citations**, is written in the question's language, and offers Web or Deep. Fast mode doesn't abstain (CH-3). *(v3)* |
-| TR-5 | When sources conflict, the answer says so and cites **the passages on each side of the conflict**; user documents outrank web by default. *(v3: today's side assignment is a midpoint split and doesn't meet this, KI-34.)* |
+| TR-5 | When sources conflict, the answer says so and cites **the passages on each side of the conflict**; user documents outrank web by default. |
 | TR-6 | Low-risk answers stream first and are annotated after review. High-risk or borderline answers show a verifying state and deliver the reviewed version. |
 | TR-7 | If the reviewer revises an answer, the UI labels it and offers a diff against the original draft. |
 | TR-8 | When the sources support more than one answer (for example, two people who are each "the master"), the answer names each one and how it fits, instead of picking one. Prompt change, gated by the eval set, with at least 3 ambiguity items in acceptance first. *(v3)* |
@@ -139,8 +139,8 @@ and tests. All are v1 unless marked.
 | SR-3 | Document viewer shows chunks, pages and metadata; users edit tags and delete or re-index documents. |
 | SR-4 | Pages that look scanned or table-heavy are flagged with a warning icon. |
 | SR-5 | Web results used in a chat are listed as temporary sources; users can pin one into the chat's sources. |
-| SR-6 | Metadata filters (source type, **format (file/OKF)**, document, tag, date range, file type; **for OKF: concept type, status, verification**) are available in the API and the composer. Filters only narrow results. *(v3: composer UI not built yet.)* |
-| SR-7 | Multilingual documents and questions are supported *(added 2026-09-29, round 2)*: chunking, embeddings and answers work beyond English; the answer follows the language of the user's question. |
+| SR-6 | Metadata filters (source type, **format (file/OKF)**, document, tag, date range, file type; **for OKF: concept type, status, verification**) are available in the API and the composer. Filters only narrow results. |
+| SR-7 | Multilingual documents and questions are supported: chunking, embeddings and answers work beyond English; the answer follows the language of the user's question. |
 
 ### 4.4 Transparency and metrics
 
@@ -213,7 +213,7 @@ Veriforge reads and writes the format; search stays one hybrid search.
 
 ## 5. Non-functional requirements and success metrics
 
-v1 is accepted when the targets below hold. *(v3: targets defined per corpus and tied to the harness that measures them; current measurements are tracked in the production plan, not here.)*
+v1 is accepted when the targets below hold. Targets are set per corpus and measured by the harness named in each row.
 
 **Acceptance corpora:**
 - books (multilingual fiction)

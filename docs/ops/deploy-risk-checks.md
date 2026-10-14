@@ -1,4 +1,4 @@
-# Deployment risk checks (lane A, item 0)
+# Deployment risk checks
 
 The three facts the rest of the beta deployment is sized against, established
 before anything was built. Every number here was measured or quoted from a

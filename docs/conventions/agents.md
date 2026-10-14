@@ -2,11 +2,11 @@
 
 Rules for any agent working on Veriforge unattended (Claude Code, Codex,
 others), and for whoever writes the prompt it runs from. Each rule traces
-back to a run that went wrong. See "Where these came from".
+back to a run that went wrong.
 
 ## Rules for the agent
 
-- **Gate and CI mechanics are done as of D8 (2026-10-02).** New gate or CI
+- **Gate and CI mechanics are done.** New gate or CI
   issues are **logged, not dispatched**, unless they block a merge. The scope
   check is a tested script, CI keeps its evidence on both paths, and a failing
   gate re-runs and judges the mean of 3.
@@ -66,7 +66,7 @@ back to a run that went wrong. See "Where these came from".
   gate, smoke runs), the prompt tells the agent to check the balance and
   stop below a floor.
 
-## Finish lines and measurement (owner rule, 2026-10-12)
+## Finish lines and measurement
 
 The project kept looping: measure, log a KI, measure again, ship nothing.
 These rules stop that.
@@ -107,21 +107,6 @@ deploy. Plan: `docs/plans/2026-10-13-0340-plan.md`.
 - **Quality phases stay serial:** one variable at a time.
 - Start with 2–3 concurrent runs. On any 429, back off and note it in the
   report.
-
-## Where these came from
-
-- **2026-09-27, KI-14 (flaky tests):** 2 hours on one item, zero commits.
-  An unproven "leaked asyncio tasks" theory led to a task-draining
-  fixture that hung the suite. The actual cause,
-  `get_session` committing after the response is sent, was a two-minute
-  read of `db/session.py` that never happened. The prompt had ten items
-  and no time box.
-- **2026-09-26, sources-panel:** five pytest failures reported as
-  "external Cohere 429s" were our tests using a real key from `.env`.
-- **2026-09-26, UX pass:** a slow provider was "fixed" by widening the
-  sweep window to 480 s (hiding crashed runs) instead of adding a
-  heartbeat (KI-4). The 402 was "fixed" by switching to free models
-  instead of capping `max_tokens` (KI-1).
 
 ## Reports
 

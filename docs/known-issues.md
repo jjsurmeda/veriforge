@@ -7,7 +7,7 @@ The Phase column is authoritative; section placement below is from the first tri
 Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 - When you fix one, move it to the archive in the same commit, with the fixing commit hash.
 - A new finding that breaks no check is added under **post-beta** and opens no lane.
-- New IDs continue from KI-69.
+- New IDs continue from KI-75.
 
 ## Index
 
@@ -21,6 +21,7 @@ Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 | check-stable | KI-49 | reviewer rarely makes an unsupported judgement itself |
 | check-stable | KI-51 | cf subset spread 0.0667 vs 0.06 band |
 | UI redesign | KI-22 | trace tab redesign; belongs to the UI pass |
+| UI redesign | KI-74 | SR-6 filters exist in the API but the composer has no filter UI |
 | UI redesign | KI-65 | screenshots and tab-order audit; redo after the UI pass |
 | before deploy | KI-59 | uvicorn forwarded_allow_ips must match the deployed proxy |
 | before deploy | KI-63 | demo credit-outstanding cap still open; only matters if DEMO_ENABLED=true |
@@ -814,3 +815,9 @@ Logged 2026-10-12 (phase 1, `make check-work` on `beta/phase1-check-work`).
   needs it, or keep it deliberately as a provider-compatibility retry and drop
   the free-model sentence from its docstring. Cheap either way; not a phase-1
   blocker and not a step-4/5 risk.
+
+## KI-74: The composer has no filter UI (SR-6)
+
+- **What:** retrieval filters (source type, document, tag, date range, file type) are accepted by the API and narrow results server-side, but the chat composer offers no control to set them.
+- **Phase:** UI redesign.
+- **Done when:** the composer sets every SR-6 filter the API accepts, with a Playwright spec proving a filter narrows the cited sources.

@@ -6,7 +6,7 @@ import { StatusChip } from './StatusChip'
 
 const FLAG_LABELS: Record<string, string> = { low_text: 'Scanned?', table_heavy: 'Table-heavy' }
 
-export function PageFlags({ document, page }: { document: DocumentOut; page: number | null }) {
+function PageFlags({ document, page }: { document: DocumentOut; page: number | null }) {
   if (page === null) return null
   const entry = (document.page_flags ?? []).find((flag) => flag.page === page)
   if (!entry) return null

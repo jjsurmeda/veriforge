@@ -1,6 +1,5 @@
 import * as React from 'react'
-import { Check, ChevronDown } from 'lucide-react'
-import { DropdownMenu, HoverCard, Popover, Select, Tooltip } from 'radix-ui'
+import { DropdownMenu, HoverCard, Popover, Tooltip } from 'radix-ui'
 
 const overlayClass =
   'z-50 rounded-xl border border-border-strong bg-popover p-1 text-fg shadow-popover outline-none data-[state=closed]:duration-100 data-[state=open]:duration-150'
@@ -9,19 +8,11 @@ const itemClass =
 
 type PopoverContentProps = React.ComponentPropsWithoutRef<typeof Popover.Content>
 type MenuContentProps = React.ComponentPropsWithoutRef<typeof DropdownMenu.Content>
-type MenuRadioItemProps = React.ComponentPropsWithoutRef<typeof DropdownMenu.RadioItem>
-type SelectContentProps = React.ComponentPropsWithoutRef<typeof Select.Content>
-type SelectItemProps = React.ComponentPropsWithoutRef<typeof Select.Item> & {
-  // Rendered outside ItemText so the closed trigger shows only `children`.
-  description?: string
-}
 type HoverCardContentProps = React.ComponentPropsWithoutRef<typeof HoverCard.Content>
 type TooltipContentProps = React.ComponentPropsWithoutRef<typeof Tooltip.Content>
 
 export const PopoverRoot = Popover.Root
 export const PopoverTrigger = Popover.Trigger
-export const PopoverAnchor = Popover.Anchor
-export const PopoverClose = Popover.Close
 
 export function PopoverContent({ className = '', ...props }: PopoverContentProps) {
   return (
@@ -33,13 +24,6 @@ export function PopoverContent({ className = '', ...props }: PopoverContentProps
 
 export const Menu = DropdownMenu.Root
 export const MenuTrigger = DropdownMenu.Trigger
-export const MenuGroup = DropdownMenu.Group
-export const MenuLabel = DropdownMenu.Label
-export const MenuSeparator = DropdownMenu.Separator
-export const MenuRadioGroup = DropdownMenu.RadioGroup
-export const MenuRadioItem = DropdownMenu.RadioItem
-export const MenuItem = DropdownMenu.Item
-export const MenuItemIndicator = DropdownMenu.ItemIndicator
 
 export function MenuContent({ className = '', ...props }: MenuContentProps) {
   return (
@@ -49,58 +33,9 @@ export function MenuContent({ className = '', ...props }: MenuContentProps) {
   )
 }
 
-export function MenuRadioItemWithCheck({ children, className = '', ...props }: MenuRadioItemProps) {
-  return (
-    <DropdownMenu.RadioItem {...props} className={`${itemClass} relative pl-8 ${className}`}>
-      <span className="absolute left-2">
-        <DropdownMenu.ItemIndicator>
-          <Check size={14} strokeWidth={1.75} aria-hidden="true" />
-        </DropdownMenu.ItemIndicator>
-      </span>
-      {children}
-    </DropdownMenu.RadioItem>
-  )
-}
-
 export function MenuItemWithIcon({ children, className = '', ...props }: React.ComponentPropsWithoutRef<typeof DropdownMenu.Item>) {
   return <DropdownMenu.Item {...props} className={`${itemClass} ${className}`}>{children}</DropdownMenu.Item>
 }
-
-export const SelectRoot = Select.Root
-export const SelectValue = Select.Value
-export const SelectTrigger = Select.Trigger
-export const SelectIcon = Select.Icon
-export const SelectGroup = Select.Group
-export const SelectLabel = Select.Label
-export const SelectViewport = Select.Viewport
-export const SelectItemText = Select.ItemText
-export const SelectItemIndicator = Select.ItemIndicator
-
-export function SelectContent({ className = '', children, position = 'popper', ...props }: SelectContentProps) {
-  return (
-    <Select.Portal>
-      <Select.Content {...props} position={position} className={`${overlayClass} min-w-[var(--radix-select-trigger-width)] ${className}`}>
-        {children}
-      </Select.Content>
-    </Select.Portal>
-  )
-}
-
-export function SelectItem({ children, description, className = '', ...props }: SelectItemProps) {
-  return (
-    <Select.Item {...props} className={`${itemClass} relative pl-8 ${className}`}>
-      <span className="absolute left-2">
-        <Select.ItemIndicator>
-          <Check size={14} strokeWidth={1.75} aria-hidden="true" />
-        </Select.ItemIndicator>
-      </span>
-      <Select.ItemText>{children}</Select.ItemText>
-      {description && <span className="text-xs text-fg-muted">{description}</span>}
-    </Select.Item>
-  )
-}
-
-export const SelectChevron = ChevronDown
 
 export const HoverCardRoot = HoverCard.Root
 export const HoverCardTrigger = HoverCard.Trigger

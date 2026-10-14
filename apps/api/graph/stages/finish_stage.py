@@ -158,6 +158,3 @@ def _cite(env: StageEnv, state: AutoRunState) -> None:
         for index, context in enumerate(state.contexts)
     )
 
-
-def _chitchat_run(env: StageEnv, state: AutoRunState) -> AutoRun:
-    return direct_run(env, state, env.params.question, chitchat=True)

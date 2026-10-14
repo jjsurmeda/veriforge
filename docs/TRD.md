@@ -42,8 +42,8 @@ handles ingestion, evals, async scoring and starter questions.
 | Jobs | Procrastinate (Postgres queue) | No Redis |
 | Database | Postgres 17, ParadeDB image: pgvector + pg_search | pg_search is AGPL; used unmodified as a service |
 | Parsing | markitdown, pdfplumber fallback; OCR adapter slot | |
-| Embeddings | OpenAI text-embedding-3-large with `dimensions=1536`, pinned per deployment *(amended 2026-09-29, round 2: multilingual corpus)* | Re-embed job on change |
-| Rerank | Jev relevance `Score` via DecisionEngine *(amended 2026-09-30, owner decision, KI-28)* | Provider fallback (Cohere, then NVIDIA) when no DecisionEngine is available (Fast mode); fused order on error. Runtime setting `retrieval.reranker` (`jev` \| `nvidia`) |
+| Embeddings | OpenAI text-embedding-3-large with `dimensions=1536`, pinned per deployment | Re-embed job on change |
+| Rerank | Jev relevance `Score` via DecisionEngine | Provider fallback (Cohere, then NVIDIA) when no DecisionEngine is available (Fast mode); fused order on error. Runtime setting `retrieval.reranker` (`jev` \| `nvidia`) |
 | Web search | Tavily; Brave + fetch-and-clean fallback | Behind `WebSearchProvider` |
 | Observability | Langfuse Cloud; app metrics in Postgres | UI never reads Langfuse |
 | IaC and CI | AWS CDK (Python); GitHub Actions; ECR | arm64 images |
@@ -185,7 +185,7 @@ process can stream or cancel any run and Uvicorn can run several workers.
 - Adapters: `PostgresRunBus` (default) and `RedisRunBus` (Redis Streams
   plus pub/sub, Compose profile `redis`, slice 8).
 
-### 7.1 Latency budget *(amended 2026-10-02, PRD v3 CH-5, ADR-003)*
+### 7.1 Latency budget (CH-5, ADR-003)
 
 Targets are client-side, from send, per reply path: answers, declines, held
 answers. `run_events` give the per-stage breakdown. Measured at D4 (fast20
@@ -260,7 +260,7 @@ side.
 | intent, source, complexity, risk | Choice | Ingress | Argmax; below 0.5 confidence falls back to safe default (Both, single, high) |
 | lexical_weight | Score 0–1 | Retrieval fusion | Used as weight |
 | chunk_injection | Noul | Sanitizer | Drop at ≥ 0.7 |
-| sufficient | Noul | Single-hop loop | Answer-first *(amended 2026-09-28, batch A)*: generate at or above `sufficient_abstain`; below it one rewrite + retry, then abstain. `sufficient_retry` is removed; default floor 0.05 |
+| sufficient | Noul | Single-hop loop | Answer-first: generate at or above `sufficient_abstain`; below it one rewrite + retry, then abstain. `sufficient_retry` is removed; default floor 0.05 |
 | entity_match | Noul per passage | Entity guard | Per provider; a passage passes when it concerns any named entity |
 | agent_step | Choice | Deep agent loop | Argmax (`search_again`, `answer`; `follow_link` in v1.1) |
 | conflict | Noul | Conflict check | Disclose at ≥ 0.6 |
@@ -288,8 +288,7 @@ their surrounding context.
    `low_text` flag (likely scanned); table cells or pipe density above a
    threshold → `table_heavy` flag. Flags surface in the Sources UI (SR-4)
    and route to OCR in v1.1.
-4. **Chunk** *(amended 2026-09-29, round 2: language-neutral,
-   sentence-aware)*. Split by heading hierarchy into sections (parents, ≤
+4. **Chunk** (language-neutral, sentence-aware). Split by heading hierarchy into sections (parents, ≤
    2,000 tokens). Plain text and PDF-derived markdown carry no markup
    headings, so chapter markers in several languages (`CHAPTER`,
    `Capítulo`, `CHAPITRE`, `Kapitel`, `KABANATA`, `第…回`, `第…章`,
@@ -472,12 +471,10 @@ data isolation is enforced in SQL, never by the model.
 4. **Sanitizer.** Jev `chunk_injection` on every chunk that reaches the
    generator (the post-rerank top-k) and every web page used; dropped
    chunks show in the Sources tab, and a dropped chunk is not backfilled
-   from beyond the reranked set. *(Amended 2026-09-27, KI-11 —
-   previously "every retrieved chunk and web page", which asked Jev ~50
-   `chunk_injection` questions per Auto run for chunks that rerank would
-   drop before they could reach the tool-less generator anyway.)*
+   from beyond the reranked set. Chunks that rerank drops never reach the generator, so they are not
+   checked.
 5. **Ingress checks.** Jev injection and jailbreak checks on the user
-   message. *(Exception, added 2026-09-28 batch A: the greeting fast path
+   message. *(Exception: the greeting fast path
    in §7's ingress row bypasses these checks for a fixed allowlist. It is
    safe because the model only ever sees the canonical allowlist phrase,
    never the raw message — invisible characters and tag smuggling are
@@ -565,7 +562,7 @@ generated from it.
 | `heartbeat` | every 15 s |
 | `run.completed` / `run.cancelled` / `run.failed` | final status, error code |
 
-*(Amended 2026-10-02, PRD v3.)* No new event types.
+No new event types.
 - `RetrievedChunk` gains optional fields `okf_status`, `verified_by`,
   `stale` and `via_link` (OKF O3, then regenerate TS).
 - Skipped links and retrieval sub-steps are `step.started` /
@@ -594,7 +591,7 @@ every table has `created_at`.
 | `documents` | collection_id, name, mime, sha256, s3_key, status, page_flags jsonb, error | status: queued → ready or failed |
 | `sections` | document_id, heading_path, text, tokens | Parents for small-to-big |
 | `chunks` | document_id, section_id, ord, page, text, embedding vector(1536), metadata jsonb, source_type, chat_id, expires_at | HNSW index on embedding; pg_search BM25 index on text; GIN on metadata |
-| `query_cache` | query_hash, embedding, created_at | 30-day TTL; the hash is namespaced by embedding model *(amended 2026-09-29, round 2)* — a model switch invalidates the cache without a wipe |
+| `query_cache` | query_hash, embedding, created_at | 30-day TTL; the hash is namespaced by embedding model — a model switch invalidates the cache without a wipe |
 | `web_cache` | query_hash, results jsonb | 24 h TTL |
 | `chats` | user_id, title, pinned, model_id, include_library, summary | include_library: always true, no UI (ADR-002 addendum) |
 | `messages` | chat_id, role, content, status, revised_from | status: complete, cancelled, abstained, failed |
@@ -692,15 +689,15 @@ if the gated latency rises by more than its factor. Four of these limits are
 wider than the ones this section originally carried, and each was widened for a
 measured reason, not to make a run pass — see the decisions below and KI-6.
 
-**Limits expressed in items, not points (owner decision A7, 2026-10-02).**
+**Limits expressed in items, not points.**
 Abstention accuracy and answer rate are compared as **item counts**, not as
 percentage points, and each fails when the count of items classified correctly
 drops by **2 or more**. A drop of exactly one item is printed as a warning and
 passes. The reason is arithmetic, not judgement: the fast20 subset holds **8
 should-abstain items and 12 answerable items**, so one item flipping moves the
 two rates by **12.5** and **8.3** points respectively. Both are more than twice
-the 5-point tolerance this section used to apply, which meant a single item —
-one coin toss in a 20-item run — failed the gate. One flip is noise; two flips
+a 5-point tolerance, so a points-based limit would fail the gate on a single
+item — one coin toss in a 20-item run. One flip is noise; two flips
 are a regression, and that is the line the code now draws. The rates are still
 recorded in the run summary and the baseline; they are simply not what the gate
 compares, because on a subset this size the denominator is the measurement.
@@ -709,7 +706,7 @@ compares, because on a subset this size the denominator is the measurement.
 replaced — with more items per corpus a rate moves by less than one item and
 percentage points become meaningful again.
 
-**Latency factors (owner decision A6, 2026-10-02).** Two factors, one per
+**Latency factors.** Two factors, one per
 figure, and each is named in the failure it produces. `p50_our_overhead_ms`
 may rise by **1.35×** (35%); total `p50_latency_ms` — still recorded, still
 displayed, still compared only when neither run attributed a call, which is the
@@ -728,9 +725,8 @@ and set the overhead factor to `max(1.20, 1 + 2 × spread)`, where `spread` is
 the observed run-to-run spread of `p50_our_overhead_ms`. P3 is expected to move
 the number down; the widening buys the gate back its authority until then.
 
-**The faithfulness bar: a 0.06 tolerance under a 0.90 floor (owner decisions
-A9 and A10, 2026-10-02).** The drop limit moves from 0.03 to **0.06**, and an
-absolute floor of **0.90** is added below which a run fails whatever the
+**The faithfulness bar: a 0.06 tolerance under a 0.90 floor.** The drop limit is **0.06**, with an
+absolute floor of **0.90** below which a run fails whatever the
 baseline says. The two are one decision, because only together they are
 defensible.
 
@@ -758,7 +754,7 @@ per-corpus subsets** land, re-measure ≥ 5 fast20 runs and set the drop to the
 measured spread — or back to **0.03** if the variance is closed. The floor does
 not move with it.
 
-**The baseline is the mean of N runs (owner decision A8, 2026-10-02).**
+**The baseline is the mean of N runs.**
 `evals/seed/baseline_fast20.json` is written by `evals.baseline` as the
 **per-metric mean of N recorded run summaries** (faithfulness, context recall,
 abstention and answer rate, the two item counts, both p50s, the attributed-item
@@ -781,7 +777,7 @@ argument as the totals check above). A mean over either is not a measurement —
 and unlike a failed comparison, it would then be *stored* for every later run to
 be measured against.
 
-**The gate re-runs and judges the mean of 3 (owner decision, 2026-10-02).** One
+**The gate re-runs and judges the mean of 3.** One
 fast20 run is a single draw from a distribution wider than the limits it is
 measured against, so a single draw fails about as often as the tolerance says it
 should and for no other reason. **A run that passes is accepted immediately and
@@ -820,7 +816,7 @@ assumed; it does not raise the bar. The 0.90 floor is the part that could, and
 it is not a relaxation: it is the first faithfulness condition this section
 carries that does not move with the baseline.
 
-**Which latency is gated (owner decision, 2026-09-29, KI-18).** The strictly
+**Which latency is gated.** The strictly
 gated figure is `p50_our_overhead_ms`: the measured wall clock minus the
 provider time OpenRouter reports for the same calls
 (`GET /api/v1/generation?id=…`). A slow provider is not a regression in this
@@ -833,7 +829,7 @@ calls at all, which restores the pre-KI-18 behaviour rather than silently
 disabling the check. An item whose calls cannot be attributed records no
 overhead figure: the summary reports `null`, never a fabricated zero.
 
-**Which field holds the provider time (owner decision A3, 2026-10-01).** The
+**Which field holds the provider time.** The
 stats record's field depends on the call. A chat completion reports
 `generation_time`, and that is the duration used. A **Jev** call
 (`api_type == "decisions"`) reports `generation_time` as **0** and carries its
@@ -846,7 +842,7 @@ conflict, ingress and review verification — to our own overhead in the one
 figure this section gates. A record with neither field is not attributed at
 all, which is a coverage gap the summary reports, never a fabricated zero.
 
-**Coverage must not bias the median (owner decision, 2026-10-02).** A
+**Coverage must not bias the median.** A
 generation's stats record lands asynchronously, and the wait has a long tail:
 measured over four consecutive calls, 0.4 s three times and 123.6 s once. An
 id that has not landed inside the lookup budget is therefore *unresolved*, not
@@ -876,7 +872,7 @@ baseline also records the models it was measured with, and the gate refuses to
 compare runs whose models differ, because a faithfulness or latency number from
 one model says nothing about the same number from another.
 
-**Corpora and run tiers** *(amended 2026-10-02, PRD v3 §5)*.
+**Corpora and run tiers** (PRD §5).
 - **Corpora:** acceptance covers four: books, AW-2000 manuals, an OKF
   bundle, and a counterfactual set (deliberately altered facts, so answers
   must come from the documents). Each has ≥ 20 answerable and ≥ 20
@@ -899,8 +895,7 @@ every metric above it. Answer rate is not defined in terms of the outcome
 it measures, which is what makes it a counterweight rather than a fourth
 view of the same number. It is stored in the run summary and in the
 baseline, and the gate fails it in items, not points: a drop of **two or more**
-items is a regression, a drop of one is a warning (owner decision A7,
-2026-10-02, above).
+items is a regression, a drop of one is a warning (see above).
 
 **Tracing.** The Langfuse LangGraph callback traces every run with node
 spans, model calls, tokens and cost; decision calls appear as spans with

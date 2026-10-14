@@ -33,7 +33,7 @@ function metaLabel(model: ModelOut): string {
     .join(' · ')
 }
 
-export function groupByProvider(models: ModelOut[]): Array<[string, ModelOut[]]> {
+function groupByProvider(models: ModelOut[]): Array<[string, ModelOut[]]> {
   const groups = new Map<string, ModelOut[]>()
   for (const model of models) {
     const bucket = groups.get(model.provider) ?? []

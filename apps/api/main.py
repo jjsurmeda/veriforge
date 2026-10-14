@@ -167,10 +167,8 @@ async def healthz(
 ) -> dict[str, object] | JSONResponse:
     """Liveness plus the three facts an operator needs during an incident.
 
-    Backward compatible by construction: `status` and `db` keep their exact
-    values and the 200/503 split on the database is unchanged, so the
-    existing check (and `scripts/seed_gutenberg.py`'s, which reads this
-    endpoint before seeding) keeps working. The new keys are additive.
+    `status` and `db` decide the 200/503 split on the database;
+    `scripts/seed_gutenberg.py` reads them before seeding.
 
     Deliberately *not* a readiness gate. `breaker`, `jev` and
     `worker_heartbeat_age_s` describe degraded service, and a run still

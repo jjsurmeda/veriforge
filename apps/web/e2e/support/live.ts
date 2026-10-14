@@ -29,7 +29,7 @@ export async function accessToken(request: APIRequestContext, user: TestUser): P
   return body.access_token
 }
 
-export async function sharedCorpusVisible(
+async function sharedCorpusVisible(
   request: APIRequestContext,
   token: string,
 ): Promise<boolean> {

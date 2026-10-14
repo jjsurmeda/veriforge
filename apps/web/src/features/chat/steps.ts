@@ -1,7 +1,6 @@
 import type { StreamEvent } from './types'
-import type { Decision, Plan, StepCompleted, StepStarted } from '../../generated/types.gen'
 
-export type StepStatus = 'active' | 'done' | 'failed' | 'warning'
+type StepStatus = 'active' | 'done' | 'failed' | 'warning'
 
 export interface WorkingStep {
   id: string
@@ -68,35 +67,4 @@ export function describeStep(event: StreamEvent): WorkingStep {
     default:
       return { id: 'unknown', label: 'Working', status: 'active' }
   }
-}
-
-export function describeRunSteps(
-  steps: Array<StepStarted | StepCompleted>,
-  plan: Plan | null,
-  decisions: Decision[],
-  thinking: string,
-  claimCount: number,
-): WorkingStep[] {
-  const result: WorkingStep[] = []
-  if (plan) {
-    result.push({
-      id: 'plan',
-      label: 'Planning',
-      detail: plan.sub_questions.map((question: Plan['sub_questions'][number]) => question.question).join(' · '),
-      status: 'active',
-    })
-  }
-  for (const step of steps) result.push(describeStep(step))
-  if (decisions.length > 0) {
-    const decision = decisions[decisions.length - 1]
-    result.push({
-      id: `decision-${decision.seq ?? decisions.length}`,
-      label: `Routing: ${decision.name}`,
-      detail: String(decision.value),
-      status: 'done',
-    })
-  }
-  if (thinking) result.push({ id: 'thinking', label: 'Thinking', detail: thinking, status: 'active' })
-  if (claimCount > 0) result.push({ id: 'review', label: `Reviewing ${claimCount} claims`, status: 'active' })
-  return result
 }

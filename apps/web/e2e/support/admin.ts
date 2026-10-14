@@ -24,7 +24,7 @@ export function grantAdmin(email: string): void {
   )
 }
 
-export function revokeAdmin(email: string): void {
+function revokeAdmin(email: string): void {
   if (!/^[^@\s]+@[^@\s]+$/.test(email)) throw new Error('invalid test email')
   const safeEmail = email.replaceAll("'", "''")
   execFileSync(
