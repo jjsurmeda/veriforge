@@ -14,6 +14,21 @@ from runtime import runtime_value
 
 SOURCE_MAX_CHARS = 6000
 
+# One block per ingress intent, keyed on what the run already decided.
+# `rag-reference.md`'s "Generator prompt" row asks for per-intent instructions
+# and the plan's R2 row for a "generator prompt per intent"; four blocks cover
+# the intents that mean something different to an answer, and any other intent
+# — including a new one ingress might grow — falls back to the base prompt.
+#
+# Each file lives in `prompts/` with its own version header, so a change to one
+# block is a reviewable diff and is caught by the eval gate (CLAUDE.md).
+INTENT_BLOCKS: dict[str, str] = {
+    "lookup": "intent_lookup.md",
+    "summarize": "intent_summarize.md",
+    "compare": "intent_compare.md",
+    "multi-part": "intent_multi_part.md",
+}
+
 
 def _escape_attr(value: str) -> str:
     return (
@@ -35,14 +50,16 @@ def build_grounded_messages(
     question: str,
     contexts: list[ExpandedContext],
     history: list[tuple[str, str]],
+    intent: str | None = None,
 ) -> list[dict[str, str]]:
     messages: list[dict[str, str]] = [
-        {"role": "system", "content": load_prompt("grounded_answer.md")}
+        {"role": "system", "content": grounded_system_prompt(intent)}
     ]
     for role, content in history[-6:]:
         messages.append({"role": role, "content": content})
     if contexts:
-        sources = "\n\n".join(_source_block(i + 1, c) for i, c in enumerate(contexts))
+        ordered = order_for_lost_in_the_middle(contexts)
+        sources = "\n\n".join(_source_block(i + 1, c) for i, c in enumerate(ordered))
         messages.append(
             {
                 "role": "user",
@@ -64,6 +81,51 @@ def build_grounded_messages(
     return messages
 
 
+def grounded_system_prompt(intent: str | None) -> str:
+    """The base grounded prompt, plus the one block for this run's intent.
+
+    The intent is the one ingress already decided, so this costs no extra model
+    call — `rag-reference.md`'s "per-intent instructions" without a
+    classifier in front of the generator. An intent with no block (including
+    `chitchat`, which never reaches here, and anything ingress invents later)
+    gets the base prompt alone, which is the safe default: an unknown shape is
+    better answered by the general rules than by a guess about its shape.
+    """
+    base = load_prompt("grounded_answer.md")
+    block = INTENT_BLOCKS.get(intent or "")
+    if block is None:
+        return base
+    return f"{base}\n\n{load_prompt(block)}"
+
+
+def order_for_lost_in_the_middle(contexts: list[ExpandedContext]) -> list[ExpandedContext]:
+    """Put the strongest passages at the start and the end of the sources block.
+
+    "Lost in the middle" is the well-measured position effect: a model
+    attending to the edges of a long context uses what is at either end and
+    under-uses what is between them. Rerank order puts the weakest passage
+    *last*, where it is read most — the single most likely place for a
+    rank-ordered sources block to lose the answer.
+
+    `contexts` arrives in rerank order, best first. The permutation takes the
+    best quarter to the front and the second-best quarter to the back, so both
+    edges are strong and the middle holds the weakest material. Source ids are
+    assigned after the permutation by the caller, so `[n]` still names the block
+    the generator actually read.
+
+    With fewer than four passages there is no "middle" to lose: everything is
+    an edge, and any permutation would only move citations around, so the order
+    is left alone.
+    """
+    if len(contexts) < 4:
+        return list(contexts)
+    best = contexts[: len(contexts) // 2]
+    weakest = contexts[len(contexts) // 2 :]
+    front = best[: max(1, len(best) // 2)]
+    back = best[max(1, len(best) // 2) :]
+    return [*front, *weakest, *reversed(back)]
+
+
 async def stream_grounded_answer(
     *,
     litellm_model: str,
@@ -71,6 +133,7 @@ async def stream_grounded_answer(
     contexts: list[ExpandedContext],
     history: list[tuple[str, str]],
     metadata: dict[str, str],
+    intent: str | None = None,
     on_reasoning: Callable[[str], Awaitable[None]] | None = None,
 ) -> AsyncIterator[str]:
     """Stream the grounded answer.
@@ -88,7 +151,7 @@ async def stream_grounded_answer(
     """
     async for token in stream_completion(
         litellm_model=litellm_model,
-        messages=build_grounded_messages(question, contexts, history),
+        messages=build_grounded_messages(question, contexts, history, intent),
         metadata={**metadata, "role": "generator"},
         on_reasoning=on_reasoning,
         temperature=runtime_value("generation.temperature", None),

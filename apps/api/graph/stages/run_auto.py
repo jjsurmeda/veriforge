@@ -81,7 +81,9 @@ async def run_auto(env: RunEnv) -> None:
     generate_ms = run.latency_ms.get("generate", 0)
     prompt_tokens = sum(
         count_tokens(message["content"])
-        for message in build_grounded_messages(run.rewritten, run.contexts, run.history)
+        for message in build_grounded_messages(
+            run.rewritten, run.contexts, run.history, run.ingress.intent
+        )
     )
     await finalize_auto_run(
         env.session_factory,
