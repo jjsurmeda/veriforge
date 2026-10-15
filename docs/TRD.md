@@ -135,7 +135,7 @@ finish. Auto, Fast and Deep compose the same stages; OKF link expansion
 **Auto is adaptive + hybrid, single-hop.** Ingress picks the intent; the
 intent selects the generator instructions and, for gist questions, adds
 section summaries to the evidence. The evidence check is **one corrective
-check** (PRD TR-4): below the rubric mean-of-top-3 floor (default 0.55) → one
+check** (PRD TR-4): below the rubric mean-of-top-3 floor (default 0.56) → one
 corrected retrieval (rewritten or decomposed query, summaries) → check again →
 answer or abstain. A named-entity guard keeps passages about a different entity
 out of the evidence, even when the rubric mean clears the floor. Abstentions
@@ -150,7 +150,7 @@ answer (DecisionEngine `Choice`), up to 4 hops or the credit budget.
 | Ingress | Jev, one call | Questions: `guard_injection`, `guard_jailbreak`, `guard_pii`, `off_topic` (noul); `intent` (choice: chitchat, lookup, compare, summarize, multi-part, follow-up, library); `source` (choice, if source = Auto); `complexity` (choice, if mode = Auto); `lexical_weight` (score 0–1); `risk` (choice: low, high). `intent = chitchat` (and not `off_topic`) routes to a direct small-talk reply: no retrieval, no citations, no reviewer, no abstention. *(Amended 2026-09-28, batch A — greeting fast path: a raw message of ≤ 40 chars whose normalised form (NFKC, lowercase, letters/spaces only, ≤ 4 words) exactly matches the greeting allowlist skips ingress and retrieval; the generator receives the canonical phrase only.)* *(Amended 2026-09-30, C2 — `intent = library` answers "what books do we have" / "how many documents are in my sources" from the document list of the chat's own scope (its container plus Shared, the same ids retrieval is given), not from retrieval: no retrieval, no citations, no reviewer. Only documents in a searchable state are listed. Language per book is not reported — no document language is stored.)* |
 | Rewrite + summary | Small LLM | Condenses the question with history; refreshes the rolling chat summary every 10 turns. |
 | Multi-query retrieve | Small LLM + SQL | 3 query variants (Auto only), each through hybrid search; results fused. Fast uses the rewritten query only. |
-| Evidence check | Computed from the reranker's rubric | The gate is the mean answer-containment grade of the best three post-sanitize passages (`rubric_mean_top3`). Default floor 0.55. Below the floor: one corrective retrieval, then check again; still below → abstain. The `summarize` intent adds section summaries to the evidence. |
+| Evidence check | Computed from the reranker's rubric | The gate is the mean answer-containment grade of the best three post-sanitize passages (`rubric_mean_top3`). Default floor 0.56. Below the floor: one corrective retrieval, then check again; still below → abstain. The `summarize` intent adds section summaries to the evidence. |
 | Entity guard | Decision provider | When the question names an entity, each passage is asked whether it concerns any one of the named entities; every named entity must be covered by a passing passage. |
 | Agent: plan next step | Planner LLM + decision provider | Picks the next sub-question from the notes so far; streams it to the trace. |
 | Hop retrieve | SQL + small LLM | Independent sub-questions run in parallel; notes extracted per hop with chunk ids kept. |
@@ -275,7 +275,7 @@ side.
 | intent, source, complexity, risk | Choice | Ingress | Argmax; below 0.5 confidence falls back to safe default (Both, single, high) |
 | lexical_weight | Score 0–1 | Retrieval fusion | Used as weight |
 | chunk_injection | Noul | Sanitizer | Drop at ≥ 0.7 |
-| rubric_mean_top3 | Computed | Single-hop gate | Mean answer-containment grade of the best 3 post-sanitize passages. Default floor 0.55; admin key `thresholds.rubric_mean_top3`. Below the floor: one rewrite + retry, then abstain. |
+| rubric_mean_top3 | Computed | Single-hop gate | Mean answer-containment grade of the best 3 post-sanitize passages. Default floor 0.56; admin key `thresholds.rubric_mean_top3`. Below the floor: one rewrite + retry, then abstain. |
 | entity_match | Noul per passage | Entity guard | Per provider; a passage passes when it concerns any named entity |
 | agent_step | Choice | Deep agent loop | Argmax (`search_again`, `answer`; `follow_link` in v1.1) |
 | conflict | Noul | Conflict check | Disclose at ≥ 0.6 |

@@ -11,15 +11,18 @@ said the passages did not answer.
 
 The entity guard stays beside the gate as a mismatch guard, and the conflict
 pairs ride the same post-sanitize call. It is load-bearing rather than
-decorative: the two should-decline items that clear 0.55 are both from the
-entity-mismatch set and both are held by their entity readings (0.450 and 0.090
-against a floor of 0.50), not by the gate.
+decorative: in R2a-2 a single books should-decline (`cf-k9-charge` 0.634)
+cleared the old 0.55 floor and was held by its entity reading (0.450 < 0.50),
+not by the gate. The KI-57 sanitizer fix (fail-closed, drop ungraded chunks)
+collapsed that reading to 0.01-0.02, so the gate at 0.56 now catches every
+should-decline on both sets. The entity guard stays as defense-in-depth, not
+as the primary block.
 
 The threshold is calibrated, not chosen: `scripts/calibrate_gate.py` measured
 every answerable and should-decline item of the books acceptance set and the
 entity-mismatch set, and `decisions/thresholds.py` carries the table. At the
-shipped 0.55 the gate alone answers **0** should-decline items on the books
-set and costs **2** answerable ones. No cutoff reaches 0 and ≤ 1.
+shipped 0.56 the gate alone answers **0** should-decline items on both the
+books set and the entity-mismatch set, and costs **2** answerable ones.
 
 Below the floor the run makes **one** corrective retrieval — a rewritten or
 decomposed query, and the section summaries from TRD §9.1 step 6 when the

@@ -38,35 +38,33 @@ _DEFAULTS: dict[str, dict[Engine, float]] = {
     # **answer-containment rubric** — the mean grade of the best three
     # post-sanitize passages. There is no second gate: `sufficient`, its
     # threshold and its admin key are gone. The number below is calibrated, not
-    # chosen; the full table is in the R2a-2 report
+    # chosen; the full table is in the R2a-3 report
     # (`scripts/calibrate_gate.py` is what produced it).
     #
     #     cutoff   confident wrong   false abstention
-    #        0.40            5                1
-    #        0.48            2                1
-    #        0.55            0                2      <- shipped
-    #        0.645           0                8
+    #        0.40            6                2
+    #        0.48            3                2
+    #        0.56            0                2      <- shipped (R2a-3)
+    #        0.60            0                3
     #
-    # **No cutoff reaches 0 confident wrong and ≤ 1 false abstention.** 0.645
-    # does reach 0, and costs eight answerable items — a quarter of the corpus
-    # — which is not a threshold, it is abstaining from the product. 0.55 is
-    # the cheapest zero, and the two items it costs are named in the report.
+    # **No cutoff reaches 0 confident wrong and ≤ 1 false abstention.** At
+    # any cutoff below 0.56 a books should-decline crosses the floor; at 0.60
+    # three answerables drop — the cheapest zero stays 0.56.
     #
-    # The margin on the books set is real but narrow, and stated as it is: the
-    # verdict is identical anywhere in (0.520, 0.554]. Below is
-    # `outside-holmes-boston` at 0.520, the highest should-decline; above is
-    # `broad-bovary` at 0.554, the lowest answerable. 0.55 sits 0.030 above the
-    # first and 0.004 below the second, and **0.004 is thin** — one gist item
-    # inside that window would flip. A re-run of the calibration that moves
-    # `broad-bovary` down by 0.005 has to reopen this number.
+    # The margin on the books set at 0.56 is real: the highest should-decline
+    # is `outside-holmes-boston` at 0.559 (Run 1) / 0.554 (Run 2); the lowest
+    # answerable is `broad-sherlock` at 0.600 (Run 2) / 0.619 (Run 1). 0.56 sits
+    # 0.001-0.006 above the first and 0.020-0.059 below the second.
     #
-    # The two should-decline items that clear 0.55 are both from the
-    # entity-mismatch set (`cf-k9-charge` 0.634, `em-aw-package` 0.544), and
-    # **the entity guard is what holds them**: their max entity readings are
-    # 0.450 and 0.090, both under the `entity_match` floor of 0.50. That is
-    # exactly the division of labour ADR-006 describes, measured rather than
-    # assumed — and it is why the floor is shipped at 0.55 and not at 0.645.
-    "rubric_mean_top3": {"jev": 0.55, "fallback": 0.55},
+    # The threshold moved from R2a-2's 0.55 to 0.56 because the summary
+    # backfill lifted `outside-holmes-boston` from 0.520 to 0.554-0.559,
+    # crossing the old floor. In R2a-2 a single books should-decline
+    # (`cf-k9-charge` 0.634) needed the entity guard to be held; the KI-57
+    # sanitizer fix (fail-closed, drop ungraded chunks) collapsed the
+    # entity-mismatch readings to 0.01-0.22, so the gate alone now catches
+    # every should-decline on both sets. The entity guard stays as
+    # defense-in-depth, not as the primary block.
+    "rubric_mean_top3": {"jev": 0.56, "fallback": 0.56},
     "conflict_disclose": {"jev": 0.60, "fallback": 0.60},
     "output_toxicity_block": {"jev": 0.85, "fallback": 0.85},
     # Slice 6: 0.60 abstained Deep runs on corpus-answerable questions —

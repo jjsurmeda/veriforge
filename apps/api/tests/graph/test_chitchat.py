@@ -693,7 +693,7 @@ async def test_answerless_but_topical_evidence_abstains(
 
     The captured `outside-study-in-scarlet` top-k never states the answer — no
     chunk mentions Afghanistan — and the rubric grades it around 0.28. Under
-    the new gate that is below the 0.55 floor, so the run abstains rather than
+    the new gate that is below the 0.56 floor, so the run abstains rather than
     answering from evidence that does not contain the answer.
     """
 
@@ -786,7 +786,7 @@ async def test_answerless_but_topical_evidence_abstains(
 
     assert run.abstain_event is not None, (
         "ADR-006 as corrected: the gate is the rubric mean-of-top-3, and the "
-        "captured KI-26 evidence grades around 0.28, well below the 0.55 floor."
+        "captured KI-26 evidence grades around 0.28, well below the 0.56 floor."
     )
     assert not any(d.name == "relevance" for d in run.decision_events)
 
@@ -958,7 +958,7 @@ async def test_the_rubric_gate_decides_above_the_floor(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """ADR-006 as corrected: the mean answer-containment grade of the best three
-    post-sanitize passages is the gate. A mean of 0.7 clears the shipped 0.55
+    post-sanitize passages is the gate. A mean of 0.7 clears the shipped 0.56
     floor and the run answers."""
     run = await _run_gate_check(db, user_a, no_llm, monkeypatch, passage_score=0.7)
 
@@ -997,7 +997,7 @@ async def test_a_non_jev_reranker_with_low_scores_abstains(
 ) -> None:
     """NVIDIA/Cohere/fused-order scores live on other scales. The gate is
     computed from whatever `rerank_score` arrives, so a provider that gives
-    every passage 0.3 fails the 0.55 floor. Providers beyond Jev are out of
+    every passage 0.3 fails the 0.56 floor. Providers beyond Jev are out of
     scope for calibration; this just pins the observed behaviour."""
 
     class _LowScoringProvider:
@@ -1045,7 +1045,7 @@ async def test_the_gate_floor_is_admin_overridable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """AD-4, on the signal that decides a run. A rubric mean of 0.7 (mapped to
-    the "partly answers" level, 2/3) clears the shipped 0.55 floor, but not an
+    the "partly answers" level, 2/3) clears the shipped 0.56 floor, but not an
     override to 0.95."""
     params = await _gate_params(db, user_a, no_llm, monkeypatch)
     answered = await _gate_run(params, passage_score=0.7)
@@ -1125,7 +1125,7 @@ async def test_retry_count_never_exceeds_one(
     )
 
     assert run.abstain_event is not None
-    # 0.2 is below the gate floor (0.55) but above the clearly-absent bound
+    # 0.2 is below the gate floor (0.56) but above the clearly-absent bound
     # (0.10), so the clamp holds: one retrieve + one retry despite retry_limit=5.
     assert len(no_llm["retrieval"]) == 2
 
@@ -1136,7 +1136,7 @@ async def test_abstention_follows_the_configured_gate_floor(
     no_llm: dict[str, list[str]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """AD-4, on the gate signal. A rubric mean of 0.7 clears the shipped 0.55
+    """AD-4, on the gate signal. A rubric mean of 0.7 clears the shipped 0.56
     floor and generates, but is below a raised `rubric_mean_top3`, so the run
     abstains on the configured value after its one retry."""
 
