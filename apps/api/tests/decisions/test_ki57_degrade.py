@@ -462,55 +462,40 @@ async def test_a_run_with_a_dead_decision_layer_degrades_rather_than_raises(
     """The single assertion that is the whole of KI-57: with the decision layer
     refusing every call, `prepare_auto_run` still returns a finished run.
 
-    It abstains rather than answering — an unreachable grader is not evidence.
-    A question that names an entity is used so the post-sanitize evidence call
-    has something to ask; an empty batch would degrade differently. The trace
-    must say that the entity guard could not be read and that the retry was
-    skipped because of it.
+    The sanitizer now fails closed, so the unreachable grader drops every
+    post-rerank chunk. The gate has no graded passages, the corrective retry is
+    skipped as clearly absent, and the run abstains rather than answering from
+    unsanitised evidence.
     """
-    from dataclasses import replace
-
     from db.session import get_session_factory
-    from graph import auto as auto_module
     from graph.auto import prepare_auto_run
+
     params = await _gate_params(db, user_a, no_llm, monkeypatch)
-    question = "What is the capital of the Ridgeline R-7?"
-
-    async def echo(**_: Any) -> str:
-        return question
-
-    monkeypatch.setattr(auto_module, "complete", echo)
-
-    class _CountingEngine(_DeadDecisionEngine):
-        def __init__(self) -> None:
-            self.kinds: list[str] = []
-
-        async def decide(self, *, state: Any, questions: Any) -> Any:
-            self.kinds.append(str(state.get("kind")))
-            raise DecisionUnavailable("decision_unavailable", "down", {})
-
-    engine = _CountingEngine()
-    run = await prepare_auto_run(get_session_factory(), replace(params, question=question), engine)
+    run = await prepare_auto_run(get_session_factory(), params, _DeadDecisionEngine())
 
     assert run.abstain_event is not None, (
         "no reading is a failing gate, and a failing gate abstains"
     )
     assert run.contexts == [], "an abstention cites nothing"
-    assert engine.kinds.count("evidence") >= 1, engine.kinds
+    skipped = [d for d in run.decision_events if d.name == "retry_skipped"]
+    assert skipped, "a decline that skipped its retry records why"
+    assert {d.engine for d in skipped} == {"jev"}
+    assert "would not change the outcome" in str(skipped[0].reasoning)
 
 
 async def test_an_unanswered_entity_guard_is_recorded_as_unavailable_not_as_a_low_score(
     db: Any, user_a: Any, no_llm: dict[str, list[str]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A trace row that reads 0.0 from `jev` is indistinguishable from a run
-    that graded the question and got a low grade. `engine="unavailable"` is the
-    difference between a degraded run that can be explained and one that
-    cannot."""
+    """When the sanitizer answers but the entity guard cannot be read, the
+    trace must say so with `engine="unavailable"` rather than publishing a
+    0.0 that looks like a real reading."""
     from dataclasses import replace
 
     from db.session import get_session_factory
     from graph import auto as auto_module
     from graph.auto import prepare_auto_run
+    from schemas.decisions import Answer
+
     params = await _gate_params(db, user_a, no_llm, monkeypatch)
     question = "What is the capital of the Ridgeline R-7?"
 
@@ -518,8 +503,16 @@ async def test_an_unanswered_entity_guard_is_recorded_as_unavailable_not_as_a_lo
         return question
 
     monkeypatch.setattr(auto_module, "complete", echo)
+
+    class _SanitizerOnlyEngine(_DeadDecisionEngine):
+        async def decide(self, *, state: Any, questions: Any) -> Any:
+            kind = str(state.get("kind"))
+            if kind == "sanitize":
+                return {name: Answer(engine="jev", latency_ms=1, value=0.01) for name in questions}
+            raise DecisionUnavailable("decision_unavailable", "down", {})
+
     run = await prepare_auto_run(
-        get_session_factory(), replace(params, question=question), _DeadDecisionEngine()
+        get_session_factory(), replace(params, question=question), _SanitizerOnlyEngine()
     )
 
     entity_rows = [d for d in run.decision_events if d.name.startswith("entity_")]
@@ -527,31 +520,4 @@ async def test_an_unanswered_entity_guard_is_recorded_as_unavailable_not_as_a_lo
     assert {d.engine for d in entity_rows} == {"unavailable"}
     assert all(d.value == 0.0 for d in entity_rows)
     assert all("unreachable" in str(d.reasoning) for d in entity_rows)
-
-
-async def test_the_entity_guard_fails_when_it_cannot_read_a_single_passage(
-    db: Any, user_a: Any, no_llm: dict[str, list[str]], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The guard beside the gate. "No passage could be confirmed to cover the
-    entity" cannot be read as coverage, so it fails — the same answer it gives
-    when every passage is confirmed to be about a different entity."""
-    from dataclasses import replace
-
-    from db.session import get_session_factory
-    from graph import auto as auto_module
-    from graph.auto import prepare_auto_run
-    question = "What is the capital of the Ridgeline R-7?"
-    params = await _gate_params(db, user_a, no_llm, monkeypatch)
-
-    async def echo(**_: Any) -> str:
-        return question
-
-    monkeypatch.setattr(auto_module, "complete", echo)
-    run = await prepare_auto_run(
-        get_session_factory(), replace(params, question=question), _DeadDecisionEngine()
-    )
-
-    entity_rows = [d for d in run.decision_events if d.name.startswith("entity_")]
-    assert entity_rows, "a question that names an entity still asks about it"
-    assert {d.engine for d in entity_rows} == {"unavailable"}
     assert run.abstain_event is not None

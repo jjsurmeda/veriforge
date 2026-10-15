@@ -253,7 +253,7 @@ then the batch is split in half until it is a single question. If a question
 still cannot be answered, each stage takes **its own** defined default rather
 than an invented reading: ingress → its defaults, rerank → fused order, **the
 gate → a failing gate** (corrective retrieval, then abstain), the entity guard
-→ fails, the sanitizer → keeps every chunk, the reviewer → `unsupported`, the
+→ fails, the sanitizer → drops every unanswered chunk, the reviewer → `unsupported`, the
 output guard → delivers as-is, Deep's controller → another hop. A decision
 answered by no engine is published with `engine: "unavailable"` — a third
 value that is not an engine, and the difference between "the evidence was
@@ -487,8 +487,10 @@ data isolation is enforced in SQL, never by the model.
 4. **Sanitizer.** Jev `chunk_injection` on every chunk that reaches the
    generator (the post-rerank top-k) and every web page used; dropped
    chunks show in the Sources tab, and a dropped chunk is not backfilled
-   from beyond the reranked set. Chunks that rerank drops never reach the generator, so they are not
-   checked.
+   from beyond the reranked set. A chunk the grader could not answer is
+   dropped too (fail-closed), so a decision outage empties the top-k and
+   the run abstains rather than answering from unsanitised passages. Chunks
+   that rerank drops never reach the generator, so they are not checked.
 5. **Ingress checks.** Jev injection and jailbreak checks on the user
    message. *(Exception: the greeting fast path
    in §7's ingress row bypasses these checks for a fixed allowlist. It is

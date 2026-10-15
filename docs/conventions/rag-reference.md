@@ -13,6 +13,6 @@ list, not only against open known issues.
 | Whole-document questions | Document or section summaries retrieved for gist questions (RAPTOR / summary index) | ❌ none; gist questions see only the passages that match |
 | Generator prompt | Sources first, question last, numbered citations; read all sources; combine stated facts; resolve conflicts (later explanation wins); per-intent instructions | ✅ v5 + four per-intent blocks from the ingress intent; **Fast and Deep still get the base prompt only** (R2b) |
 | Abstention | One clear sufficiency signal; few independent vetoes | ✅ one evidence gate (`rubric_mean_top3` ≥ 0.55) + the entity guard; calibration holds 0 confident wrong with the guard at the cost of 2 false abstentions (`outside-whitman`, `broad-alice`) |
-| Degradation | An outage degrades the stage; it never fails the run | ✅ a decision outage takes each stage's own default — **the gate fails and abstains**, never answers (KI-57) |
+| Degradation | An outage degrades the stage; it never fails the run | ✅ a decision outage takes each stage's own default — **the gate fails and abstains**, never answers; the sanitizer drops unanswered chunks so an outage cannot bypass it (KI-57) |
 | Verification | Post-hoc claim check against cited passages | ✅ reviewer |
 | Evaluation | Answer correctness and context recall on a labelled set, not only safety | ✅ content misses are a counted class, `MAX_CONTENT_MISSES = 1` (KI-75); context recall deferred to v1 |

@@ -185,13 +185,11 @@ async def sanitize_chunks(
     (KI-57): without it a decision-layer outage raised `DecisionUnavailable` out
     of the sanitizer and failed the run.
 
-    **A chunk the grader could not answer is kept, not dropped.** That is the
-    branch this function already takes for a passage Jev skipped, and it is the
-    one an outage has to land on: the alternative — failing the run, or
-    silently dropping every passage — is worse in both directions. It is also
-    the weaker of the two security postures, and deliberately so: an unsanitised
-    passage can reach the generator when the decision layer is down. The
-    alternative was that the whole turn did not happen at all.
+    **A chunk the grader could not answer is dropped.** "Unanswered" is the
+    same branch as "Jev skipped this passage" and is now treated the same way:
+    the generator must not see a chunk nobody checked. A decision outage therefore
+    drops the top-k, the gate fails for lack of evidence, and the run abstains
+    rather than answering from unsanitised passages (KI-57 fail-closed).
     """
     if not chunks or not bool(runtime_value("guardrails.enabled", True)):
         return list(chunks), [], {}
@@ -215,7 +213,10 @@ async def sanitize_chunks(
     for i, chunk in enumerate(chunks):
         answer = answers.get(f"chunk_injection_{i}")
         if answer is None:
-            kept_at[i] = chunk
+            # Unanswered = the grader was unreachable or skipped this chunk.
+            # Fail closed: do not hand an unchecked passage to the generator.
+            logger.info("sanitizer dropped chunk %s: no answer from grader", chunk.chunk_id)
+            dropped.append(chunk)
             continue
         drop_threshold = threshold("chunk_injection_drop", answer.engine)
         if float(answer.value) < drop_threshold:

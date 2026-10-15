@@ -23,7 +23,7 @@ async def sanitize(
     with the sanitizer's per-chunk answers recorded as decisions.
 
     A decision-layer outage degrades to "every chunk unanswered, every chunk
-    kept" rather than failing the run (KI-57) — see `decisions.sanitize` for
+    dropped" rather than failing the run (KI-57) — see `decisions.sanitize` for
     why that is the branch and what it costs."""
     kept, dropped, answers = await env.step(
         "sanitize",
