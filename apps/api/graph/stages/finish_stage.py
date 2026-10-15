@@ -17,6 +17,7 @@ from graph.stages.checks import _conflict_pair_questions
 from graph.stages.common import no_call
 from graph.stages.evidence_stage import Attempt
 from graph.stages.ingress_stage import direct_run
+from graph.stages.retrieve_stage import SUMMARY_SOURCE_TYPE
 from graph.stages.state import AutoRun, AutoRunState, StageEnv
 from retrieval.context import count_tokens, trim_context
 from retrieval.hybrid import ScoredChunk
@@ -144,7 +145,12 @@ def _cite(env: StageEnv, state: AutoRunState) -> None:
         Citation(
             message_id=env.params.message_id,
             n=index + 1,
-            chunk_id=context.chunk.chunk_id,
+            # Summaries carry a synthetic chunk_id that matches no row in
+            # `chunks`; the foreign key is nullable so a summary citation
+            # points through document_id/section_id instead (_merge_summaries).
+            chunk_id=context.chunk.chunk_id
+            if context.chunk.source_type != SUMMARY_SOURCE_TYPE
+            else None,
             rerank_score=context.chunk.rerank_score,
         )
         for index, context in enumerate(state.contexts)
