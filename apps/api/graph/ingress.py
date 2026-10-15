@@ -13,10 +13,11 @@ blocked", and redacting the question would corrupt retrieval.
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, Literal, TypedDict
 from uuid import UUID
 
 from decisions import DecisionEngine, threshold
+from decisions.engine import DecisionUnavailable
 from decisions.thresholds import Engine
 from runtime import runtime_value
 from schemas.decisions import Answer, Choice, Noul, Score
@@ -228,6 +229,53 @@ def interpret_answers(answers: dict[str, Answer]) -> IngressOutcome:
     )
 
 
+# What ingress returns when the decision layer answered nothing at all (KI-57).
+#
+# These are the module's own defaults, which is the point: every one of them is
+# already the value `_pick_choice` falls back to below the confidence floor, and
+# the guards' default below their warn floor is `pass`. The run therefore takes
+# the ordinary retrieval path it takes for a low-confidence classification,
+# rather than ending `failed` with `decision_unavailable` — which is what a Jev
+# outage used to do here.
+#
+# `source` is `both` rather than `upload`: a web page can still answer, and
+# web retrieval degrades to documents-only by itself when the web is down.
+# `risk` is `high` because the conservative delivery plan is the expensive-safe
+# one and review is cheap relative to an unreviewed confident answer.
+class _IngressDefaults(TypedDict):
+    """The shape of `INGRESS_DEFAULTS`, so the outcome below is built from it
+    rather than restated: one source, and a new field cannot drift from the
+    value an outage degrades to."""
+
+    intent: str
+    source: str
+    complexity: str
+    risk: str
+    lexical_weight: float
+    guard_injection: GuardVerdict
+    guard_jailbreak: GuardVerdict
+    guard_pii: GuardVerdict
+    off_topic: GuardVerdict
+
+
+INGRESS_DEFAULTS: _IngressDefaults = {
+    "intent": INTENT_DEFAULT,
+    "source": SOURCE_DEFAULT,
+    "complexity": COMPLEXITY_DEFAULT,
+    "risk": RISK_DEFAULT,
+    "lexical_weight": 0.5,
+    "guard_injection": "pass",
+    "guard_jailbreak": "pass",
+    "guard_pii": "pass",
+    "off_topic": "pass",
+}
+
+
+def ingress_outcome_without_answers() -> IngressOutcome:
+    """The outcome for a decision-layer outage: every default, nothing invented."""
+    return IngressOutcome(**INGRESS_DEFAULTS)
+
+
 async def run_ingress(
     engine: DecisionEngine,
     *,
@@ -235,15 +283,26 @@ async def run_ingress(
     user_message: str,
     has_collections: bool,
 ) -> IngressOutcome:
-    """One DecisionEngine.decide call; outcome drives the rest of the run."""
+    """One DecisionEngine.decide call; outcome drives the rest of the run.
+
+    An unreachable engine degrades to `ingress_outcome_without_answers` rather
+    than failing the run (KI-57). The caller records
+    `unavailable_event` rows for the questions it did not get back.
+    """
     state: dict[str, Any] = {
         "run_id": str(run_id),
         "kind": "ingress",
         "user_message": user_message,
         "has_collections": has_collections,
     }
-    answers = await engine.decide(
-        state=state, questions=ingress_questions(user_message, has_collections)
-    )
+    questions = ingress_questions(user_message, has_collections)
+    try:
+        answers = await engine.decide(state=state, questions=questions)
+    except DecisionUnavailable as exc:
+        logger.warning("decision layer unavailable at ingress (%s); using ingress defaults", exc)
+        return ingress_outcome_without_answers()
+    if not answers:
+        logger.warning("decision layer answered none of the ingress questions; using defaults")
+        return ingress_outcome_without_answers()
     return interpret_answers(answers)
 

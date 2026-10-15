@@ -13,23 +13,44 @@ import {
 } from '../decisionMeta'
 
 function engineLabel(engine: Decision['engine']): string {
-  return engine === 'jev' ? 'Jev' : 'fallback'
+  if (engine === 'jev') return 'Jev'
+  // `unavailable` is not an engine (KI-57): it is a row for a question the
+  // decision layer could not answer, so it says so rather than borrowing
+  // `fallback`'s name for a question the LLM fallback did not answer either.
+  return engine === 'fallback' ? 'fallback' : 'unavailable'
 }
 
 /** Exported so the evidence-gate card badges a gate with this component rather
  *  than a second engine badge that drifts from it. */
 export function EngineBadge({ engine }: { engine: Decision['engine'] }) {
   const fallback = engine === 'fallback'
+  // The degraded badge is a third tone: `fallback` means "Jev was down and the
+  // LLM answered instead", which is a working system; `unavailable` means
+  // nothing answered and the stage used its own default, which is not, and
+  // which an operator reading a trace needs to see as its own state (KI-57).
+  const unavailable = engine === 'unavailable'
   return (
     <span
       className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 font-mono text-2xs ${
-        fallback
-          ? 'border-border/30 bg-raised text-warning'
-          : 'border-border/25 bg-raised text-fg'
+        unavailable
+          ? 'border-danger/40 bg-raised text-danger'
+          : fallback
+            ? 'border-border/30 bg-raised text-warning'
+            : 'border-border/25 bg-raised text-fg'
       }`}
-      title={fallback ? 'Jev unavailable — answered by LLM fallback' : undefined}
+      title={
+        unavailable
+          ? 'Decision layer unreachable — no engine answered; the stage used its own default'
+          : fallback
+            ? 'Jev unavailable — answered by LLM fallback'
+            : undefined
+      }
     >
-      {fallback ? <AlertTriangle size={10} aria-hidden="true" /> : <Sparkles size={10} aria-hidden="true" />}
+      {fallback || unavailable ? (
+        <AlertTriangle size={10} aria-hidden="true" />
+      ) : (
+        <Sparkles size={10} aria-hidden="true" />
+      )}
       {engineLabel(engine)}
     </span>
   )

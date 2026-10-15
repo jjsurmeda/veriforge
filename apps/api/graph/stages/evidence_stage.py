@@ -34,7 +34,7 @@ from graph.stages.checks import (
     _sufficient_question,
     named_entities,
 )
-from graph.stages.common import decision_event
+from graph.stages.common import decide_or_degrade, decision_event, unavailable_event
 from graph.stages.rerank_stage import add_rerank_scores
 from graph.stages.retrieve_stage import retrieve_queries
 from graph.stages.sanitize_stage import sanitize
@@ -42,7 +42,7 @@ from graph.stages.state import AutoRunState, StageEnv
 from retrieval.expand import ExpandedContext, dedupe_adjacent, expand_context
 from retrieval.hybrid import ScoredChunk
 from retrieval.rerank import RERANK_TOP_N, RerankProvider
-from schemas.decisions import Answer, Noul
+from schemas.decisions import Answer, Choice, Noul, Score
 from schemas.events import Decision, Retrieval
 
 # Answer-first: one retrieve, and below the sufficient_abstain floor exactly
@@ -66,6 +66,10 @@ class Attempt:
     p_sufficient: float = 0.0
     abstain_threshold: float = 0.0
     sufficient_engine: Literal["jev", "fallback"] = "jev"
+    # The decision layer answered nothing this pass (KI-57). Kept apart from
+    # `p_sufficient == 0.0` because a real 0.0 is a judgement and this is an
+    # absence of one, and the trace must not read as if it were the first.
+    gate_unavailable: bool = False
     entity_ok: bool = True
     entity_max: float | None = None
     entity_names: list[str] = field(default_factory=list)
@@ -163,23 +167,20 @@ async def _evaluate_attempt(
         loop.current_query, attempt.entity_names, top_for_check
     )
     attempt.sides = _conflict_sides(attempt.winners)
+    questions = {
+        "sufficient": _sufficient_question(loop.current_query, top_for_check),
+        **entity_questions,
+        **(
+            _conflict_pair_questions(attempt.sides, env.params.question)
+            if attempt.batched_pairs
+            else {}
+        ),
+    }
     answers = await env.step(
         "sufficient",
-        partial(
-            env.engine.decide,
-            state={"run_id": str(env.params.run_id), "kind": "sufficient"},
-            questions={
-                "sufficient": _sufficient_question(loop.current_query, top_for_check),
-                **entity_questions,
-                **(
-                    _conflict_pair_questions(attempt.sides, env.params.question)
-                    if attempt.batched_pairs
-                    else {}
-                ),
-            },
-        ),
+        partial(decide_or_degrade, env, "sufficient", questions),
     )
-    _read_answers(env, state, attempt, answers, entity_questions)
+    _read_answers(env, state, attempt, answers, entity_questions, questions)
     return attempt
 
 
@@ -189,12 +190,43 @@ def _read_answers(
     attempt: Attempt,
     answers: dict[str, Answer],
     entity_questions: dict[str, Noul],
+    questions: dict[str, Noul | Choice | Score],
 ) -> None:
-    """Turn the batched answers into the attempt's three verdicts."""
+    """Turn the batched answers into the attempt's verdicts.
+
+    **No reading at all is a failing gate** (KI-57), not an error. The
+    decision layer being unreachable is not evidence that the corpus cannot
+    answer, and it is certainly not evidence that it can, so the gate treats it
+    the way it treats a low grade: below the floor, into the corrective
+    retrieval, and — if the layer is still down — to an abstention that cites
+    nothing. The entity guard fails with it, because "no passage could be
+    confirmed to cover the entity" cannot be read as coverage.
+
+    Both are recorded as `unavailable` decision rows rather than as low scores,
+    so a trace cannot be read as a run that graded the question and got a bad
+    grade.
+    """
     attempt.batched_conflict_answers = {
         name: answer for name, answer in answers.items() if name.startswith("conflict_")
     }
-    sufficient = answers["sufficient"]
+    sufficient = answers.get("sufficient")
+    if sufficient is None:
+        state.decision_events.append(
+            unavailable_event(env.params.run_id, "sufficient", questions["sufficient"])
+        )
+        for name, question in entity_questions.items():
+            state.decision_events.append(unavailable_event(env.params.run_id, name, question))
+        attempt.gate_unavailable = True
+        attempt.p_sufficient = 0.0
+        # The engine that would have answered is unknown, so the threshold is
+        # read on the reference scale; at 0.0 every floor fails, which is the
+        # intent.
+        attempt.abstain_threshold = threshold("sufficient_abstain", "jev")
+        attempt.sufficient_engine = "jev"
+        if entity_questions:
+            attempt.entity_ok = False
+            attempt.entity_max = None
+        return
     state.decision_events.append(decision_event(env.params.run_id, "sufficient", sufficient))
     attempt.p_sufficient = float(sufficient.value)
     attempt.abstain_threshold = threshold("sufficient_abstain", sufficient.engine)
@@ -210,7 +242,29 @@ def _read_answers(
 
 def _retry_skipped_event(env: StageEnv, attempt: Attempt) -> Decision:
     """Recorded as a decision so the trace says why this run declined without
-    a retry."""
+    a retry.
+
+    When the decision layer is the reason (KI-57) the row says so in both its
+    engine and its reasoning: a `retry_skipped` reading 0.0 from `jev` says
+    "the evidence was judged clearly absent", and that is not what happened.
+    """
+    if attempt.gate_unavailable:
+        return Decision(
+            run_id=str(env.params.run_id),
+            name="retry_skipped",
+            value=attempt.p_sufficient,
+            probability=attempt.p_sufficient,
+            probabilities=None,
+            engine="unavailable",
+            latency_ms=0,
+            stage="sufficient",
+            threshold=RETRY_SKIP_SUFFICIENT_MAX,
+            reasoning=(
+                "the decision layer was unreachable, so the evidence was never "
+                "graded; the corrective re-query would reach the same outage and "
+                "13-15 s later"
+            ),
+        )
     return Decision(
         run_id=str(env.params.run_id),
         name="retry_skipped",

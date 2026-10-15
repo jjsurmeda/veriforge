@@ -16,7 +16,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from decisions.engine import EngineProtocol
+from decisions.engine import DecisionUnavailable, EngineProtocol
 from prompts.load import load_prompt
 from providers.llm import complete
 from retrieval.context import count_tokens
@@ -378,9 +378,17 @@ async def verify_claims(
         questions: dict[str, Question] = {
             claim.claim_id: _verdict_question(claim, contexts, answer) for claim in batch
         }
-        batch_answers = await engine.decide(
-            state={"run_id": run_id, "kind": "claim_verdict"}, questions=questions
-        )
+        try:
+            batch_answers = await engine.decide(
+                state={"run_id": run_id, "kind": "claim_verdict"}, questions=questions
+            )
+        except DecisionUnavailable as exc:
+            # The reviewer degrades to "unverified", which is the branch it
+            # already takes for a claim Jev did not answer and for one whose
+            # verdict it could not parse (KI-57). It does not degrade to
+            # "supported": an unreachable grader is not evidence for a claim.
+            logger.warning("decision layer unavailable at claim_verdict (%s)", exc)
+            batch_answers = {}
         for claim in batch:
             decision = batch_answers.get(claim.claim_id)
             verdict = str(decision.value) if decision is not None else "unsupported"

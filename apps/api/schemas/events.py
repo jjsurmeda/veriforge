@@ -109,7 +109,12 @@ class Decision(RunEvent):
     value: str | float
     probability: float | None = None
     probabilities: dict[str, float] | None = None
-    engine: Literal["jev", "fallback"]
+    # `unavailable` is the third value and is not an engine: it is the record of
+    # a question the decision layer could not answer at all, carrying the
+    # stage's own default rather than a reading (KI-57). It has to be
+    # distinguishable in the trace, because a row reading 0.0 from `jev` says
+    # "the evidence was judged thin" and this says "nobody could judge it".
+    engine: Literal["jev", "fallback", "unavailable"]
     latency_ms: int
     reasoning: str | None = None
     stage: str | None = None

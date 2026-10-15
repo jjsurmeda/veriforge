@@ -17,7 +17,7 @@ import re
 from dataclasses import dataclass, field
 
 from decisions import threshold
-from decisions.engine import EngineProtocol
+from decisions.engine import DecisionUnavailable, EngineProtocol
 from runtime import runtime_value
 from schemas.decisions import Answer, Noul
 
@@ -86,20 +86,28 @@ async def guard_output(engine: EngineProtocol, *, run_id: str, text: str) -> Out
     if not text.strip() or not bool(runtime_value("guardrails.enabled", True)):
         return result
 
-    answers = await engine.decide(
-        state={"run_id": run_id, "kind": "output_guard"},
-        questions={
-            TOXICITY_QUESTION: Noul(
-                prompt=(
-                    "Is the following assistant output toxic — harassment, "
-                    "hate speech, graphic incitement? Answer yes only for "
-                    "text that must not be delivered to the user.\n\n"
-                    f"[output]\n{text[:6000]}"
-                )
-            ),
-            SECRETS_QUESTION: _secrets_noul(text),
-        },
-    )
+    try:
+        answers = await engine.decide(
+            state={"run_id": run_id, "kind": "output_guard"},
+            questions={
+                TOXICITY_QUESTION: Noul(
+                    prompt=(
+                        "Is the following assistant output toxic — harassment, "
+                        "hate speech, graphic incitement? Answer yes only for "
+                        "text that must not be delivered to the user.\n\n"
+                        f"[output]\n{text[:6000]}"
+                    )
+                ),
+                SECRETS_QUESTION: _secrets_noul(text),
+            },
+        )
+    except DecisionUnavailable as exc:
+        # An unreachable grader is not a clean bill of health and not a
+        # verdict: the output is delivered unredacted, exactly as it would be
+        # for a text the guard was disabled on (KI-57). The alternative was
+        # the run failing after the answer had already been generated.
+        logger.warning("decision layer unavailable at output_guard (%s); delivering as-is", exc)
+        answers = {}
     toxicity = answers.get(TOXICITY_QUESTION)
     secrets = answers.get(SECRETS_QUESTION)
     result.toxicity_answer = toxicity

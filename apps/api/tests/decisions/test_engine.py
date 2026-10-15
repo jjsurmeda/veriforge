@@ -445,7 +445,12 @@ class TestJevClientParsing:
 class TestFallbackEngineParsing:
     @pytest.mark.asyncio
     async def test_choice_probabilities_normalised(self) -> None:
-        async def fake_complete(*, litellm_model: str, messages: Any, metadata: Any) -> str:
+        # `**_` absorbs the cap and the response-format hint the fallback now
+        # sends (KI-57); a double of `providers.llm.complete` accepts what
+        # `complete` accepts.
+        async def fake_complete(
+            *, litellm_model: str, messages: Any, metadata: Any, **_: Any
+        ) -> str:
             return json.dumps({
                 "intent": {
                     "probabilities": {
@@ -476,7 +481,12 @@ class TestFallbackEngineParsing:
 
     @pytest.mark.asyncio
     async def test_noul_out_of_range_raises(self) -> None:
-        async def fake_complete(*, litellm_model: str, messages: Any, metadata: Any) -> str:
+        # `**_` absorbs the cap and the response-format hint the fallback now
+        # sends (KI-57); a double of `providers.llm.complete` accepts what
+        # `complete` accepts.
+        async def fake_complete(
+            *, litellm_model: str, messages: Any, metadata: Any, **_: Any
+        ) -> str:
             return json.dumps({"guard_injection": {"probability": 1.7}})
 
         engine = FallbackEngine(complete_fn=fake_complete)
@@ -487,7 +497,12 @@ class TestFallbackEngineParsing:
 
     @pytest.mark.asyncio
     async def test_fenced_json_accepted(self) -> None:
-        async def fake_complete(*, litellm_model: str, messages: Any, metadata: Any) -> str:
+        # `**_` absorbs the cap and the response-format hint the fallback now
+        # sends (KI-57); a double of `providers.llm.complete` accepts what
+        # `complete` accepts.
+        async def fake_complete(
+            *, litellm_model: str, messages: Any, metadata: Any, **_: Any
+        ) -> str:
             return '```json\n{"guard_injection": {"probability": 0.3}}\n```'
 
         engine = FallbackEngine(complete_fn=fake_complete)

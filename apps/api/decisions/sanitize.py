@@ -35,6 +35,7 @@ call, and N chunks in one round trip beats N round trips.
 
 import logging
 import re
+from collections.abc import Awaitable, Callable
 from dataclasses import replace
 from typing import Any
 
@@ -44,6 +45,11 @@ from runtime import runtime_value
 from schemas.decisions import Answer, Choice, Noul, Score
 
 logger = logging.getLogger(__name__)
+
+#: The caller's "ask the decision layer, or come back empty-handed" seam. Takes
+#: the stage name and the questions; returns whatever came back, possibly
+#: nothing (KI-57).
+DegradeFn = Callable[[str, dict[str, "Noul | Choice | Score"]], Awaitable[dict[str, Answer]]]
 
 REDACTION_MARKER = "[REDACTED:INJECTION]"
 
@@ -168,16 +174,38 @@ async def sanitize_chunks(
     *,
     run_id: str,
     chunks: list[ScoredChunk],
+    degrade: DegradeFn | None = None,
 ) -> tuple[list[ScoredChunk], list[ScoredChunk], dict[str, Answer]]:
     """Split (kept, dropped) chunks; the third tuple element carries the
-    per-chunk answers so callers can emit decision events."""
+    per-chunk answers so callers can emit decision events.
+
+    `degrade` is the caller's "ask, or come back empty-handed" helper — the
+    graph passes a closure over `graph.stages.common.decide_or_degrade`. It
+    exists because this module is below the graph and must not import it
+    (KI-57): without it a decision-layer outage raised `DecisionUnavailable` out
+    of the sanitizer and failed the run.
+
+    **A chunk the grader could not answer is kept, not dropped.** That is the
+    branch this function already takes for a passage Jev skipped, and it is the
+    one an outage has to land on: the alternative — failing the run, or
+    silently dropping every passage — is worse in both directions. It is also
+    the weaker of the two security postures, and deliberately so: an unsanitised
+    passage can reach the generator when the decision layer is down. The
+    alternative was that the whole turn did not happen at all.
+    """
     if not chunks or not bool(runtime_value("guardrails.enabled", True)):
         return list(chunks), [], {}
+
+    async def ask(kind: str, qs: dict[str, Noul | Choice | Score]) -> dict[str, Answer]:
+        state: dict[str, Any] = {"run_id": run_id, "kind": kind}
+        if degrade is None:
+            return await engine.decide(state=state, questions=qs)
+        return await degrade(kind, qs)
+
     questions: dict[str, Noul | Choice | Score] = {
         f"chunk_injection_{i}": _question_for(c, i) for i, c in enumerate(chunks)
     }
-    state: dict[str, Any] = {"run_id": run_id, "kind": "sanitize"}
-    answers = await engine.decide(state=state, questions=questions)
+    answers = await ask("sanitize", questions)
 
     # By original index, so the kept list keeps retrieval rank order.
     kept_at: dict[int, ScoredChunk] = {}
@@ -216,9 +244,9 @@ async def sanitize_chunks(
     # generator never sees instruction text; the decision stays with the
     # DecisionEngine). One batched call, and only for chunks that tripped.
     if redacted:
-        recheck = await engine.decide(
-            state={"run_id": run_id, "kind": "sanitize_recheck"},
-            questions={
+        recheck = await ask(
+            "sanitize_recheck",
+            {
                 f"chunk_injection_recheck_{i}": _question_for(red, i)
                 for i, (_, red) in redacted.items()
             },

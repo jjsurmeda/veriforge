@@ -650,7 +650,8 @@
           "engine": {
             "enum": [
               "jev",
-              "fallback"
+              "fallback",
+              "unavailable"
             ],
             "title": "Engine",
             "type": "string"
@@ -5684,7 +5685,7 @@
     },
     "/healthz": {
       "get": {
-        "description": "Liveness plus the three facts an operator needs during an incident.\n\nBackward compatible by construction: `status` and `db` keep their exact\nvalues and the 200/503 split on the database is unchanged, so the\nexisting check (and `scripts/seed_gutenberg.py`'s, which reads this\nendpoint before seeding) keeps working. The new keys are additive.\n\nDeliberately *not* a readiness gate. `breaker`, `jev` and\n`worker_heartbeat_age_s` describe degraded service, and a run still\nanswers with the fallback engine while the breaker is open \u2014 returning\n503 for that would take the whole API out for something the pipeline is\ndesigned to absorb. They are reported so an alarm can read them, and the\nstatus stays 200 while the service is serving.",
+        "description": "Liveness plus the three facts an operator needs during an incident.\n\n`status` and `db` decide the 200/503 split on the database;\n`scripts/seed_gutenberg.py` reads them before seeding.\n\nDeliberately *not* a readiness gate. `breaker`, `jev` and\n`worker_heartbeat_age_s` describe degraded service, and a run still\nanswers with the fallback engine while the breaker is open \u2014 returning\n503 for that would take the whole API out for something the pipeline is\ndesigned to absorb. They are reported so an alarm can read them, and the\nstatus stays 200 while the service is serving.",
         "operationId": "healthz_healthz_get",
         "responses": {
           "200": {

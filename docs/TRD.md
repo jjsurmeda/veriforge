@@ -244,6 +244,20 @@ Choice asks for a probability per option, normalised to sum to 1.
 - Every decision event carries `engine`; the trace marks fallback
   decisions.
 
+**Degradation, not failure (KI-57).** A decision-layer outage degrades the
+stage that asked and **never fails a run**: a run ends `completed`, answered or
+abstained. The fallback's output cap is sized to the batch it was asked, its
+call requests JSON explicitly, and an unparseable reply is retried once and
+then the batch is split in half until it is a single question. If a question
+still cannot be answered, each stage takes **its own** defined default rather
+than an invented reading: ingress → its defaults, rerank → fused order, **the
+gate → a failing gate** (corrective retrieval, then abstain), the entity guard
+→ fails, the sanitizer → keeps every chunk, the reviewer → `unsupported`, the
+output guard → delivers as-is, Deep's controller → another hop. A decision
+answered by no engine is published with `engine: "unavailable"` — a third
+value that is not an engine, and the difference between "the evidence was
+judged thin" and "nobody could judge it" in a trace.
+
 **Shadow mode and comparison.** For a configurable sample (default 2%), a
 second provider also answers asynchronously; results are stored in
 `decision_shadow`. The comparison view (PRD AD-11) replays one question
@@ -369,7 +383,8 @@ asked "Does the passage contain the information needed to answer or verify
 the question?" graded off-topic / related / partly / fully, ranked by the
 expected level), an **LLM judge** (same rubric, a chat model), and **fused
 order** (no rerank). Chosen per run like decision providers (PRD AD-10). A
-rerank outage degrades to fused order and never fails the run.
+rerank outage degrades to fused order and never fails the run — and, with
+KI-57, an outage of the decision layer underneath it degrades the same way.
 
 ### 9.5 OKF bundles *(v1.1, PRD §4.7, ADR-004)*
 

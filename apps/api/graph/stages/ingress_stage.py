@@ -17,9 +17,9 @@ from chats.scope import list_scope_documents
 from db.models import Chat
 from graph import rewrite as rewrite_node
 from graph.history import history_messages
-from graph.ingress import IngressOutcome, run_ingress
+from graph.ingress import IngressOutcome, ingress_questions, run_ingress
 from graph.stages.checks import named_entities
-from graph.stages.common import decision_event, no_call
+from graph.stages.common import decision_event, no_call, unavailable_event
 from graph.stages.state import AutoRun, AutoRunState, StageEnv
 from schemas.events import Abstain
 
@@ -250,6 +250,16 @@ async def _ingress_and_rewrite(env: StageEnv, state: AutoRunState) -> tuple[Ingr
     )
     for name, answer in outcome.answers.items():
         state.decision_events.append(decision_event(env.params.run_id, name, answer))
+    if not outcome.answers:
+        # Every ingress question went unanswered, so the route below was chosen
+        # by the module's defaults rather than by the classifier. Say so on the
+        # trace: an `unavailable` row per question is the difference between a
+        # degraded run that can be explained and one that reads as a confident
+        # routing decision (KI-57).
+        for name, question in ingress_questions(
+            env.params.question, state.has_collections
+        ).items():
+            state.decision_events.append(unavailable_event(env.params.run_id, name, question))
     return outcome, rewritten
 
 

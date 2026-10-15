@@ -15,7 +15,6 @@ Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 | --- | --- | --- |
 | check-work (acceptance) | KI-70 | the relevance gate abstains on broad/summary answerables; no threshold separates |
 | check-work (1d) | KI-15 | order-dependent hang in test_chats_runs.py; a flaky suite fails "repeatable" |
-| check-stable | KI-57 | degrade-to-fail when the decision fallback truncates; fault injection covers it |
 | check-stable | KI-32 | record of faithfulness variance; gate tolerances already set |
 | check-stable | KI-43 | absence-claim verdict flips between runs (grader quality) |
 | check-stable | KI-49 | reviewer rarely makes an unsupported judgement itself |
@@ -202,7 +201,68 @@ plan), closed in the same commit.
   next stalls, the decisive evidence is `faulthandler_timeout` plus the two
   probes named in the 2026-10-02 note, in that order.
 
-## KI-57: The decision fallback's output cap (512) truncates the batched decision JSON, failing the whole item whenever jev degrades
+## CLOSED KI-57: The decision fallback's output cap (512) truncates the batched decision JSON, failing the whole item whenever jev degrades
+
+Closed 2026-10-15 (phase R2a-2 item 3). The truncation cause was fixed on
+2026-10-05 (P2a item 5, below); what stayed open was the behaviour behind it —
+**a fallback failure still failed the item**. Both are fixed now.
+
+The degradation half of it was confirmed live, not theorised. The R2a
+acceptance run aborted at item 25 of 57 with exactly this, from its own logs:
+
+```
+WARNING:decisions.engine:jev failed, retrying on fallback: jev http error:
+ERROR:decisions.engine:shadow fallback call failed
+decisions.fallback.FallbackError: fallback returned non-JSON: Expecting value: line 1 column 1 (char 0)
+ERROR:graph.runner:run failed
+{"event":"run.failed","error_code":"decision_unavailable"}
+```
+
+A socket timeout, then one unreadable reply, then a whole turn lost. The
+provider timeout is external; **the fail-the-run behaviour was ours.**
+
+- **Fix, at the engine** (`decisions/fallback.py`): the output cap is now sized
+  to the batch (`fallback_max_tokens`, never below the role's own cap) instead of
+  fixed, so the rerank rubric's per-passage four-way distributions — the shape
+  KI-57's note calls "bigger" — have somewhere to go; the call requests
+  `response_format={"type": "json_object"}` instead of relying on the prompt's
+  "no prose"; an unparseable reply is **retried once** and then the batch is
+  **split in half, recursively, until it is one question**, because a truncated
+  object truncates deterministically and re-asking the same batch returns the
+  same cut.
+- **Fix, at every stage** (`graph/stages/common.decide_or_degrade`, and the
+  call sites): an unreachable decision layer is now each stage's **own**
+  degradation, never a failed run. Ingress → the module's defaults (`lookup`,
+  `both`, guards `pass`). Rerank → fused order (unchanged; it already caught
+  `DecisionUnavailable`). **The gate → a FAILING gate**: below the floor, into
+  the corrective retrieval, and — while the layer is down — a skipped retry and
+  an abstention that cites nothing, because an unreachable grader is not
+  evidence. The entity guard fails with it. The sanitizer keeps every chunk, the
+  branch it already takes for a passage the grader skipped. The reviewer marks
+  every claim `unsupported`. The output guard delivers as-is. Deep's controller
+  takes another hop.
+- **The trace can tell the two apart.** `Decision.engine` gains
+  `unavailable`, a third value that is not an engine: a row reading 0.0 from
+  `jev` says "the evidence was judged thin", and this says "nobody could judge
+  it". `retry_skipped` carries it too, so a decline that skipped its corrective
+  re-query because the layer was down does not read as a judgement that the
+  evidence was clearly absent.
+
+**Tests.** `tests/decisions/test_ki57_degrade.py` (15): the cap grows with the
+batch and covers a 40-passage rubric batch; JSON output and the sized cap are
+asserted on the request; non-JSON and truncated replies, the retry, and the
+recursive split with its call bound; the Jev-timeout path unchanged; ingress's
+defaults; a whole `prepare_auto_run` with a dead engine that still returns a
+finished, abstaining run, records `unavailable` rows, and skips the corrective
+re-query. Web: `DecisionTimeline.test.tsx` (5) on the third badge state.
+
+**Log history, kept because the entry it closes is the record of it:**
+
+**Still to do, not this entry's job:** `make check-stable` phase 2 injects a Jev
+outage. That injection is what proves these paths on a live run; the tests here
+are fakes, and a fake that agrees with itself proves the wiring, not the
+provider.
+
 
 Logged 2026-10-04, P2a item 5 (the generator bake-off), from the control
 runs. During an OpenRouter degradation window (raw
