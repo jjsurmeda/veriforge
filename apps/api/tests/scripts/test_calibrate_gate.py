@@ -331,6 +331,93 @@ def test_an_unknown_or_unloaded_scope_is_an_error_not_an_empty_scope() -> None:
 # --- the persisted artefact --------------------------------------------------
 
 
+async def test_the_entity_set_produces_rows_and_not_item_tuples(
+    db: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A regression, not a style note.
+
+    `probe()` accumulated results in a list called `rows` and then reused the
+    name for the entity-mismatch set's raw payload. All twelve items ran, every
+    one abstained correctly, and the failure surfaced *afterwards* in
+    `print_table` on a list holding `(id, expect, turns)` tuples where dicts
+    were expected — so the run looked clean in the log and wrote no artefact.
+
+    The whole of `probe()` is exercised here with `_run_item` stubbed, so the
+    real loading, scoping and accumulation path runs and no model is called.
+    """
+    import scripts.calibrate_gate as probe_module
+
+    seen: list[tuple[str, list[str]]] = []
+
+    async def stub_run_item(
+        factory: Any,
+        *,
+        user_id: UUID,
+        question_turns: list[str],
+        item_id: str,
+        expect: str,
+        corpus_collection_ids: Any,
+    ) -> dict[str, Any]:
+        seen.append((item_id, [str(c) for c in corpus_collection_ids]))
+        return measure(_Run(), item_id, expect, "lookup", len(question_turns), [])
+
+    async def stub_user_id(session: Any) -> UUID:
+        return uuid4()
+
+    monkeypatch.setattr(probe_module, "_run_item", stub_run_item)
+    monkeypatch.setattr(probe_module, "_eval_user_id", stub_user_id)
+
+    rows = await probe_module.probe("entity_mismatch", None)
+
+    assert len(rows) == 12
+    assert all(isinstance(row, dict) for row in rows), (
+        "probe() returned item tuples, not measurement rows — the results "
+        "accumulator has been shadowed"
+    )
+    assert {row["id"] for row in rows} == {
+        "cf-k9-ingress",
+        "cf-k9-charge",
+        "cf-k9-brightness",
+        "cf-rl-axle",
+        "cf-cv-leave",
+        "cf-fr-montbriv",
+        "em-aw-battery",
+        "em-aw-package",
+        "em-aw-warranty",
+        "em-aw-es-setup",
+        "em-aw-de-pairing",
+        "em-aw-firmware",
+    }
+    # KI-54: each item is scoped to ONE corpus, and the six AW-2000 items and
+    # the six seed items must be on different ones — that difference is the
+    # label.
+    scopes = {item_id: ids for item_id, ids in seen}
+    assert len(set(scopes["em-aw-battery"])) == 1
+    assert len(set(scopes["cf-k9-ingress"])) == 1
+    assert scopes["em-aw-battery"] != scopes["cf-k9-ingress"], (
+        "both corpora in scope would let the run retrieve the answer it is "
+        "supposed to be unable to see"
+    )
+    assert all(row["expect"] == "not_in_sources" for row in rows)
+
+
+async def test_an_item_filter_that_matches_nothing_is_an_error(
+    db: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A typo'd id would otherwise run the whole set and write a report with
+    fewer rows than intended, labelled as if it were complete."""
+    import scripts.calibrate_gate as probe_module
+
+    monkeypatch.setattr(probe_module, "_eval_user_id", _stub_user_id)
+
+    with pytest.raises(ProbeError, match="no such item"):
+        await probe_module.probe("books", "not-an-item-id")
+
+
+async def _stub_user_id(session: Any) -> UUID:
+    return uuid4()
+
+
 def test_the_written_report_says_which_commit_and_how_many_were_gated(tmp_path: Any) -> None:
     """A calibration file named after nothing, or without the commit it measured,
     is a number a later reader cannot trust. `write_report` carries both."""

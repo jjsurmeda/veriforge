@@ -502,6 +502,62 @@ class Chunk(Base):
     )
 
 
+class Summary(Base):
+    """Section and document summaries (TRD §9.1 step 6, R2a-2 item 4).
+
+    The whole-document / gist-question index (RAPTOR). A 300-token child cannot
+    answer "what is this book about", which is why the recorded `broad-*`
+    items score 0.35-0.36 on the passages that *do* contain the arc (KI-70);
+    these rows exist so a gist question has something that answers it.
+
+    Two kinds in one table, discriminated by `kind`:
+
+    * `section` — one per section, `section_id` set.
+    * `document` — one per document, built from its section summaries,
+      `section_id` NULL.
+
+    `kind` is a discriminator and not a derived value because the alternative is
+    reachable-but-meaningless state: a section summary whose `section_id` is
+    NULL would be a summary of nothing, and every read of this table has to
+    branch on `kind` anyway.
+
+    **Ownership is not a column here.** Retrieval joins through `documents` and
+    `collections` under the *same* injected predicate `chunks` uses
+    (`retrieval/filters.build_scope`), so there is no second, simplified scope
+    for a second table to get wrong — see `retrieval/summaries.py`.
+    """
+
+    __tablename__ = "summaries"
+    __table_args__ = (
+        Index("ix_summaries_document_kind", "document_id", "kind"),
+        Index("ix_summaries_section", "section_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid7)
+    document_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), nullable=False
+    )
+    # NULL for the document summary only; see the class docstring.
+    section_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("sections.id", ondelete="CASCADE"), nullable=True
+    )
+    kind: Mapped[str] = mapped_column(Text, nullable=False, default="section")
+    ord: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    heading_path: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    # The document summary is built from its section summaries, never from the
+    # chunks: summarising 2,000 tokens of a chapter costs several times what
+    # summarising one section's does, and the document-level question wants the
+    # arc, not a second copy of the first chapter.
+    built_from_summaries: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(1536), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class Claim(Base):
     """Reviewer claim (TRD §13 claims, written first in slice 6).
 

@@ -351,9 +351,14 @@ async def probe(dataset: str, only: str | None) -> list[dict[str, Any]]:
         # carries them (ADR-002) and no private eval collection is in scope.
         scope_by_id: dict[str, str] = {}
     elif dataset == "entity_mismatch":
-        rows = _load_json(ENTITY_SET)["items"]
-        items = [(str(row["id"]), "not_in_sources", [str(row["question"])]) for row in rows]
-        scope_by_id = {str(row["id"]): str(row.get("scope_corpus") or "") for row in rows}
+        entity_rows = _load_json(ENTITY_SET)["items"]
+        items = [
+            (str(row["id"]), "not_in_sources", [str(row["question"])])
+            for row in entity_rows
+        ]
+        scope_by_id = {
+            str(row["id"]): str(row.get("scope_corpus") or "") for row in entity_rows
+        }
     else:
         raise ProbeError(f"unknown dataset {dataset!r}")
 
