@@ -14,10 +14,14 @@ discovered at runtime:
 
 | | `chunks` | `summaries` |
 | --- | --- | --- |
-| web rows | yes (`c.chat_id`) | **no** — a summary belongs to an uploaded document (TRD §9.1 step 6 runs in ingest; web chunks are chat-scoped and temporary, TRD §9.3) |
+| web rows | yes (`c.chat_id`) | **no** — a summary belongs to an uploaded document |
 | `source_type` | a real column | implicit: always `document` |
 | `page` | a real column | a summary belongs to no single page |
 | document branch | yes | yes — **identical predicate**, the only thing shared |
+
+Why no web summaries: step 6 runs in ingest, over uploaded documents. Web
+chunks are chat-scoped and expire after seven days (TRD §9.3), so a summary
+of one would outlive the thing it summarises.
 
 The document branch is the whole ownership rule and it is written once. The
 `page` and `source_type` client filters narrow a summary search to *nothing*

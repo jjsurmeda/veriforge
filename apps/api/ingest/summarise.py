@@ -28,8 +28,6 @@ import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
-from config import get_settings
-
 logger = logging.getLogger(__name__)
 
 #: The role summaries are written under, so they get their own output cap and
@@ -154,13 +152,22 @@ async def summarise_document(
     *,
     document_title: str,
     sections: list[tuple[int, str, str]],
+    small_model: str,
     complete_fn: Callable[..., Awaitable[str]],
 ) -> DocumentSummaries:
-    """Both levels of one document's summaries, in one call."""
+    """Both levels of one document's summaries, in one call.
+
+    `small_model` is a parameter rather than a settings lookup because that is
+    how the pipeline already carries it — `AutoRunInput.small_model` and
+    `rewrite_node.rewrite_query(small_model=...)` both take it from the run —
+    and an ingest job has no run. Reading it from settings here would make the
+    summariser the one model call in ingest that ignores the model the caller
+    chose, which is a different model for an eval run than for a chat.
+    """
     if not sections:
         raise SummaryError(f"{document_title!r} has no sections to summarise")
     raw = await complete_fn(
-        litellm_model=get_settings().small_model,
+        litellm_model=small_model,
         messages=[
             {
                 "role": "system",

@@ -97,6 +97,12 @@ class AutoRunState:
     # between a grounded answer and this chitchat reply; with none in scope
     # the fast reply is the whole answer.
     chitchat_route: bool = False
+    # Set by the evidence loop once it has spent its one corrective retrieval.
+    # Read by the retrieve stage, because the gist-question index (TRD §9.1
+    # step 6) is retrieved for a `summarize` question AND for any question's
+    # corrective pass — and "which attempt is this" is state the loop knows and
+    # the retrieve stage does not.
+    corrective: bool = False
     library_names: list[str] | None = None
     contexts: list[ExpandedContext] = field(default_factory=list)
     kept_chunks: list[ScoredChunk] = field(default_factory=list)

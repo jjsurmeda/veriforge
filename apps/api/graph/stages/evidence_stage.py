@@ -121,6 +121,12 @@ async def run_evidence(env: StageEnv, state: AutoRunState) -> Attempt:
             state.decision_events.append(_retry_skipped_event(env, attempt))
             return attempt
         loop.retries_left -= 1
+        # The next `retrieve_queries` is the corrective one, and that is what
+        # lets any intent reach the summary index (TRD §9.1 step 6). Recorded on
+        # the state rather than threaded as an argument because the retrieve
+        # stage's signature is the fan-out, and a second flag argument there
+        # would invite the two call sites to disagree about it.
+        state.corrective = True
         loop.current_query = await _retry_rewrite(env, state)
 
 
