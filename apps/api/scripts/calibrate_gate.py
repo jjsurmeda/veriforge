@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """Calibrate the evidence gate on the two sets that decide it (R2a-2 item 1).
 
-ADR-006 as corrected says the gate is the reranker's answer-containment grade,
-and that `sufficient` stays as a second reading *only if calibration shows the
-grade alone cannot meet both PRD §5 clauses*. This script is that calibration,
-and it exists because the previous dispatch skipped it by asserting that the
-number did not matter.
+ADR-006 as corrected says the gate is the reranker's answer-containment grade.
+This script is the calibration behind that number: it measures the grade the run
+actually had, and the entity guard beside it. The old `sufficient` Noul is gone
+from the path, so it is no longer measured.
 
 **What it runs, per item: ingress → rewrite → retrieve → rerank (the rubric)
 → sanitize → the evidence check. No generation, no review.** That is
@@ -13,13 +12,12 @@ number did not matter.
 third of a full acceptance item costs: the generator and the reviewer are the
 expensive half and the gate never sees either.
 
-For each item it records the four numbers a candidate gate could be built on:
+For each item it records the numbers a candidate gate could be built on:
 
 | field | what it is |
 | --- | --- |
 | `top_grade` | the highest answer-containment grade over the post-sanitize winners |
 | `mean_top3` | the mean of the top three grades: strong throughout, not just at one |
-| `sufficient` | the `sufficient` Noul's own reading, on the attempt that reached the gate |
 | `entity_max` | the max entity reading, when the question named an entity |
 
 Two sets, because the gate has to hold on both and they fail differently. The
@@ -132,42 +130,17 @@ def _corpus_ids(state: dict[str, Any], scope_corpus: str) -> list[UUID]:
     return [UUID(raw)]
 
 
-def _sufficient(run: Any, emitted: list[Decision]) -> float | None:
-    """The `sufficient` reading of the attempt the verdict came from.
-
-    Read from the run's own **last** `sufficient` event — the run's own list
-    first, the emitter's after — so the number is the one the verdict came from
-    and not the first attempt's, which took the corrective retrieval. It is
-    deliberately not `AutoRun.sufficiency_p`: a value written by a stage the
-    probe did not reach cannot be mistaken for one it did.
-
-    **`engine == "unavailable"` is `None`, not 0.0** (KI-57). That row carries
-    the stage's default rather than a reading, and a calibration table that
-    counted it would be measuring how many times the decision layer was down.
-    """
-    rows = [
-        d
-        for d in (*run.decision_events, *emitted)
-        if d.name == "sufficient"
-    ]
-    if not rows or rows[-1].engine == "unavailable":
-        return None
-    try:
-        return float(rows[-1].value)
-    except (TypeError, ValueError):
-        return None
-
-
 def _entity_event(name: str, answer: Answer, call: Any, run_id: UUID) -> Decision:
     """The probe's stand-in for the run bus's decision emitter.
 
     **Without this the entity columns are silently empty**, which is the trap
-    this probe nearly fell into: `prepare_auto_run` records `sufficient` itself
-    (the evidence stage appends it), but every *other* answer reaches a trace
-    only through `DecisionEngine.set_event_emitter`, which `graph/stages/
-    run_auto.py` wires and a direct `prepare_auto_run` call does not. A reader
-    looking at an all-empty entity column would conclude the entity guard never
-    fires, which is a claim about the product this probe cannot support.
+    this probe nearly fell into: `prepare_auto_run` records the gate row itself
+    (the evidence stage appends it), but every *other* answer — every
+    per-passage entity and conflict reading — reaches a trace only through
+    `DecisionEngine.set_event_emitter`, which `graph/stages/run_auto.py` wires
+    and a direct `prepare_auto_run` call does not. A reader looking at an
+    all-empty entity column would conclude the entity guard never fires, which
+    is a claim about the product this probe cannot support.
 
     Mirrors `graph/runner._emit_decision` rather than inventing a shape.
     """
@@ -214,14 +187,13 @@ def measure(
 
     `emitted` is the probe's decision-emitter capture (`_entity_event`). It is
     merged with the run's own events because the two carry **different**
-    questions: the evidence stage records `sufficient` itself, and everything
+    questions: the evidence stage records the gate row itself, and everything
     else — every per-passage `entity_` and `conflict_` reading — arrives only
     through the emitter. Reading one without the other silently loses half the
     signal.
     """
     grades = _grades(run)
     events = [*run.decision_events, *emitted]
-    sufficient = _sufficient(run, emitted)
     entity_rows = [d for d in events if d.name.startswith("entity_")]
     entity_values = [float(d.value) for d in entity_rows if _numeric(d.value)]
     return {
@@ -234,14 +206,13 @@ def measure(
         "top_grade": grades[0] if grades else None,
         "mean_top3": statistics.fmean(grades[:3]) if grades else None,
         "n_passages": len(grades),
-        "sufficient": sufficient,
         "entity_max": max(entity_values) if entity_values else None,
         "entity_measured": bool(entity_rows),
         "entity_entities": sorted({_entity_label(d.name) for d in entity_rows}),
         "abstained": run.abstain_event is not None,
         "engines": sorted({str(d.engine) for d in events}),
         "gate_engine": next(
-            (str(d.engine) for d in events if d.name == "sufficient"), None
+            (str(d.engine) for d in events if d.name == "evidence"), None
         ),
         "trace_gate_rows": sorted({d.name for d in events}),
     }
@@ -302,10 +273,22 @@ async def _run_item(
         engine = DecisionEngine()
         pipeline_run_id = uuid4()
 
+        # Per turn, not accumulated: a two-turn item is measured on its LAST
+        # turn, so the first turn's rows must not be in the record. And it must
+        # not be cleared *after* the run and before measuring — that empties it
+        # entirely, and an all-empty entity column reads as "the entity guard
+        # never fires", which is a claim about the product rather than about
+        # the probe.
+        emitted = []
+
         async def emit(
-            name: str, answer: Answer, call: Any, _run_id: UUID = pipeline_run_id
+            name: str,
+            answer: Answer,
+            call: Any,
+            _rows: list[Decision] = emitted,
+            _run_id: UUID = pipeline_run_id,
         ) -> None:
-            emitted.append(_entity_event(name, answer, call, _run_id))
+            _rows.append(_entity_event(name, answer, call, _run_id))
 
         # The one thing `run_auto.run_auto` does that a direct
         # `prepare_auto_run` call does not, and without which every
@@ -329,7 +312,6 @@ async def _run_item(
             ),
             engine,
         )
-        emitted.clear()
     assert run is not None
     # No `stream_answer()`, no `finalize_*`: the generator and the reviewer are
     # the expensive half and the gate never sees either. `latency_ms` is
@@ -387,7 +369,7 @@ async def probe(dataset: str, only: str | None) -> list[dict[str, Any]]:
         rows.append(row)
         print(
             f"      top={_fmt(row['top_grade'])} mean3={_fmt(row['mean_top3'])} "
-            f"sufficient={_fmt(row['sufficient'])} abstained={row['abstained']}",
+            f"entity={_fmt(row['entity_max'])} abstained={row['abstained']}",
             flush=True,
         )
     return rows
@@ -439,12 +421,12 @@ def _head_sha() -> str:
 def print_table(dataset: str, rows: list[dict[str, Any]]) -> None:
     print()
     print(f"== {dataset}: gate calibration ==")
-    print(f"{'id':<32}{'expect':<16}{'top':>7}{'mean3':>8}{'suff':>7}{'ent':>7}  {'gate'}")
+    print(f"{'id':<32}{'expect':<16}{'top':>7}{'mean3':>8}{'ent':>7}  {'gate'}")
     for row in rows:
         print(
             f"{row['id'][:31]:<32}{row['expect'][:15]:<16}"
             f"{_fmt(row['top_grade']):>7}{_fmt(row['mean_top3']):>8}"
-            f"{_fmt(row['sufficient']):>7}{_fmt(row['entity_max']):>7}"
+            f"{_fmt(row['entity_max']):>7}"
             f"  {'declined' if row['abstained'] else 'answered'}"
         )
     gated = [r for r in rows if r["gated"]]

@@ -182,7 +182,7 @@
  },
  {
   "event": {
-   "label": "sufficient",
+   "label": "evidence",
    "node": "auto",
    "seq": 0,
    "type": "step.started"
@@ -190,15 +190,14 @@
   "kind": "event"
  },
  {
-  "kind": "sufficient",
+  "kind": "evidence",
   "questions": [
-   "entity_0_0",
-   "sufficient"
+   "entity_0_0"
   ]
  },
  {
   "event": {
-   "label": "sufficient",
+   "label": "evidence",
    "node": "auto",
    "seq": 0,
    "type": "step.completed"
@@ -340,7 +339,7 @@
  },
  {
   "event": {
-   "label": "sufficient",
+   "label": "evidence",
    "node": "auto",
    "seq": 0,
    "type": "step.started"
@@ -348,15 +347,14 @@
   "kind": "event"
  },
  {
-  "kind": "sufficient",
+  "kind": "evidence",
   "questions": [
-   "entity_0_0",
-   "sufficient"
+   "entity_0_0"
   ]
  },
  {
   "event": {
-   "label": "sufficient",
+   "label": "evidence",
    "node": "auto",
    "seq": 0,
    "type": "step.completed"

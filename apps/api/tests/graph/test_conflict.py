@@ -23,7 +23,7 @@ from decisions.engine import DecisionEngine
 from graph import auto as auto_module
 from graph.auto import (
     CONFLICT_MAX_PAIRS,
-    TOP_CHUNKS_FOR_SUFFICIENT,
+    TOP_CHUNKS_FOR_CHECKS,
     AutoRunInput,
     _conflict_pair_questions,
     _conflict_sides,
@@ -87,7 +87,10 @@ class _ConflictJev(_IngressJev):
                 answers[name] = Answer(
                     engine="jev", latency_ms=1, value=value, probability=value
                 )
-            elif name == "sufficient":
+            elif name.startswith("entity_"):
+                # The entity guard rides the same post-sanitize call as the
+                # pairs; this corpus carries the question's entity, so it says
+                # yes, or the guard would abstain before the conflict branch.
                 answers[name] = Answer(engine="jev", latency_ms=1, value=0.9, probability=0.9)
             elif name in SCORE_NAMES:
                 answers[name] = Answer(engine="jev", latency_ms=1, value=0.01, probability=0.01)
@@ -282,7 +285,6 @@ async def test_the_conflict_call_is_one_batched_decide_and_is_timed(
     assert len(jev.calls) == 1, "the pairs ride the one post-sanitize call"
     pairs = [name for name in jev.calls[0] if name.startswith("conflict_")]
     assert len(pairs) == 3, "3 passages -> 3 candidate pairs"
-    assert "sufficient" in jev.calls[0], "the same call, not one of its own"
     assert "conflict" in run.latency_ms
 
 
@@ -359,7 +361,7 @@ def test_one_side_per_document_so_a_document_cannot_disagree_with_itself() -> No
 
 def test_the_pair_count_is_capped() -> None:
     """Bounded prompt: the cap holds even past the passage limit, so a future
-    change to TOP_CHUNKS_FOR_SUFFICIENT cannot silently multiply the
+    change to TOP_CHUNKS_FOR_CHECKS cannot silently multiply the
     question set."""
     sides = [
         ScoredChunk(
@@ -376,7 +378,7 @@ def test_the_pair_count_is_capped() -> None:
             bm25_score=None,
             fused_score=0.0,
         )
-        for i in range(TOP_CHUNKS_FOR_SUFFICIENT + 4)
+        for i in range(TOP_CHUNKS_FOR_CHECKS + 4)
     ]
 
     questions = _conflict_pair_questions(sides, "?")

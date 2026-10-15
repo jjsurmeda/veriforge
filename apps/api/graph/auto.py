@@ -26,16 +26,15 @@ from graph.generate import (
 )
 from graph.stages.checks import (
     CONFLICT_MAX_PAIRS,
+    EVIDENCE_CHARS,
     RETRY_SKIP_ENTITY_MAX,
-    RETRY_SKIP_SUFFICIENT_MAX,
-    SUFFICIENT_EVIDENCE_CHARS,
-    TOP_CHUNKS_FOR_SUFFICIENT,
+    RETRY_SKIP_RUBRIC_MAX,
+    TOP_CHUNKS_FOR_CHECKS,
     _conflict_pair_questions,
     _conflict_sides,
     _entity_passage_decision,
     _entity_passage_questions,
     _evidence_clearly_absent,
-    _sufficient_question,
     named_entities,
 )
 from graph.stages.evidence_stage import MAX_SUFFICIENT_RETRIES, run_evidence
@@ -76,6 +75,7 @@ from runtime import runtime_value
 
 __all__ = [
     "CONFLICT_MAX_PAIRS",
+    "EVIDENCE_CHARS",
     "EXCERPT_CHARS",
     "GREETING_ALLOWLIST",
     "MAX_GREETING_CHARS",
@@ -85,9 +85,8 @@ __all__ = [
     "MULTI_PART_VARIANTS",
     "MULTI_QUERY_VARIANTS",
     "RETRY_SKIP_ENTITY_MAX",
-    "RETRY_SKIP_SUFFICIENT_MAX",
-    "SUFFICIENT_EVIDENCE_CHARS",
-    "TOP_CHUNKS_FOR_SUFFICIENT",
+    "RETRY_SKIP_RUBRIC_MAX",
+    "TOP_CHUNKS_FOR_CHECKS",
     "AutoRun",
     "AutoRunInput",
     "_conflict_pair_questions",
@@ -100,7 +99,6 @@ __all__ = [
     "_generate_query_variants",
     "_rerank_candidates",
     "_search_one_variant",
-    "_sufficient_question",
     "add_rerank_scores",
     "ensure_web_sources",
     "finalize_auto_run",

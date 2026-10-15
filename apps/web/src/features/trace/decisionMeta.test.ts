@@ -27,12 +27,12 @@ describe('groupDecisions', () => {
     const groups = groupDecisions([
       decision({ name: 'guard_injection', call_id: 'call-1', stage: 'ingress' }),
       decision({ name: 'intent', call_id: 'call-1', stage: 'ingress' }),
-      decision({ name: 'sufficient', call_id: 'call-2', stage: 'sufficient' }),
+      decision({ name: 'evidence', call_id: 'call-2', stage: 'gate' }),
     ])
 
     expect(groups.map((group) => group.key)).toEqual(['call:call-1', 'call:call-2'])
     expect(groups[0]?.decisions).toHaveLength(2)
-    expect(groups[1]?.stage).toBe('sufficient')
+    expect(groups[1]?.stage).toBe('gate')
   })
 
   it('falls back to stage and then one legacy group', () => {

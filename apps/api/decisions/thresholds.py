@@ -32,14 +32,41 @@ _DEFAULTS: dict[str, dict[Engine, float]] = {
     "library_min_confidence": {"jev": 0.70, "fallback": 0.70},
     "chunk_injection_drop": {"jev": 0.70, "fallback": 0.70},
     # Answer-first (batch A, 2026-09-28): generate at or above the floor,
-    # one rewrite + retry below it, then abstain. 0.05 measured on the
-    # books acceptance set: answer-class items scored 0.06-0.49 while
-    # not-in-sources items scored 0.01-0.04, so 0.05 separates the groups
-    # (thin margin — the entity guard is the one reading beside it, and it is
-    # a mismatch guard rather than a second sufficiency signal). sufficient_retry
-    # is removed: with one retry there is one bar. `rerank_abstain` is removed
-    # with the relevance floor (ADR-006, R2a item 4).
-    "sufficient_abstain": {"jev": 0.05, "fallback": 0.05},
+    # one rewrite + retry below it, then abstain.
+    #
+    # ADR-006 as corrected (2026-10-15): the evidence gate is the reranker's
+    # **answer-containment rubric** — the mean grade of the best three
+    # post-sanitize passages. There is no second gate: `sufficient`, its
+    # threshold and its admin key are gone. The number below is calibrated, not
+    # chosen; the full table is in the R2a-2 report
+    # (`scripts/calibrate_gate.py` is what produced it).
+    #
+    #     cutoff   confident wrong   false abstention
+    #        0.40            5                1
+    #        0.48            2                1
+    #        0.55            0                2      <- shipped
+    #        0.645           0                8
+    #
+    # **No cutoff reaches 0 confident wrong and ≤ 1 false abstention.** 0.645
+    # does reach 0, and costs eight answerable items — a quarter of the corpus
+    # — which is not a threshold, it is abstaining from the product. 0.55 is
+    # the cheapest zero, and the two items it costs are named in the report.
+    #
+    # The margin on the books set is real but narrow, and stated as it is: the
+    # verdict is identical anywhere in (0.520, 0.554]. Below is
+    # `outside-holmes-boston` at 0.520, the highest should-decline; above is
+    # `broad-bovary` at 0.554, the lowest answerable. 0.55 sits 0.030 above the
+    # first and 0.004 below the second, and **0.004 is thin** — one gist item
+    # inside that window would flip. A re-run of the calibration that moves
+    # `broad-bovary` down by 0.005 has to reopen this number.
+    #
+    # The two should-decline items that clear 0.55 are both from the
+    # entity-mismatch set (`cf-k9-charge` 0.634, `em-aw-package` 0.544), and
+    # **the entity guard is what holds them**: their max entity readings are
+    # 0.450 and 0.090, both under the `entity_match` floor of 0.50. That is
+    # exactly the division of labour ADR-006 describes, measured rather than
+    # assumed — and it is why the floor is shipped at 0.55 and not at 0.645.
+    "rubric_mean_top3": {"jev": 0.55, "fallback": 0.55},
     "conflict_disclose": {"jev": 0.60, "fallback": 0.60},
     "output_toxicity_block": {"jev": 0.85, "fallback": 0.85},
     # Slice 6: 0.60 abstained Deep runs on corpus-answerable questions —
@@ -68,7 +95,10 @@ DISPLAY_THRESHOLDS: dict[str, str] = {
     "guard_jailbreak": "guard_jailbreak_block",
     "guard_pii": "guard_pii_warn",
     "off_topic": "off_topic_warn",
-    "sufficient": "sufficient_abstain",
+    # The evidence gate is the rubric's mean-of-top-3 (ADR-006 as corrected), so
+    # this is the number the `evidence` decision row is shown against.
+    "evidence": "rubric_mean_top3",
+    "rubric": "rubric_mean_top3",
     "conflict": "conflict_disclose",
     "controller": "controller_sufficient",
     "output_toxicity": "output_toxicity_block",

@@ -8,17 +8,17 @@ definition and the threshold it picked still refers to the same thing.
 
 So this pins the **shape**, with fakes and no provider (testing.md):
 
-* every row carries the four numbers a candidate gate could be built on, and
-  each is a real 0-1 reading or explicitly `None` — never a 0.0 standing in for
-  "not measured", which is the failure that makes a calibration table lie;
+* every row carries the numbers a candidate gate could be built on, each a
+  real 0-1 reading or explicitly `None` — never a 0.0 standing in for "not
+  measured", which is the failure that makes a calibration table lie;
 * `gated` is exactly "this class reaches the gate", so `smalltalk` and
   `library` can never be counted as abstentions and quietly flatter a
   threshold;
 * the grades come off `kept_chunks`, the same set the gate judged, and the
   derived `top_grade` / `mean_top3` are the order statistics a cutoff on them
   would actually be applied to;
-* an `unavailable` gate (KI-57) is recorded as `None`, not as 0.0 — the
-  distinction between "judged thin" and "nobody could judge".
+* the gate row's `engine` (`gate_engine`) is recorded, so a reading produced on
+  the LLM fallback's scale is visible rather than assumed.
 
 Nothing here runs a live model or reads a real corpus.
 """
@@ -96,14 +96,15 @@ def _emitted(*decisions: Decision) -> list[Decision]:
     return list(decisions)
 
 
-def test_the_row_carries_all_four_numbers_a_gate_could_be_built_on() -> None:
-    """The brief's record: the expected class, the top rubric grade, the mean of
-    the top 3, and `sufficient`. A column that is missing cannot be calibrated
-    against, and the whole point of running the probe is to have all of them."""
+def test_the_row_carries_the_numbers_a_gate_could_be_built_on() -> None:
+    """The record: the expected class, the top rubric grade, the mean of the
+    top 3, and the entity reading. A column that is missing cannot be
+    calibrated against, and the whole point of running the probe is to have
+    them all."""
     run = _Run(
         kept_chunks=[_chunk(0.90), _chunk(0.70), _chunk(0.50), _chunk(0.10)],
         decision_events=[
-            _decision("sufficient", 0.61),
+            _decision("evidence", 0.61),
             _decision("entity_0_0", 0.93),
             _decision("entity_1_0", 0.12),
         ],
@@ -113,7 +114,6 @@ def test_the_row_carries_all_four_numbers_a_gate_could_be_built_on() -> None:
 
     assert row["top_grade"] == pytest.approx(0.90)
     assert row["mean_top3"] == pytest.approx(statistics.fmean([0.90, 0.70, 0.50]))
-    assert row["sufficient"] == pytest.approx(0.61)
     assert row["entity_max"] == pytest.approx(0.93)
     assert row["expect"] == "answer"
 
@@ -158,34 +158,32 @@ def test_no_evidence_is_none_and_not_zero() -> None:
     """The distinction the whole table rests on. A 0.0 here reads as "the
     rubric graded every passage off-topic", which is a measurement; `None`
     reads as "there was nothing to grade", which is what happened."""
-    run = _Run(kept_chunks=[], decision_events=[_decision("sufficient", 0.02)])
+    run = _Run(kept_chunks=[], decision_events=[_decision("evidence", 0.02)])
     row = measure(run, "x", "answer", "lookup", 1, [])
 
     assert row["top_grade"] is None
     assert row["mean_top3"] is None
-    assert row["sufficient"] == pytest.approx(0.02)
 
 
-def test_an_unavailable_gate_is_none_rather_than_zero() -> None:
-    """KI-57's `unavailable` row carries `value=0.0`, and reading it as a
-    reading would put a degraded run into the calibration table as though the
-    rubric had graded it. It did not."""
+def test_an_unavailable_gate_is_recorded_as_unavailable_engine() -> None:
+    """KI-57: when the decision layer is unreachable the rubric cannot grade,
+    and the gate row's engine says so. A reader must not take the row's value
+    for a reading the rubric produced."""
     run = _Run(
         kept_chunks=[_chunk(0.7)],
-        decision_events=[_decision("sufficient", 0.0, engine="unavailable")],
+        decision_events=[_decision("evidence", 0.0, engine="unavailable")],
     )
 
     row = measure(run, "x", "answer", "lookup", 1, [])
 
-    assert row["sufficient"] is None
     assert row["gate_engine"] == "unavailable", "the outage is still recorded, just not as a score"
 
 
 def test_the_gate_engine_is_recorded_so_a_fallback_reading_is_visible() -> None:
-    """`sufficient` thresholds are per engine (TRD §8), so a row measured on the
-    LLM fallback is on a different scale from one measured on Jev. The row says
+    """The rubric grade is per engine (TRD §8), so a row measured on the LLM
+    fallback is on a different scale from one measured on Jev. The row says
     which, rather than leaving it to be assumed."""
-    run = _Run(decision_events=[_decision("sufficient", 0.40, engine="fallback")])
+    run = _Run(decision_events=[_decision("evidence", 0.40, engine="fallback")])
 
     assert measure(run, "x", "answer", "lookup", 1, [])["gate_engine"] == "fallback"
 
@@ -196,7 +194,7 @@ def test_the_gate_engine_is_recorded_so_a_fallback_reading_is_visible() -> None:
 def test_entity_readings_arrive_only_through_the_emitter() -> None:
     """The probe calls `prepare_auto_run` directly, and `graph/stages/run_auto.py`
     — not `prepare_auto_run` — is what binds `DecisionEngine.set_event_emitter`.
-    So the run's own `decision_events` carry `sufficient` (the evidence stage
+    So the run's own `decision_events` carry the gate row (the evidence stage
     appends it) and **nothing else**: every per-passage `entity_` reading would
     be missing.
 
@@ -206,7 +204,7 @@ def test_entity_readings_arrive_only_through_the_emitter() -> None:
 
     So the probe merges the emitter's capture with the run's own events, and
     this pins that it does."""
-    run = _Run(kept_chunks=[_chunk(0.8)], decision_events=[_decision("sufficient", 0.62)])
+    run = _Run(kept_chunks=[_chunk(0.8)], decision_events=[_decision("evidence", 0.62)])
 
     without = measure(run, "x", "answer", "lookup", 1, [])
     assert without["entity_measured"] is False
@@ -231,7 +229,7 @@ def test_a_conflict_row_is_merged_in_without_becoming_an_entity_reading() -> Non
     emitter, so a prefix test has to be exact — `entity_` does not match
     `conflict_`, but a looser one would silently average the conflict verdicts
     into the entity guard's max."""
-    run = _Run(decision_events=[_decision("sufficient", 0.62)])
+    run = _Run(decision_events=[_decision("evidence", 0.62)])
     emitted = [_decision("conflict_0", 0.99), _decision("entity_0_0", 0.31)]
 
     row = measure(run, "x", "answer", "lookup", 1, emitted)
@@ -240,24 +238,16 @@ def test_a_conflict_row_is_merged_in_without_becoming_an_entity_reading() -> Non
     assert "conflict_0" in row["trace_gate_rows"]
 
 
-def test_the_emitted_sufficient_does_not_shadow_the_runs_own_verdict() -> None:
-    """The run's own `sufficient` is the one that decided the verdict; the
-    emitter's copy of the same name is the same reading. If both are merged,
-    taking the last must not let a stale one win — and taking the first must not
-    report the pre-correction attempt."""
-    run = _Run(
-        decision_events=[
-            _decision("sufficient", 0.02),
-            _decision("sufficient", 0.71),
-        ]
-    )
-    emitted = [_decision("sufficient", 0.71)]
+def test_the_gate_engine_comes_from_the_gate_row_alone() -> None:
+    """The gate row (name `evidence`) is the only row that says which engine
+    graded. The per-passage readings arrive on the same emitter and carry their
+    own engine; they must not be mistaken for the gate's."""
+    run = _Run(decision_events=[_decision("evidence", 0.62, engine="jev")])
+    emitted = [_decision("entity_0_0", 0.31, engine="fallback")]
 
     row = measure(run, "x", "answer", "lookup", 1, emitted)
 
-    assert row["sufficient"] == pytest.approx(0.71), (
-        "the second attempt is the one the verdict came from"
-    )
+    assert row["gate_engine"] == "jev"
 
 
 def test_the_record_says_which_query_the_grades_were_graded_against() -> None:
@@ -265,7 +255,7 @@ def test_the_record_says_which_query_the_grades_were_graded_against() -> None:
     rewrite is a model call that varies. Without the rewritten text a table row
     cannot be re-derived, and a change to the rewriter would move every number
     in it with nothing in the record to show why."""
-    run = _Run(decision_events=[_decision("sufficient", 0.6)])
+    run = _Run(decision_events=[_decision("evidence", 0.6)])
     run.rewritten = "What did Mary Bostan do after leaving her husband?"
 
     row = measure(run, "x", "answer", "lookup", 1, [])
@@ -426,7 +416,7 @@ def test_the_written_report_says_which_commit_and_how_many_were_gated(tmp_path: 
     original = probe_module.OUT_DIR
     probe_module.OUT_DIR = tmp_path
     try:
-        gated_run = _Run(decision_events=[_decision("sufficient", 0.8)])
+        gated_run = _Run(decision_events=[_decision("evidence", 0.8)])
         rows = [
             measure(gated_run, "a", "answer", "l", 1, []),
             measure(_Run(), "b", "not_in_sources", "l", 1, []),

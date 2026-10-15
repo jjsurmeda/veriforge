@@ -61,7 +61,7 @@ OUTER_LABELS = {"ingress+rewrite": "ingress+rewrite", "retrieve": "retrieve"}
 PLAIN_LABELS = {
     "rerank": "rerank",
     "sanitize": "sanitize",
-    "sufficient": "sufficient",
+    "evidence": "evidence",
     "conflict": "conflict",
     "query variants": "query variants",
     "query parts": "query parts",

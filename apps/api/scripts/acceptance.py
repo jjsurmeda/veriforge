@@ -527,7 +527,7 @@ async def run(
                     "q_language": detect_language(item["turns"][-1]),
                     "a_language": detect_language(result.get("answer") or ""),
                     "ttft_ms": result.get("ttft_ms"),
-                    "sufficient": result.get("sufficient"),
+                    "evidence": result.get("evidence"),
                     "status": result.get("status"),
                     "message_status": result.get("message_status"),
                     "intent": result.get("intent"),
@@ -548,10 +548,10 @@ async def run(
             if pace and item is not items[-1] and item["expect"] != "smalltalk":
                 await sleep(pace)
 
-    print("\n{| id | expected | got | pass | ttft ms | sufficient |")
+    print("\n{| id | expected | got | pass | ttft ms | evidence |")
     print("|---|---|---|---|---|---|")
     for r in rows:
-        scores = ",".join(f"{s:.2f}" for s in r["sufficient"] or []) or "-"
+        scores = ",".join(f"{s:.2f}" for s in r["evidence"] or []) or "-"
         print(
             f"| {r['id']} | {r['expect']} | {r['got']} | {'pass' if r['pass'] else 'FAIL'} "
             f"| {r['ttft_ms'] if r['ttft_ms'] is not None else '-'} | {scores} |"

@@ -128,9 +128,12 @@ async def _publish_trace(env: RunEnv, run: AutoRun) -> None:
 def _plan(run: AutoRun) -> str:
     if run.abstain_event is not None or run.chitchat or run.library_names is not None:
         return _ALWAYS_STREAM
+    # The gate's number and the gate's floor, not the sufficiency reading: the
+    # hold decision is about how confidently the run answered, and the rubric
+    # grade is what says that.
     return plan_delivery(
         mode="auto",
         risk=run.ingress.risk,
-        sufficiency_p=run.sufficiency_p,
-        sufficient_threshold=threshold("sufficient_abstain", "jev"),
+        evidence_p=run.gate_mean_top3,
+        evidence_threshold=threshold("rubric_mean_top3", "jev"),
     )

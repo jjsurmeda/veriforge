@@ -235,7 +235,7 @@
  },
  {
   "event": {
-   "label": "sufficient",
+   "label": "evidence",
    "node": "auto",
    "seq": 0,
    "type": "step.started"
@@ -243,17 +243,16 @@
   "kind": "event"
  },
  {
-  "kind": "sufficient",
+  "kind": "evidence",
   "questions": [
    "conflict_0",
    "entity_0_0",
-   "entity_1_0",
-   "sufficient"
+   "entity_1_0"
   ]
  },
  {
   "event": {
-   "label": "sufficient",
+   "label": "evidence",
    "node": "auto",
    "seq": 0,
    "type": "step.completed"

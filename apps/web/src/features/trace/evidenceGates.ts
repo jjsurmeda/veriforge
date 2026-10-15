@@ -19,20 +19,18 @@ export interface EvidenceGate {
   tone: OutcomeTone
   engine: Decision['engine']
   /** How many checks this row folds together. Meaningful only for the
-   *  per-passage families; for sufficiency and relevance a count above one
-   *  means "the run retried", not "N measurements". */
+   *  per-passage families; for the evidence gate a count above one means
+   *  "the run retried", not "N measurements". */
   sample: number
   perPassage: boolean
 }
 
-/** One row per gate, in the order the run applied them: sufficiency, then
- *  relevance, then entity match, then conflict. Every gate here is a
- *  "cleared means the run continued" check except conflict, which clears when
- *  the sources agree — so its own label and shape carry that distinction
- *  rather than a shared pass/fail. */
+/** One row per gate, in the order the run applied them: evidence, then entity
+ *  match, then conflict. Every gate here is a "cleared means the run continued"
+ *  check except conflict, which clears when the sources agree — so its own
+ *  label and shape carry that distinction rather than a shared pass/fail. */
 const GATES = [
-  { key: 'sufficient', label: 'Sufficiency', match: (name: string) => name === 'sufficient' },
-  { key: 'relevance', label: 'Relevance', match: (name: string) => name === 'relevance' },
+  { key: 'evidence', label: 'Evidence', match: (name: string) => name === 'evidence' },
   { key: 'entity', label: 'Entity match', match: (name: string) => name.startsWith('entity_') },
   {
     key: 'conflict',
@@ -43,8 +41,7 @@ const GATES = [
 
 /** Cleared / blocked wording per gate, in the design system's plain voice. */
 const VERDICT_TEXT: Record<string, { cleared: string; blocked: string }> = {
-  sufficient: { cleared: 'answered', blocked: 'too little evidence' },
-  relevance: { cleared: 'on topic', blocked: 'off topic' },
+  evidence: { cleared: 'answered', blocked: 'too little evidence' },
   entity: { cleared: 'matched', blocked: 'no passage matches' },
   conflict: { cleared: 'sources agree', blocked: 'disclosed' },
 }
@@ -71,12 +68,12 @@ export function evidenceGates(decisions: Decision[]): EvidenceGate[] {
     const matches = decisions.filter((decision) => gate.match(decision.name))
     if (matches.length === 0) continue
     // A run can publish several of these: one rewrite + retry for the
-    // single-valued gates, one Noul per passage for entity, one per candidate
-    // pair for conflict. For the per-passage families the row shows the best
-    // check, because that is the one that decided the gate — any passage
-    // clearing the floor is a match, and the conflict that gets disclosed is
-    // the most severe pair, not the last pair asked about. For sufficiency and
-    // relevance the last decision is the one the run acted on.
+    // evidence gate, one Noul per passage for entity, one per candidate pair
+    // for conflict. For the per-passage families the row shows the best check,
+    // because that is the one that decided the gate — any passage clearing the
+    // floor is a match, and the conflict that gets disclosed is the most severe
+    // pair, not the last pair asked about. For the evidence gate the last
+    // decision is the one the run acted on.
     const byValue = matches.reduce((top, decision) =>
       (probabilityOf(decision) ?? -1) > (probabilityOf(top) ?? -1) ? decision : top,
     )

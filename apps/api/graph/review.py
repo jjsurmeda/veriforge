@@ -127,18 +127,18 @@ def score_review(claims: list[VerifiedClaim], citation_count: int) -> ReviewScor
 
 
 def plan_delivery(
-    *, mode: str, risk: str, sufficiency_p: float | None, sufficient_threshold: float
+    *, mode: str, risk: str, evidence_p: float | None, evidence_threshold: float
 ) -> str:
     """'hold' (verify before delivery) or 'stream' (deliver, review after)
-    per TRD §10's risk-based delivery table. Sufficiency within 0.1 of the
-    retry threshold counts as high-risk even when ingress said low."""
+    per TRD §10's risk-based delivery table. Evidence within 0.1 of the gate
+    floor counts as high-risk even when ingress said low."""
     if mode == "deep":
         return "hold"
     if mode == "fast":
         return "stream"
     if risk == "high":
         return "hold"
-    if sufficiency_p is not None and abs(sufficiency_p - sufficient_threshold) <= 0.1:
+    if evidence_p is not None and abs(evidence_p - evidence_threshold) <= 0.1:
         return "hold"
     return "stream"
 

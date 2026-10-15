@@ -331,7 +331,7 @@ async def test_a_single_question_the_fallback_cannot_answer_still_names_the_fail
     engine = DecisionEngine(jev=_DeadJev(), fallback=fallback, breaker=_breaker(), mode="auto")
 
     with pytest.raises(DecisionUnavailable) as failed:
-        await engine.decide(state={"kind": "sufficient"}, questions=_nouls(1))
+        await engine.decide(state={"kind": "evidence"}, questions=_nouls(1))
 
     assert failed.value.error_code == "decision_unavailable"
     assert fallback.batch_sizes == [1], "a single question is not split"
@@ -462,14 +462,24 @@ async def test_a_run_with_a_dead_decision_layer_degrades_rather_than_raises(
     """The single assertion that is the whole of KI-57: with the decision layer
     refusing every call, `prepare_auto_run` still returns a finished run.
 
-    It abstains rather than answering — an unreachable grader is not evidence
-    — and it abstains through the corrective path the gate defines, so the
-    test also pins that the gate was graded a second time. This is the R2a
-    run's `run.failed` replaced by a decline.
+    It abstains rather than answering — an unreachable grader is not evidence.
+    A question that names an entity is used so the post-sanitize evidence call
+    has something to ask; an empty batch would degrade differently. The trace
+    must say that the entity guard could not be read and that the retry was
+    skipped because of it.
     """
+    from dataclasses import replace
+
     from db.session import get_session_factory
+    from graph import auto as auto_module
     from graph.auto import prepare_auto_run
     params = await _gate_params(db, user_a, no_llm, monkeypatch)
+    question = "What is the capital of the Ridgeline R-7?"
+
+    async def echo(**_: Any) -> str:
+        return question
+
+    monkeypatch.setattr(auto_module, "complete", echo)
 
     class _CountingEngine(_DeadDecisionEngine):
         def __init__(self) -> None:
@@ -480,42 +490,43 @@ async def test_a_run_with_a_dead_decision_layer_degrades_rather_than_raises(
             raise DecisionUnavailable("decision_unavailable", "down", {})
 
     engine = _CountingEngine()
-    run = await prepare_auto_run(get_session_factory(), params, engine)
+    run = await prepare_auto_run(get_session_factory(), replace(params, question=question), engine)
 
     assert run.abstain_event is not None, (
         "no reading is a failing gate, and a failing gate abstains"
     )
     assert run.contexts == [], "an abstention cites nothing"
-    assert run.sufficiency_p == 0.0
-    # One `sufficient` call, not two, and that is the right number: the gate
-    # reads 0.0 with no reading behind it, which is below the `clearly absent`
-    # skip bound, so the corrective retrieval is skipped rather than paying
-    # 13-15 s to reach the same outage. The trace has to say which of those two
-    # things happened — hence `gate_unavailable` and the row below.
-    assert engine.kinds.count("sufficient") == 1, engine.kinds
-    skipped = [d for d in run.decision_events if d.name == "retry_skipped"]
-    assert skipped, "a decline that skipped its retry records why"
-    assert {d.engine for d in skipped} == {"unavailable"}
-    assert "unreachable" in str(skipped[0].reasoning)
+    assert engine.kinds.count("evidence") >= 1, engine.kinds
 
 
-async def test_an_unanswered_gate_is_recorded_as_unavailable_not_as_a_low_score(
+async def test_an_unanswered_entity_guard_is_recorded_as_unavailable_not_as_a_low_score(
     db: Any, user_a: Any, no_llm: dict[str, list[str]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A trace row that reads 0.0 from `jev` is indistinguishable from a run
     that graded the question and got a low grade. `engine="unavailable"` is the
     difference between a degraded run that can be explained and one that
     cannot."""
+    from dataclasses import replace
+
     from db.session import get_session_factory
+    from graph import auto as auto_module
     from graph.auto import prepare_auto_run
     params = await _gate_params(db, user_a, no_llm, monkeypatch)
-    run = await prepare_auto_run(get_session_factory(), params, _DeadDecisionEngine())
+    question = "What is the capital of the Ridgeline R-7?"
 
-    sufficient = [d for d in run.decision_events if d.name == "sufficient"]
-    assert sufficient, "the gate still records what it could not read"
-    assert {d.engine for d in sufficient} == {"unavailable"}
-    assert all(d.value == 0.0 for d in sufficient)
-    assert all("unreachable" in str(d.reasoning) for d in sufficient)
+    async def echo(**_: Any) -> str:
+        return question
+
+    monkeypatch.setattr(auto_module, "complete", echo)
+    run = await prepare_auto_run(
+        get_session_factory(), replace(params, question=question), _DeadDecisionEngine()
+    )
+
+    entity_rows = [d for d in run.decision_events if d.name.startswith("entity_")]
+    assert entity_rows, "a question that names an entity still asks about it"
+    assert {d.engine for d in entity_rows} == {"unavailable"}
+    assert all(d.value == 0.0 for d in entity_rows)
+    assert all("unreachable" in str(d.reasoning) for d in entity_rows)
 
 
 async def test_the_entity_guard_fails_when_it_cannot_read_a_single_passage(

@@ -20,11 +20,9 @@ from graph.auto import (
     AutoRunInput,
     _entity_queries,
     _rerank_candidates,
-    _sufficient_question,
     greeting_canonical,
     prepare_auto_run,
 )
-from retrieval.expand import ExpandedContext
 from retrieval.filters import ClientFilters
 from retrieval.hybrid import ScoredChunk
 from retrieval.rerank import ANSWER_LEVEL_VALUE, ANSWER_LEVELS, JevRerank
@@ -167,112 +165,6 @@ def test_answer_prompts_carry_the_language_rule() -> None:
     assert "same language" in chitchat
 
 
-def test_sufficient_question_leads_with_the_matched_passage() -> None:
-    chunk = ScoredChunk(
-        chunk_id=UUID(int=1),
-        document_id=None,
-        document_name="book.txt",
-        section_id=None,
-        ord=0,
-        page=None,
-        text="short retrieved chunk",
-        heading_path=None,
-        source_type="document",
-        vector_score=None,
-        bm25_score=None,
-        fused_score=0.0,
-    )
-
-    prompt = _sufficient_question(
-        "What happened?", [ExpandedContext(chunk, "the expanded section answers the question")]
-    ).prompt
-
-    assert prompt.index("short retrieved chunk") < prompt.index("the expanded section answers")
-    assert "the expanded section answers the question" in prompt
-    assert "short retrieved chunk" in prompt
-
-
-def test_sufficient_question_spends_the_budget_across_sources() -> None:
-    def context(i: int) -> ExpandedContext:
-        chunk = ScoredChunk(
-            chunk_id=UUID(int=i + 1),
-            document_id=None,
-            document_name=f"book-{i}.txt",
-            section_id=None,
-            ord=0,
-            page=None,
-            text=f"[source {i} matched] " + "m" * 2_000,
-            heading_path=None,
-            source_type="document",
-            vector_score=None,
-            bm25_score=None,
-            fused_score=0.0,
-        )
-        return ExpandedContext(chunk, f"[source {i} parent] " + "p" * 2_000)
-
-    prompt = _sufficient_question("What happened?", [context(i) for i in range(8)]).prompt
-
-    # children first (D2 item 3): the ~9,000-char budget holds ~4 whole
-    # children from four different sources, and no parent context at all;
-    # interleaving would have spent the budget on source 0's child+parent
-    # and source 1's child
-    assert "[source 0 matched] " + "m" * 2_000 in prompt
-    assert "[source 3 matched]" in prompt
-    assert "[parent context]" not in prompt
-    assert "[source 7 matched]" not in prompt
-    assert len(prompt) < 10_000
-
-
-def test_sufficient_question_children_first_then_parents_in_rank_order() -> None:
-    def context(i: int) -> ExpandedContext:
-        chunk = ScoredChunk(
-            chunk_id=UUID(int=i + 1),
-            document_id=None,
-            document_name=f"book-{i}.txt",
-            section_id=None,
-            ord=0,
-            page=None,
-            text=f"[child {i}]",
-            heading_path=None,
-            source_type="document",
-            vector_score=None,
-            bm25_score=None,
-            fused_score=0.0,
-        )
-        return ExpandedContext(chunk, f"[parent {i}]")
-
-    prompt = _sufficient_question("What?", [context(i) for i in range(3)]).prompt
-
-    # every child precedes every parent, and parents follow their own child
-    assert prompt.index("[child 0]") < prompt.index("[child 1]") < prompt.index("[child 2]")
-    assert prompt.index("[child 2]") < prompt.index("[parent 0]")
-    assert prompt.index("[parent 0]") < prompt.index("[parent 1]") < prompt.index("[parent 2]")
-
-
-def test_sufficient_question_shows_the_whole_child() -> None:
-    answer = "the answer is 42."
-    chunk = ScoredChunk(
-        chunk_id=UUID(int=1),
-        document_id=None,
-        document_name="book.txt",
-        section_id=None,
-        ord=0,
-        page=None,
-        text="filler " * 200 + answer,
-        heading_path=None,
-        source_type="document",
-        vector_score=None,
-        bm25_score=None,
-        fused_score=0.0,
-    )
-
-    prompt = _sufficient_question(
-        "What is the answer?", [ExpandedContext(chunk, chunk.text)]
-    ).prompt
-
-    assert answer in prompt
-
-
 def _chunk_for(uuid_int: int, text: str) -> ScoredChunk:
     return ScoredChunk(
         chunk_id=UUID(int=uuid_int),
@@ -385,7 +277,7 @@ async def test_sanitize_asks_only_about_the_reranked_top_k(
             passthrough = {
                 name: question
                 for name, question in questions.items()
-                if not name.startswith("chunk_injection_") and name != "sufficient"
+                if not name.startswith("chunk_injection_")
             }
             answers = await super().decide(state=state, questions=passthrough)
             for name, question in questions.items():
@@ -396,8 +288,6 @@ async def test_sanitize_asks_only_about_the_reranked_top_k(
                     answers[name] = Answer(
                         engine="jev", latency_ms=1, value=value, probability=value
                     )
-                elif name == "sufficient":
-                    answers[name] = Answer(engine="jev", latency_ms=1, value=0.95, probability=0.95)
             return answers
 
     from db.models import Chunk
@@ -738,34 +628,23 @@ async def test_greeting_plus_question_runs_ingress(
     assert sent_to_generator == []
 
 
-async def test_mid_sufficiency_generates_without_retry(
+async def test_a_passing_gate_generates_without_retry(
     db: AsyncSession,
     user_a: User,
     no_llm: dict[str, list[str]],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Answer-first (batch A): 0.3 sits above the 0.05 sufficient_abstain
-    floor, so the first retrieve generates — no rewrite, no second pass."""
+    """Answer-first (batch A): the gate passes on the first pass, so the
+    run generates — no rewrite, no second pass."""
 
-    class _MidJev(_IngressJev):
-        async def decide(
-            self, *, state: dict[str, Any] | str, questions: dict[str, Question]
-        ) -> dict[str, Answer]:
-            answers = await super().decide(state=state, questions=questions)
-            if "sufficient" in answers:
-                answers["sufficient"] = Answer(
-                    engine="jev", latency_ms=1, value=0.3, probability=0.3
-                )
-            return answers
-
-    chat, assistant_message_id = await _seed_chat(db, user_a)
-
+    params = await _gate_params(
+        db, user_a, no_llm, monkeypatch, reranker_factory=_PassThroughRerank
+    )
     run = await prepare_auto_run(
-        get_session_factory(),
-        await _params(db, chat, user_a, assistant_message_id),
-        DecisionEngine(jev=_MidJev("lookup"), mode="jev_only"),
+        get_session_factory(), params, DecisionEngine(jev=_IngressJev("lookup"), mode="jev_only")
     )
 
-    assert run.sufficiency_p == 0.3
+    assert run.gate_mean_top3 == pytest.approx(0.99)
     assert run.abstain_event is None
     # the fake rewriter returns one variant per retrieve pass
     assert len(no_llm["retrieval"]) == 1
@@ -775,30 +654,30 @@ async def test_below_floor_retries_once_then_abstains(
     db: AsyncSession,
     user_a: User,
     no_llm: dict[str, list[str]],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Below the floor: one rewrite + retry (a second batch of variant
     searches), then abstention when the second pass is still below."""
 
-    class _EmptyJev(_IngressJev):
-        async def decide(
-            self, *, state: dict[str, Any] | str, questions: dict[str, Question]
-        ) -> dict[str, Answer]:
-            answers = await super().decide(state=state, questions=questions)
-            if "sufficient" in answers:
-                answers["sufficient"] = Answer(
-                    engine="jev", latency_ms=1, value=0.03, probability=0.03
-                )
-            return answers
+    class _LowGradeRerank:
+        def __init__(self, *_args: object) -> None:
+            pass
 
-    chat, assistant_message_id = await _seed_chat(db, user_a)
+        async def rerank(
+            self, *, query: str, documents: list[str], top_n: int
+        ) -> list[tuple[int, float]]:
+            # 0.2 is below the gate floor but above the "clearly absent" bound,
+            # so the run takes its one corrective retrieval before abstaining.
+            return [(i, 0.2) for i in range(min(top_n, len(documents)))]
 
+    params = await _gate_params(
+        db, user_a, no_llm, monkeypatch, reranker_factory=_LowGradeRerank
+    )
     run = await prepare_auto_run(
-        get_session_factory(),
-        await _params(db, chat, user_a, assistant_message_id),
-        DecisionEngine(jev=_EmptyJev("lookup"), mode="jev_only"),
+        get_session_factory(), params, DecisionEngine(jev=_IngressJev("lookup"), mode="jev_only")
     )
 
-    assert run.sufficiency_p == 0.03
+    assert run.gate_mean_top3 == pytest.approx(0.2)
     assert run.abstain_event is not None
     # initial retrieve + the single rewrite-retry, one variant each
     assert len(no_llm["retrieval"]) == 2
@@ -810,18 +689,13 @@ async def test_answerless_but_topical_evidence_abstains(
     no_llm: dict[str, list[str]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """KI-26's captured evidence, and what R2a does to it.
+    """KI-26's captured evidence under the rubric gate.
 
     The captured `outside-study-in-scarlet` top-k never states the answer — no
-    chunk mentions Afghanistan — yet sufficiency reads 0.10, over its floor.
-    The relevance veto held it, at rerank 0.28. ADR-006 removed that veto, so
-    the run now answers from evidence that does not contain the answer.
-
-    **The assertion below is the regression, stated rather than hidden.** It is
-    the reason `tests/graph/test_one_evidence_check.py` exists and why item 4's
-    acceptance test fails on the recorded runs: the sufficiency floor of 0.05
-    was calibrated as one of three signals, and it is not decision-grade on its
-    own."""
+    chunk mentions Afghanistan — and the rubric grades it around 0.28. Under
+    the new gate that is below the 0.55 floor, so the run abstains rather than
+    answering from evidence that does not contain the answer.
+    """
 
     chat, assistant_message_id = await _seed_chat(db, user_a)
 
@@ -880,10 +754,7 @@ async def test_answerless_but_topical_evidence_abstains(
     monkeypatch.setattr(auto_module, "hybrid_search", fake_search)
 
     class _TopicalJev(_IngressJev):
-        """Sufficient at 0.10 and rerank relevance at 0.28 — the values live
-        Jev returns for the captured KI-26 evidence (`.data/ki26/
-        capture.json`): sufficient clears the 0.05 floor, but the max
-        rerank score sits under the 0.60 relevance gate."""
+        """Rerank passages graded around 0.28, the KI-26 captured level."""
 
         def __init__(self) -> None:
             super().__init__("lookup")
@@ -896,19 +767,13 @@ async def test_answerless_but_topical_evidence_abstains(
             for name in questions:
                 if name.startswith("passage_"):
                     self.relevance_questions += 1
-                    answers[name] = Answer(engine="jev", latency_ms=1, value=0.28, probability=None)
-            if "sufficient" in answers:
-                answers["sufficient"] = Answer(
-                    engine="jev", latency_ms=1, value=0.1, probability=0.1
-                )
+                    answers[name] = _rubric_answer(0.28)
             return answers
 
     # The mechanism, pinned: the answer's key fact is in no chunk.
     assert all("Afghanistan" not in chunk.text for chunk in chunks)
 
-    # Pin the real JevRerank so the relevance gate runs on the fake's
-    # captured 0.28 scores (the default factory would too, but ambient
-    # runtime settings must not decide which reranker a test exercises).
+    # Pin the real JevRerank so the rubric runs on the fake's captured scores.
     monkeypatch.setattr(
         auto_module, "get_reranker", lambda engine=None, run_id="": JevRerank(engine, run_id)
     )
@@ -919,31 +784,23 @@ async def test_answerless_but_topical_evidence_abstains(
         DecisionEngine(jev=_TopicalJev(), mode="jev_only"),
     )
 
-    assert run.abstain_event is None, (
-        "ADR-006 removed the relevance veto (R2a item 4), so the captured KI-26 "
-        "evidence — sufficient 0.10 over its 0.05 floor, rerank 0.28 — now "
-        "answers. This is the shape of the regression that removal costs, and it "
-        "is not hypothetical: `outside-study-in-scarlet` recorded at sufficient "
-        "0.07 / relevance 0.26 is one of the twelve rows "
-        "`tests/graph/test_one_evidence_check.py` flips to confident wrong, and "
-        "that file's acceptance test is the reason item 4 needs the owner's "
-        "threshold decision rather than a silent merge."
+    assert run.abstain_event is not None, (
+        "ADR-006 as corrected: the gate is the rubric mean-of-top-3, and the "
+        "captured KI-26 evidence grades around 0.28, well below the 0.55 floor."
     )
     assert not any(d.name == "relevance" for d in run.decision_events)
 
 
 class _RelevanceJev(_IngressJev):
-    """Sufficient pinned; rerank passages graded on the answer-containment
-    rubric (TRD §9.6), or left unanswered when `passage_score` is None (a
-    reranker outage: JevRerank then defaults them to 0.0).
+    """Rerank passages graded on the answer-containment rubric (TRD §9.6), or
+    left unanswered when `passage_score` is None.
 
     The 0-1 `passage_score` is translated to the rubric level whose expected
     value is closest, so a test can still say "a passage scoring 0.2" and mean
     the same thing the trace shows."""
 
-    def __init__(self, intent: str, sufficient: float, passage_score: float | None) -> None:
+    def __init__(self, intent: str, passage_score: float | None) -> None:
         super().__init__(intent)
-        self._sufficient_value = sufficient
         self._passage_score = passage_score
 
     async def decide(
@@ -956,13 +813,6 @@ class _RelevanceJev(_IngressJev):
                     answers.pop(name, None)
                 else:
                     answers[name] = _rubric_answer(self._passage_score)
-        if "sufficient" in answers:
-            answers["sufficient"] = Answer(
-                engine="jev",
-                latency_ms=1,
-                value=self._sufficient_value,
-                probability=self._sufficient_value,
-            )
         return answers
 
 
@@ -990,8 +840,8 @@ async def _gate_params(
     reranker_factory: object | None = None,
 ) -> AutoRunInput:
     """Seed four answerable chunks and patch retrieval, with the reranker
-    pinned to the real JevRerank (so the KI-26 relevance gate runs) unless a
-    test overrides the factory. Reusable across prepare_auto_run calls."""
+    pinned to the real JevRerank (so the rubric runs) unless a test overrides
+    the factory. Reusable across prepare_auto_run calls."""
     from db.models import Chunk
 
     chat, assistant_message_id = await _seed_chat(db, user_a)
@@ -1043,23 +893,23 @@ async def _gate_params(
 
 
 async def _gate_run(
-    params: AutoRunInput, *, sufficient: float, passage_score: float | None
+    params: AutoRunInput, *, passage_score: float | None
 ) -> AutoRun:
     return await prepare_auto_run(
         get_session_factory(),
         params,
-        DecisionEngine(jev=_RelevanceJev("lookup", sufficient, passage_score), mode="jev_only"),
+        DecisionEngine(jev=_RelevanceJev("lookup", passage_score), mode="jev_only"),
     )
 
 
 async def _gate_run_intent(
-    params: AutoRunInput, *, intent: str, sufficient: float, passage_score: float | None
+    params: AutoRunInput, *, intent: str, passage_score: float | None
 ) -> AutoRun:
-    """`_gate_run` with the intent under test, for the KI-70 veto exemption."""
+    """`_gate_run` with the intent under test."""
     return await prepare_auto_run(
         get_session_factory(),
         params,
-        DecisionEngine(jev=_RelevanceJev(intent, sufficient, passage_score), mode="jev_only"),
+        DecisionEngine(jev=_RelevanceJev(intent, passage_score), mode="jev_only"),
     )
 
 
@@ -1069,12 +919,11 @@ async def _run_gate_check(
     no_llm: dict[str, list[str]],
     monkeypatch: pytest.MonkeyPatch,
     *,
-    sufficient: float,
     passage_score: float | None,
     reranker_factory: object | None = None,
 ) -> AutoRun:
     params = await _gate_params(db, user_a, no_llm, monkeypatch, reranker_factory=reranker_factory)
-    return await _gate_run(params, sufficient=sufficient, passage_score=passage_score)
+    return await _gate_run(params, passage_score=passage_score)
 
 
 def _max_rerank_score(run: AutoRun) -> float | None:
@@ -1102,58 +951,54 @@ def _relevance_decisions(run: AutoRun) -> list[Decision]:
 
 
 @pytest.mark.asyncio
-async def test_the_evidence_check_alone_decides_a_topically_adjacent_answer(
+async def test_the_rubric_gate_decides_above_the_floor(
     db: AsyncSession,
     user_a: User,
     no_llm: dict[str, list[str]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """What replaced the relevance gate, in the shape KI-26's gate was written
-    for: topically adjacent, answerless evidence with sufficiency 0.2 over its
-    0.05 floor.
-
-    Under the old rule the rerank score of 0.2 would have abstained this. Under
-    the new one sufficiency decides, and at 0.2 it clears — which is correct for
-    this reading and is exactly the flip `tests/graph/test_one_evidence_check.py`
-    replays across every recorded item. The two together are the change: the
-    shape is unchanged, the bar is a single decision-grade signal instead of a
-    lexical-overlap proxy."""
-    run = await _run_gate_check(
-        db, user_a, no_llm, monkeypatch, sufficient=0.2, passage_score=0.2
-    )
+    """ADR-006 as corrected: the mean answer-containment grade of the best three
+    post-sanitize passages is the gate. A mean of 0.7 clears the shipped 0.55
+    floor and the run answers."""
+    run = await _run_gate_check(db, user_a, no_llm, monkeypatch, passage_score=0.7)
 
     assert run.abstain_event is None
-    assert run.contexts, "a run that cleared the check still generates from evidence"
+    assert run.contexts, "a run that cleared the gate still generates from evidence"
     assert _relevance_decisions(run) == []
+    # 0.7 maps to the "partly answers" level (expected value 2/3).
+    assert run.gate_mean_top3 == pytest.approx(ANSWER_LEVEL_VALUE["partly answers the question"])
 
 
 @pytest.mark.asyncio
-async def test_the_evidence_check_alone_declines_thin_evidence(
+async def test_the_rubric_gate_declines_below_the_floor(
     db: AsyncSession,
     user_a: User,
     no_llm: dict[str, list[str]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The same question with sufficiency under its floor. The rerank score is
-    irrelevant to the verdict now, and the trace must not offer it as a
-    reason."""
-    run = await _run_gate_check(db, user_a, no_llm, monkeypatch, sufficient=0.02, passage_score=0.9)
+    """The same fixture with a mean grade of 0.2 is under the floor, so the run
+    abstains after its one retry."""
+    run = await _run_gate_check(db, user_a, no_llm, monkeypatch, passage_score=0.2)
 
     assert run.abstain_event is not None
-    assert _relevance_decisions(run) == [], "the trace must show why the run abstained"
+    assert _relevance_decisions(run) == [], "the trace must not invent a removed veto"
+    # 0.2 maps to the "related but does not answer" level (expected value 1/3).
+    assert run.gate_mean_top3 == pytest.approx(
+        ANSWER_LEVEL_VALUE["related but does not answer the question"]
+    )
 
 
 @pytest.mark.asyncio
-async def test_a_reranker_on_another_scale_changes_nothing(
+async def test_a_non_jev_reranker_with_low_scores_abstains(
     db: AsyncSession,
     user_a: User,
     no_llm: dict[str, list[str]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """NVIDIA/Cohere/fused-order scores live on other scales (fused order's top
-    is always 1.0), and the old gate had to special-case them because it read
-    their numbers. A verdict built from a decision-grade check has no such
-    coupling: this provider scores 0.3 everywhere and changes nothing."""
+    """NVIDIA/Cohere/fused-order scores live on other scales. The gate is
+    computed from whatever `rerank_score` arrives, so a provider that gives
+    every passage 0.3 fails the 0.55 floor. Providers beyond Jev are out of
+    scope for calibration; this just pins the observed behaviour."""
 
     class _LowScoringProvider:
         def __init__(self, *_args: object) -> None:
@@ -1169,51 +1014,54 @@ async def test_a_reranker_on_another_scale_changes_nothing(
         user_a,
         no_llm,
         monkeypatch,
-        sufficient=0.02,
         passage_score=0.3,
         reranker_factory=_LowScoringProvider,
     )
 
-    assert run.abstain_event is not None, "sufficiency is the only evidence check"
+    assert run.abstain_event is not None, "the gate is the rubric score on this scale"
     assert _relevance_decisions(run) == []
 
 
 @pytest.mark.asyncio
-async def test_a_reranker_outage_still_never_abstains(
+async def test_an_unanswered_rubric_abstains(
     db: AsyncSession,
     user_a: User,
     no_llm: dict[str, list[str]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Every passage defaulted to 0.0 — no passage got a real answer, i.e. a
-    reranker outage, which degrades to fused order and never fails the run."""
-    run = await _run_gate_check(db, user_a, no_llm, monkeypatch, sufficient=0.2, passage_score=None)
+    """No passage got a real rubric answer, so `rerank_score` is 0.0 for every
+    winner. A missing or zero grade is a failing gate — the safe direction."""
+    run = await _run_gate_check(db, user_a, no_llm, monkeypatch, passage_score=None)
 
-    assert run.abstain_event is None
+    assert run.abstain_event is not None
     assert _relevance_decisions(run) == []
 
 
 @pytest.mark.asyncio
-async def test_the_sufficient_abstain_threshold_is_still_admin_overridable(
+async def test_the_gate_floor_is_admin_overridable(
     db: AsyncSession,
     user_a: User,
     no_llm: dict[str, list[str]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """AD-4, on the signal that decides a run. 0.02 is under the shipped 0.05
-    floor and clears an override to 0.0."""
+    """AD-4, on the signal that decides a run. A rubric mean of 0.7 (mapped to
+    the "partly answers" level, 2/3) clears the shipped 0.55 floor, but not an
+    override to 0.95."""
     params = await _gate_params(db, user_a, no_llm, monkeypatch)
-    blocked = await _gate_run(params, sufficient=0.02, passage_score=0.3)
-    assert blocked.abstain_event is not None
+    answered = await _gate_run(params, passage_score=0.7)
+    assert answered.gate_mean_top3 == pytest.approx(
+        ANSWER_LEVEL_VALUE["partly answers the question"]
+    )
+    assert answered.abstain_event is None
 
     token = set_runtime_settings(
-        RuntimeSettings.from_data(11, {"thresholds": {"sufficient_abstain": {"jev": 0.0}}})
+        RuntimeSettings.from_data(11, {"thresholds": {"rubric_mean_top3": {"jev": 0.95}}})
     )
     try:
-        answered = await _gate_run(params, sufficient=0.02, passage_score=0.3)
+        blocked = await _gate_run(params, passage_score=0.7)
     finally:
         reset_runtime_settings(token)
-    assert answered.abstain_event is None
+    assert blocked.abstain_event is not None
 
 
 @pytest.mark.asyncio
@@ -1231,7 +1079,7 @@ async def test_no_relevance_decision_reaches_the_trace(
     run = await prepare_auto_run(
         get_session_factory(),
         params,
-        DecisionEngine(jev=_RelevanceJev("lookup", 0.2, 0.3), mode="jev_only"),
+        DecisionEngine(jev=_RelevanceJev("lookup", 0.3), mode="jev_only"),
     )
 
     assert _relevance_decisions(run) == []
@@ -1251,82 +1099,79 @@ async def test_retry_count_never_exceeds_one(
     no_llm: dict[str, list[str]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """The runtime retry_limit is clamped to one, and a rubric grade below the
+    floor but above the "clearly absent" bound triggers exactly one corrective
+    retrieval."""
     monkeypatch.setattr(
         auto_module,
         "runtime_value",
         lambda name, default: 5 if name == "retrieval.retry_limit" else default,
     )
 
-    class _AlwaysBelowJev(_IngressJev):
-        async def decide(
-            self, *, state: dict[str, Any] | str, questions: dict[str, Question]
-        ) -> dict[str, Answer]:
-            answers = await super().decide(state=state, questions=questions)
-            if "sufficient" in answers:
-                answers["sufficient"] = Answer(
-                    engine="jev", latency_ms=1, value=0.03, probability=0.03
-                )
-            return answers
+    class _BelowFloorRerank:
+        def __init__(self, *_args: object) -> None:
+            pass
 
-    chat, assistant_message_id = await _seed_chat(db, user_a)
+        async def rerank(
+            self, *, query: str, documents: list[str], top_n: int
+        ) -> list[tuple[int, float]]:
+            return [(i, 0.2) for i in range(min(top_n, len(documents)))]
 
+    params = await _gate_params(
+        db, user_a, no_llm, monkeypatch, reranker_factory=_BelowFloorRerank
+    )
     run = await prepare_auto_run(
-        get_session_factory(),
-        await _params(db, chat, user_a, assistant_message_id),
-        DecisionEngine(jev=_AlwaysBelowJev("lookup"), mode="jev_only"),
+        get_session_factory(), params, DecisionEngine(jev=_IngressJev("lookup"), mode="jev_only")
     )
 
     assert run.abstain_event is not None
-    # the clamp holds: one retrieve + one retry despite retry_limit=5. 0.03 is
-    # chosen to sit above `RETRY_SKIP_SUFFICIENT_MAX` (0.02), because with the
-    # relevance reading gone from the skip test, a run at or below 0.02 skips
-    # the correction instead of clamping it.
+    # 0.2 is below the gate floor (0.55) but above the clearly-absent bound
+    # (0.10), so the clamp holds: one retrieve + one retry despite retry_limit=5.
     assert len(no_llm["retrieval"]) == 2
 
 
-async def test_abstention_follows_the_configured_sufficient_abstain_threshold(
+async def test_abstention_follows_the_configured_gate_floor(
     db: AsyncSession,
     user_a: User,
     no_llm: dict[str, list[str]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """AD-4: 0.7 clears the default 0.05 floor and generates, but is below
-    a raised `sufficient_abstain`, so the run abstains on the configured
-    value after its one retry."""
+    """AD-4, on the gate signal. A rubric mean of 0.7 clears the shipped 0.55
+    floor and generates, but is below a raised `rubric_mean_top3`, so the run
+    abstains on the configured value after its one retry."""
 
-    class _SufficientJev(_IngressJev):
-        async def decide(
-            self, *, state: dict[str, Any] | str, questions: dict[str, Question]
-        ) -> dict[str, Answer]:
-            answers = await super().decide(state=state, questions=questions)
-            if "sufficient" in answers:
-                answers["sufficient"] = Answer(
-                    engine="jev", latency_ms=1, value=0.7, probability=0.7
-                )
-            return answers
+    class _FlatRerank:
+        def __init__(self, score: float) -> None:
+            self._score = score
 
-    chat, assistant_message_id = await _seed_chat(db, user_a)
-    params = await _params(db, chat, user_a, assistant_message_id)
+        async def rerank(
+            self, *, query: str, documents: list[str], top_n: int
+        ) -> list[tuple[int, float]]:
+            return [(i, self._score) for i in range(min(top_n, len(documents)))]
+
+    params = await _gate_params(
+        db, user_a, no_llm, monkeypatch, reranker_factory=lambda *_a, **_k: _FlatRerank(0.7)
+    )
 
     answered = await prepare_auto_run(
-        get_session_factory(), params, DecisionEngine(jev=_SufficientJev("lookup"), mode="jev_only")
+        get_session_factory(), params, DecisionEngine(jev=_IngressJev("lookup"), mode="jev_only")
     )
-    assert answered.sufficiency_p == 0.7
+    assert answered.gate_mean_top3 == pytest.approx(0.7)
     assert answered.abstain_event is None
 
     token = set_runtime_settings(
-        RuntimeSettings.from_data(9, {"thresholds": {"sufficient_abstain": {"jev": 0.95}}})
+        RuntimeSettings.from_data(9, {"thresholds": {"rubric_mean_top3": {"jev": 0.95}}})
     )
     try:
         abstained = await prepare_auto_run(
             get_session_factory(),
             params,
-            DecisionEngine(jev=_SufficientJev("lookup"), mode="jev_only"),
+            DecisionEngine(jev=_IngressJev("lookup"), mode="jev_only"),
         )
     finally:
         reset_runtime_settings(token)
 
-    assert abstained.sufficiency_p == 0.7
+    assert abstained.gate_mean_top3 == pytest.approx(0.7)
     assert abstained.abstain_event is not None
 
 
@@ -1341,25 +1186,14 @@ async def test_abstention_persists_no_citations(
     retrieval to return zero candidates, so the rows the run *did* persist
     went unasserted."""
 
-    class _PassThroughRerank:
+    class _LowGradeRerank:
         def __init__(self, *_args: object) -> None:
             pass
 
         async def rerank(
             self, *, query: str, documents: list[str], top_n: int
         ) -> list[tuple[int, float]]:
-            return [(i, 1.0 - i / 100) for i in range(min(top_n, len(documents)))]
-
-    class _BelowFloorJev(_IngressJev):
-        async def decide(
-            self, *, state: dict[str, Any] | str, questions: dict[str, Question]
-        ) -> dict[str, Answer]:
-            answers = await super().decide(state=state, questions=questions)
-            if "sufficient" in answers:
-                answers["sufficient"] = Answer(
-                    engine="jev", latency_ms=1, value=0.02, probability=0.02
-                )
-            return answers
+            return [(i, 0.02) for i in range(min(top_n, len(documents)))]
 
     chat, assistant_message_id = await _seed_chat(db, user_a)
     collection = (
@@ -1401,12 +1235,12 @@ async def test_abstention_persists_no_citations(
         return list(candidates)
 
     monkeypatch.setattr(auto_module, "hybrid_search", fake_search)
-    monkeypatch.setattr(auto_module, "get_reranker", _PassThroughRerank)
+    monkeypatch.setattr(auto_module, "get_reranker", _LowGradeRerank)
 
     run = await prepare_auto_run(
         get_session_factory(),
         await _params(db, chat, user_a, assistant_message_id),
-        DecisionEngine(jev=_BelowFloorJev("lookup"), mode="jev_only"),
+        DecisionEngine(jev=_IngressJev("lookup"), mode="jev_only"),
     )
 
     assert run.abstain_event is not None
@@ -1481,27 +1315,12 @@ async def test_compare_retrieves_chunks_for_each_named_entity(
     monkeypatch.setattr(auto_module, "get_reranker", _PassThroughRerank)
     params = await _params(db, chat, user_a, assistant_message_id)
 
-    class _RetryJev(_IngressJev):
-        attempts = 0
-
-        async def decide(
-            self, *, state: dict[str, Any] | str, questions: dict[str, Question]
-        ) -> dict[str, Answer]:
-            answers = await super().decide(state=state, questions=questions)
-            if "sufficient" in answers:
-                self.attempts += 1
-                value = 0.1 if self.attempts == 1 else 0.95
-                answers["sufficient"] = Answer(
-                    engine="jev", latency_ms=1, value=value, probability=value
-                )
-            return answers
-
     run = await prepare_auto_run(
         get_session_factory(),
         AutoRunInput(
             **{**params.__dict__, "question": "Compare Victor Frankenstein and the Time Traveller."}
         ),
-        DecisionEngine(jev=_RetryJev("compare"), mode="jev_only"),
+        DecisionEngine(jev=_IngressJev("compare"), mode="jev_only"),
     )
     # not a rerank/gate test: identity reranker, gate skipped (non-Jev)
     assert {context.chunk.document_name for context in run.contexts} == {
@@ -1533,17 +1352,6 @@ async def test_compare_keeps_both_books_when_the_reranker_prefers_one(
             ]
             pairs.sort(key=lambda pair: pair[1], reverse=True)
             return pairs[:top_n]
-
-    class _SufficientJev(_IngressJev):
-        async def decide(
-            self, *, state: dict[str, Any] | str, questions: dict[str, Question]
-        ) -> dict[str, Answer]:
-            answers = await super().decide(state=state, questions=questions)
-            if "sufficient" in answers:
-                answers["sufficient"] = Answer(
-                    engine="jev", latency_ms=1, value=0.95, probability=0.95
-                )
-            return answers
 
     chat, assistant_message_id = await _seed_chat(db, user_a)
     collection = (
@@ -1611,7 +1419,7 @@ async def test_compare_keeps_both_books_when_the_reranker_prefers_one(
                     "question": "Compare how Victor Frankenstein and the Time Traveller cope.",
                 }
             ),
-            DecisionEngine(jev=_SufficientJev("compare"), mode="jev_only"),
+            DecisionEngine(jev=_IngressJev("compare"), mode="jev_only"),
         )
     finally:
         reset_runtime_settings(token)
@@ -1632,17 +1440,6 @@ async def test_multi_part_retrieves_one_query_per_part(
     """A two-part question retrieves on the whole question as one
     query, so one part's chunks never surface. Each part gets its own
     retrieval and its own share of the top-k."""
-
-    class _SufficientJev(_IngressJev):
-        async def decide(
-            self, *, state: dict[str, Any] | str, questions: dict[str, Question]
-        ) -> dict[str, Answer]:
-            answers = await super().decide(state=state, questions=questions)
-            if "sufficient" in answers:
-                answers["sufficient"] = Answer(
-                    engine="jev", latency_ms=1, value=0.95, probability=0.95
-                )
-            return answers
 
     question = (
         "What is Elizabeth Bennet's opinion of Mr Darcy? "
@@ -1719,7 +1516,7 @@ async def test_multi_part_retrieves_one_query_per_part(
         run = await prepare_auto_run(
             get_session_factory(),
             AutoRunInput(**{**params.__dict__, "question": question}),
-            DecisionEngine(jev=_SufficientJev("multi-part"), mode="jev_only"),
+            DecisionEngine(jev=_IngressJev("multi-part"), mode="jev_only"),
         )
     finally:
         reset_runtime_settings(token)
@@ -1826,7 +1623,7 @@ async def test_chitchat_that_names_a_book_retrieves_and_answers_with_citations(
     run = await prepare_auto_run(
         get_session_factory(),
         AutoRunInput(**{**params.__dict__, "question": question}),
-        DecisionEngine(jev=_RelevanceJev("chitchat", 0.61, 0.97), mode="jev_only"),
+        DecisionEngine(jev=_RelevanceJev("chitchat", 0.97), mode="jev_only"),
     )
 
     assert run.ingress.intent == "chitchat"
@@ -1834,10 +1631,9 @@ async def test_chitchat_that_names_a_book_retrieves_and_answers_with_citations(
     assert run.chitchat is False
     assert run.abstain_event is None
     assert run.contexts, "a chitchat-routed run with support answers from evidence"
-    # Sufficiency is the recorded broad-alice value (0.61), and the reranker
-    # graded the passages as fully answering — the level the old 0.97 relevance
-    # score maps to now that the rubric replaces it.
-    assert run.sufficiency_p == pytest.approx(0.61)
+    # The rubric graded the passages as fully answering (the level the old 0.97
+    # relevance score maps to), so the mean-of-top-3 gate is 1.0.
+    assert run.gate_mean_top3 == pytest.approx(1.0)
     assert _max_rerank_score(run) == pytest.approx(1.0)
     # And it went out through the grounded generator, never the chitchat one.
     assert streamed == []
@@ -1862,7 +1658,7 @@ async def test_chitchat_routed_run_with_no_support_falls_back_to_the_sourceless_
     run = await prepare_auto_run(
         get_session_factory(),
         AutoRunInput(**{**params.__dict__, "question": "tell me something about the moon"}),
-        DecisionEngine(jev=_RelevanceJev("chitchat", 0.02, 0.11), mode="jev_only"),
+        DecisionEngine(jev=_RelevanceJev("chitchat", 0.11), mode="jev_only"),
     )
 
     assert run.ingress.intent == "chitchat"
@@ -1901,7 +1697,7 @@ async def test_thanks_after_an_answer_does_not_retrieve(
 # so the entity guard was skipped, and the *rewriter* answer the instruction
 # instead of following it — "I understand. You're correct—there is no question
 # to rewrite in your message." That prose became retrieval query #1 and every
-# variant beside it, the nonsense retrieval cleared sufficiency, and the turn
+# variant beside it, the nonsense retrieval cleared the gate, and the turn
 # answered with eight citations instead of taking the chitchat reply.
 #
 # The two layers are independent and both are needed: the rewrite contract is
@@ -1974,9 +1770,9 @@ def test_a_single_unmarked_clause_is_read_as_a_query_and_that_is_deliberate() ->
     them apart without becoming the phrase list the contract exists to avoid.
 
     Reading it as a query is the safe direction: a nonsense query retrieves
-    nothing and the sufficiency check abstains, while prose read as a query is
-    exactly the KI-73 failure. The recorded failure had *three* sentences, so
-    it is caught, and the two-way cost above says this is where the line goes.
+    nothing and the gate abstains, while prose read as a query is exactly the
+    KI-73 failure. The recorded failure had *three* sentences, so it is caught,
+    and the two-way cost above says this is where the line goes.
     """
     from graph.rewrite import is_query_shape
 
@@ -2005,7 +1801,7 @@ async def test_thanks_with_sources_in_scope_retrieves_nothing_and_cites_nothing(
     run = await prepare_auto_run(
         get_session_factory(),
         AutoRunInput(**{**params.__dict__, "question": question}),
-        DecisionEngine(jev=_RelevanceJev("chitchat", 0.61, 0.97), mode="jev_only"),
+        DecisionEngine(jev=_IngressJev("chitchat"), mode="jev_only"),
     )
 
     assert run.ingress.intent == "chitchat"
@@ -2033,7 +1829,7 @@ async def _recorded_chitchat_content_run(
     return await prepare_auto_run(
         get_session_factory(),
         dc_replace(params, question=question),
-        DecisionEngine(jev=_RelevanceJev("chitchat", 0.61, 0.97), mode="jev_only"),
+        DecisionEngine(jev=_RelevanceJev("chitchat", 0.97), mode="jev_only"),
     )
 
 
@@ -2047,8 +1843,8 @@ async def test_broad_sherlock_still_retrieves_and_cites_through_the_new_gate(
     stopped it retrieving and produced exactly the uncited reply KI-71's fix
     exists to prevent.
 
-    The sufficiency and passage scores are the recorded ones — 0.61 and 0.97 —
-    so the evidence clears the floors and the run answers from it."""
+    The passage score is the recorded one (0.97), so the rubric grades the
+    evidence as fully answering and the run answers from it."""
     run = await _recorded_chitchat_content_run(
         db, user_a, no_llm, monkeypatch, "tell me something about the adventures of sherlock holmes"
     )
@@ -2126,7 +1922,7 @@ async def test_retrieval_uses_the_original_message_when_the_rewrite_is_prose(
     run = await prepare_auto_run(
         get_session_factory(),
         AutoRunInput(**{**params.__dict__, "question": "what is the AW-2000 blade warranty"}),
-        DecisionEngine(jev=_RelevanceJev("lookup", 0.61, 0.97), mode="jev_only"),
+        DecisionEngine(jev=_RelevanceJev("lookup", 0.97), mode="jev_only"),
     )
 
     assert run.rewritten == "what is the AW-2000 blade warranty"

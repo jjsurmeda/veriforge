@@ -103,16 +103,16 @@ def test_the_same_label_twice_in_one_run_sums_across_attempts() -> None:
     report only its last attempt."""
     events = [
         *_step("retrieve", 0, 2000),
-        *_step("sufficient", 2000, 2200),
+        *_step("evidence", 2000, 2200),
         *_step("retrieve", 2200, 4800),
-        *_step("sufficient", 4800, 5000),
+        *_step("evidence", 4800, 5000),
         _event("run.completed", 5200),
     ]
 
     timings = attribute(events)
 
     assert timings.spans["retrieve"] == 4600
-    assert timings.spans["sufficient"] == 400
+    assert timings.spans["evidence"] == 400
 
 
 def test_an_unknown_label_keeps_its_own_row() -> None:

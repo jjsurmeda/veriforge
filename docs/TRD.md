@@ -116,7 +116,7 @@ flowchart TD
   G --> H{Agent: search again<br/>or answer?}
   H -->|need more| G
   E -->|yes| I[Conflict check]
-  H -->|sufficient| I
+  H -->|answer| I
   E -->|no, exhausted| Z[Abstain]
   H -->|budget spent| Z
   I --> J[Generate]
@@ -135,10 +135,11 @@ finish. Auto, Fast and Deep compose the same stages; OKF link expansion
 **Auto is adaptive + hybrid, single-hop.** Ingress picks the intent; the
 intent selects the generator instructions and, for gist questions, adds
 section summaries to the evidence. The evidence check is **one corrective
-check** (PRD TR-4): insufficient → one corrected retrieval (rewritten or
-decomposed query, summaries) → check again → answer or abstain. A
-named-entity guard keeps passages about a different entity out of the
-evidence. Abstentions carry no citations.
+check** (PRD TR-4): below the rubric mean-of-top-3 floor (default 0.55) → one
+corrected retrieval (rewritten or decomposed query, summaries) → check again →
+answer or abstain. A named-entity guard keeps passages about a different entity
+out of the evidence, even when the rubric mean clears the floor. Abstentions
+carry no citations.
 
 **Deep is agentic.** An agent loop over the same stages: decide the next
 sub-question, retrieve, extract notes, then decide to search again or
@@ -149,7 +150,7 @@ answer (DecisionEngine `Choice`), up to 4 hops or the credit budget.
 | Ingress | Jev, one call | Questions: `guard_injection`, `guard_jailbreak`, `guard_pii`, `off_topic` (noul); `intent` (choice: chitchat, lookup, compare, summarize, multi-part, follow-up, library); `source` (choice, if source = Auto); `complexity` (choice, if mode = Auto); `lexical_weight` (score 0–1); `risk` (choice: low, high). `intent = chitchat` (and not `off_topic`) routes to a direct small-talk reply: no retrieval, no citations, no reviewer, no abstention. *(Amended 2026-09-28, batch A — greeting fast path: a raw message of ≤ 40 chars whose normalised form (NFKC, lowercase, letters/spaces only, ≤ 4 words) exactly matches the greeting allowlist skips ingress and retrieval; the generator receives the canonical phrase only.)* *(Amended 2026-09-30, C2 — `intent = library` answers "what books do we have" / "how many documents are in my sources" from the document list of the chat's own scope (its container plus Shared, the same ids retrieval is given), not from retrieval: no retrieval, no citations, no reviewer. Only documents in a searchable state are listed. Language per book is not reported — no document language is stored.)* |
 | Rewrite + summary | Small LLM | Condenses the question with history; refreshes the rolling chat summary every 10 turns. |
 | Multi-query retrieve | Small LLM + SQL | 3 query variants (Auto only), each through hybrid search; results fused. Fast uses the rewritten query only. |
-| Evidence check | Decision provider | `sufficient` noul over the question and the reranked evidence (children first, then parent context within the 9,000-char budget; section summaries for `summarize` intent). Below the provider's threshold: one corrective retrieval, then check again; still below → abstain. |
+| Evidence check | Computed from the reranker's rubric | The gate is the mean answer-containment grade of the best three post-sanitize passages (`rubric_mean_top3`). Default floor 0.55. Below the floor: one corrective retrieval, then check again; still below → abstain. The `summarize` intent adds section summaries to the evidence. |
 | Entity guard | Decision provider | When the question names an entity, each passage is asked whether it concerns any one of the named entities; every named entity must be covered by a passing passage. |
 | Agent: plan next step | Planner LLM + decision provider | Picks the next sub-question from the notes so far; streams it to the trace. |
 | Hop retrieve | SQL + small LLM | Independent sub-questions run in parallel; notes extracted per hop with chunk ids kept. |
@@ -190,7 +191,7 @@ process can stream or cancel any run and Uvicorn can run several workers.
 Targets are client-side, from send, per reply path: answers, declines, held
 answers. `run_events` give the per-stage breakdown. Measured at D4 (fast20
 per-stage p50): ingress+rewrite 1.2–1.5 s, **retrieve 4.1–4.7 s**, rerank
-~0.4 s, sanitize ~0.4 s, sufficient ~0.4 s, generator first token ~0.5 s.
+~0.4 s, sanitize ~0.4 s, evidence check ~0.4 s, generator first token ~0.5 s.
 Declines run the full retry, so they take about twice as long.
 
 Planned structural changes (P3, each measured against the baseline):
@@ -274,7 +275,7 @@ side.
 | intent, source, complexity, risk | Choice | Ingress | Argmax; below 0.5 confidence falls back to safe default (Both, single, high) |
 | lexical_weight | Score 0–1 | Retrieval fusion | Used as weight |
 | chunk_injection | Noul | Sanitizer | Drop at ≥ 0.7 |
-| sufficient | Noul | Single-hop loop | Answer-first: generate at or above `sufficient_abstain`; below it one rewrite + retry, then abstain. `sufficient_retry` is removed; default floor 0.05 |
+| rubric_mean_top3 | Computed | Single-hop gate | Mean answer-containment grade of the best 3 post-sanitize passages. Default floor 0.55; admin key `thresholds.rubric_mean_top3`. Below the floor: one rewrite + retry, then abstain. |
 | entity_match | Noul per passage | Entity guard | Per provider; a passage passes when it concerns any named entity |
 | agent_step | Choice | Deep agent loop | Argmax (`search_again`, `answer`; `follow_link` in v1.1) |
 | conflict | Noul | Conflict check | Disclose at ≥ 0.6 |
@@ -406,7 +407,7 @@ KI-57, an outage of the decision layer underneath it degrades the same way.
 - **Edges:** an `okf_links` table (source concept, target bundle + path,
   or `resource` id for cross-bundle links). Resolved at query time,
   **inside scope only**.
-- **Expansion (Auto):** after both evidence gates pass, add passages from
+- **Expansion (Auto):** after the evidence gate passes, add passages from
   directly linked, in-scope, non-excluded concepts, up to the admin limit.
   They go through the sanitizer and are timed as `okf_expand`. A skipped
   link is reported identically, whatever the reason, with no target title
@@ -454,7 +455,7 @@ decision from ingress.
 | Risk (ingress) | Mode | Delivery |
 | --- | --- | --- |
 | Low | Auto | Stream answer; chips recolour as verdicts arrive; if revised, a "Reviewer revised this answer" banner with diff |
-| High, or sufficiency within 0.1 of threshold | Auto | Show "Verifying…" with the trace live; deliver the reviewed answer |
+| High, or gate `mean_top3` within 0.1 of threshold | Auto | Show "Verifying…" with the trace live; deliver the reviewed answer |
 | Any | Deep | Always verified before delivery |
 | Any | Fast | Stream; review runs asynchronously; chips update when done |
 
@@ -852,8 +853,8 @@ duration in `latency` instead — verified live on two probes (22 and 1590
 native tokens; `generation_time` 0 both times, `latency` 241 and 242 ms). Jev
 provider time is therefore read from `latency`; LLM generations keep
 `generation_time`. Reading `generation_time` for Jev credited it with 0 ms,
-which charged every Jev millisecond — rerank batches, sufficient, sanitize,
-conflict, ingress and review verification — to our own overhead in the one
+which charged every Jev millisecond — rerank batches, sanitize, conflict,
+ingress and review verification — to our own overhead in the one
 figure this section gates. A record with neither field is not attributed at
 all, which is a coverage gap the summary reports, never a fabricated zero.
 

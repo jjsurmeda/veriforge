@@ -8,11 +8,11 @@ list, not only against open known issues.
 | Chunking | Small chunks for search, larger parent for context (small-to-big), overlap | ✅ 300-token children, 45 overlap, 2000-token sections |
 | Retrieval | Hybrid BM25 + vector, fused (RRF), wide candidate pool | ✅ 50 + 50, fused 40 |
 | Query | Rewrite and variants; validate the rewrite is a query | ✅ `is_query_shape` gates the rewrite and every variant line; a `chitchat` turn that names nothing does not retrieve (KI-73) |
-| Rerank | Ask whether the passage **answers** the question, graded (off-topic / related / partly / fully), batched | ✅ the answer-containment rubric, ranked by expected level (`retrieval/rerank.py`) |
+| Rerank | Ask whether the passage **answers** the question, graded (off-topic / related / partly / fully), batched | ✅ the answer-containment rubric, ranked by expected level (`retrieval/rerank.py`); the mean of the top 3 grades is the evidence gate |
 | Context order | Best passages at the start **and** end (lost in the middle) | ✅ `order_for_lost_in_the_middle`; ids follow the new order |
 | Whole-document questions | Document or section summaries retrieved for gist questions (RAPTOR / summary index) | ❌ none; gist questions see only the passages that match |
 | Generator prompt | Sources first, question last, numbered citations; read all sources; combine stated facts; resolve conflicts (later explanation wins); per-intent instructions | ✅ v5 + four per-intent blocks from the ingress intent; **Fast and Deep still get the base prompt only** (R2b) |
-| Abstention | One clear sufficiency signal; few independent vetoes | ⚠️ one evidence check + the entity guard, and **the recorded runs say the check alone does not hold** — 12 confident wrong (KI-70) |
+| Abstention | One clear sufficiency signal; few independent vetoes | ✅ one evidence gate (`rubric_mean_top3` ≥ 0.55) + the entity guard; calibration holds 0 confident wrong with the guard at the cost of 2 false abstentions (`outside-whitman`, `broad-alice`) |
 | Degradation | An outage degrades the stage; it never fails the run | ✅ a decision outage takes each stage's own default — **the gate fails and abstains**, never answers (KI-57) |
 | Verification | Post-hoc claim check against cited passages | ✅ reviewer |
 | Evaluation | Answer correctness and context recall on a labelled set, not only safety | ✅ content misses are a counted class, `MAX_CONTENT_MISSES = 1` (KI-75); context recall deferred to v1 |

@@ -29,7 +29,7 @@ from retrieval.filters import ClientFilters
 from retrieval.hybrid import ScoredChunk
 from tests.graph.test_chitchat import _IngressJev, _seed_chat
 from tests.graph.test_chitchat import no_llm as no_llm
-from tests.retrieval.conftest import make_user, vec
+from tests.retrieval.conftest import add_chunk, make_document, make_section, make_user, vec
 
 
 @pytest.fixture
@@ -85,7 +85,42 @@ async def _run_once(
 ) -> dict[str, list[Any]]:
     chat, message_id = await _seed_chat(db, user_a)
     calls: dict[str, list[Any]] = {"embed": [], "search": [], "embeddings": []}
-    _patch_pipeline(monkeypatch, calls, [])
+
+    class _BelowFloorRerank:
+        def __init__(self, *_args: object) -> None:
+            pass
+
+        async def rerank(
+            self, *, query: str, documents: list[str], top_n: int
+        ) -> list[tuple[int, float]]:
+            return [(i, 0.2) for i in range(min(top_n, len(documents)))]
+
+    collection = (
+        await db.execute(select(Collection).where(Collection.owner_id == user_a.id))
+    ).scalar_one()
+    document = await make_document(db, collection)
+    section = await make_section(db, document)
+    chunk = await add_chunk(
+        db, document=document, section=section, ord=0, text_="some text", embedding=vec(1)
+    )
+    await db.commit()
+    scored_chunk = ScoredChunk(
+        chunk_id=chunk.id,
+        document_id=document.id,
+        document_name=document.name,
+        section_id=section.id,
+        ord=0,
+        page=None,
+        text=chunk.text,
+        heading_path=section.heading_path,
+        source_type="document",
+        vector_score=1.0,
+        bm25_score=None,
+        fused_score=1.0,
+    )
+
+    monkeypatch.setattr(auto_module, "get_reranker", _BelowFloorRerank)
+    _patch_pipeline(monkeypatch, calls, [scored_chunk])
     await prepare_auto_run(
         get_session_factory(),
         await _params(db, chat, user_a, message_id),
@@ -99,9 +134,9 @@ async def test_one_auto_run_embeds_every_variant_in_one_call(
 ) -> None:
     calls = await _run_once(db, user_a, monkeypatch)
 
-    # The fixture's Jev keeps `sufficient` low, so the run takes its one retry
-    # and retrieves twice. Both attempts must still reach the provider once in
-    # total — the second reads the cache the first filled.
+    # The fixture's Jev keeps the rubric grade low, so the run takes its one
+    # retry and retrieves twice. Both attempts must still reach the provider
+    # once in total — the second reads the cache the first filled.
     assert len(calls["embed"]) == 1, f"one provider call for the whole run: {calls['embed']}"
     assert len(calls["embed"][0]) == MULTI_QUERY_VARIANTS, "one text per variant"
     assert len(calls["search"]) == 2 * MULTI_QUERY_VARIANTS, "both attempts fanned out"

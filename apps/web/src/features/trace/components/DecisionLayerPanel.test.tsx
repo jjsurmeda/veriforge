@@ -27,7 +27,7 @@ function stats(overrides: Partial<DecisionStatsOut> = {}): DecisionStatsOut {
     ingress_p95_ms: 380,
     rerank_latency_p50_ms: 260,
     rerank_latency_p95_ms: 610,
-    by_decision: [{ name_or_prefix: 'sufficient', count: 40, fallback_count: 0 }],
+    by_decision: [{ name_or_prefix: 'evidence', count: 40, fallback_count: 0 }],
     breaker: { state: 'closed', open_until: null },
     shadow: { sampled: 3, agree_rate: 2 / 3, recent_disagreements: [] },
     targets: { ingress_p95_ms: 600, fallback_share: 0.05 },

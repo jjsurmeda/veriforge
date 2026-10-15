@@ -1,40 +1,54 @@
 """Evidence stage (TRD §7): does the retrieved evidence answer the question?
 
-**One** evidence check (ADR-006): the `sufficient` decision over the reranked
-evidence, with the entity guard beside it as a mismatch guard rather than a
-third veto. The relevance floor that used to sit between rerank and sufficiency
-is gone — the reranker's answer-containment rubric (TRD §9.6) already ranks
-passages by whether they answer, so a separate relevance score was a second,
-separately calibrated judgement of the same thing, and the one ADR-006 removes.
+**The gate is the reranker's answer-containment grade** (ADR-006 as corrected):
+the mean grade of the best three post-sanitize passages, over the rubric in
+`retrieval/rerank.py`. That is the whole decision — a computed number, not a
+second model question. The old `sufficient` Noul is gone from the path entirely:
+its threshold, its decision row, its admin key and its question are all removed,
+because the one case where it could be checked against a known label
+(`cf-k9-charge`) it read "sufficient" while the rubric and the entity guard both
+said the passages did not answer.
+
+The entity guard stays beside the gate as a mismatch guard, and the conflict
+pairs ride the same post-sanitize call. It is load-bearing rather than
+decorative: the two should-decline items that clear 0.55 are both from the
+entity-mismatch set and both are held by their entity readings (0.450 and 0.090
+against a floor of 0.50), not by the gate.
+
+The threshold is calibrated, not chosen: `scripts/calibrate_gate.py` measured
+every answerable and should-decline item of the books acceptance set and the
+entity-mismatch set, and `decisions/thresholds.py` carries the table. At the
+shipped 0.55 the gate alone answers **0** should-decline items on the books
+set and costs **2** answerable ones. No cutoff reaches 0 and ≤ 1.
 
 Below the floor the run makes **one** corrective retrieval — a rewritten or
-decomposed query, and the section summaries from TRD §9.1 step 6 for a gist
-question — checks again, and then answers or abstains. Answer-first, so never
-more than one. The corrective pass is skipped only when the evidence is clearly
-absent, and that now needs the sufficiency and entity readings alone.
+decomposed query, and the section summaries from TRD §9.1 step 6 when the
+question is a gist one or when the correction is the second chance — grades
+again, and then answers or abstains. Answer-first, so never more than one.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from functools import partial
-from typing import Literal
 from uuid import UUID
 
 from decisions import threshold
 from graph import rewrite as rewrite_node
 from graph.stages.checks import (
-    RETRY_SKIP_SUFFICIENT_MAX,
-    TOP_CHUNKS_FOR_SUFFICIENT,
+    RETRY_SKIP_RUBRIC_MAX,
+    TOP_CHUNKS_FOR_CHECKS,
     _conflict_pair_questions,
     _conflict_sides,
     _entity_passage_decision,
     _entity_passage_questions,
     _evidence_clearly_absent,
-    _sufficient_question,
     named_entities,
+    rubric_gate_passes,
+    rubric_grades,
+    rubric_mean_top3,
 )
-from graph.stages.common import decide_or_degrade, decision_event, unavailable_event
+from graph.stages.common import decide_or_degrade, unavailable_event
 from graph.stages.rerank_stage import add_rerank_scores
 from graph.stages.retrieve_stage import retrieve_queries
 from graph.stages.sanitize_stage import sanitize
@@ -45,17 +59,17 @@ from retrieval.rerank import RERANK_TOP_N, RerankProvider
 from schemas.decisions import Answer, Choice, Noul, Score
 from schemas.events import Decision, Retrieval
 
-# Answer-first: one retrieve, and below the sufficient_abstain floor exactly
-# one corrective retrieval before abstaining. The corrective loop clamps any
-# admin override to this.
+# Answer-first: one retrieve, and below the gate floor exactly one corrective
+# retrieval before abstaining. The corrective loop clamps any admin override to
+# this.
 MAX_SUFFICIENT_RETRIES = 1
 
 
 @dataclass
 class Attempt:
     """What one pass over the evidence stages produced. The last attempt is
-    the one the answer is delivered from, so its conflict sides and its
-    sufficiency verdict are the ones that reach the run."""
+    the one the answer is delivered from, so its conflict sides and its gate
+    verdict are the ones that reach the run."""
 
     winners: list[ScoredChunk]
     expanded: list[ExpandedContext]
@@ -63,12 +77,15 @@ class Attempt:
     sanitize_dropped: list[ScoredChunk]
     batched_pairs: bool
     batched_conflict_answers: dict[str, Answer] = field(default_factory=dict)
-    p_sufficient: float = 0.0
-    abstain_threshold: float = 0.0
-    sufficient_engine: Literal["jev", "fallback"] = "jev"
-    # The decision layer answered nothing this pass (KI-57). Kept apart from
-    # `p_sufficient == 0.0` because a real 0.0 is a judgement and this is an
-    # absence of one, and the trace must not read as if it were the first.
+    # The gate's own number, the threshold it was compared against, and the
+    # engine whose rubric produced it.
+    gate_mean_top3: float | None = None
+    gate_floor: float = 0.0
+    gate_engine: str = "jev"
+    # The batched evidence call (entity + conflict) answered nothing this pass
+    # (KI-57). Kept apart from `gate_mean_top3 is None` because the trace needs
+    # to say "nobody could check the entities" rather than "the rubric graded it
+    # 0", and because the rerank rubric itself may have graded fine.
     gate_unavailable: bool = False
     entity_ok: bool = True
     entity_max: float | None = None
@@ -76,13 +93,13 @@ class Attempt:
 
     @property
     def enough(self) -> bool:
-        """One evidence check and one mismatch guard (ADR-006)."""
-        return self.p_sufficient >= self.abstain_threshold and self.entity_ok
+        """One gate (ADR-006) and one mismatch guard beside it."""
+        return rubric_gate_passes(self.gate_mean_top3, self.gate_floor) and self.entity_ok
 
     @property
     def clearly_absent(self) -> bool:
         return _evidence_clearly_absent(
-            p_sufficient=self.p_sufficient,
+            gate_mean_top3=self.gate_mean_top3,
             entity_max=self.entity_max,
             entity_measured=bool(self.entity_names),
             entity_ok=self.entity_ok,
@@ -166,15 +183,14 @@ async def _evaluate_attempt(
     )
     attempt.expanded = await expand_context(env.session, attempt.winners)
     top_for_check = attempt.expanded[
-        : int(env.seams.runtime_value("retrieval.top_k", TOP_CHUNKS_FOR_SUFFICIENT))
+        : int(env.seams.runtime_value("retrieval.top_k", TOP_CHUNKS_FOR_CHECKS))
     ]
     attempt.entity_names = named_entities(loop.current_query)
     entity_questions = _entity_passage_questions(
         loop.current_query, attempt.entity_names, top_for_check
     )
     attempt.sides = _conflict_sides(attempt.winners)
-    questions = {
-        "sufficient": _sufficient_question(loop.current_query, top_for_check),
+    questions: dict[str, Noul | Choice | Score] = {
         **entity_questions,
         **(
             _conflict_pair_questions(attempt.sides, env.params.question)
@@ -183,10 +199,10 @@ async def _evaluate_attempt(
         ),
     }
     answers = await env.step(
-        "sufficient",
-        partial(decide_or_degrade, env, "sufficient", questions),
+        "evidence",
+        partial(decide_or_degrade, env, "evidence", questions),
     )
-    _read_answers(env, state, attempt, answers, entity_questions, questions)
+    _read_answers(env, state, attempt, loop.reranker, answers, entity_questions)
     return attempt
 
 
@@ -194,95 +210,137 @@ def _read_answers(
     env: StageEnv,
     state: AutoRunState,
     attempt: Attempt,
+    reranker: RerankProvider,
     answers: dict[str, Answer],
     entity_questions: dict[str, Noul],
-    questions: dict[str, Noul | Choice | Score],
 ) -> None:
-    """Turn the batched answers into the attempt's verdicts.
+    """Turn the rerank scores and the batched answers into the attempt's verdicts.
 
-    **No reading at all is a failing gate** (KI-57), not an error. The
-    decision layer being unreachable is not evidence that the corpus cannot
-    answer, and it is certainly not evidence that it can, so the gate treats it
-    the way it treats a low grade: below the floor, into the corrective
-    retrieval, and — if the layer is still down — to an abstention that cites
-    nothing. The entity guard fails with it, because "no passage could be
-    confirmed to cover the entity" cannot be read as coverage.
+    **The gate is the rubric**, read off `attempt.winners`: `answer_containment_score`
+    already turned each passage's distribution into the expected level that
+    `rerank_score` carries, so the gate is arithmetic over numbers the reranker
+    produced, not a new model question. `sufficient` no longer exists; the only
+    things the batched call still asks are the entity guard and the conflict
+    pairs.
 
-    Both are recorded as `unavailable` decision rows rather than as low scores,
-    so a trace cannot be read as a run that graded the question and got a bad
-    grade.
+    **No entity reading at all is a failing guard** (KI-57), not an error. When
+    the batched call comes back empty and there were entity questions, the
+    decision layer was unreachable: "no passage could be confirmed to cover the
+    entity" is not coverage, so the guard fails and the run corrects once and
+    then abstains. The gate's own number is unaffected, because the rubric came
+    from the rerank call, not this one.
     """
     attempt.batched_conflict_answers = {
         name: answer for name, answer in answers.items() if name.startswith("conflict_")
     }
-    sufficient = answers.get("sufficient")
-    if sufficient is None:
-        state.decision_events.append(
-            unavailable_event(env.params.run_id, "sufficient", questions["sufficient"])
+    attempt.gate_engine = _gate_engine(reranker)
+    grades = rubric_grades(attempt.winners)
+    attempt.gate_mean_top3 = rubric_mean_top3(grades)
+    attempt.gate_floor = threshold("rubric_mean_top3", "jev")
+    state.decision_events.append(
+        _gate_event(
+            env.params.run_id, attempt.gate_mean_top3, attempt.gate_floor, attempt.gate_engine
         )
+    )
+
+    attempt.gate_unavailable = bool(entity_questions) and not answers
+    if attempt.gate_unavailable:
         for name, question in entity_questions.items():
             state.decision_events.append(unavailable_event(env.params.run_id, name, question))
-        attempt.gate_unavailable = True
-        attempt.p_sufficient = 0.0
-        # The engine that would have answered is unknown, so the threshold is
-        # read on the reference scale; at 0.0 every floor fails, which is the
-        # intent.
-        attempt.abstain_threshold = threshold("sufficient_abstain", "jev")
-        attempt.sufficient_engine = "jev"
-        if entity_questions:
-            attempt.entity_ok = False
-            attempt.entity_max = None
+        attempt.entity_ok = False
+        attempt.entity_max = None
         return
-    state.decision_events.append(decision_event(env.params.run_id, "sufficient", sufficient))
-    attempt.p_sufficient = float(sufficient.value)
-    attempt.abstain_threshold = threshold("sufficient_abstain", sufficient.engine)
-    attempt.sufficient_engine = sufficient.engine
     if entity_questions:
         attempt.entity_ok, attempt.entity_max = _entity_passage_decision(
             answers,
             entity_questions,
             len(attempt.entity_names),
-            threshold("entity_match", sufficient.engine),
+            threshold("entity_match", "jev"),
         )
+
+
+def _gate_engine(reranker: RerankProvider) -> str:
+    """Which engine's rubric produced the gate number.
+
+    The gate is computed from `rerank_score`, so its engine is the reranker's.
+    `JevRerank` records what actually answered each passage; the other providers
+    (Cohere, NVIDIA, fused order) have no decision engine and are reported as
+    `jev` — the display scale the trace is calibrated for. A rerank outage
+    degrades to fused order, and then the sanitizer drops the ungraded chunks so
+    a fabricated fused score cannot become a passing gate.
+    """
+    answered: set[str] = getattr(reranker, "answered_by", set())
+    if "fallback" in answered and "jev" not in answered:
+        return "fallback"
+    return "jev"
+
+
+def _gate_event(
+    run_id: UUID, mean_top3: float | None, floor: float, engine: str = "jev"
+) -> Decision:
+    """The trace row for the gate itself — the one number that decided.
+
+    Named `evidence` because it is the evidence gate, and its `stage` is `gate`.
+    Its `value` is the mean answer-containment grade.
+    """
+    return Decision(
+        run_id=str(run_id),
+        name="evidence",
+        value=mean_top3 if mean_top3 is not None else 0.0,
+        probability=mean_top3,
+        probabilities=None,
+        engine=engine,
+        latency_ms=0,
+        stage="gate",
+        threshold=floor,
+        reasoning=(
+            "mean answer-containment grade of the best three passages; "
+            "below the floor the run corrects once and then abstains"
+        ),
+    )
+
 
 
 def _retry_skipped_event(env: StageEnv, attempt: Attempt) -> Decision:
     """Recorded as a decision so the trace says why this run declined without
     a retry.
 
-    When the decision layer is the reason (KI-57) the row says so in both its
-    engine and its reasoning: a `retry_skipped` reading 0.0 from `jev` says
-    "the evidence was judged clearly absent", and that is not what happened.
+    The row carries the **gate's** number, because the gate is what the skip is
+    decided against. When the entity check could not be read (KI-57) the row
+    says so in both its engine and its reasoning: a `retry_skipped` reading 0.0
+    from `jev` says "the evidence was judged clearly absent", and that is not
+    what happened.
     """
+    value = attempt.gate_mean_top3 if attempt.gate_mean_top3 is not None else 0.0
     if attempt.gate_unavailable:
         return Decision(
             run_id=str(env.params.run_id),
             name="retry_skipped",
-            value=attempt.p_sufficient,
-            probability=attempt.p_sufficient,
+            value=value,
+            probability=value,
             probabilities=None,
             engine="unavailable",
             latency_ms=0,
-            stage="sufficient",
-            threshold=RETRY_SKIP_SUFFICIENT_MAX,
+            stage="gate",
+            threshold=RETRY_SKIP_RUBRIC_MAX,
             reasoning=(
-                "the decision layer was unreachable, so the evidence was never "
-                "graded; the corrective re-query would reach the same outage and "
-                "13-15 s later"
+                "the decision layer was unreachable, so the entity guard could "
+                "not be read; the corrective re-query would reach the same "
+                "outage and 13-15 s later"
             ),
         )
     return Decision(
         run_id=str(env.params.run_id),
         name="retry_skipped",
-        value=attempt.p_sufficient,
-        probability=attempt.p_sufficient,
+        value=value,
+        probability=value,
         probabilities=None,
-        engine=attempt.sufficient_engine,
+        engine=attempt.gate_engine,
         latency_ms=0,
-        stage="sufficient",
-        threshold=RETRY_SKIP_SUFFICIENT_MAX,
+        stage="gate",
+        threshold=RETRY_SKIP_RUBRIC_MAX,
         reasoning=(
-            "sufficiency and the entity check were both far below their "
+            "the rubric gate and the entity check were both far below their "
             "floors; the corrective re-query would not change the outcome"
         ),
     )

@@ -29,7 +29,10 @@ async def finish(env: StageEnv, state: AutoRunState, attempt: Attempt) -> AutoRu
     """The last attempt's verdict, the contexts or the abstention, and the
     citation rows the generator will answer from."""
     _mark_dropped(state)
-    state.sufficiency_p = _final_sufficiency(state)
+    # The gate's own number. `plan_delivery` reads it to decide hold-vs-stream,
+    # and a run must be held or streamed on the signal that decided whether it
+    # answered at all.
+    state.gate_mean_top3 = attempt.gate_mean_top3
     if attempt.enough:
         await _resolve_conflict(env, state, attempt)
         state.contexts = attempt.expanded
@@ -60,7 +63,7 @@ async def finish(env: StageEnv, state: AutoRunState, attempt: Attempt) -> AutoRu
         context_used=state.context_used,
         ingress=state.ingress,
         seams=env.seams,
-        sufficiency_p=state.sufficiency_p,
+        gate_mean_top3=state.gate_mean_top3,
         retry_skipped=state.retry_skipped,
     )
 
@@ -73,17 +76,6 @@ def _mark_dropped(state: AutoRunState) -> None:
         for chunk in event.chunks:
             if chunk.chunk_id in dropped_ids:
                 chunk.dropped = True
-
-
-def _final_sufficiency(state: AutoRunState) -> float:
-    """The last sufficiency reading, or 0.0. `relevance` is emitted before
-    `sufficient` in the loop, so the last decision being `sufficient` still
-    means the sufficiency floor was met; an abstention with p_sufficient above
-    the floor is the relevance gate."""
-    last = state.decision_events[-1] if state.decision_events else None
-    if last is not None and last.name == "sufficient":
-        return float(last.value)
-    return 0.0
 
 
 async def _resolve_conflict(env: StageEnv, state: AutoRunState, attempt: Attempt) -> None:

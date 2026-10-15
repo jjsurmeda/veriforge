@@ -123,31 +123,31 @@ class TestScoringMath:
 class TestPlanDelivery:
     def test_deep_always_holds(self) -> None:
         assert (
-            plan_delivery(mode="deep", risk="low", sufficiency_p=0.99, sufficient_threshold=0.6)
+            plan_delivery(mode="deep", risk="low", evidence_p=0.99, evidence_threshold=0.6)
             == "hold"
         )
 
     def test_fast_always_streams(self) -> None:
         assert (
-            plan_delivery(mode="fast", risk="high", sufficiency_p=0.1, sufficient_threshold=0.6)
+            plan_delivery(mode="fast", risk="high", evidence_p=0.1, evidence_threshold=0.6)
             == "stream"
         )
 
     def test_auto_high_risk_holds(self) -> None:
         assert (
-            plan_delivery(mode="auto", risk="high", sufficiency_p=0.95, sufficient_threshold=0.6)
+            plan_delivery(mode="auto", risk="high", evidence_p=0.95, evidence_threshold=0.6)
             == "hold"
         )
 
-    def test_auto_sufficiency_within_0_1_of_threshold_holds(self) -> None:
+    def test_auto_evidence_within_0_1_of_threshold_holds(self) -> None:
         assert (
-            plan_delivery(mode="auto", risk="low", sufficiency_p=0.68, sufficient_threshold=0.6)
+            plan_delivery(mode="auto", risk="low", evidence_p=0.68, evidence_threshold=0.6)
             == "hold"
         )
 
     def test_auto_low_risk_confident_streams(self) -> None:
         assert (
-            plan_delivery(mode="auto", risk="low", sufficiency_p=0.9, sufficient_threshold=0.6)
+            plan_delivery(mode="auto", risk="low", evidence_p=0.9, evidence_threshold=0.6)
             == "stream"
         )
 

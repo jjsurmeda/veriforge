@@ -285,7 +285,6 @@ class Scenario:
     answer_tokens: tuple[str, ...] = ("24 ", "months.")
 
 
-_DEFAULT_SUFFICIENT: Any = jev(0.9)
 _DEFAULT_RERANK: Any = 0.9
 
 
@@ -302,7 +301,6 @@ def script(
     *,
     intent: str = "lookup",
     source: str = "upload",
-    sufficient: Any = _DEFAULT_SUFFICIENT,
     rerank: Any = _DEFAULT_RERANK,
     entity: Answer | None = None,
     conflict: Answer | None = None,
@@ -312,27 +310,25 @@ def script(
     prose_decline: Any = _DEFAULT_PROSE_DECLINE,
 ) -> Script:
     """A script answering every question the pipeline can ask, with the
-    scenario's signals overlaid; `sufficient`/`rerank` may be a list, consumed
-    in call order (a retry asks again)."""
+    scenario's signals overlaid; `rerank` may be a list, consumed in call order
+    (a retry asks again). The gate is the rubric mean-of-top-3, so a passing
+    scenario sets a high `rerank` and a declining one sets a low `rerank`."""
+    entity_answer = entity if entity is not None else jev(0.9)
     built = Script(
         by_question=ingress_script(intent, source=source),
         by_kind={
             "rerank": _last(rerank),
             "sanitize": sanitize,
-            "sufficient": sufficient[-1] if isinstance(sufficient, list) else sufficient,
             "conflict": conflict or jev(0.01),
             "controller": controller,
             "prose_decline": prose_decline,
         },
     )
-    if isinstance(sufficient, list):
-        built.sequences[("sufficient", "sufficient")] = list(sufficient)
     if isinstance(rerank, list):
         built.sequences[("rerank", "passage_0")] = [rubric(value) for value in rerank]
-    if entity is not None:
-        for index in range(8):
-            for side in range(8):
-                built.by_question[f"entity_{index}_{side}"] = entity
+    for index in range(8):
+        for side in range(8):
+            built.by_question[f"entity_{index}_{side}"] = entity_answer
     for index in range(10):
         built.by_question.setdefault(f"conflict_{index}", conflict or jev(0.01))
     for index in range(8):
@@ -356,12 +352,10 @@ SCENARIOS: list[Scenario] = [
         question="Give me the gist of the AW-2000 warranty terms",
         script=script(
             intent="summarize",
-            # A gist question decided by the one evidence check. The relevance
-            # exemption KI-70 added is gone with the veto it applied to
-            # (ADR-006, R2a item 4): nothing about this scenario is special
-            # any more, which is the point of the change.
-            sufficient=jev(0.4),
-            rerank=0.3,
+            # A gist question is now decided by the same rubric gate as every
+            # other intent. The relevance exemption KI-70 added is gone with
+            # the veto it applied to (ADR-006, R2a item 4).
+            rerank=0.9,
         ),
     ),
     Scenario(
@@ -370,7 +364,6 @@ SCENARIOS: list[Scenario] = [
         question="Compare Frankenstein and The Time Machine",
         script=script(
             intent="compare",
-            sufficient=jev(0.7),
             entity=jev(0.9),
         ),
         rewritten="Frankenstein and The Time Machine",
@@ -383,7 +376,9 @@ SCENARIOS: list[Scenario] = [
         name="chitchat_with_sources",
         mode="auto",
         question="Tell me something about dogs",
-        script=script(intent="chitchat", sufficient=[jev(0.1), jev(0.05)]),
+        # The rubric grades the retrieved passages low, so the gate fails and
+        # the chitchat route answers from its own words instead of the sources.
+        script=script(intent="chitchat", rerank=[0.1, 0.1]),
     ),
     Scenario(
         name="chitchat_without_sources",
@@ -399,15 +394,13 @@ SCENARIOS: list[Scenario] = [
         script=script(),
     ),
     Scenario(
-        name="decline_sufficiency",
+        name="decline_gate",
         mode="auto",
         question="Is the AW-2000 waterproof?",
         script=script(
-            # Below `RETRY_SKIP_SUFFICIENT_MAX` (0.005 — the bound sits under
-            # the lowest sufficiency the corrective retrieval has been
-            # recorded rescuing), so the correction is skipped as pointless and
+            # A rubric grade of 0.1 maps to "off-topic" (score 0.0), which is
+            # below both the gate floor and the "clearly absent" skip bound, so
             # the run declines on the first attempt.
-            sufficient=jev(0.002),
             rerank=0.1,
         ),
     ),
@@ -415,19 +408,18 @@ SCENARIOS: list[Scenario] = [
         name="decline_entity",
         mode="auto",
         question="How long is the AW-2000 warranty?",
-        script=script(sufficient=jev(0.9), entity=jev(0.01)),
+        # The rubric gate passes, but the entity guard fails, so the run
+        # abstains on a mismatch rather than hallucinating from the wrong source.
+        script=script(entity=jev(0.01)),
     ),
     Scenario(
         name="retry_hop",
         mode="auto",
         question="Is the AW-2000 waterproof?",
         script=script(
-            # The first attempt is under the 0.05 evidence-check floor, so the
-            # corrective retrieval runs and asks again. It used to be the
-            # relevance veto (rerank 0.1 under 0.60) that failed this attempt;
-            # with the veto gone the sufficiency reading has to be the thing
-            # that does, which is the whole of ADR-006's corrective shape.
-            sufficient=[jev(0.03), jev(0.9)],
+            # The first rubric grade fails the gate (0.1 -> off-topic), so the
+            # corrective retrieval runs and asks again. The second grade clears
+            # the floor and the run answers.
             rerank=[0.1, 0.9],
         ),
     ),

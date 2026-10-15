@@ -182,7 +182,7 @@
  },
  {
   "event": {
-   "label": "sufficient",
+   "label": "evidence",
    "node": "auto",
    "seq": 0,
    "type": "step.started"
@@ -190,18 +190,197 @@
   "kind": "event"
  },
  {
-  "kind": "sufficient",
+  "kind": "evidence",
   "questions": [
-   "entity_0_0",
-   "sufficient"
+   "entity_0_0"
   ]
  },
  {
   "event": {
-   "label": "sufficient",
+   "label": "evidence",
    "node": "auto",
    "seq": 0,
    "type": "step.completed"
+  },
+  "kind": "event"
+ },
+ {
+  "kind": "llm",
+  "role": "rewriter"
+ },
+ {
+  "event": {
+   "label": "retrieve",
+   "node": "auto",
+   "seq": 0,
+   "type": "step.started"
+  },
+  "kind": "event"
+ },
+ {
+  "event": {
+   "label": "query variants",
+   "node": "auto",
+   "seq": 0,
+   "type": "step.started"
+  },
+  "kind": "event"
+ },
+ {
+  "kind": "llm",
+  "role": "rewriter"
+ },
+ {
+  "event": {
+   "label": "query variants",
+   "node": "auto",
+   "seq": 0,
+   "type": "step.completed"
+  },
+  "kind": "event"
+ },
+ {
+  "event": {
+   "label": "embed queries (1)",
+   "node": "auto",
+   "seq": 0,
+   "type": "step.started"
+  },
+  "kind": "event"
+ },
+ {
+  "event": {
+   "label": "embed queries (1)",
+   "node": "auto",
+   "seq": 0,
+   "type": "step.completed"
+  },
+  "kind": "event"
+ },
+ {
+  "event": {
+   "label": "retrieve: AW-2000 warranty length",
+   "node": "auto",
+   "seq": 0,
+   "type": "step.started"
+  },
+  "kind": "event"
+ },
+ {
+  "kind": "search",
+  "n": 1,
+  "query": "AW-2000 warranty length"
+ },
+ {
+  "event": {
+   "label": "retrieve: AW-2000 warranty length",
+   "node": "auto",
+   "seq": 0,
+   "type": "step.completed"
+  },
+  "kind": "event"
+ },
+ {
+  "event": {
+   "label": "retrieve",
+   "node": "auto",
+   "seq": 0,
+   "type": "step.completed"
+  },
+  "kind": "event"
+ },
+ {
+  "event": {
+   "label": "rerank",
+   "node": "auto",
+   "seq": 0,
+   "type": "step.started"
+  },
+  "kind": "event"
+ },
+ {
+  "kind": "rerank",
+  "questions": [
+   "passage_0"
+  ]
+ },
+ {
+  "event": {
+   "label": "rerank",
+   "node": "auto",
+   "seq": 0,
+   "type": "step.completed"
+  },
+  "kind": "event"
+ },
+ {
+  "event": {
+   "label": "sanitize",
+   "node": "auto",
+   "seq": 0,
+   "type": "step.started"
+  },
+  "kind": "event"
+ },
+ {
+  "kind": "sanitize",
+  "questions": [
+   "chunk_injection_0"
+  ]
+ },
+ {
+  "event": {
+   "label": "sanitize",
+   "node": "auto",
+   "seq": 0,
+   "type": "step.completed"
+  },
+  "kind": "event"
+ },
+ {
+  "event": {
+   "label": "evidence",
+   "node": "auto",
+   "seq": 0,
+   "type": "step.started"
+  },
+  "kind": "event"
+ },
+ {
+  "kind": "evidence",
+  "questions": [
+   "entity_0_0"
+  ]
+ },
+ {
+  "event": {
+   "label": "evidence",
+   "node": "auto",
+   "seq": 0,
+   "type": "step.completed"
+  },
+  "kind": "event"
+ },
+ {
+  "event": {
+   "chunks": [
+    {
+     "bm25_score": null,
+     "document_name": "warranty.md",
+     "dropped": false,
+     "excerpt": "The AW-2000 warranty is 24 months from the date of purchase.",
+     "fused_score": 1.0,
+     "heading_path": "Section 0",
+     "page": null,
+     "rerank_score": 0.0,
+     "source_type": "document",
+     "vector_score": 1.0
+    }
+   ],
+   "hop": 0,
+   "query": "AW-2000 warranty length",
+   "seq": 0,
+   "type": "retrieval"
   },
   "kind": "event"
  },

@@ -86,7 +86,7 @@ async def run_turn(
     answer = ""
     status = "timeout"
     ttft_ms: int | None = None
-    sufficient: list[float] = []
+    evidence: list[float] = []
     retrievals: list[dict[str, Any]] = []
     deadline = time.monotonic() + RUN_TIMEOUT_SECONDS
 
@@ -102,9 +102,9 @@ async def run_turn(
                 kind = event.get("type")
                 if kind == "decision" and event.get("name") == "intent":
                     intent = str(event.get("value"))
-                elif kind == "decision" and event.get("name") == "sufficient":
+                elif kind == "decision" and event.get("name") == "evidence":
                     with contextlib.suppress(TypeError, ValueError):
-                        sufficient.append(float(event.get("value")))
+                        evidence.append(float(event.get("value")))
                 elif kind == "retrieval":
                     retrievals.append(
                         {
@@ -174,7 +174,7 @@ async def run_turn(
         "citations": citations,
         "steps": steps,
         "ttft_ms": ttft_ms,
-        "sufficient": sufficient,
+        "evidence": evidence,
         "message_status": message_status,
         "run_id": run_id,
         "retrievals": retrievals,

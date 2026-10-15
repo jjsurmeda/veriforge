@@ -70,7 +70,9 @@ class AutoRun:
     ingress: IngressOutcome
     seams: StageSeams
     chitchat: bool = False
-    sufficiency_p: float = 0.0
+    # The gate's own number (ADR-006 as corrected): the mean answer-containment
+    # grade of the best three passages. `None` when nothing was graded.
+    gate_mean_top3: float | None = None
     library_names: list[str] | None = None
     # Set when the rewrite + retry was skipped because every signal was far
     # below its floor, so a caller (and a test) can see that a fast decline
@@ -111,7 +113,7 @@ class AutoRunState:
     decision_events: list[Decision] = field(default_factory=list)
     conflict_event: Conflict | None = None
     abstain_event: Abstain | None = None
-    sufficiency_p: float = 0.0
+    gate_mean_top3: float | None = None
     retry_skipped: bool = False
     context_used: int = 0
 
