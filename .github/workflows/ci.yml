@@ -236,4 +236,5 @@ jobs:
       - run: npm run lint
       - run: ../../scripts/check-colors.sh
       - run: npx tsc --noEmit -p tsconfig.app.json
+      - run: npm test
       - run: npm run build

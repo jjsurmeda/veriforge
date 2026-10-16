@@ -7,7 +7,7 @@ The Phase column is authoritative; section placement below is from the first tri
 Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 - When you fix one, move it to the archive in the same commit, with the fixing commit hash.
 - A new finding that breaks no check is added under **post-beta** and opens no lane.
-- New IDs continue from KI-75.
+- New IDs continue from KI-78.
 
 ## Index
 
@@ -15,6 +15,7 @@ Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 | --- | --- | --- |
 | check-work (acceptance) | KI-70 | the relevance gate abstains on broad/summary answerables; no threshold separates |
 | check-work (1d) | KI-15 | order-dependent hang in test_chats_runs.py; a flaky suite fails "repeatable" |
+| check-stable | KI-76 | credits stay reserved if the process dies between completion and settlement |
 | check-stable | KI-32 | record of faithfulness variance; gate tolerances already set |
 | check-stable | KI-43 | absence-claim verdict flips between runs (grader quality) |
 | check-stable | KI-49 | reviewer rarely makes an unsupported judgement itself |
@@ -1043,3 +1044,17 @@ Logged 2026-10-12 (phase 1, `make check-work` on `beta/phase1-check-work`).
 - **What:** retrieval filters (source type, document, tag, date range, file type) are accepted by the API and narrow results server-side, but the chat composer offers no control to set them.
 - **Phase:** UI redesign.
 - **Done when:** the composer sets every SR-6 filter the API accepts, with a Playwright spec proving a filter narrows the cited sources.
+
+## KI-76: credits stay reserved if the process dies between completion and settlement
+
+- **What:** `execute_run` marks a run `complete` with `settle_usage=False` while
+  async scoring runs, and settles the ledger in a background task after scoring
+  (`graph/runner.py`, the `_finalize` call and `_settle_after_scoring`). A hard
+  crash in that window leaves the `usage_ledger` row `reserved`.
+  `sweep_stale_runs` selects only `status == "running"`, so nothing ever
+  reconciles it. TRD §14: credits are settled even on failure.
+- **Found:** outside review, 2026-10-17; confirmed by reading the code, not reproduced.
+- **Phase:** check-stable (the worker-kill fault).
+- **Done when:** a sweep settles `reserved` ledger rows whose run is terminal
+  and older than the scoring timeout, with a test that kills between
+  `_finalize` and settlement and proves the row settles.
