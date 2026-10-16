@@ -491,11 +491,26 @@ async def run(
                 token = await fresh_token()
                 headers = {"Authorization": f"Bearer {token}"}
                 chat = await client.post("/chats", headers=headers, json={"title": None})
-                chat_id = str(chat.json()["id"])
+                body = chat.json()
+                if "id" not in body:
+                    return {
+                        "status": "failed",
+                        "reason": f"chat creation error: {chat.status_code} {str(body)[:200]}",
+                    }
+                chat_id = str(body["id"])
                 result: dict[str, Any] = {}
                 for turn in item["turns"]:
                     fresh = await fresh_token()
-                    result = await smoke_chat.run_turn(client, fresh, chat_id, turn)
+                    try:
+                        result = await smoke_chat.run_turn(client, fresh, chat_id, turn)
+                    except SystemExit as e:
+                        result = {
+                            "status": "failed",
+                            "reason": f"run error: {e}",
+                            "answer": "",
+                            "citations": [],
+                            "message_status": None,
+                        }
                 return result
 
             result = await play()
@@ -508,6 +523,17 @@ async def run(
                 result = await play()
             got = observed_class(item, result)
             ok = passes(item, result)
+            # A non-failed, non-completed result (timeout, stream drop, decline)
+            # may be transient — retry once for items that need a scored answer.
+            if not ok and not str(result.get("status", "")).startswith("failed"):
+                print(
+                    f"  {item['id']}: {got} FAIL ({failure_reason(item, result)}); retrying in 70s",
+                    flush=True,
+                )
+                await asyncio.sleep(70)
+                result = await play()
+                got = observed_class(item, result)
+                ok = passes(item, result)
             mention_hit = mentions_hit(item, result.get("answer") or "")
             rows.append(
                 {

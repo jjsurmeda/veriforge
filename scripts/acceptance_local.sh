@@ -54,6 +54,11 @@ PORT="${ACCEPTANCE_PORT:-8123}"
 API_URL="http://127.0.0.1:${PORT}"
 SUMMARY_OUT="${ACCEPTANCE_SUMMARY_OUT:-$root/.data/evals/summary-acceptance.json}"
 ITEMS="${1:-}"
+# OpenRouter's free tier caps free-model requests at 20/min account-wide.
+# A full 57-item acceptance run needs ~114 calls; without pacing the cap is hit
+# around item 10 and every subsequent chat creation returns a 429. 6 s between
+# non-smalltalk items keeps the pace under the cap (10 items/min, 20 calls/min).
+PACE="${ACCEPTANCE_PACE:-6}"
 STACK_LOG="$root/.data/acceptance-stack.log"
 
 export ACCEPTANCE_DB="$DB_NAME"
@@ -117,12 +122,12 @@ runner_status=0
 if [ -n "$ITEMS" ]; then
   VERIFORGE_API_URL="$API_URL" EVAL_USER_EMAIL="$EVAL_USER_EMAIL" \
     EVAL_USER_PASSWORD="$EVAL_USER_PASSWORD" \
-    .venv/bin/python scripts/acceptance.py "$ITEMS" --summary-out "$SUMMARY_OUT" \
+    .venv/bin/python scripts/acceptance.py "$ITEMS" --summary-out "$SUMMARY_OUT" --pace "$PACE" \
     || runner_status=$?
 else
   VERIFORGE_API_URL="$API_URL" EVAL_USER_EMAIL="$EVAL_USER_EMAIL" \
     EVAL_USER_PASSWORD="$EVAL_USER_PASSWORD" \
-    .venv/bin/python scripts/acceptance.py --summary-out "$SUMMARY_OUT" \
+    .venv/bin/python scripts/acceptance.py --summary-out "$SUMMARY_OUT" --pace "$PACE" \
     || runner_status=$?
 fi
 if [ "$runner_status" -ne 0 ]; then
