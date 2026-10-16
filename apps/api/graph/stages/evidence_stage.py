@@ -93,10 +93,23 @@ class Attempt:
     entity_ok: bool = True
     entity_max: float | None = None
     entity_names: list[str] = field(default_factory=list)
+    # KI-70: the intent gates which evidence checks apply. A `summarize`
+    # question matches no single passage lexically, so the reranker's
+    # answer-containment score cannot stand in for "is this relevant" —
+    # the entity check alone decides it instead.
+    intent: str = "lookup"
 
     @property
     def enough(self) -> bool:
-        """One gate (ADR-006) and one mismatch guard beside it."""
+        """One gate (ADR-006) and one mismatch guard beside it.
+
+        KI-70: a `summarize` question is not subject to the relevance veto;
+        the entity check decides it alone, because a gist question matches
+        no single passage lexically and the reranker's score cannot stand
+        in for "is this evidence relevant" for that intent.
+        """
+        if self.intent == "summarize":
+            return self.entity_ok
         return rubric_gate_passes(self.gate_mean_top3, self.gate_floor) and self.entity_ok
 
     @property
@@ -183,6 +196,7 @@ async def _evaluate_attempt(
         # winners, so a drop invalidates them and the pairs are re-asked over
         # what survived, in their own call after the loop.
         batched_pairs=not sanitize_dropped,
+        intent=state.ingress.intent,
     )
     attempt.expanded = await expand_context(env.session, attempt.winners)
     top_for_check = attempt.expanded[
