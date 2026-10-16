@@ -75,8 +75,8 @@ NOT_IN_SOURCES = tuple(
     for p in (
         r"not (?:in|among|covered|found|mentioned|included) (?:the|my|your|these|your) ",
         r"(?:don'?t|do not|cannot|can'?t|couldn'?t|doesn'?t|does not) "
-        r"(?:find|have|contain|see|show)",
-        r"(?:isn'?t|is not|aren'?t|are not|wasn'?t) (?:in|among|covered|included)",
+        r"(?:find|have|contain|see|show)\b",
+        r"(?:isn'?t|is not|aren'?t|are not|wasn'?t) (?:in|among|covered|included)\b",
         r"no (?:matching|relevant|such) ",
         r"not part of ",
         r"outside (?:the|my|your) ",
