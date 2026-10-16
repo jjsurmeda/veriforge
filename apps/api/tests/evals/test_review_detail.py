@@ -25,6 +25,7 @@ from db.session import get_session_factory
 from evals import runner
 from evals.attribution import Attribution
 from evals.loader import EVAL_USER_EMAIL
+from schemas.events import Decision
 
 pytestmark = pytest.mark.asyncio
 
@@ -38,6 +39,7 @@ class _FakeRun:
         self.abstain_event = None
         self.rewritten = "q"
         self.history: list[tuple[str, str]] = []
+        self.decision_events: list[Any] = []
 
     async def stream_answer(self) -> AsyncIterator[str]:
         yield "answer"
@@ -108,6 +110,11 @@ async def _run_one(
     run = _FakeRun(contexts)
     if abstain:
         run.abstain_event = cast(Any, object())
+        run.decision_events = [
+            Decision(
+                run_id=str(UUID(int=9)), name="evidence", value=0.21, engine="jev", latency_ms=1
+            )
+        ]
 
     async def fake_prepare(*_a: Any, **_k: Any) -> _FakeRun:
         return run
@@ -304,6 +311,8 @@ async def test_an_abstention_records_contexts_and_no_claims(
     assert detail is not None
     assert detail["claims"] == []
     assert len(detail["contexts"]) == 2
+    # Why it abstained has to survive the dropped database.
+    assert detail["decisions"] == [["evidence", 0.21, "jev"]]
 
 
 async def test_the_export_column_is_jsonb_on_the_model() -> None:

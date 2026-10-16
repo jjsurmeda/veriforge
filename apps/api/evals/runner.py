@@ -288,6 +288,7 @@ async def _run_item(
             )
             abstained = deep_run.abstain_event is not None
             contexts = deep_run.contexts
+            decisions = deep_run.decision_events
         else:
             run = await prepare_auto_run(
                 factory,
@@ -321,6 +322,7 @@ async def _run_item(
             )
             abstained = run.abstain_event is not None
             contexts = run.contexts
+            decisions = run.decision_events
 
     # KI-18 (D2 2c): the generation ids are collected here but the stats
     # lookups are deferred to run_eval — a generation's record lands ~20 s
@@ -426,7 +428,16 @@ async def _run_item(
         stage_ms=stage_ms,
         tokens_in=tokens_in,
         tokens_out=tokens_out,
-        review_detail={"claims": claim_detail, "contexts": context_detail},
+        # Every decision the run took, as `[name, value, engine]`: the gate
+        # grade, the rerank grades, the sanitizer's verdicts. An eval run
+        # publishes no run events and `eval-gate-local` drops the database, so
+        # without this an abstention is a bare `true` and the only way to ask
+        # why it abstained is a paid rerun.
+        review_detail={
+            "claims": claim_detail,
+            "contexts": context_detail,
+            "decisions": [[d.name, d.value, d.engine] for d in decisions],
+        },
     )
     async with factory() as session, session.begin():
         session.add(result)

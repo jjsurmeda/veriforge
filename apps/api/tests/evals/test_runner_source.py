@@ -33,6 +33,7 @@ class _FakeRun:
         self.latency_ms: dict[str, int] = {}
         self.contexts: list[Any] = []
         self.abstain_event = None
+        self.decision_events: list[Any] = []
         self.rewritten = "q"
         self.history: list[tuple[str, str]] = []
 
