@@ -52,6 +52,10 @@ export function describeStep(event: StreamEvent): WorkingStep {
       return { id: `${event.seq ?? 0}-conflict`, label: 'Reviewing conflicting evidence', status: 'warning' }
     case 'abstain':
       return { id: `${event.seq ?? 0}-abstain`, label: 'Checking the evidence', status: 'warning' }
+    case 'answer.retract':
+      // A streamed answer struck by IsUse; the text the client renders is
+      // replaced wholesale by the decline (ADR-006 item 4).
+      return { id: `${event.seq ?? 0}-retract`, label: 'Withdrawing the answer', status: 'warning' }
     case 'suggestions':
       return { id: `${event.seq ?? 0}-suggestions`, label: 'Finding follow-ups', status: 'done' }
     case 'metrics':

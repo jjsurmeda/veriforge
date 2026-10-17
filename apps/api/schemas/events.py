@@ -177,6 +177,18 @@ class AnswerHold(RunEvent):
     reason: str = "verifying"
 
 
+class AnswerRetract(RunEvent):
+    """AirFlow:stream, ADR-006 item 4 — a streamed answer whose post-stream
+    IsUse check failed is retracted: the client replaces the rendered text
+    with the decline. The event must be idempotent-safe: any number of
+    retractions lands the same replaced text, so a reconnect cannot
+    resurrect text the trace already strikes."""
+
+    type: Literal["answer.retract"] = "answer.retract"
+    reason: str
+    text: str
+
+
 class Revision(RunEvent):
     """The reviewer rewrote flagged claims (TRD §10, max one pass)."""
 
@@ -214,6 +226,7 @@ RunStreamEvent = Annotated[
     | Retrieval
     | AnswerDelta
     | Abstain
+    | AnswerRetract
     | Conflict
     | ReviewClaim
     | AnswerHold

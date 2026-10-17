@@ -19,7 +19,7 @@ from graph.stages.run_env import FinishRequest, RunEnv
 from graph.stages.usefulness_stage import UsefulnessOutcome, run_usefulness, usefulness_decline
 from graph.timing import EventPublisher, make_step_timer
 from retrieval.context import count_tokens
-from schemas.events import AnswerHold, Decision, RunStreamEvent
+from schemas.events import AnswerHold, AnswerRetract, Decision, RunStreamEvent
 
 # Small talk has no claims to review, so a "hold" plan would park the reply in
 # a branch that only publishes deltas after the review.
@@ -80,14 +80,15 @@ async def run_auto(env: RunEnv) -> None:
     await delivery.flush()
     text = env.state.text
 
-    # IsUse (ADR-006): one post-generation usefulness check for every grounded
-    # Auto answer — the same stage the eval harness runs, so the eval measures
-    # the product. Only a grounded answer reaches here: an abstention, a
-    # chitchat or a library reply took the always-stream plan above and has no
-    # sources to check the answer against.
     usefulness: UsefulnessOutcome | None = None
     decline_text: str | None = None
-    if plan != _ALWAYS_STREAM:
+    # Only a grounded answer carries sources to check the answer against; an
+    # abstention, a chitchat route or a library listing has none. A held run
+    # delivered nothing while generating; a streamed run DID deliver, so its
+    # failure is a retraction and publishes `answer.retract` before the tail
+    # replaces the text.
+    grounded = run.abstain_event is None and not run.chitchat and run.library_names is None
+    if grounded:
         usefulness_step = make_step_timer(
             node="auto", run_id=env.run_id, latency_ms=run.latency_ms, publish=_publish_step(env)
         )
@@ -107,6 +108,15 @@ async def run_auto(env: RunEnv) -> None:
                 decline_text = usefulness_decline(str(env.run_id), run.contexts)
 
         await usefulness_step("isuse", _run_usefulness)
+    if decline_text is not None and plan == _ALWAYS_STREAM:
+        await env.bus.publish(
+            env.run_id,
+            AnswerRetract(
+                run_id=str(env.run_id),
+                reason="the usefulness check rejected the answer",
+                text=decline_text,
+            ),
+        )
 
     generate_ms = run.latency_ms.get("generate", 0)
     prompt_tokens = sum(
@@ -174,12 +184,11 @@ def _plan(run: AutoRun) -> str:
     if run.abstain_event is not None or run.chitchat or run.library_names is not None:
         return _ALWAYS_STREAM
     # The floor's number and its floor, not the sufficiency reading: the
-    # hold decision is about how confidently the run answered, and the
-    # rubric grade is what says that (TRD §10; ADR-006 item 4 moves this
-    # band onto an explicit stream line in R2a item 4).
+    # stream decision is about how confidently the run answered, and the
+    # rubric grade is what says that (ADR-006 item 4; TRD §10).
     return plan_delivery(
         mode="auto",
         risk=run.ingress.risk,
         evidence_p=run.gate_mean_top3,
-        evidence_threshold=threshold("evidence_floor", "jev"),
+        stream_line=threshold("stream_line", "jev"),
     )

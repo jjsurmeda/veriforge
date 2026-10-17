@@ -121,33 +121,57 @@ class TestScoringMath:
 
 
 class TestPlanDelivery:
+    LINE = 0.6
+
     def test_deep_always_holds(self) -> None:
         assert (
-            plan_delivery(mode="deep", risk="low", evidence_p=0.99, evidence_threshold=0.6)
+            plan_delivery(mode="deep", risk="low", evidence_p=0.99, stream_line=self.LINE)
             == "hold"
         )
 
     def test_fast_always_streams(self) -> None:
         assert (
-            plan_delivery(mode="fast", risk="high", evidence_p=0.1, evidence_threshold=0.6)
+            plan_delivery(mode="fast", risk="high", evidence_p=0.1, stream_line=self.LINE)
             == "stream"
         )
 
     def test_auto_high_risk_holds(self) -> None:
         assert (
-            plan_delivery(mode="auto", risk="high", evidence_p=0.95, evidence_threshold=0.6)
+            plan_delivery(mode="auto", risk="high", evidence_p=0.95, stream_line=self.LINE)
             == "hold"
         )
 
-    def test_auto_evidence_within_0_1_of_threshold_holds(self) -> None:
+    def test_auto_at_the_line_streams(self) -> None:
+        """>= the line streams: the line is the *floor* of the streaming band,
+        so a run exactly at 0.60 skips the verifying step."""
         assert (
-            plan_delivery(mode="auto", risk="low", evidence_p=0.68, evidence_threshold=0.6)
+            plan_delivery(mode="auto", risk="low", evidence_p=0.6, stream_line=self.LINE)
+            == "stream"
+        )
+
+    def test_auto_under_the_line_holds(self) -> None:
+        """The band between the floor (0.455) and the line holds, however
+        the grade got there — 0.4721 is the probe's lowest answerable and it
+        is still a verifying-step answer."""
+        assert (
+            plan_delivery(mode="auto", risk="low", evidence_p=0.599, stream_line=self.LINE)
+            == "hold"
+        )
+        assert (
+            plan_delivery(mode="auto", risk="low", evidence_p=0.4721, stream_line=self.LINE)
+            == "hold"
+        )
+
+    def test_auto_without_a_grade_holds(self) -> None:
+        """A missing rubric reading is not evidence the run could stream on."""
+        assert (
+            plan_delivery(mode="auto", risk="low", evidence_p=None, stream_line=self.LINE)
             == "hold"
         )
 
     def test_auto_low_risk_confident_streams(self) -> None:
         assert (
-            plan_delivery(mode="auto", risk="low", evidence_p=0.9, evidence_threshold=0.6)
+            plan_delivery(mode="auto", risk="low", evidence_p=0.9, stream_line=self.LINE)
             == "stream"
         )
 

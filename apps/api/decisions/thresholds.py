@@ -77,6 +77,27 @@ _DEFAULTS: dict[str, dict[Engine, float]] = {
     # numbers predate that path (it was abstained outright at 0.56) — and
     # the proof run grades whether the rescue holds.
     "evidence_floor": {"jev": 0.455, "fallback": 0.455},
+    # Stream line (ADR-006 item 4, TRD §10): a grounded Auto answer whose
+    # rubric mean reaches the line *streams*, and IsUse runs after delivery
+    # (a failure retracts). Below the line — the band between the floor and
+    # the line — the run is held under the verifying step until IsUse passes.
+    # The line sits ABOVE every should-decline reading recorded, so streaming
+    # stays safe:
+    #
+    #     class         set                     item                   mean-top-3
+    #     ------------  ----------------------  ---------------------  ----------
+    #     should-dcln   books calibration       outside-holmes-boston  0.5200 / 0.5589
+    #     should-dcln   books probe (forced)    outside-holmes-boston  0.5344
+    #     should-dcln   books calibration       outside-moby-dick      0.5178
+    #     should-dcln   fast20 x3 (attempt 1)   abstain-10             0.4844-0.4900
+    #     answerable    books probe (forced)    broad-sherlock         0.4721
+    #
+    # 0.60 is the lowest tenth above the 0.559 maximum, a 0.041 margin the
+    # high end, and it keeps every answerable *held* reading (0.4721-0.559)
+    # on the verifying path where a wrong answer is likely, which is the
+    # split ADR-006 item 4 orders. The evidence_floor is not part of this
+    # choice: a run below it never plans delivery.
+    "stream_line": {"jev": 0.60, "fallback": 0.60},
     "conflict_disclose": {"jev": 0.60, "fallback": 0.60},
     "output_toxicity_block": {"jev": 0.85, "fallback": 0.85},
     # Slice 6: 0.60 abstained Deep runs on corpus-answerable questions —

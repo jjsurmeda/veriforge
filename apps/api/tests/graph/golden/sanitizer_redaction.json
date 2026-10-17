@@ -282,6 +282,30 @@
   "kind": "event"
  },
  {
+  "event": {
+   "label": "isuse",
+   "node": "auto",
+   "seq": 0,
+   "type": "step.started"
+  },
+  "kind": "event"
+ },
+ {
+  "kind": "isuse",
+  "questions": [
+   "is_use"
+  ]
+ },
+ {
+  "event": {
+   "label": "isuse",
+   "node": "auto",
+   "seq": 0,
+   "type": "step.completed"
+  },
+  "kind": "event"
+ },
+ {
   "kind": "prose_decline",
   "questions": [
    "prose_decline"

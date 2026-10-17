@@ -194,6 +194,46 @@
         "title": "AnswerHold",
         "type": "object"
       },
+      "AnswerRetract": {
+        "description": "AirFlow:stream, ADR-006 item 4 \u2014 a streamed answer whose post-stream\nIsUse check failed is retracted: the client replaces the rendered text\nwith the decline. The event must be idempotent-safe: any number of\nretractions lands the same replaced text, so a reconnect cannot\nresurrect text the trace already strikes.",
+        "properties": {
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "run_id": {
+            "default": "",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "default": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "answer.retract",
+            "default": "answer.retract",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason",
+          "text"
+        ],
+        "title": "AnswerRetract",
+        "type": "object"
+      },
       "AuditOut": {
         "properties": {
           "action": {
@@ -3043,6 +3083,7 @@
             "abstain": "#/components/schemas/Abstain",
             "answer.delta": "#/components/schemas/AnswerDelta",
             "answer.hold": "#/components/schemas/AnswerHold",
+            "answer.retract": "#/components/schemas/AnswerRetract",
             "conflict": "#/components/schemas/Conflict",
             "decision": "#/components/schemas/Decision",
             "heartbeat": "#/components/schemas/Heartbeat",
@@ -3089,6 +3130,9 @@
           },
           {
             "$ref": "#/components/schemas/Abstain"
+          },
+          {
+            "$ref": "#/components/schemas/AnswerRetract"
           },
           {
             "$ref": "#/components/schemas/Conflict"

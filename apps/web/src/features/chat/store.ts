@@ -120,6 +120,14 @@ export const useChatRunStore = create<ChatRunStore>()((set) => ({
           next.status = 'streaming'
           next.text += event.text
           break
+        case 'answer.retract':
+          // A streamed answer whose IsUse check failed: the delivered text is
+          // struck and replaced by the decline (ADR-006 item 4). Any number
+          // of retractions lands the same text, so a replay cannot
+          // resurrect what the trace dropped.
+          next.status = 'streaming'
+          next.text = event.text
+          break
         case 'answer.hold':
           next.hold = true
           break

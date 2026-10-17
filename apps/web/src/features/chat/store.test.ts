@@ -55,6 +55,19 @@ describe('chat run store — slice 6 events', () => {
     expect(useChatRunStore.getState().runs[RUN_ID].hold).toBe(true)
   })
 
+  it('answer.retract replaces the streamed text with the decline', () => {
+    useChatRunStore.getState().applyEvent(RUN_ID, {
+      type: 'answer.retract',
+      run_id: RUN_ID,
+      seq: 6,
+      text: "I could not find enough evidence to answer that question.",
+      reason: 'the usefulness check rejected the answer',
+    } as never)
+    expect(useChatRunStore.getState().runs[RUN_ID].text).toBe(
+      'I could not find enough evidence to answer that question.'
+    )
+  })
+
   it('review.claim events accumulate keyed by claim_id', () => {
     const store = useChatRunStore.getState()
     store.applyEvent(RUN_ID, claimEvent('c1', 'supported', ['1']))

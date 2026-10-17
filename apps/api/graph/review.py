@@ -127,18 +127,25 @@ def score_review(claims: list[VerifiedClaim], citation_count: int) -> ReviewScor
 
 
 def plan_delivery(
-    *, mode: str, risk: str, evidence_p: float | None, evidence_threshold: float
+    *, mode: str, risk: str, evidence_p: float | None, stream_line: float
 ) -> str:
     """'hold' (verify before delivery) or 'stream' (deliver, review after)
-    per TRD §10's risk-based delivery table. Evidence within 0.1 of the gate
-    floor counts as high-risk even when ingress said low."""
+    per TRD §10's risk-based delivery table (ADR-006 item 4).
+
+    The band replaces the old ±0.1 rule: an answer whose graded evidence
+    under the stream line is held under the verifying step until IsUse
+    passes; at or above the line it streams (and a failed IsUse retracts
+    it, `answer.retract`). High-risk intents hold however graded the run
+    was; the line only sets where a low-risk, clearly-evidenced Auto
+    answer may skip the hand-off. The evidence floor plays no part here —
+    a run below it never plans, it abstains first."""
     if mode == "deep":
         return "hold"
     if mode == "fast":
         return "stream"
     if risk == "high":
         return "hold"
-    if evidence_p is not None and abs(evidence_p - evidence_threshold) <= 0.1:
+    if evidence_p is None or evidence_p < stream_line:
         return "hold"
     return "stream"
 
