@@ -12,7 +12,7 @@ numbers PRD §5 states for one run:
 - **Clean declines ≥ 90%** of should-decline items — 18 of 20. A prose "not in
   the sources" reply with citations is an unclean decline and counts against
   this, not against confident wrong.
-- **False abstention ≤ 5%** of answerable items — 1 of 32.
+- **False abstention ≤ 5%** of answerable items — 1 of 33.
 - **An `answer`-class item that completed with zero citations fails**, whether
   its text was right or wrong. This is KI-71: ingress can classify a content
   question as `chitchat`, the run skips retrieval and answers from model
@@ -55,25 +55,29 @@ from typing import Any
 # The mix moved from 33/20 to 32/21 on 2026-10-12 (phase 1c item 2):
 # `amb-bovary-homais` was relabelled `answer` → `not_in_sources` because the
 # eye-consultation scene its label depends on is not in this edition of
-# Madame Bovary at all (`Rouard` is 0 hits corpus-wide). Labels only; the
+# Madame Bovary at all (`Rouard` is 0 hits corpus-wide). It moved back to
+# 33/20 on 2026-10-17 (ADR-006): `ml-zh-xiyou-nezha` was relabelled
+# `not_in_sources` → `answer` — the corpus does state that the Heavenly
+# King lives in the Cloud Tower Palace (雲樓宮) and calls Nezha there.
+# Labels only; the
 # reasoning and the measurement are in `evals/acceptance/books.json` and
 EXPECTED_COUNTS = {
     "items": 57,
-    "answer_items": 32,
-    "abstain_items": 21,
+    "answer_items": 33,
+    "abstain_items": 20,
     "smalltalk_items": 2,
     "library_items": 2,
 }
 
 # PRD §5, as the brief takes it for one run. Named with the arithmetic rather
-# than as bare numbers so a reader can see which clause each is. The percentages
-# are integers and the arithmetic is integer arithmetic, because
-# `math.ceil(20 * 0.90)` is 19 — 0.9 is not exact in binary and the gate must
-# not quietly tighten itself by one item. The counts in the comments are the
-# ones these rates produce at the CURRENT mix: 19 of 21, and 1 of 32.
-MIN_CLEAN_DECLINE_PERCENT = 90  # ≥ 90% of should-decline items → 19 of 21
-MAX_FALSE_ABSTENTION_PERCENT = 5  # ≤ 5% of answerable items → 1 of 32
-MAX_CONFIDENT_WRONG = 0  # PRD §5 allows ≤1 per 100; on 21 items, 0
+# than as bare numbers so a reader can see which clause each is. The arithmetic
+# is integer ceiling division (-(-21 * 90 // 100) = 19), never `math.ceil` over
+# binary floats: 0.9 is inexact and the gate must not quietly tighten itself by
+# one item. The counts in the comments are the ones these rates produce at the
+# CURRENT mix: 18 of 20, and 1 of 33.
+MIN_CLEAN_DECLINE_PERCENT = 90  # ≥ 90% of should-decline items → 18 of 20
+MAX_FALSE_ABSTENTION_PERCENT = 5  # ≤ 5% of answerable items → 1 of 33
+MAX_CONFIDENT_WRONG = 0  # PRD §5 allows ≤1 per 100; on 20 items, 0
 # KI-71 (owner decision 2026-10-12): answering a content question from model
 # memory is the one thing this product says it does not do, so an `answer`
 # item that completed with no citation is a failure at any text quality. Not a
@@ -86,7 +90,7 @@ MAX_UNCITED_ANSWERS = 0
 # it cited is the right one — so without this clause a run that is confidently
 # wrong about the thing it was asked passes the whole gate. PRD §5's 1 is the
 # bar, and it is the same arithmetic as `MAX_FALSE_ABSTENTION_PERCENT` at this
-# mix (32 * 5% = 1).
+# mix (33 * 5% = 1).
 MAX_CONTENT_MISSES = 1
 
 

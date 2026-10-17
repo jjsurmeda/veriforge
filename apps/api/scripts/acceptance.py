@@ -279,7 +279,7 @@ def summarise(
       and cited, but whose answer does not state the strings the item
       requires. Every other class here would pass it: it is not a decline, not
       an abstention, not an error, not uncited, and it cited a plausible book.
-      The content check the plan's bar names ("≤ 1 content miss of 32
+      The content check the plan's bar names ("≤ 1 content miss of 33
       answerables", KI-75) has to be its own count, because a run that holds
       decline accuracy *and* false abstention *and* citations can still be
       wrong about the thing it was asked.
