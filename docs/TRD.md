@@ -343,7 +343,8 @@ jobs when more than 3 chat runs are active.
 WITH vec AS (top 50 by cosine distance, filtered),
      lex AS (top 50 by pg_search BM25, same filter)
 fused  = Σ weight_i / (60 + rank_i)
-         weight: vector = 1 − w, bm25 = w, w = lexical_weight from ingress
+         weight: vector = 1 − w, bm25 = w, w = max(lexical_weight from ingress, 0.5)
+         (the floor keeps BM25 on; amended 2026-10-18, R2a-4 replay)
 → top 40 → rerank (pluggable, §9.6) → top 8 → dedupe adjacent → expand
 ```
 
