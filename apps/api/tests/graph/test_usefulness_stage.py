@@ -9,7 +9,7 @@ ends the run through the normal tail (a completed run, no run.failed).
 """
 
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import select
@@ -29,6 +29,8 @@ from graph.stages.usefulness_stage import (
     run_usefulness,
     usefulness_decline,
 )
+from retrieval.expand import ExpandedContext
+from retrieval.hybrid import ScoredChunk
 from schemas.decisions import Answer, Question
 from schemas.events import AnswerDelta, Decision, Metrics, RunCompleted
 from tests.retrieval.conftest import make_user
@@ -66,25 +68,30 @@ class _UsefulnessEngine:
         }
 
 
-class _Context:
-    """An `ExpandedContext`-shaped stub for the decline template."""
-
-    def __init__(self, text: str, document_name: str = "warranty.md") -> None:
-        self.context_text = text
-        self.chunk = type(
-            "Chunk",
-            (),
-            {
-                "document_name": document_name,
-                "source_type": "document",
-                "page": 3,
-                "heading_path": "H",
-            },
-        )()
-
-
-def _context(index: int = 1) -> _Context:
-    return _Context("The AW-2000 warranty is 24 months.", f"doc-{index}.md")
+def _context(
+    text: str = "The AW-2000 warranty is 24 months.", document_name: str = "warranty.md"
+) -> ExpandedContext:
+    """A real `ExpandedContext` (a frozen dataclass over a real `ScoredChunk`),
+    so the stage receives exactly the shape the product hands it."""
+    ids = uuid4()
+    return ExpandedContext(
+        chunk=ScoredChunk(
+            chunk_id=ids,
+            document_id=ids,
+            document_name=document_name,
+            section_id=ids,
+            ord=0,
+            page=3,
+            text=text,
+            heading_path="Section 0",
+            source_type="document",
+            vector_score=1.0,
+            bm25_score=None,
+            fused_score=1.0,
+            rerank_score=0.9,
+        ),
+        context_text=text,
+    )
 
 
 @pytest.fixture
@@ -99,7 +106,7 @@ async def test_a_pass_delivers_and_records_the_row(decisions: list[Decision]) ->
         run_id=str(RUN_ID),
         question="How long is the warranty?",
         answer="The warranty is 24 months [1].",
-        contexts=[_context()],
+        contexts=[_context(document_name="doc-1.md")],
         decisions=decisions,
     )
 
@@ -126,12 +133,12 @@ async def test_a_fail_declines_with_the_found_missing_template(
         run_id=str(RUN_ID),
         question="How long is the warranty?",
         answer="The sources discuss torque specs.",
-        contexts=[_context()],
+        contexts=[_context(document_name="doc-1.md")],
         decisions=decisions,
     )
 
     assert outcome.state == "fail"
-    decline = usefulness_decline(str(RUN_ID), [_context()])
+    decline = usefulness_decline(str(RUN_ID), [_context(document_name="doc-1.md")])
     # TR-4: found, missing, offered actions — the same shape a pre-generation
     # abstention renders.
     assert "What I found:" in decline
@@ -160,7 +167,7 @@ async def test_an_outage_is_a_failing_check_with_an_unavailable_row(
         run_id=str(RUN_ID),
         question="q",
         answer="a",
-        contexts=[_context()],
+        contexts=[_context(document_name="doc-1.md")],
         decisions=decisions,
         on_unavailable=publish_row,
     )
@@ -187,7 +194,7 @@ async def test_the_threshold_boundary_is_0_47(decisions: list[Decision]) -> None
             run_id=str(RUN_ID),
             question="q",
             answer="a",
-            contexts=[_context()],
+            contexts=[_context(document_name="doc-1.md")],
             decisions=[],
         )
         assert outcome.state == expected, value
@@ -197,7 +204,9 @@ async def test_the_threshold_boundary_is_0_47(decisions: list[Decision]) -> None
 async def test_the_prompt_is_the_probe_s_byte_for_byte() -> None:
     """The thresholds were calibrated-. Changing the wording invalidates both
     the `is_use` threshold and the evidence floor, so the stage pin is here."""
-    question = is_use_question("How long is the warranty?", "It is 24 months.", [_context()])
+    question = is_use_question(
+        "How long is the warranty?", "It is 24 months.", [_context(document_name="doc-1.md")]
+    )
     sources = "[1] The AW-2000 warranty is 24 months."
     expected = IS_USE_PROMPT.format(
         q="How long is the warranty?", a="It is 24 months.", s=sources
@@ -207,7 +216,7 @@ async def test_the_prompt_is_the_probe_s_byte_for_byte() -> None:
 
 async def test_sources_are_truncated_like_the_probe() -> None:
     long_text = "x" * 2000
-    question = is_use_question("q", "a", [_Context(long_text)])
+    question = is_use_question("q", "a", [_context(long_text)])
     assert question.prompt.count("x" * 1200) == 1
     assert "x" * 1201 not in question.prompt
 

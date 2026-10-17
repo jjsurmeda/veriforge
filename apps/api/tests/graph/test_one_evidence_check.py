@@ -57,7 +57,8 @@ def gate_rows() -> list[dict[str, Any]]:
     for path in ARTEFACTS[:3]:
         if not path.exists():
             pytest.skip(f"calibration artefact not present: {path}")
-        rows.extend(json.loads(path.read_text())["rows"])
+        data: list[dict[str, Any]] = json.loads(path.read_text())["rows"]
+        rows.extend(data)
     return [r for r in rows if r.get("gated")]
 
 
@@ -66,7 +67,8 @@ def probe_rows() -> list[dict[str, Any]]:
     path = ARTEFACTS[3]
     if not path.exists():
         pytest.skip(f"probe artefact not present: {path}")
-    return json.loads(path.read_text())
+    loaded: list[dict[str, Any]] = json.loads(path.read_text())
+    return loaded
 
 
 # ---------------------------------------------------------------------------
