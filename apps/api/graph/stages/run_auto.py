@@ -7,6 +7,7 @@ behind a step of its own, and hands the answer to the shared review tail.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from uuid import UUID
 
 from decisions import threshold
@@ -15,9 +16,10 @@ from graph.generate import build_grounded_messages
 from graph.review import plan_delivery
 from graph.stages.delivery import Delivery
 from graph.stages.run_env import FinishRequest, RunEnv
+from graph.stages.usefulness_stage import UsefulnessOutcome, run_usefulness, usefulness_decline
 from graph.timing import EventPublisher, make_step_timer
 from retrieval.context import count_tokens
-from schemas.events import AnswerHold, RunStreamEvent
+from schemas.events import AnswerHold, Decision, RunStreamEvent
 
 # Small talk has no claims to review, so a "hold" plan would park the reply in
 # a branch that only publishes deltas after the review.
@@ -78,6 +80,34 @@ async def run_auto(env: RunEnv) -> None:
     await delivery.flush()
     text = env.state.text
 
+    # IsUse (ADR-006): one post-generation usefulness check for every grounded
+    # Auto answer — the same stage the eval harness runs, so the eval measures
+    # the product. Only a grounded answer reaches here: an abstention, a
+    # chitchat or a library reply took the always-stream plan above and has no
+    # sources to check the answer against.
+    usefulness: UsefulnessOutcome | None = None
+    decline_text: str | None = None
+    if plan != _ALWAYS_STREAM:
+        usefulness_step = make_step_timer(
+            node="auto", run_id=env.run_id, latency_ms=run.latency_ms, publish=_publish_step(env)
+        )
+
+        async def _run_usefulness() -> None:
+            nonlocal usefulness, decline_text
+            usefulness = await run_usefulness(
+                env.engine,
+                run_id=str(env.run_id),
+                question=env.user_message,
+                answer=env.state.text,
+                contexts=run.contexts,
+                decisions=run.decision_events,
+                on_unavailable=_publish_outage_row(env),
+            )
+            if usefulness.state != "pass":
+                decline_text = usefulness_decline(str(env.run_id), run.contexts)
+
+        await usefulness_step("isuse", _run_usefulness)
+
     generate_ms = run.latency_ms.get("generate", 0)
     prompt_tokens = sum(
         count_tokens(message["content"])
@@ -90,7 +120,7 @@ async def run_auto(env: RunEnv) -> None:
         run,
         generate_ms=generate_ms,
         tokens_in=prompt_tokens,
-        tokens_out=count_tokens(text),
+        tokens_out=count_tokens(decline_text or text),
     )
     await env.finish(
         FinishRequest(
@@ -105,6 +135,7 @@ async def run_auto(env: RunEnv) -> None:
             plan=plan,
             chitchat=run.chitchat or run.library_names is not None,
             revert_title=run.chitchat,
+            decline_text=decline_text,
         )
     )
 
@@ -112,6 +143,20 @@ async def run_auto(env: RunEnv) -> None:
 def _publish_step(env: RunEnv) -> EventPublisher:
     async def publish(run_id: UUID, event: RunStreamEvent) -> None:
         await env.bus.publish(run_id, event)
+
+    return publish
+
+
+def _publish_outage_row(env: RunEnv) -> Callable[[Decision], Awaitable[None]]:
+    """Publish the outage row onto the bus.
+
+    An answered IsUse call's trace row is emitted by the engine's own event
+    emitter; a call that never got an answer produced none, and the trace
+    still has to say why the answer was declined (KI-57).
+    """
+
+    async def publish(row: Decision) -> None:
+        await env.bus.publish(env.run_id, row)
 
     return publish
 

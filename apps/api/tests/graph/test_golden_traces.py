@@ -322,6 +322,10 @@ def script(
             "conflict": conflict or jev(0.01),
             "controller": controller,
             "prose_decline": prose_decline,
+            # IsUse (ADR-006) runs after the answer flushes, on the grounded
+            # Auto path; the default is a pass so scenarios that only test
+            # earlier stages keep their original answer.
+            "isuse": jev(0.9),
         },
     )
     if isinstance(rerank, list):

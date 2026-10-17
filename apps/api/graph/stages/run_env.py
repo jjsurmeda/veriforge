@@ -48,6 +48,11 @@ class FinishRequest:
     plan: str
     chitchat: bool = False
     revert_title: bool = False
+    # IsUse (ADR-006): when the usefulness check failed — or could not be
+    # asked, which is treated as failing — the delivered text is replaced by
+    # the TR-4 decline, so the tail persists it and records the message as an
+    # abstention without running the reviewer over the decline itself.
+    decline_text: str | None = None
 
 
 FinishRun = Callable[["FinishRequest"], Awaitable[None]]

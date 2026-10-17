@@ -85,6 +85,16 @@ _DEFAULTS: dict[str, dict[Engine, float]] = {
     # the run abstains only when NO top-k passage matches. The question
     # names no entity -> the check is skipped, never an abstention.
     "entity_match": {"jev": 0.50, "fallback": 0.50},
+    # IsUse (ADR-006, accepted 2026-10-17): after generation, does the
+    # grounded answer directly answer what was asked, from these sources?
+    # Calibrated on the IsUse probe (`.data/evals/isuse-probe-a03a3a8.json`,
+    # 19 in-band books items with the evidence gate forced open): failing
+    # answers 0.09-0.37, answerables 0.56-0.93, with the one known miss
+    # (`outside-whitman`, 0.11). 0.47 is the probe gap's midpoint (0.465)
+    # rounded up: 0.10 above the highest failing reading, 0.09 below the
+    # lowest answerable one. The derivation table is in the R2a-4 report;
+    # the held-out set confirms it next phase.
+    "is_use": {"jev": 0.47, "fallback": 0.47},
 }
 
 
@@ -103,6 +113,8 @@ DISPLAY_THRESHOLDS: dict[str, str] = {
     "output_secrets": "guard_pii_warn",
     "prose_decline": "prose_decline",
     "entity": "entity_match",
+    # ADR-006: the usefulness row shows the floor it was compared against.
+    "is_use": "is_use",
 }
 
 

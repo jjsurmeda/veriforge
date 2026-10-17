@@ -59,6 +59,7 @@ from graph.auto import AutoRunInput, finalize_auto_run, prepare_auto_run
 from graph.deep import DeepRunInput, finalize_deep_run, prepare_deep_run
 from graph.generate import build_grounded_messages
 from graph.review import review_answer
+from graph.stages.usefulness_stage import run_usefulness, usefulness_decline
 from retrieval.context import count_tokens
 from retrieval.filters import ClientFilters
 
@@ -323,6 +324,29 @@ async def _run_item(
             abstained = run.abstain_event is not None
             contexts = run.contexts
             decisions = run.decision_events
+            # ADR-006: the same post-generation usefulness check the product's
+            # Auto path runs, so a fast20 number is measured against what
+            # ships. Only a grounded answer carries sources to check against;
+            # an abstention, a chitchat route or a library listing checked
+            # nothing.
+            if abstained or run.chitchat or run.library_names is not None:
+                usefulness = None
+            else:
+                usefulness = await run_usefulness(
+                    engine,
+                    run_id=str(pipeline_run_id),
+                    question=item.question,
+                    answer=answer,
+                    contexts=run.contexts,
+                    decisions=run.decision_events,
+                )
+                if usefulness.state != "pass":
+                    # The benefit of the check is what the product does with
+                    # it: the drafted answer is replaced by the TR-4 decline,
+                    # and the item is recorded as an abstention.
+                    abstained = True
+                    answer = usefulness_decline(str(pipeline_run_id), run.contexts)
+                    tokens_out = count_tokens(answer)
 
     # KI-18 (D2 2c): the generation ids are collected here but the stats
     # lookups are deferred to run_eval — a generation's record lands ~20 s
