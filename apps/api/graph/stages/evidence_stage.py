@@ -1,28 +1,26 @@
-"""Evidence stage (TRD §7): does the retrieved evidence answer the question?
+"""Evidence stage (TRD §7): is the retrieved evidence clearly absent?
 
-**The gate is the reranker's answer-containment grade** (ADR-006 as corrected):
-the mean grade of the best three post-sanitize passages, over the rubric in
-`retrieval/rerank.py`. That is the whole decision — a computed number, not a
-second model question. The old `sufficient` Noul is gone from the path entirely:
-its threshold, its decision row, its admin key and its question are all removed,
-because the one case where it could be checked against a known label
-(`cf-k9-charge`) it read "sufficient" while the rubric and the entity guard both
-said the passages did not answer.
+**The floor is the reranker's answer-containment grade** (ADR-006, accepted
+2026-10-17): the mean grade of the best three post-sanitize passages, over the
+rubric in `retrieval/rerank.py`. That is the whole pre-generation decision — a
+computed number, not a second model question. The old `sufficient` Noul is gone
+from the path entirely: its threshold, its decision row, its admin key and its
+question are all removed, because the one case where it could be checked against
+a known label (`cf-k9-charge`) it read "sufficient" while the rubric and the
+entity guard both said the passages did not answer.
 
-The entity guard stays beside the gate as a mismatch guard, and the conflict
-pairs ride the same post-sanitize call. It is load-bearing rather than
-decorative: in R2a-2 a single books should-decline (`cf-k9-charge` 0.634)
-cleared the old 0.55 floor and was held by its entity reading (0.450 < 0.50),
-not by the gate. The KI-57 sanitizer fix (fail-closed, drop ungraded chunks)
-collapsed that reading to 0.01-0.02, so the gate at 0.56 now catches every
-should-decline on both sets. The entity guard stays as defense-in-depth, not
-as the primary block.
+The entity guard stays beside the floor as a mismatch guard, and the conflict
+pairs ride the same post-sanitize call. It is defense-in-depth rather than
+load-bearing: the KI-57 sanitizer fix (fail-closed, drop ungraded chunks)
+collapsed the once-relevant entity-mismatch readings below the floor, so the
+entity guard no longer has to block sets the floor already blocks.
 
-The threshold is calibrated, not chosen: `scripts/calibrate_gate.py` measured
-every answerable and should-decline item of the books acceptance set and the
-entity-mismatch set, and `decisions/thresholds.py` carries the table. At the
-shipped 0.56 the gate alone answers **0** should-decline items on both the
-books set and the entity-mismatch set, and costs **2** answerable ones.
+The floor is calibrated, not chosen, and it is NOT a decline classifier
+(`decisions/thresholds.py` carries the derivation table): only the clearly-
+absent band below 0.455 keeps a run from generating. Everything else generates
+and is classified after generation — IsUse (ADR-006) decides whether the
+delivered answer answers the question, and `plan_delivery` decides whether it
+streams first.
 
 Below the floor the run makes **one** corrective retrieval — a rewritten or
 decomposed query, and the section summaries from TRD §9.1 step 6 when the
@@ -239,7 +237,7 @@ def _read_answers(
     attempt.gate_engine = _gate_engine(reranker)
     grades = rubric_grades(attempt.winners)
     attempt.gate_mean_top3 = rubric_mean_top3(grades)
-    attempt.gate_floor = threshold("rubric_mean_top3", "jev")
+    attempt.gate_floor = threshold("evidence_floor", "jev")
     state.decision_events.append(
         _gate_event(
             env.params.run_id, attempt.gate_mean_top3, attempt.gate_floor, attempt.gate_engine

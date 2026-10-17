@@ -287,7 +287,7 @@ class TestDisplayThresholds:
     def test_display_threshold_honors_runtime_override(self) -> None:
         token = set_runtime_settings(
             RuntimeSettings.from_data(
-                1, {"thresholds": {"rubric_mean_top3": {"fallback": 0.42}}}
+                1, {"thresholds": {"evidence_floor": {"fallback": 0.42}}}
             )
         )
         try:

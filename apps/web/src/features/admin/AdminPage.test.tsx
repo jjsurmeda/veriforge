@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const me = { email: 'someone@example.com', role: 'user' as 'user' | 'admin' }
-type SettingsPatchBody = { thresholds: { rubric_mean_top3: Record<string, number> } }
+type SettingsPatchBody = { thresholds: { evidence_floor: Record<string, number> } }
 const patchSettings = vi.fn(async (_args: { body: SettingsPatchBody }) => ({ data: {} }))
 const providersGet = vi.fn(async () => ({ data: [] as unknown[] }))
 const emptyOk = async () => ({ data: [] })
@@ -68,7 +68,7 @@ describe('failed reads', () => {
 })
 
 describe('gate threshold', () => {
-  it('the rubric_mean_top3 floor is editable and saved per engine (AD-4)', async () => {
+  it('the evidence_floor floor is editable and saved per engine (AD-4)', async () => {
     me.role = 'admin'
     renderPage()
 
@@ -78,6 +78,6 @@ describe('gate threshold', () => {
 
     await waitFor(() => expect(patchSettings).toHaveBeenCalled())
     const { thresholds } = patchSettings.mock.calls[0]![0].body
-    expect(thresholds.rubric_mean_top3).toEqual({ jev: 0.42, fallback: 0.42 })
+    expect(thresholds.evidence_floor).toEqual({ jev: 0.42, fallback: 0.42 })
   })
 })

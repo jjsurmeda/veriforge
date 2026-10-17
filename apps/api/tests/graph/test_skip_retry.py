@@ -67,7 +67,7 @@ def test_every_signal_far_below_its_floor_skips_the_retry() -> None:
 
 
 def test_a_gate_reading_near_its_floor_retries() -> None:
-    """0.56 is the gate floor. Anything at or above it retries or answers;
+    """The floor is 0.455 (ADR-006). A reading at or above it retries or answers;
     just under it still retries, because the failure direction of a skip is a
     decline that could have been an answer."""
     assert _absent(gate_mean_top3=0.56) is False

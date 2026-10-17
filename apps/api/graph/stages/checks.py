@@ -77,10 +77,15 @@ def rubric_grades(winners: list[ScoredChunk]) -> list[float]:
 # `scripts/calibrate_gate.py` recorded a mean-of-top-3 for all 53 gated items of
 # the books set and all 12 of the entity-mismatch set; the lowest value in that
 # table for an item the correction could conceivably rescue is 0.224
-# (`outside-whitman`, an answerable item), and the values on the wrong side of
-# every threshold are 0.150-0.518. 0.10 sits below all of them and above the 0.0
-# a run with nothing usable produces, so the skip fires only when a re-query has
-# nothing to find.
+# (`outside-whitman`, an answerable item), and the should-decline values the
+# shipped 0.455 floor still blocks sit between outside-dracula's 0.007 and
+# ml-de-bovary-animal's 0.441. 0.10 therefore misses some blocked rows either
+# way and is not a floor replica: it is a "clearly absent" bound, and sitting
+# below every answerable reading that could be rescued and above the 0.0 a run
+# with nothing usable produces is what makes a skip fire only when a re-query
+# has nothing to find. Higher failing readings (0.520-0.559, e.g.
+# `outside-holmes-boston`) are no longer on any wrong side: above the floor
+# they generate, and IsUse is the check that decides them.
 #
 # It replaces `RETRY_SKIP_SUFFICIENT_MAX = 0.005`, which R2a had moved down from
 # 0.02 and which was by then nearly inert — under the `sufficient` reading almost

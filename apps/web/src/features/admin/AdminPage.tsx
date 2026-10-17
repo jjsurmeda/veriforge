@@ -300,7 +300,7 @@ export function AdminPage() {
           },
           deep: { per_run_credit_cap: settingsDraft.deep_cap },
           thresholds: {
-            rubric_mean_top3: {
+            evidence_floor: {
               jev: settingsDraft.threshold,
               fallback: settingsDraft.threshold,
             },
@@ -372,7 +372,7 @@ export function AdminPage() {
   const current = settings.data
   const data = (current?.data ?? {}) as Record<string, unknown>
   const currentTopK = valueAt(data, 'retrieval.top_k', settingsDraft.top_k)
-  const currentThreshold = valueAt(data, 'thresholds.rubric_mean_top3.jev', settingsDraft.threshold)
+  const currentThreshold = valueAt(data, 'thresholds.evidence_floor.jev', settingsDraft.threshold)
   const currentMode = typeof data.decision_engine_mode === 'string' ? data.decision_engine_mode : settingsDraft.mode
   const tabs: Array<[Section, string, React.ReactNode]> = [
     ['decisions', 'Decision layer', <Activity key="decisions" size={14} aria-hidden="true" />],

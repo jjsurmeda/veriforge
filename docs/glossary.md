@@ -84,11 +84,13 @@ agreement, logged to `decision_shadow`.
 its neighbouring chunks or parent section before it's sent to the
 generator, so the model sees more context than it matched on.
 
-**Evidence gate** — The computed gate that decides whether retrieved
-evidence is enough to answer. It is the mean answer-containment grade of the
-best three post-sanitize passages (`rubric_mean_top3`); the default floor is
-0.56. The gate triggers one corrective retrieval when below the floor, then
-abstains if still below. The named-entity guard sits beside it.
+**Evidence floor** — The computed floor that decides whether the
+retrieved evidence is clearly absent. It is the mean answer-containment grade
+of the best three post-sanitize passages (`evidence_floor`); the default is
+0.455 (ADR-006: it only removes clear misses, it is not a decline classifier).
+Below the floor triggers one corrective retrieval, then abstains if still
+below. Above it the run generates, and IsUse decides. The named-entity guard
+sits beside it.
 
 **Verdict** — A claim's outcome after review: supported, partial,
 unsupported, or contradicted.

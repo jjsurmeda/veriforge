@@ -32,39 +32,51 @@ _DEFAULTS: dict[str, dict[Engine, float]] = {
     "library_min_confidence": {"jev": 0.70, "fallback": 0.70},
     "chunk_injection_drop": {"jev": 0.70, "fallback": 0.70},
     # Answer-first (batch A, 2026-09-28): generate at or above the floor,
-    # one rewrite + retry below it, then abstain.
+    # one corrective retrieval below it, then abstain.
     #
-    # ADR-006 as corrected (2026-10-15): the evidence gate is the reranker's
-    # **answer-containment rubric** — the mean grade of the best three
-    # post-sanitize passages. There is no second gate: `sufficient`, its
-    # threshold and its admin key are gone. The number below is calibrated, not
-    # chosen; the full table is in the R2a-3 report
-    # (`scripts/calibrate_gate.py` is what produced it).
+    # ADR-006 (accepted 2026-10-17): **this is not a delivery gate any
+    # more.** No cutoff on the rubric grade separates should-decline from
+    # answerable items — measured over fast20 x3 and the books calibration
+    # (`docs/history/reports/2026-10-17-0140-r2a-gate-findings.md`):
+    # should-declines reach 0.49 on fast20 (`abstain-10`) and 0.559 on
+    # after-summaries books re-runs (`outside-holmes-boston`), while
+    # answerables bottom out at 0.47 (`injection-01`, `keyword-04`). What
+    # the old 0.56 gate kept, the post-generation IsUse check (`is_use`
+    # below) now decides instead; delivery between the floor and the
+    # stream line (0.60, `plan_delivery`) is held under the verifying step.
     #
-    #     cutoff   confident wrong   false abstention
-    #        0.40            6                2
-    #        0.48            3                2
-    #        0.56            0                2      <- shipped (R2a-3)
-    #        0.60            0                3
+    # The floor's remaining job: catch evidence that is clearly absent, so
+    # the run spends one corrective retrieval and then abstains instead of
+    # generating from nothing. It must sit below every answerable reading
+    # except the one known miss (`outside-whitman`, the brief's allowed
+    # miss), and above the should-decline cluster it still blocks:
     #
-    # **No cutoff reaches 0 confident wrong and ≤ 1 false abstention.** At
-    # any cutoff below 0.56 a books should-decline crosses the floor; at 0.60
-    # three answerables drop — the cheapest zero stays 0.56.
+    #     class         set                     item                   mean-top-3
+    #     ------------  ----------------------  ---------------------  ----------
+    #     answerable    books probe (forced)    broad-sherlock           0.4721
+    #     answerable    fast20 x3 (attempt 1)   injection-01             0.4867
+    #     answerable    fast20 x3 (attempt 1)   keyword-04               0.4878-0.5000
+    #     answerable    books calibration       broad-alice              0.4989
+    #     blocked       books calibration       amb-bovary-homais        0.4233
+    #     blocked       books probe (forced)    ml-de-bovary-animal      0.4278
+    #     blocked       books calibration       ml-de-bovary-animal      0.4356 / 0.4411
     #
-    # The margin on the books set at 0.56 is real: the highest should-decline
-    # is `outside-holmes-boston` at 0.559 (Run 1) / 0.554 (Run 2); the lowest
-    # answerable is `broad-sherlock` at 0.600 (Run 2) / 0.619 (Run 1). 0.56 sits
-    # 0.001-0.006 above the first and 0.020-0.059 below the second.
+    # 0.455 is the value between them with the margins those rows give:
+    # 0.017 below the lowest answerable reading (0.4721, `broad-sherlock`
+    # probe) and 0.014 above the highest reading that stays blocked
+    # (0.4411, `ml-de-bovary-animal` calibration run 2). Everything above
+    # the floor generates and is classified *after* generation — IsUse,
+    # not the floor, is what a web of true sentences that ignores the
+    # question runs into (probe readings 0.09-0.37 vs answerables
+    # 0.56-0.93, `isuse-probe-a03a3a8.json`).
     #
-    # The threshold moved from R2a-2's 0.55 to 0.56 because the summary
-    # backfill lifted `outside-holmes-boston` from 0.520 to 0.554-0.559,
-    # crossing the old floor. In R2a-2 a single books should-decline
-    # (`cf-k9-charge` 0.634) needed the entity guard to be held; the KI-57
-    # sanitizer fix (fail-closed, drop ungraded chunks) collapsed the
-    # entity-mismatch readings to 0.01-0.22, so the gate alone now catches
-    # every should-decline on both sets. The entity guard stays as
-    # defense-in-depth, not as the primary block.
-    "rubric_mean_top3": {"jev": 0.56, "fallback": 0.56},
+    # Known tension, owned by the ADR: `ml-zh-xiyou-nezha` was relabelled
+    # `answer` on 2026-10-17 and its single-pass readings (0.3967 probe,
+    # 0.4011-0.4411 calibration) sit below even this floor. Its rescue is
+    # the corrective-retrieval step the floor triggers — the calibration
+    # numbers predate that path (it was abstained outright at 0.56) — and
+    # the proof run grades whether the rescue holds.
+    "evidence_floor": {"jev": 0.455, "fallback": 0.455},
     "conflict_disclose": {"jev": 0.60, "fallback": 0.60},
     "output_toxicity_block": {"jev": 0.85, "fallback": 0.85},
     # Slice 6: 0.60 abstained Deep runs on corpus-answerable questions —
@@ -103,10 +115,9 @@ DISPLAY_THRESHOLDS: dict[str, str] = {
     "guard_jailbreak": "guard_jailbreak_block",
     "guard_pii": "guard_pii_warn",
     "off_topic": "off_topic_warn",
-    # The evidence gate is the rubric's mean-of-top-3 (ADR-006 as corrected), so
+    # The evidence floor is the rerank rubric's mean-of-top-3 (ADR-006), so
     # this is the number the `evidence` decision row is shown against.
-    "evidence": "rubric_mean_top3",
-    "rubric": "rubric_mean_top3",
+    "evidence": "evidence_floor",
     "conflict": "conflict_disclose",
     "controller": "controller_sufficient",
     "output_toxicity": "output_toxicity_block",
