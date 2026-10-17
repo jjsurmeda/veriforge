@@ -19,6 +19,9 @@ DEFAULT_DATA: dict[str, Any] = {
         "fused_limit": 40,
         "vec_limit": 50,
         "lex_limit": 50,
+        # Reserved BM25-leg slots, ON TOP of the fused order; see
+        # retrieval/hybrid.py.
+        "lex_reserve": 24,
         "rrf_k": 60,
         "rerank": True,
         # Owner decision 2026-09-30: Jev reranks. "nvidia" is the
