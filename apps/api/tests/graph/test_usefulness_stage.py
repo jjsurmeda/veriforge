@@ -175,6 +175,25 @@ async def test_an_outage_is_a_failing_check_with_an_unavailable_row(
     assert published == [row]
 
 
+async def test_the_threshold_boundary_is_0_47(decisions: list[Decision]) -> None:
+    """The calibrated boundary, both sides: 0.47 exactly passes (the stage
+    compares `>=`), and a reading 0.0001 below it fails — the probe's
+    answerables sit at 0.56+ while its should-declines top out at 0.37, so
+    nothing measured should ever decide on this razor, but the comparison's
+    direction must never flip."""
+    for value, expected in ((0.47, "pass"), (0.469_999, "fail"), (0.37, "fail")):
+        outcome = await run_usefulness(
+            _UsefulnessEngine(value),
+            run_id=str(RUN_ID),
+            question="q",
+            answer="a",
+            contexts=[_context()],
+            decisions=[],
+        )
+        assert outcome.state == expected, value
+        assert outcome.threshold == pytest.approx(0.47)
+
+
 async def test_the_prompt_is_the_probe_s_byte_for_byte() -> None:
     """The thresholds were calibrated-. Changing the wording invalidates both
     the `is_use` threshold and the evidence floor, so the stage pin is here."""

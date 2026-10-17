@@ -99,13 +99,38 @@ _DEFAULTS: dict[str, dict[Engine, float]] = {
     "entity_match": {"jev": 0.50, "fallback": 0.50},
     # IsUse (ADR-006, accepted 2026-10-17): after generation, does the
     # grounded answer directly answer what was asked, from these sources?
-    # Calibrated on the IsUse probe (`.data/evals/isuse-probe-a03a3a8.json`,
-    # 19 in-band books items with the evidence gate forced open): failing
-    # answers 0.09-0.37, answerables 0.56-0.93, with the one known miss
-    # (`outside-whitman`, 0.11). 0.47 is the probe gap's midpoint (0.465)
-    # rounded up: 0.10 above the highest failing reading, 0.09 below the
-    # lowest answerable one. The derivation table is in the R2a-4 report;
-    # the held-out set confirms it next phase.
+    # Calibrated on the IsUse probe (`.data/evals/isuse-probe-a03a3a8.json`):
+    # 19 in-band books items, the evidence gate forced open, every generated
+    # answer scored once by Jev. The full per-item table:
+    #
+    #     class           item                         isuse   reviewer min_support
+    #     --------------  ---------------------------  ------  --------------------
+    #     should-decline  ml-ja-rashomon-rokuro         0.09   0.81 (passes)
+    #     should-decline  amb-bovary-homais             0.17   0.0
+    #     should-decline  ml-fr-outside                 0.20   0.0
+    #     should-decline  outside-moby-dick             0.26   0.86 (passes)
+    #     should-decline  outside-study-in-scarlet      0.37   0.94 (passes)
+    #     mislabelled     ml-zh-xiyou-nezha             0.83   0.8  <- relabelled
+    #                                                                `answer` (ADR)
+    #     answer          broad-alice                   0.83   0.0
+    #     answer          broad-bovary                  0.62   0.0
+    #     answer          followup-adler                0.57   -
+    #     answer          plot-speckled-band            0.56   -
+    #     answer          broad-time-machine            0.89   -
+    #     answer          broad-sherlock                0.86   -
+    #     answer          broad-frankenstein            0.91   -
+    #     answer          fact-weena                    0.91   -
+    #     answer          broad-verwandlung             0.93   -
+    #     answer (miss)   outside-whitman               0.11   0.5   <- allowed
+    #
+    # (holmes-boston / de-bovary-animal / emma declined before generation and
+    # carry no isuse reading.) 0.47 is the gap's midpoint (0.465 between 0.37
+    # and 0.56) rounded up: 0.10 above the highest failing reading, 0.09 below
+    # the lowest answering one outside the accepted miss. The reviewer numbers
+    # are the evidence the reviewer must NOT arbitrate: it passes 3 of 5
+    # confident-wrong answers and 0.0s the two gist answerables — exactly the
+    # shapes IsUse gets right. The held-out set confirms the threshold next
+    # phase; an in-sample miss reopens the ADR.
     "is_use": {"jev": 0.47, "fallback": 0.47},
 }
 
