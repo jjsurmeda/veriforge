@@ -92,6 +92,21 @@ Below the floor triggers one corrective retrieval, then abstains if still
 below. Above it the run generates, and IsUse decides. The named-entity guard
 sits beside it.
 
+**IsUse** — The post-generation usefulness check (Self-RAG's third
+critique, realized; ADR-006). One `Noul` asked of every grounded Auto
+answer after it generates: *does this answer directly answer the question
+asked, from these sources?* Below the `is_use` threshold (0.47) the
+answer is replaced by the decline template and the run records an
+abstention; a streamed answer is retracted first (`answer.retract`).
+Calibrated on the probe: failing answers 0.09–0.37, answerables
+0.56–0.93. A decision outage reads as a fail (KI-57, fail-closed).
+
+**Stream line** — The delivery boundary for grounded Auto answers
+(ADR-006 item 4): a rubric grade at or above it (0.60) streams before
+review; below it the answer is held under the verifying step. Sits above
+every recorded should-decline rubric reading (0.559) so streaming stays
+clean; an `answer.retract` is its backstop.
+
 **Verdict** — A claim's outcome after review: supported, partial,
 unsupported, or contradicted.
 

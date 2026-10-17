@@ -80,6 +80,15 @@ DB_NAME="${EVAL_GATE_DB:-veriforge_eval_gate}"
 DB_PORT="${DB_PORT:-5432}"
 DB_URL="postgresql+asyncpg://veriforge:veriforge@localhost:${DB_PORT}/${DB_NAME}"
 
+# The compose project is pinned so this script's `docker compose exec db`
+# always reaches the stack's own database. Without the pin, compose derives
+# the project from the directory name in some HOOKS (older plugins, rootless
+# setups), and in parallel worktree lanes the derivations differ — the exec
+# hits another lane's (or no) service and the script dies mid-run. The same
+# default `scripts/check_work.sh` sets; a caller who exported their own wins.
+: "${COMPOSE_PROJECT_NAME:=veriforge}"
+export COMPOSE_PROJECT_NAME
+
 if [ ! -x .venv/bin/python ]; then
   echo "apps/api/.venv is missing; run 'uv sync' in apps/api first" >&2
   exit 1

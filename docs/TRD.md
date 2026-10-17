@@ -158,7 +158,8 @@ answer (DecisionEngine `Choice`), up to 4 hops or the credit budget.
 | Abstain | Generator LLM | Fixed template: what was found (**plain text, no citations**, KI-25), what is missing, offers Web or Deep as buttons. English questions get the template with no model call; other languages get it translated, with the target language named (KI-29). |
 | Conflict check | Jev | `conflict` noul across top chunks from different documents or source types. If yes, the priority rule and both citations go into the prompt. *(2026-10-02: today's side assignment is a midpoint split of document ids and the call is untimed: KI-34.)* |
 | Generate | Generator LLM | Streams the answer with `[n]` markers. Base prompt (sources-are-data, citation and grounding rules) plus one block per intent (lookup, summarize, compare, multi-part). Best-ranked passages at the start and end of the sources block. No tools. |
-| Review + deliver | Section 10 | Risk-based delivery; claim verdicts; optional single revision; output guardrail; suggestions in parallel. |
+| IsUse | Decision provider | Post-generation usefulness check, grounded Auto answers only (ADR-006, PRD TR-4): *does this answer directly answer the question asked, from these sources?* — the question as asked, the full generated answer, the sources (each truncated at 1200 chars, exactly as the calibration probe did). Fails closed on a decision outage (KI-57). A fail replaces the answer with the fixed-abstention template, drops its citations, and records the run as an abstention that still completes; on a streamed plan a retraction (`answer.retract`) is published before the text is replaced. |
+| Review + deliver | Section 10 | Risk-based delivery (`plan_delivery`: the stream line decides); claim verdicts; optional single revision; output guardrail; suggestions in parallel. |
 
 **Mode behaviour**
 
@@ -276,6 +277,8 @@ side.
 | lexical_weight | Score 0–1 | Retrieval fusion | Used as weight |
 | chunk_injection | Noul | Sanitizer | Drop at ≥ 0.7 |
 | evidence_floor | Computed | Single-hop floor | Mean answer-containment grade of the best 3 post-sanitize passages. Default 0.455; admin key `thresholds.evidence_floor`. Not a delivery gate (ADR-006): below the floor → one corrective retrieval, then abstain; above it the run generates and IsUse decides. |
+| is_use | Noul | IsUse (post-generation) | Yes ≥ 0.47 (admin key `thresholds.is_use`); a fail replaces the answer with the decline (TR-4). A decision outage counts as a fail. |
+| stream_line | Computed | Delivery | A grounded Auto answer with rubric mean ≥ 0.60 (admin key `thresholds.stream_line`) streams; under the line it is held under the verifying step. `plan_delivery`; ADR-006 item 4. |
 | entity_match | Noul per passage | Entity guard | Per provider; a passage passes when it concerns any named entity |
 | agent_step | Choice | Deep agent loop | Argmax (`search_again`, `answer`; `follow_link` in v1.1) |
 | conflict | Noul | Conflict check | Disclose at ≥ 0.6 |
@@ -450,14 +453,20 @@ decision from ingress.
    flagged claims using the same context, or removes them. Verification
    reruns on revised claims only. At most one revision per answer.
 
-**Risk-based delivery**
+**Risk-based delivery** (`plan_delivery`, ADR-006 item 4)
 
-| Risk (ingress) | Mode | Delivery |
+| Risk (ingress) | Grade vs stream line | Delivery |
 | --- | --- | --- |
-| Low | Auto | Stream answer; chips recolour as verdicts arrive; if revised, a "Reviewer revised this answer" banner with diff |
-| High, or gate `mean_top3` within 0.1 of threshold | Auto | Show "Verifying…" with the trace live; deliver the reviewed answer |
-| Any | Deep | Always verified before delivery |
-| Any | Fast | Stream; review runs asynchronously; chips update when done |
+| Low | `mean_top3` ≥ stream line (0.60) | Stream answer; chips recolour as verdicts arrive; if revised, a "Reviewer revised this answer" banner with diff; a failed IsUse retracts (`answer.retract`) |
+| Low | in band (evidence floor 0.455 … stream line) | Show "Verifying…" with the trace live; IsUse passes before the answer is delivered |
+| High | any grade | Show "Verifying…"; deliver the reviewed answer |
+| Any | — | Deep always verified before delivery |
+| Any | — | Fast streams; review runs asynchronously; chips update when done |
+
+The stream line sits above every should-decline rubric reading recorded
+(0.559, `outside-holmes-boston`); the band's other bound — the evidence
+floor — never plans delivery itself (a run below it abstains before
+generation).
 
 **In parallel with review:** suggested follow-ups (small LLM, 3 questions
 grounded in retrieved chunks the answer did not use) and the output
@@ -571,6 +580,7 @@ generated from it.
 | `retrieval` | hop, query, chunks with vector, bm25, fused and rerank scores, dropped flag |
 | `answer.delta` | text |
 | `answer.hold` | reason (verifying) |
+| `answer.retract` | reason, replacement text — a streamed answer IsUse rejected; the client replaces the delivered text (ADR-006) |
 | `review.claim` | claim id, text, citation ids, verdict, p_supported |
 | `revision` | revised text, diff |
 | `abstain` | found summary, missing summary, offered actions |

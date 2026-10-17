@@ -5,8 +5,8 @@ has to read the per-stage breakdown out while it still exists — and printing i
 to a terminal is not keeping it. D3 traced a faithfulness dip to two item ids
 and could not go further: the claims and verdicts that would say *why* went with
 the database. These pin that the dump is written to
-`.data/evals/<timestamp>-<sha>.json` and that it carries the four things a
-run-to-run comparison needs.
+`.data/evals/<timestamp>-<run-id>-<sha>.json` and that it carries the four
+things a run-to-run comparison needs.
 
 No provider calls: `write_export` and `measured_sha` are pure, and the file
 system is a tmp_path.
@@ -24,25 +24,40 @@ from scripts import eval_dump_stages
 PAYLOAD = json.dumps({"per_item": [{"question": "q", "faithfulness": 1.0}]})
 
 
-def test_the_export_is_written_named_for_its_timestamp_and_sha(
+def test_the_export_is_written_named_for_its_run_timestamp_and_sha(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(eval_dump_stages, "OUT_DIR", tmp_path / "evals")
     monkeypatch.setattr(eval_dump_stages, "measured_sha", lambda: "abc1234")
 
-    path = eval_dump_stages.write_export(PAYLOAD, now=datetime(2026, 10, 2, 1, 2, 3, tzinfo=UTC))
+    path = eval_dump_stages.write_export(
+        PAYLOAD,
+        run_id="01a145b5-bf1c-75a1-a2ca-7cd7b64613cd",
+        now=datetime(2026, 10, 2, 1, 2, 3, tzinfo=UTC),
+    )
 
-    assert path.name == "20261002-010203-abc1234.json"
+    assert path.name == "20261002-010203-01a145b5-bf1c-75a1-a2ca-7cd7b64613cd-abc1234.json"
     assert path.parent == tmp_path / "evals"
     assert path.read_text() == PAYLOAD + "\n"
     # Round-trips: an export nobody can load is not an export.
     assert json.loads(path.read_text())["per_item"][0]["faithfulness"] == 1.0
 
 
+def test_a_dump_without_a_run_id_admits_it(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`unknown-run`, never a plausible-looking id: the gap in the name must
+    say the run was lost, not hide it."""
+    monkeypatch.setattr(eval_dump_stages, "OUT_DIR", tmp_path / "evals")
+    monkeypatch.setattr(eval_dump_stages, "measured_sha", lambda: "abc1234")
+    path = eval_dump_stages.write_export(
+        PAYLOAD, run_id=None, now=datetime(2026, 10, 2, 1, 2, 3, tzinfo=UTC)
+    )
+    assert "unknown-run" in path.name
+
+
 def test_the_export_directory_is_created(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(eval_dump_stages, "OUT_DIR", tmp_path / "nested" / "evals")
     monkeypatch.setattr(eval_dump_stages, "measured_sha", lambda: "abc1234")
-    path = eval_dump_stages.write_export(PAYLOAD)
+    path = eval_dump_stages.write_export(PAYLOAD, run_id="01a145b5")
     assert path.exists()
 
 
