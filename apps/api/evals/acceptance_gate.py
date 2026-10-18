@@ -39,7 +39,17 @@ from a filtered run (`acceptance.py id1,id2`) cannot pass as a whole-set
 verdict. That is the whole reason `--summary-out` writes the counts rather than
 the caller scraping the printed table.
 
-Usage: `python -m evals.acceptance_gate .data/evals/summary-acceptance.json`
+Usage: `python -m evals.acceptance_gate .data/evals/summary-acceptance.json [--set=deep]`
+
+R2b item 2 adds the **deep** set: the 14-item Deep replay over the books
+corpus (evals/deep/items.json — 10 multi-hop answerables, 4
+should-declines). Its bar is its own, not PRD §5's books table: **0
+confident wrong**, **≤ 1 content miss**, **an errored item fails**, the
+**pinned counts** below, and **p50 item wall clock ≤ 30 s**. Clean/unclean
+declines, false abstentions and uncited answers are reported by the
+summary and the runner but not gated: R2b is the first Deep measurement
+under the new floor + guard + IsUse tail, and the report is what the
+numbers are for.
 """
 
 import json
@@ -80,7 +90,24 @@ HELDOUT_COUNTS = {
     "smalltalk_items": 0,
     "library_items": 0,
 }
-EXPECTED_BY_SET = {"books": EXPECTED_COUNTS, "heldout": HELDOUT_COUNTS}
+# The Deep set (R2b item 2, evals/deep/items.json): 14 items replayed in Deep
+# mode over the books corpus — 10 multi-hop answerables and 4 should-declines
+# that look in-corpus. Its bar is the plan's Deep bar, not the books one: the
+# evidence floor and the entity guard (R2b item 1) make Deep declines a
+# different mechanism from Auto's, so this set is scored as a whole-set
+# verdict on its own terms, and turn-latency is part of the bar.
+DEEP_COUNTS = {
+    "items": 14,
+    "answer_items": 10,
+    "abstain_items": 4,
+    "smalltalk_items": 0,
+    "library_items": 0,
+}
+# R2b's bar: a multi-hop run that meets every accuracy clause but takes three
+# minutes is not shippable as Deep. p50 of the per-item wall clock
+# (`p50_total_ms`, measured POST → run.completed) at most 30 s.
+MAX_P50_TOTAL_MS = 30_000
+EXPECTED_BY_SET = {"books": EXPECTED_COUNTS, "heldout": HELDOUT_COUNTS, "deep": DEEP_COUNTS}
 
 # PRD §5, as the brief takes it for one run. Named with the arithmetic rather
 # than as bare numbers so a reader can see which clause each is. The arithmetic
@@ -186,7 +213,10 @@ def acceptance_failures(summary: Mapping[str, Any], set_name: str = "books") -> 
     clean = _count(summary, "clean_declines")
     min_clean = min_clean_declines(abstain_items)
     # The plan's held-out bar names confident wrong and false abstention only;
-    # clean declines are reported for it, not gated (no clause added mid-phase).
+    # clean declines are reported for it, not gated (no clause added
+    # mid-phase). The Deep set's declines are a different mechanism (the
+    # R2b evidence floor, not Auto's prose rules), measured here by the
+    # other clauses plus latency.
     if set_name == "books" and clean < min_clean:
         failures.append(
             f"{clean} of {abstain_items} clean declines ({_count(summary, 'unclean_declines')} "
@@ -197,7 +227,7 @@ def acceptance_failures(summary: Mapping[str, Any], set_name: str = "books") -> 
     answer_items = _count(summary, "answer_items")
     false_abstentions = _count(summary, "false_abstentions")
     max_false = max_false_abstentions(answer_items)
-    if false_abstentions > max_false:
+    if set_name != "deep" and false_abstentions > max_false:
         failures.append(
             f"{false_abstentions} of {answer_items} answerable items declined "
             f"({_ids(summary, 'false_abstention_ids')}); PRD §5 allows ≤ "
@@ -209,7 +239,7 @@ def acceptance_failures(summary: Mapping[str, Any], set_name: str = "books") -> 
     # decline accuracy and false abstention and was still an answer from model
     # memory with nothing behind it.
     uncited = _count(summary, "uncited_answers")
-    if uncited > MAX_UNCITED_ANSWERS:
+    if set_name != "deep" and uncited > MAX_UNCITED_ANSWERS:
         failures.append(
             f"{uncited} answer-class item(s) completed with zero citations: "
             f"{_ids(summary, 'uncited_answer_ids')} — an answer with no evidence "
@@ -231,7 +261,22 @@ def acceptance_failures(summary: Mapping[str, Any], set_name: str = "books") -> 
             f"allows ≤ {MAX_CONTENT_MISSES} content miss"
         )
 
-    # The two small classes are pass/fail in full: they exist to catch a
+    # R2b item 2: Deep's own latency clause. `p50_total_ms` is the median of the
+    # per-item wall clock (POST → run.completed) the runner records; absent
+    # (-1) or late both fail, because "slow but correct" is not Deep shipping.
+    if set_name == "deep":
+        p50 = summary.get("p50_total_ms")
+        if not isinstance(p50, int | float) or p50 < 0:
+            failures.append(
+                "no p50_total_ms in the summary (or no item measured one); the "
+                "Deep bar reads a latency median from a --summary-out run"
+            )
+        elif p50 > MAX_P50_TOTAL_MS:
+            failures.append(
+                f"p50 item wall clock {int(p50)} ms > {MAX_P50_TOTAL_MS} ms; a "
+                "multi-hop answer arriving three minutes late is not shippable "
+                "as Deep"
+            )    # The two small classes are pass/fail in full: they exist to catch a
     # regression in chitchat handling and in the library answer, where a rate
     # over two items means nothing.
     for key, label in (("smalltalk_items", "smalltalk"), ("library_items", "library")):
@@ -278,7 +323,7 @@ def main(argv: list[str]) -> int:
     set_name = next((a.split("=", 1)[1] for a in argv[1:] if a.startswith("--set=")), "books")
     if len(args) != 1 or set_name not in EXPECTED_BY_SET:
         print(
-            "usage: python -m evals.acceptance_gate <summary.json> [--set=books|heldout]",
+            "usage: python -m evals.acceptance_gate <summary.json> [--set=books|heldout|deep]",
             file=sys.stderr,
         )
         return 2

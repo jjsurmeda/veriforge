@@ -65,3 +65,17 @@ def test_the_summary_path_is_explicit_and_stdout_is_not_scraped() -> None:
     script = ACCEPTANCE_LOCAL.read_text()
     assert "--summary-out" in script
     assert "evals.acceptance_gate" in script
+
+def test_check_work_wires_the_deep_step() -> None:
+    """R2b item 2: the Deep set is a check-work step with its own gate set,
+    not a paragraph in the report."""
+    script = CHECK_WORK.read_text()
+    assert 'acceptance_deep' in script
+    assert 'acceptance: deep' in script
+
+
+def test_the_deep_step_goes_through_the_pinned_local_runner() -> None:
+    script = ACCEPTANCE_LOCAL.read_text()
+    # The deep fee path: + the deep gate set and the --mode deep replay.
+    assert "GATE_SET=deep" in script
+    assert "--mode deep" in script

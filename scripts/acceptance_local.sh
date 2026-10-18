@@ -65,8 +65,11 @@ if [ -n "${ACCEPTANCE_SET:-}" ]; then
   SET_ARGS=(--set "$ACCEPTANCE_SET")
   case "$ACCEPTANCE_SET" in
     *heldout*) GATE_SET=heldout ;;
-    *) echo "ACCEPTANCE_SET=$ACCEPTANCE_SET has no gate; only the held-out set does" >&2; exit 2 ;;
+    *deep/items.json) GATE_SET=deep; MODE_ARGS=(--mode deep) ;;
+    *) echo "ACCEPTANCE_SET=$ACCEPTANCE_SET has no gate; only the held-out and deep sets do" >&2; exit 2 ;;
   esac
+else
+  MODE_ARGS=()
 fi
 # OpenRouter's free tier caps free-model requests at 20/min account-wide.
 # A full 57-item acceptance run needs ~114 calls; without pacing the cap is hit
@@ -141,7 +144,7 @@ if [ -n "$ITEMS" ]; then
 else
   VERIFORGE_API_URL="$API_URL" EVAL_USER_EMAIL="$EVAL_USER_EMAIL" \
     EVAL_USER_PASSWORD="$EVAL_USER_PASSWORD" \
-    .venv/bin/python scripts/acceptance.py ${SET_ARGS[@]+"${SET_ARGS[@]}"} --summary-out "$SUMMARY_OUT" --pace "$PACE" \
+    .venv/bin/python scripts/acceptance.py ${SET_ARGS[@]+"${SET_ARGS[@]}"} ${MODE_ARGS[@]+"${MODE_ARGS[@]}"} --summary-out "$SUMMARY_OUT" --pace "$PACE" \
     || runner_status=$?
 fi
 if [ "$runner_status" -ne 0 ]; then

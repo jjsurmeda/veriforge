@@ -190,6 +190,14 @@ acceptance_books() {
   "$root/scripts/acceptance_local.sh"
 }
 
+acceptance_deep() {
+  # R2b item 2: the Deep set (evals/deep/items.json) replayed in mode deep
+  # over the same books-corpus library, gate-set deep. Shares the acceptance
+  # stack with the books step on purpose: one library, one ingest, and the
+  # served-commit check above proves the code under test.
+  ACCEPTANCE_SET=evals/deep/items.json "$root/scripts/acceptance_local.sh"
+}
+
 echo "check-work on $(git rev-parse --short HEAD 2>/dev/null || echo '?') (test db: ${TEST_DATABASE_URL##*/})"
 echo "Steps 4-6 spend OpenRouter credit."
 
@@ -202,5 +210,6 @@ step "models: no :free default" no_free_defaults
 step "eval gate: fast20 + counterfactual" eval_gate_both_subsets
 step "eval: entity-mismatch 12/12" entity_mismatch_clean
 step "acceptance: books 57 items, PRD §5 bar" acceptance_books
+step "acceptance: deep 14 items, R2b bar" acceptance_deep
 
 report

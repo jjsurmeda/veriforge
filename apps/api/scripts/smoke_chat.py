@@ -82,14 +82,19 @@ def final_answer(streamed: str, assistant: list[dict[str, Any]]) -> str:
 
 
 async def run_turn(
-    client: httpx.AsyncClient, token: str, chat_id: str, message: str
+    client: httpx.AsyncClient,
+    token: str,
+    chat_id: str,
+    message: str,
+    *,
+    mode: str = "auto",
 ) -> dict[str, Any]:
     headers = {"Authorization": f"Bearer {token}"}
     started = time.monotonic()
     created = await client.post(
         f"/chats/{chat_id}/runs",
         headers=headers,
-        json={"message": message, "mode": "auto", "source": "upload"},
+        json={"message": message, "mode": mode, "source": "upload"},
     )
     if created.status_code != 201:
         raise SystemExit(f"run failed: {created.status_code} {created.text[:200]}")
@@ -100,12 +105,14 @@ async def run_turn(
     answer = ""
     status = "timeout"
     ttft_ms: int | None = None
+    total_ms: int | None = None
     evidence: list[float] = []
     retrievals: list[dict[str, Any]] = []
+    deep_evidence: dict[str, Any] | None = None
     deadline = time.monotonic() + RUN_TIMEOUT_SECONDS
 
     async def read_events() -> None:
-        nonlocal intent, answer, status, ttft_ms
+        nonlocal intent, answer, status, ttft_ms, total_ms, deep_evidence
         async with client.stream(
             "GET", f"/runs/{run_id}/stream", headers=headers, params={"after_seq": 0}
         ) as response:
@@ -119,6 +126,20 @@ async def run_turn(
                 elif kind == "decision" and event.get("name") == "evidence":
                     with contextlib.suppress(TypeError, ValueError):
                         evidence.append(float(event.get("value")))
+                # Deep's computed gate row (R2b): the one number that graded
+                # the evidence after the controller's last hop. Carried apart
+                # from `evidence` — Auto never publishes one — so a Deep trace
+                # can be checked for the gate without mixing the streams.
+                elif (
+                    kind == "decision"
+                    and event.get("name") == "evidence"
+                    and event.get("stage") == "gate"
+                ):
+                    deep_evidence = {
+                        "value": event.get("value"),
+                        "threshold": event.get("threshold"),
+                        "engine": event.get("engine"),
+                    }
                 elif kind == "retrieval":
                     retrievals.append(
                         {
@@ -140,6 +161,7 @@ async def run_turn(
                     answer += str(event.get("text", ""))
                 elif kind == "run.completed":
                     status = "completed"
+                    total_ms = int((time.monotonic() - started) * 1000)
                     break
                 elif kind == "run.failed":
                     status = f"failed ({event.get('error_code')})"
@@ -191,6 +213,8 @@ async def run_turn(
         "message_status": message_status,
         "run_id": run_id,
         "retrievals": retrievals,
+        "total_ms": total_ms,
+        "deep_evidence": deep_evidence,
     }
 
 

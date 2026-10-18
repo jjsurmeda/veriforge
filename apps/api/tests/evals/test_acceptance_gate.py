@@ -348,6 +348,116 @@ def test_clean_declines_are_reported_not_gated_for_the_heldout_set() -> None:
     assert acceptance_failures(_heldout_summary(clean_declines=5), "heldout") == []
 
 
+# --------------------------------------------------------------------------
+# The Deep set (R2b item 2): its own bar — 0 confident wrong, ≤ 1 content
+# miss, errored fails, pinned counts, p50 wall clock ≤ 30 s; declines,
+# false abstentions and uncited answers are reported, not gated.
+# --------------------------------------------------------------------------
+
+
+def _deep_summary(**overrides: Any) -> dict[str, Any]:
+    from evals.acceptance_gate import DEEP_COUNTS
+
+    summary: dict[str, Any] = {
+        "counts": {
+            "items": DEEP_COUNTS["items"],
+            "answer_items": DEEP_COUNTS["answer_items"],
+            "abstain_items": DEEP_COUNTS["abstain_items"],
+            "smalltalk_items": 0,
+            "library_items": 0,
+            "clean_declines": DEEP_COUNTS["abstain_items"],
+            "unclean_declines": 0,
+            "confident_wrong": 0,
+            "false_abstentions": 0,
+            "uncited_answers": 0,
+            "content_misses": 0,
+            "errored": 0,
+        },
+        "p50_total_ms": 18_000,
+        "detail": {
+            "confident_wrong_ids": [],
+            "clean_decline_ids": [],
+            "unclean_decline_ids": [],
+            "false_abstention_ids": [],
+            "uncited_answer_ids": [],
+            "content_miss_ids": [],
+            "errored_ids": [],
+            "failed_ids": [],
+        },
+        "served_commit": "a" * 40,
+        "items": [],
+    }
+    for key, value in overrides.items():
+        if key in summary.get("counts", {}):
+            summary["counts"][key] = value
+        else:
+            summary[key] = value
+    return summary
+
+
+def test_a_clean_deep_run_passes() -> None:
+    assert acceptance_failures(_deep_summary(), "deep") == []
+
+
+def test_one_confident_wrong_fails_on_the_deep_set() -> None:
+    summary = _deep_summary(confident_wrong=1)
+    summary["detail"]["confident_wrong_ids"] = ["deep-sherlock-eurus"]
+    failures = acceptance_failures(summary, "deep")
+    assert failures and any("confident wrong" in f for f in failures)
+
+
+def test_one_content_miss_passes_and_two_fail_on_the_deep_set() -> None:
+    assert acceptance_failures(_deep_summary(content_misses=1), "deep") == []
+    failures = acceptance_failures(_deep_summary(content_misses=2), "deep")
+    assert any("content miss" in f for f in failures)
+
+
+def test_a_slow_deep_median_fails_and_the_bar_edge_passes() -> None:
+    assert acceptance_failures(_deep_summary(p50_total_ms=30_000), "deep") == []
+    failures = acceptance_failures(_deep_summary(p50_total_ms=30_001), "deep")
+    assert any("30" in f or "wall clock" in f for f in failures)
+
+
+def test_no_p50_at_all_fails_the_deep_bar() -> None:
+    """A summary without `p50_total_ms` was produced by an old runner, not by
+    a fast one: absent is not a pass."""
+    summary = _deep_summary()
+    del summary["p50_total_ms"]
+    failures = acceptance_failures(summary, "deep")
+    assert any("p50_total_ms" in f for f in failures)
+
+
+def test_a_filtered_deep_run_is_not_a_whole_set_verdict() -> None:
+    failures = acceptance_failures(_deep_summary(items=13), "deep")
+    assert any("whole-set measurement" in f for f in failures)
+
+
+def test_an_errored_deep_item_fails_as_an_error() -> None:
+    summary = _deep_summary(errored=1)
+    summary["detail"]["errored_ids"] = ["deep-alice-first-changes"]
+    failures = acceptance_failures(summary, "deep")
+    assert any("errored" in f for f in failures)
+
+
+def test_declines_and_false_abstentions_are_reported_not_gated_on_the_deep_set() -> None:
+    """R2b's bar for Deep: the decline classes are report content, not pass
+    conditions — one false abstention of 10 and two unclean declines stay a
+    pass until a different clause names the same behaviour."""
+    summary = _deep_summary(false_abstentions=1, unclean_declines=1, clean_declines=3)
+    summary["detail"]["false_abstention_ids"] = ["deep-bovary-emma-poison"]
+    summary["detail"]["unclean_decline_ids"] = ["deep-sherlock-eurus"]
+    assert acceptance_failures(summary, "deep") == []
+
+
+def test_the_deep_bar_does_not_gate_an_uncited_answer() -> None:
+    """R2b's brief names the clauses it gates for Deep and deliberately leaves
+    the uncited-answer count to the report. Pinned so a later phase cannot
+    add the clause silently without touching this pin first."""
+    summary = _deep_summary(uncited_answers=1)
+    summary["detail"]["uncited_answer_ids"] = ["deep-noli-ibarra-project"]
+    assert acceptance_failures(summary, "deep") == []
+
+
 def test_the_category_report_counts_passes_per_category() -> None:
     summary = {"items": [{"id": "a", "pass": True}, {"id": "b", "pass": False}, {"id": "c"}]}
     lines = acceptance_gate.category_report(summary, {"a": "lookup", "b": "lookup", "c": "gist"})
