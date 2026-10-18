@@ -131,7 +131,9 @@ def wired_run(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]
     set_file.write_text(json.dumps({"items": items}))
     client = FakeClient()
 
-    async def run_turn(_c: Any, _t: str, chat: str, _turn: str) -> dict[str, Any]:
+    async def run_turn(
+        _c: Any, _t: str, chat: str, _turn: str, *, mode: str = "auto"
+    ) -> dict[str, Any]:
         client.timeline.append(f"run_turn {chat}")
         return {
             "answer": "Rocinante is Don Quijote's horse [1].",
