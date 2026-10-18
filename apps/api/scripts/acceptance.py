@@ -35,7 +35,6 @@ import base64
 import binascii
 import json
 import os
-import re
 import statistics
 import sys
 import time
@@ -48,6 +47,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import httpx
 
+from evals.abstention import NOT_IN_SOURCES as NOT_IN_SOURCES
+from evals.abstention import says_not_in_sources as says_not_in_sources
 from evals.content import forbids_hit, mentions_hit
 from scripts import smoke_chat as smoke_chat
 from textkit import detect_language
@@ -68,26 +69,6 @@ NO_EVAL_USER = (
     f"{EVAL_PLAN_NAME} plan. Refusing to sign up a throwaway user instead — it "
     "would score a library the eval never uses."
 )
-
-# "Says plainly it's not in the sources" — generous on purpose: batch B owns
-# the exact wording, this only has to recognise the shape.
-NOT_IN_SOURCES = tuple(
-    re.compile(p, re.IGNORECASE)
-    for p in (
-        r"not (?:in|among|covered|found|mentioned|included) (?:the|my|your|these|your) ",
-        r"(?:don'?t|do not|cannot|can'?t|couldn'?t|doesn'?t|does not) "
-        r"(?:find|have|contain|see|show)\b",
-        r"(?:isn'?t|is not|aren'?t|are not|wasn'?t) (?:in|among|covered|included)\b",
-        r"no (?:matching|relevant|such) ",
-        r"not part of ",
-        r"outside (?:the|my|your) ",
-    )
-)
-
-
-def says_not_in_sources(answer: str) -> bool:
-    return any(p.search(answer) for p in NOT_IN_SOURCES)
-
 
 # Re-authenticate this long before the token's own `exp`, not after: a token
 # that expires between the chat and its turn 401s, and the turn runner raises on
