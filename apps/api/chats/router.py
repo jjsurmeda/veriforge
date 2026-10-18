@@ -16,6 +16,7 @@ from chats.scope import (
     library_starter_questions,
     resolve_scope,
 )
+from config import get_settings
 from db.models import (
     Chat,
     Chunk,
@@ -31,6 +32,7 @@ from db.models import (
     User,
 )
 from db.session import SessionDep
+from decisions.thresholds import reranker_calibrated
 from demo.settings import demo_settings
 from errors import AppError
 from graph import runner
@@ -39,6 +41,7 @@ from ingest.containers import get_chat_collection, get_or_create_chat_collection
 from ingest.repository import list_container_documents
 from ingest.upload import accept_upload, deny_read_only, document_out, read_upload
 from quota.service import gate_and_reserve
+from retrieval.rerank import RERANKERS, check_reranker
 from runtime import load_active_runtime
 from schemas.chats import (
     ChatCreate,
@@ -46,6 +49,7 @@ from schemas.chats import (
     ChatPatch,
     CitationOut,
     MessageOut,
+    RerankerOut,
     RunCreateRequest,
     RunCreateResponse,
     chat_out,
@@ -378,6 +382,25 @@ async def upload_chat_document(
     return DocumentUploadOut(**document_out(document).model_dump(), deduped=deduped)
 
 
+@router.get("/rerankers", response_model=list[RerankerOut])
+async def list_rerankers(_: CurrentUser, session: SessionDep) -> list[RerankerOut]:
+    settings = get_settings()
+    default = str((await load_active_runtime(session)).get("retrieval.reranker", "jev"))
+    return [
+        RerankerOut(
+            id=info.id,
+            label=info.label,
+            kind=info.kind,
+            key_present=info.key_present(settings),
+            calibrated=reranker_calibrated(info.id),
+            cost_per_1k_queries_usd=info.cost_per_1k_queries_usd,
+            cost_note=info.cost_note,
+            is_default=info.id == default,
+        )
+        for info in RERANKERS.values()
+    ]
+
+
 @router.post("/chats/{chat_id}/runs", response_model=RunCreateResponse, status_code=201)
 async def create_run(
     chat_id: UUID,
@@ -403,14 +426,19 @@ async def create_run(
     if user.role == "demo":
         demo_cfg = demo_settings()
         if body.mode == "deep" and not demo_cfg.allow_deep:
-            raise DemoNotAllowed(
-                "demo_not_allowed", "Deep mode is not available on a demo account"
-            )
+            raise DemoNotAllowed("demo_not_allowed", "Deep mode is not available on a demo account")
         if body.source == "web":
             raise DemoNotAllowed(
                 "demo_not_allowed", "Web search is not available on a demo account"
             )
     chat = await _owned_chat(session, user, chat_id)
+    # R2c: admit the reranker before any row is written. The effective id is the
+    # request's, else the admin default, and an unknown / keyless / uncalibrated
+    # one is refused here, by name, on every run: an admin-forced uncalibrated
+    # default fails loudly at the first run instead of grading on a wrong scale.
+    runtime = await load_active_runtime(session)
+    reranker_id = body.reranker or str(runtime.get("retrieval.reranker", "jev"))
+    check_reranker(reranker_id)
     model_id = body.model_id or chat.model_id
     if model_id is None:
         model_id = await _default_model_id(session)
@@ -441,7 +469,6 @@ async def create_run(
     )
     session.add(run)
     await session.flush()
-    runtime = await load_active_runtime(session)
     reservation = await gate_and_reserve(
         session,
         user_id=user.id,
@@ -450,9 +477,7 @@ async def create_run(
         settings=runtime.data,
     )
     run.settings_version = runtime.version
-    small_litellm_model = await _small_model_litellm(
-        session, f"{provider.kind}/{model_id}"
-    )
+    small_litellm_model = await _small_model_litellm(session, f"{provider.kind}/{model_id}")
     await session.commit()
 
     runner.start_run(
@@ -474,6 +499,7 @@ async def create_run(
             collection_ids=scope,
             quota_remaining_5h=reservation.remaining_5h,
             settings_version=runtime.version,
+            reranker=body.reranker,
             instant_title=instant_title,
         )
     )

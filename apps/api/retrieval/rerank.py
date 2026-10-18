@@ -8,12 +8,16 @@ cached (TRD §9.4).
 
 import asyncio
 import logging
-from typing import Protocol
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Literal, Protocol
 
 import httpx
 
-from config import get_settings
+from config import Settings, get_settings
 from decisions.engine import DecisionEngine, DecisionUnavailable
+from decisions.thresholds import RerankerUncalibrated, reranker_calibrated
+from errors import AppError
 from retrieval.context import count_tokens
 from retrieval.hybrid import ScoredChunk
 from runtime import runtime_value
@@ -33,6 +37,8 @@ class RerankProvider(Protocol):
 
 
 class CohereRerank:
+    reranker_id = "cohere"
+
     def __init__(self, api_key: str, model: str, client: httpx.AsyncClient | None = None) -> None:
         self._api_key = api_key
         self._model = model
@@ -78,6 +84,8 @@ class NvidiaRerank:
     results are sorted by logit and sliced here.
     """
 
+    reranker_id = "nvidia"
+
     def __init__(self, api_key: str, model: str, client: httpx.AsyncClient | None = None) -> None:
         self._api_key = api_key
         self._model = model
@@ -122,6 +130,8 @@ class NvidiaRerank:
 
 class FusedOrderRerank:
     """Local fallback: identity ranking over the fused order (score = fused)."""
+
+    reranker_id = "fused"
 
     async def rerank(self, *, query: str, documents: list[str], top_n: int) -> RerankResult:
         return [(i, 1.0 / (1 + i)) for i in range(min(top_n, len(documents)))]
@@ -228,9 +238,7 @@ def batch_passages(query: str, documents: list[str]) -> list[list[int]]:
     current: list[int] = []
     current_tokens = 0
     for i, document in enumerate(documents):
-        tokens = count_tokens(
-            answer_containment_question(query, document[:_PASSAGE_CHARS]).prompt
-        )
+        tokens = count_tokens(answer_containment_question(query, document[:_PASSAGE_CHARS]).prompt)
         if current and current_tokens + tokens > JEV_BATCH_TOKEN_BUDGET:
             batches.append(current)
             current, current_tokens = [], 0
@@ -250,6 +258,8 @@ class JevRerank:
     scores 0.0 rather than dropping the run, and `apply_rerank` still catches
     transport errors and falls back to fused order.
     """
+
+    reranker_id = "jev"
 
     def __init__(self, engine: DecisionEngine, run_id: str) -> None:
         self._engine = engine
@@ -284,16 +294,113 @@ class JevRerank:
         return pairs[:top_n]
 
 
+class RerankerUnavailable(AppError):
+    status_code = 422
+
+    def __init__(self, reranker_id: str, why: str) -> None:
+        super().__init__(
+            "reranker_unavailable",
+            f"reranker {reranker_id!r} is unavailable: {why}",
+            {"reranker": reranker_id},
+        )
+
+
+@dataclass(frozen=True)
+class RerankerInfo:
+    """One selectable reranker. `kind` says whether it is a decision model
+    (goes through DecisionEngine, no key of its own) or a traditional
+    cross-encoder behind an HTTP API."""
+
+    id: str
+    label: str
+    kind: Literal["decision-model", "traditional"]
+    # Rough USD per 1,000 queries of one 40-passage rerank; None = not a flat
+    # price (Jev is metered by tokens: `scripts/compare_rerankers.py` measures
+    # it from OpenRouter generation stats).
+    cost_per_1k_queries_usd: float | None
+    cost_note: str
+    key_present: Callable[[Settings], bool]
+    build: Callable[[Settings, DecisionEngine | None, str], RerankProvider | None]
+
+
+def _build_jev(_: Settings, engine: DecisionEngine | None, run_id: str) -> RerankProvider | None:
+    return JevRerank(engine, run_id) if engine is not None else None
+
+
+# ponytail: one dict, no plugin discovery; a new reranker is one entry here plus
+# its gate values in decisions/thresholds.py once calibrated.
+RERANKERS: dict[str, RerankerInfo] = {
+    info.id: info
+    for info in (
+        RerankerInfo(
+            "jev",
+            "Jev answer-containment rubric",
+            "decision-model",
+            None,
+            "token-metered through the decision layer",
+            lambda s: True,
+            _build_jev,
+        ),
+        RerankerInfo(
+            "cohere",
+            "Cohere Rerank",
+            "traditional",
+            2.0,
+            "Cohere list price, per 1,000 searches",
+            lambda s: bool(s.cohere_api_key),
+            lambda s, e, r: CohereRerank(s.cohere_api_key, s.cohere_rerank_model),
+        ),
+        RerankerInfo(
+            "nvidia",
+            "NVIDIA NIM rerank",
+            "traditional",
+            0.0,
+            "hosted evaluation endpoint, free; self-hosting cost not included",
+            lambda s: bool(s.nvidia_api_key),
+            lambda s, e, r: NvidiaRerank(s.nvidia_api_key, s.nvidia_rerank_model),
+        ),
+        RerankerInfo(
+            "fused",
+            "Fused order (no rerank)",
+            "traditional",
+            0.0,
+            "no model call",
+            lambda s: True,
+            lambda s, e, r: FusedOrderRerank(),
+        ),
+    )
+}
+
+
+def check_reranker(reranker_id: str) -> RerankerInfo:
+    """Admit a reranker id for a run or refuse it by name. Never falls back."""
+    info = RERANKERS.get(reranker_id)
+    if info is None:
+        raise RerankerUnavailable(reranker_id, "unknown id")
+    if not info.key_present(get_settings()):
+        raise RerankerUnavailable(reranker_id, "its API key is not configured")
+    if not reranker_calibrated(reranker_id):
+        raise RerankerUncalibrated(reranker_id)
+    return info
+
+
 def get_reranker(engine: DecisionEngine | None = None, run_id: str = "") -> RerankProvider:
     if not bool(runtime_value("retrieval.rerank", True)):
         return FusedOrderRerank()
-    if str(runtime_value("retrieval.reranker", "jev")) == "jev":
-        if engine is not None:
-            return JevRerank(engine, run_id)
-        # Fast mode has no DecisionEngine, so it cannot ask Jev: fall through
-        # to the provider rerankers rather than dropping to fused order.
-        logger.warning("retrieval.reranker=jev but no engine; using provider reranker")
+    reranker_id = str(runtime_value("retrieval.reranker", "jev"))
     settings = get_settings()
+    info = RERANKERS.get(reranker_id)
+    if info is None:
+        raise RerankerUnavailable(reranker_id, "unknown id")
+    provider = info.build(settings, engine, run_id)
+    if provider is not None:
+        if not info.key_present(settings):
+            raise RerankerUnavailable(reranker_id, "its API key is not configured")
+        return provider
+    # Jev selected but no engine: Fast mode has no DecisionEngine, so it cannot
+    # ask Jev. Fast has no evidence gate, so ordering by a provider reranker is
+    # safe there; fall through rather than dropping to fused order.
+    logger.warning("retrieval.reranker=jev but no engine; using provider reranker")
     if settings.cohere_api_key:
         return CohereRerank(settings.cohere_api_key, settings.cohere_rerank_model)
     if settings.nvidia_api_key:

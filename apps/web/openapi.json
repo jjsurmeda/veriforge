@@ -691,7 +691,10 @@
             "enum": [
               "jev",
               "fallback",
-              "unavailable"
+              "unavailable",
+              "cohere",
+              "nvidia",
+              "fused"
             ],
             "title": "Engine",
             "type": "string"
@@ -2369,6 +2372,63 @@
         "title": "QuotaOut",
         "type": "object"
       },
+      "RerankerOut": {
+        "description": "One entry of `GET /rerankers` (R2c, ADR-005).",
+        "properties": {
+          "calibrated": {
+            "title": "Calibrated",
+            "type": "boolean"
+          },
+          "cost_note": {
+            "title": "Cost Note",
+            "type": "string"
+          },
+          "cost_per_1k_queries_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Per 1K Queries Usd"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "is_default": {
+            "title": "Is Default",
+            "type": "boolean"
+          },
+          "key_present": {
+            "title": "Key Present",
+            "type": "boolean"
+          },
+          "kind": {
+            "pattern": "^(decision-model|traditional)$",
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "kind",
+          "key_present",
+          "calibrated",
+          "cost_per_1k_queries_usd",
+          "cost_note",
+          "is_default"
+        ],
+        "title": "RerankerOut",
+        "type": "object"
+      },
       "ResetPasswordRequest": {
         "properties": {
           "password": {
@@ -2846,6 +2906,18 @@
               }
             ],
             "title": "Model Id"
+          },
+          "reranker": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reranker"
           },
           "source": {
             "default": "auto",
@@ -5948,6 +6020,36 @@
         "summary": "List Models",
         "tags": [
           "models"
+        ]
+      }
+    },
+    "/rerankers": {
+      "get": {
+        "operationId": "list_rerankers_rerankers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RerankerOut"
+                  },
+                  "title": "Response List Rerankers Rerankers Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Rerankers",
+        "tags": [
+          "chats"
         ]
       }
     },

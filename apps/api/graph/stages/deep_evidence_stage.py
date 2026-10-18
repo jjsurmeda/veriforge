@@ -35,6 +35,7 @@ from uuid import UUID
 
 from decisions import threshold
 from decisions.engine import DecisionUnavailable, EngineProtocol
+from decisions.thresholds import active_reranker_id, reranker_threshold
 from graph.stages.checks import (
     TOP_CHUNKS_FOR_CHECKS,
     _entity_passage_decision,
@@ -83,12 +84,14 @@ def deep_gate_decision(run_id: UUID, winners: list[ScoredChunk]) -> GateVerdict:
     """
     grades = rubric_grades(winners)
     mean_top3 = rubric_mean_top3(grades)
-    floor = threshold("evidence_floor", "jev")
+    reranker_id = active_reranker_id()
+    floor = reranker_threshold("evidence_floor", reranker_id)
     passes = rubric_gate_passes(mean_top3, floor)
     decision = gate_event(
         run_id,
         mean_top3,
         floor,
+        reranker_id,
         reasoning=(
             "mean answer-containment grade of the best three passages across "
             "all hops; below the floor Deep declines instead of generating"
@@ -131,9 +134,7 @@ async def deep_entity_guard(
     returned in `events` for the caller to publish.
     """
     entity_names = named_entities(question)
-    questions = _entity_passage_questions(
-        question, entity_names, contexts[: TOP_CHUNKS_FOR_CHECKS]
-    )
+    questions = _entity_passage_questions(question, entity_names, contexts[:TOP_CHUNKS_FOR_CHECKS])
     if not questions:
         return EntityVerdict(ok=True, max_reading=None, entity_names=entity_names)
     try:
@@ -149,15 +150,14 @@ async def deep_entity_guard(
             # batched evidence call is published under come from elsewhere);
             # the guard's rows are marked `entity` so the trace can tell
             # which stage could not be read.
-            unavailable_event(UUID(run_id), name, question) for name, question in questions.items()
+            unavailable_event(UUID(run_id), name, question)
+            for name, question in questions.items()
         ]
         for row in rows:
             row.stage = ENTITY_KIND
         if decisions is not None:
             decisions.extend(rows)
-        return EntityVerdict(
-            ok=False, max_reading=None, entity_names=entity_names, events=rows
-        )
+        return EntityVerdict(ok=False, max_reading=None, entity_names=entity_names, events=rows)
     ok, max_reading = _entity_passage_decision(
         answers,
         list(questions),
@@ -169,9 +169,7 @@ async def deep_entity_guard(
         # that reads `decision_events`; on the product path the engine's own
         # event emitter is what puts them on the bus (the guard is one
         # `engine.decide` like any other).
-        decisions.extend(
-            _guard_row(run_id, name, answers[name]) for name in questions
-        )
+        decisions.extend(_guard_row(run_id, name, answers[name]) for name in questions)
     return EntityVerdict(ok=ok, max_reading=max_reading, entity_names=entity_names)
 
 

@@ -35,7 +35,7 @@ from config import Settings, get_settings
 from db.models import Citation, Claim, LlmProvider, Message, Model, ModelRole, Run
 from decisions import DecisionCall, DecisionEngine, display_threshold, make_shadow_writer
 from decisions.output_guard import OutputGuardResult, guard_output
-from decisions.thresholds import threshold
+from decisions.thresholds import active_reranker_id, threshold
 from errors import AppError
 from graph.async_scoring import score_run_async
 from graph.chat_title import refine_chat_title
@@ -453,6 +453,7 @@ class RunSpec:
     collection_ids: list[UUID] | None = None
     quota_remaining_5h: float | None = None
     settings_version: int | None = None
+    reranker: str | None = None
     instant_title: str | None = None
 
 
@@ -673,6 +674,8 @@ async def _finish_answer(
         "revised": review is not None and review.revised_text is not None,
         "revision_diff": review.diff if review is not None else None,
         "suggestions": suggestions,
+        # R2c: which reranker graded this run's evidence (per-run or default).
+        "reranker": active_reranker_id(),
     }
     # P2a item 3: a prose decline ends the run as an abstention too — no
     # scoring task, no "complete" status. Same for an IsUse decline (ADR-006):
@@ -751,6 +754,7 @@ async def execute_run(spec: RunSpec) -> None:
     collection_ids = spec.collection_ids
     quota_remaining_5h = spec.quota_remaining_5h
     settings_version = spec.settings_version
+    reranker = spec.reranker
     instant_title = spec.instant_title
     # TX-3: the clock for time-to-first-token starts here, before the runtime
     # and model roles are resolved, because everything from here on is latency
@@ -764,6 +768,7 @@ async def execute_run(spec: RunSpec) -> None:
             user_id=user_id,
             quota_remaining_5h=quota_remaining_5h,
             settings_version=settings_version,
+            reranker=reranker,
         )
     except asyncio.CancelledError:
         await _finalize(session_factory, run_id, message_id, status="cancelled", text="")
@@ -811,9 +816,7 @@ async def execute_run(spec: RunSpec) -> None:
         )
         await _dispatch(env)
     except asyncio.CancelledError:
-        await _finalize(
-            session_factory, run_id, message_id, status="cancelled", text=state.text
-        )
+        await _finalize(session_factory, run_id, message_id, status="cancelled", text=state.text)
         try:
             await bus.publish(run_id, RunCancelled(run_id=str(run_id), message_id=str(message_id)))
         finally:
@@ -882,9 +885,18 @@ async def _setup_run(
     user_id: UUID,
     quota_remaining_5h: float | None,
     settings_version: int | None,
+    reranker: str | None = None,
 ) -> _Setup:
     settings = get_settings()
     runtime, model_roles, api_keys = await _runtime_context(session_factory, settings_version)
+    if reranker:
+        # R2c: the per-run choice is the runtime's reranker for this run only, so
+        # Auto, Deep and Fast all read it through the one seam (`get_reranker`,
+        # `active_reranker_id`). The request was already admitted by create_run.
+        runtime = RuntimeSettings.from_data(
+            runtime.version,
+            {**runtime.data, "retrieval": {**runtime.data["retrieval"], "reranker": reranker}},
+        )
     usage_context = UsageContext(
         session_factory=session_factory,
         user_id=user_id,

@@ -8,7 +8,8 @@ defaults here come from TRD §8's catalogue; `settings.data.thresholds`
 
 from typing import Literal
 
-from runtime import get_runtime_settings
+from errors import AppError
+from runtime import get_runtime_settings, runtime_value
 
 Engine = Literal["jev", "fallback"]
 
@@ -217,3 +218,51 @@ def display_threshold(name: str, engine: Engine) -> float | None:
         return threshold(threshold_name, engine)
     except KeyError:
         return None
+
+
+# Gate thresholds per RERANKER (R2c, ADR-005). `evidence_floor` and `stream_line`
+# are numbers on the scale of whichever reranker produced the grade: Jev's are
+# calibrated on its answer-containment rubric, and a Cohere relevance score or
+# an NVIDIA logit compared to them is a wrong-scale comparison that raises no
+# error. So a reranker other than Jev has NO entry until
+# `scripts/calibrate_gate.py --reranker <id>` has been run, its output reviewed
+# and the values pasted here by a human. Fail closed: no entry means refused.
+# Jev (and its LLM-fallback reading) keep the engine-keyed `_DEFAULTS` above.
+RERANKER_GATES = ("evidence_floor", "stream_line")
+_RERANKER_DEFAULTS: dict[str, dict[str, float]] = {name: {} for name in RERANKER_GATES}
+
+
+class RerankerUncalibrated(AppError):
+    status_code = 422
+
+    def __init__(self, reranker_id: str) -> None:
+        super().__init__(
+            "reranker_uncalibrated",
+            f"reranker {reranker_id!r} has no calibrated evidence floor / stream line",
+            {"reranker": reranker_id},
+        )
+
+
+def reranker_calibrated(reranker_id: str) -> bool:
+    if reranker_id in ("jev", "fallback"):
+        return True
+    return all(reranker_id in _RERANKER_DEFAULTS[name] for name in RERANKER_GATES)
+
+
+def reranker_threshold(name: str, reranker_id: str) -> float:
+    """`evidence_floor` / `stream_line` for the reranker that produced the grade.
+
+    `jev` and `fallback` (Jev's rerank answered by the LLM fallback) read the
+    existing engine-keyed cells, admin overrides included, so Jev behaves
+    exactly as before. Anything else is refused unless calibrated.
+    """
+    if reranker_id in ("jev", "fallback"):
+        return threshold(name, "fallback" if reranker_id == "fallback" else "jev")
+    if not reranker_calibrated(reranker_id):
+        raise RerankerUncalibrated(reranker_id)
+    return _RERANKER_DEFAULTS[name][reranker_id]
+
+
+def active_reranker_id() -> str:
+    """The reranker this run's runtime selected (per-run choice or admin default)."""
+    return str(runtime_value("retrieval.reranker", "jev"))

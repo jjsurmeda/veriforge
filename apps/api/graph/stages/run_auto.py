@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from uuid import UUID
 
-from decisions import threshold
+from decisions.thresholds import active_reranker_id, reranker_threshold
 from graph.auto import AutoRun, AutoRunInput, finalize_auto_run, prepare_auto_run
 from graph.generate import build_grounded_messages
 from graph.review import plan_delivery
@@ -190,5 +190,5 @@ def _plan(run: AutoRun) -> str:
         mode="auto",
         risk=run.ingress.risk,
         evidence_p=run.gate_mean_top3,
-        stream_line=threshold("stream_line", "jev"),
+        stream_line=reranker_threshold("stream_line", active_reranker_id()),
     )
