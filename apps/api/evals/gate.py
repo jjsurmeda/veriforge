@@ -163,9 +163,7 @@ def _mean_of(runs: list[dict[str, float | None]]) -> dict[str, float | None]:
     return means
 
 
-def compare_models(
-    baseline: Mapping[str, object], current: Mapping[str, object]
-) -> list[str]:
+def compare_models(baseline: Mapping[str, object], current: Mapping[str, object]) -> list[str]:
     """Refuse to compare runs that did not use the same models.
 
     A faithfulness or latency number from gpt-4o-mini says nothing about the
@@ -425,9 +423,7 @@ def check(
     return failures, warnings
 
 
-def blockers(
-    baseline: dict[str, float | None], current: dict[str, float | None]
-) -> list[str]:
+def blockers(baseline: dict[str, float | None], current: dict[str, float | None]) -> list[str]:
     """Failures a re-run cannot fix: a model mismatch or an item-set mismatch.
 
     Both are properties of the *configuration*, not of the draw. Re-running
@@ -513,7 +509,12 @@ async def _run_subset_gate(
                 print(f"GATE FAIL: run {attempt} ({label}): {failure}", file=sys.stderr)
         runs.append(current)
         verdicts.append((failures, warnings))
-        if not failures:
+        # A first-run pass is judged alone and costs one run. After any failure
+        # the whole batch is run and its mean judged: stopping at the first
+        # passing retry would judge the one favourable draw (best-of-N),
+        # e.g. faithfulness 0.80 / 0.87 / 0.94 passing on the last draw
+        # although the mean 0.87 is under the 0.90 floor.
+        if not failures and len(runs) == 1:
             break
         stuck = blockers(baseline, current)
         if stuck:
@@ -529,9 +530,13 @@ async def _run_subset_gate(
             file=sys.stderr,
         )
 
-    passed = not verdicts[-1][0]
-    judged = runs[-1] if passed else _mean_of(runs)
-    judged_failures, judged_warnings = ([], []) if passed else _judge(baseline, judged)
+    if len(runs) == 1:
+        judged = runs[0]
+        judged_failures, judged_warnings = verdicts[0]
+    else:
+        judged = _mean_of(runs)
+        judged_failures, judged_warnings = _judge(baseline, judged)
+    passed = not judged_failures
 
     print(
         json.dumps(
@@ -541,13 +546,15 @@ async def _run_subset_gate(
                 "models": models_on_record(),
                 "baseline": baseline,
                 "runs": runs,
-                "judged_on": "the run that passed" if passed else f"the mean of {len(runs)} runs",
+                "judged_on": ("the run that passed" if passed else "the only run")
+                if len(runs) == 1
+                else f"the mean of {len(runs)} runs",
                 "judged": judged,
             },
             indent=2,
         )
     )
-    if not passed:
+    if not passed and len(runs) > 1:
         for warning in judged_warnings:
             print(f"GATE WARN: mean of {len(runs)} ({label}): {warning}", file=sys.stderr)
         for failure in judged_failures:
