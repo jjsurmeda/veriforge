@@ -432,6 +432,7 @@ async def run(
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     set_file: Path | None = None,
     summary_out: Path | None = None,
+    concurrency: int = 4,
 ) -> None:
     path = set_file or SET_FILE
     dataset = json.loads(path.read_text())
@@ -485,8 +486,7 @@ async def run(
             token_state["expires_at"] = now + _token_lifetime(token) - TOKEN_REFRESH_MARGIN_SECONDS
             return token
 
-        for item in items:
-
+        async def score(item: dict[str, Any]) -> dict[str, Any]:
             async def play(item: dict[str, Any] = item) -> dict[str, Any]:
                 token = await fresh_token()
                 headers = {"Authorization": f"Bearer {token}"}
@@ -535,7 +535,7 @@ async def run(
                 got = observed_class(item, result)
                 ok = passes(item, result)
             mention_hit = mentions_hit(item, result.get("answer") or "")
-            rows.append(
+            row: dict[str, Any] = (
                 {
                     "id": item["id"],
                     "expect": item["expect"],
@@ -566,13 +566,25 @@ async def run(
             )
             print(
                 f"  {item['id']}: {got} "
-                f"{'PASS' if ok else 'FAIL' + ' (' + str(rows[-1]['reason']) + ')'}",
+                f"{'PASS' if ok else 'FAIL' + ' (' + str(row['reason']) + ')'}",
                 flush=True,
             )
             # Opt-in free-model pacing (--pace N; default 0 = no sleep),
             # skipped after smalltalk items and after the last item.
             if pace and item is not items[-1] and item["expect"] != "smalltalk":
                 await sleep(pace)
+            return row
+
+        # Items are independent (a fresh chat each), so they run `concurrency`
+        # at a time; 57 serial items took 42 min in R2a-4. Rows keep the set's
+        # order. Pacing for free-model limits only makes sense one at a time.
+        gate = asyncio.Semaphore(1 if pace else concurrency)
+
+        async def guarded(item: dict[str, Any]) -> dict[str, Any]:
+            async with gate:
+                return await score(item)
+
+        rows.extend(await asyncio.gather(*(guarded(i) for i in items)))
 
     print("\n{| id | expected | got | pass | ttft ms | evidence |")
     print("|---|---|---|---|---|---|")
@@ -669,6 +681,20 @@ if __name__ == "__main__":
         "`evals.acceptance_gate` to classify. `make check-work` step 9 reads it "
         "from this path rather than scraping stdout.",
     )
+    parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=4,
+        help="items played at once (default 4; --pace forces 1)",
+    )
     args = parser.parse_args()
     only = args.only.split(",") if args.only else None
-    asyncio.run(run(only=only, pace=args.pace, set_file=args.set, summary_out=args.summary_out))
+    asyncio.run(
+        run(
+            only=only,
+            pace=args.pace,
+            set_file=args.set,
+            summary_out=args.summary_out,
+            concurrency=args.concurrency,
+        )
+    )

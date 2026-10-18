@@ -168,3 +168,33 @@ async def test_pace_skips_after_smalltalk_items_and_after_the_last_item(
 async def test_a_fractional_pace_is_passed_through(paced_run: PacedRun) -> None:
     """Seconds may be fractional; the value is not rounded away."""
     assert await paced_run(pace=0.5) == [0.5]
+
+
+async def test_items_run_concurrently_and_keep_the_set_order(
+    paced_run: PacedRun, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Items are independent (a fresh chat each), so they run `concurrency`
+    at a time, never more, and the rows keep the set's order."""
+    import asyncio
+
+    items = [_answer_item(f"a{n}") for n in range(6)]
+    for n, item in enumerate(items):
+        item["turns"] = [f"Who is Rocinante? ({n})"]
+    (tmp_path / "books.json").write_text(json.dumps({"items": items}))
+    in_flight = {"now": 0, "max": 0}
+
+    async def run_turn(_client: Any, _token: str, _chat_id: str, turn: str) -> dict[str, Any]:
+        in_flight["now"] += 1
+        in_flight["max"] = max(in_flight["max"], in_flight["now"])
+        # Later items finish first, so a result order that follows completion
+        # would come out reversed.
+        await asyncio.sleep(0.01 * (6 - int(turn[-2])))
+        in_flight["now"] -= 1
+        return _result_for(_answer_item("x"))
+
+    monkeypatch.setattr(acceptance.smoke_chat, "run_turn", run_turn)
+    await paced_run(concurrency=3)
+
+    assert in_flight["max"] == 3
+    (raw,) = (tmp_path / "out").glob("*.json")
+    assert [r["id"] for r in json.loads(raw.read_text())["items"]] == [i["id"] for i in items]
