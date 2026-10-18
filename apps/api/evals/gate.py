@@ -128,6 +128,10 @@ GATE_ATTEMPTS = 3
 # real-world value its own document contradicts, or that misses the altered
 # fact, and one such item is the failure, not noise.
 CONTENT_KEYS = ("forbidden_hits", "content_misses", "wrong_document")
+# Counts where one bad draw is the finding, so retries are judged on the worst
+# draw, not the mean. `answers_unscored` is answered items the reviewer could
+# not score (third-party review #5); its bar is zero too.
+WORST_DRAW_KEYS = (*CONTENT_KEYS, "answers_unscored")
 
 
 def _mean_of(runs: list[dict[str, float | None]]) -> dict[str, float | None]:
@@ -154,7 +158,7 @@ def _mean_of(runs: list[dict[str, float | None]]) -> dict[str, float | None]:
             if value is not None:
                 values.append(float(value))
         means[key] = statistics.mean(values) if values else None
-    for key in CONTENT_KEYS:
+    for key in WORST_DRAW_KEYS:
         recorded = [float(v) for run in runs if (v := run.get(key)) is not None]
         if recorded:
             # The worst draw, not the mean: a forbidden value stated in one of
@@ -412,6 +416,12 @@ def check(
         (failures if LATENCY_GATED else warnings).append(
             f"{gate_key} {base_p50:.0f} → {curr_p50:.0f} ms "
             f"(rise > {factor:.2f}x = {factor - 1:.0%})"
+        )
+    unscored = current.get("answers_unscored")
+    if unscored:
+        failures.append(
+            f"{unscored:.0f} of {current.get('answers_delivered') or 0:.0f} answers have no "
+            "review score (claim extraction or review failed): unmeasured is not passing"
         )
     for key in CONTENT_KEYS:
         count = current.get(key)

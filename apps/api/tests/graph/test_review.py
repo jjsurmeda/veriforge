@@ -388,6 +388,61 @@ class TestRevisionLoop:
         assert result.scores is not None
         assert result.scores.faithfulness == pytest.approx(1.0)
 
+    async def test_a_revision_with_no_extractable_claims_leaves_scores_unmeasured(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Third-party review #3: the revision is what gets delivered, so the
+        original answer's scores must not stay attached to it."""
+
+        async def fake_complete(
+            *,
+            litellm_model: str,
+            messages: list[dict[str, str]],
+            metadata: dict[str, str],
+            **kwargs: object,
+        ) -> str:
+            job = metadata.get("job", "")
+            if job == "claim_extraction":
+                answer = messages[1]["content"] if len(messages) > 1 else ""
+                if "revised" in answer:
+                    return "[]"
+                return (
+                    '[{"claim": "the battery lasts 100 years", '
+                    '"citation_ids": [1], "is_factual": true}]'
+                )
+            if job == "revision":
+                return "The battery lasts ten hours [1] (revised)."
+            raise AssertionError(f"unexpected job {job}")
+
+        engine = _RecordingEngine()
+
+        async def contradicts(*, state, questions):  # type: ignore[no-untyped-def]
+            return {
+                name: Answer(
+                    engine="jev",
+                    latency_ms=1,
+                    value="contradicted",
+                    probability=0.1,
+                    probabilities={"contradicted": 0.9},
+                )
+                for name in questions
+            }
+
+        monkeypatch.setattr(engine, "decide", contradicts)
+        result = await review_answer(
+            engine=engine,
+            run_id="r",
+            answer="The battery lasts 100 years [1]",
+            contexts=_ctx(),
+            citation_count=1,
+            small_model="small",
+            litellm_model="big",
+            complete_fn=fake_complete,
+        )
+        assert result.revised_text is not None
+        assert result.scores is None
+        assert result.claims == []
+
     async def test_no_revision_when_all_supported(self) -> None:
         calls: list[str] = []
 

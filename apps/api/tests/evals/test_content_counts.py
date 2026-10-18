@@ -62,3 +62,20 @@ def test_the_gate_fails_on_any_content_count_and_judges_the_worst_draw() -> None
         assert any(key in f for f in compare(base, {"faithfulness": 0.95, key: 1.0}))
     mean = _mean_of([{"forbidden_hits": 0.0}, {"forbidden_hits": 1.0}, {"forbidden_hits": 0.0}])
     assert mean["forbidden_hits"] == 1.0
+
+
+def test_the_gate_fails_when_an_answer_has_no_review_score() -> None:
+    from evals.gate import _mean_of, compare
+
+    base: dict[str, float | None] = {"faithfulness": 0.95}
+    ok: dict[str, float | None] = {
+        "faithfulness": 0.95,
+        "answers_unscored": 0.0,
+        "answers_delivered": 5.0,
+    }
+    assert compare(base, ok) == []
+    failures = compare(base, {**ok, "answers_unscored": 1.0})
+    assert any("no review score" in f for f in failures)
+    draws: list[dict[str, float | None]] = [{"answers_unscored": n} for n in (0.0, 1.0, 0.0)]
+    mean = _mean_of(draws)
+    assert mean["answers_unscored"] == 1.0

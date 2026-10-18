@@ -82,6 +82,8 @@ def run(
         "answerable_answered": answerable_answered,
         "should_abstain_total": 8.0,
         "answerable_total": 12.0,
+        "answers_delivered": 12.0,
+        "answers_unscored": 0.0,
         "min_support_share": 0.95,
         "answers_with_min_support": 12.0,
         "answers_total": 12.0,

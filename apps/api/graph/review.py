@@ -528,6 +528,12 @@ async def review_answer(
         )
         result.claims = re_verified
         result.scores = score_review(re_verified, citation_count)
+    else:
+        # The revision is what gets delivered, so scores left over from the
+        # original answer would describe text nobody sees. Unmeasured is the
+        # honest value, and the eval gate counts it (answers_unscored).
+        result.claims = []
+        result.scores = None
     result.revised_text = revised
     result.diff = make_diff(answer, revised)
     return result

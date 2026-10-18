@@ -419,6 +419,10 @@ async def _run_item(
             for verified in review.claims
         ]
         stage_ms["review_revised"] = int(review.revised_text is not None)
+        if review.revised_text is not None:
+            # The product delivers the revision, and its claims and scores were
+            # computed on it: store and judge that text, not the draft.
+            answer = review.revised_text
     else:
         faithfulness = 1.0
         citation_precision = 1.0
@@ -826,6 +830,11 @@ def aggregate(results: list[tuple[EvalItem, EvalResult]]) -> dict[str, float | N
     # nothing, so it has no weakest claim and is not part of the share. It
     # scores 1.0 in the column for uniformity with faithfulness, and counting
     # that 1.0 here would pad the share with items that were never answered.
+    # An answer the reviewer could not score (no claims extracted, a failed
+    # review) is not a pass. aggregate drops None from every mean, so without
+    # this count eight perfect abstentions hide unscored answers.
+    answers = [(_, r) for _, r in scored if not r.abstained]
+    answers_unscored = sum(1 for _, r in answers if r.faithfulness is None)
     support_eligible = [(_, r) for _, r in scored if not r.abstained and r.min_support is not None]
     supports = [float(value) for _, r in support_eligible if (value := r.min_support) is not None]
     min_support_share = (
@@ -875,6 +884,8 @@ def aggregate(results: list[tuple[EvalItem, EvalResult]]) -> dict[str, float | N
         # and "7 of 6" are both `7`, and only the second is a regression.
         "should_abstain_total": float(len(abstain_items)),
         "answerable_total": float(len(answerable)),
+        "answers_delivered": float(len(answers)),
+        "answers_unscored": float(answers_unscored),
         "p50_latency_ms": p50,
         "p50_our_overhead_ms": (float(statistics.median(overheads)) if overheads else None),
         "overhead_items_attributed": float(len(overheads)),
