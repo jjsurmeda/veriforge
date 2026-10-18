@@ -26,12 +26,19 @@ def _row(
     message_status: str | None = "complete",
     citations: list[str] | None = None,
     ok: bool = True,
+    mention_hit: bool = True,
 ) -> dict[str, Any]:
-    """One row in the shape `run()` appends: the scorer's own fields."""
+    """One row in the shape `run()` appends: the scorer's own fields.
+
+    `mention_hit` is what the item's `mention`/`mention_all`/`alt_mention`
+    lists reduce to against this answer. It is on the row (not recomputed in
+    `summarise`) so the count the gate reads cannot disagree with `passes()`.
+    """
     return {
         "id": item_id,
         "expect": expect,
         "pass": ok,
+        "mention_hit": mention_hit,
         "reason": None if ok else "wrong_class_or_content",
         "answer": answer,
         "citations": citations if citations is not None else ["[1] Book p.1"],
@@ -136,6 +143,68 @@ def test_an_answered_item_with_no_citations_is_an_uncited_answer() -> None:
     assert summary["detail"]["uncited_answer_ids"] == ["broad-sherlock"]
     assert summary["counts"]["false_abstentions"] == 0
     assert summary["counts"]["confident_wrong"] == 0
+
+
+def test_an_answered_and_cited_item_that_misses_its_content_is_a_content_miss() -> None:
+    """KI-75. The item is `answer`, the run did not decline, it cited a
+    source — and the answer does not state the string the item requires.
+    Every other answer-class count passes this row, so correctness has to be a
+    count of its own or the gate is blind to being wrong about the thing it
+    was asked."""
+    rows = [
+        _row(
+            "plot-speckled-band",
+            "answer",
+            answer="The band was speckled with silver thread.",
+            citations=["[3] A Study in Scarlet p.42"],
+            ok=False,
+            mention_hit=False,
+        )
+    ]
+
+    summary = acceptance.summarise(rows)
+
+    assert summary["counts"]["content_misses"] == 1
+    assert summary["detail"]["content_miss_ids"] == ["plot-speckled-band"]
+    assert summary["counts"]["false_abstentions"] == 0
+    assert summary["counts"]["uncited_answers"] == 0
+
+
+def test_a_declined_answer_item_is_not_also_a_content_miss() -> None:
+    """A decline has no content to be missing, and a false abstention is
+    already its own count — an item must not be counted twice for one run."""
+    rows = [
+        _row(
+            "plot-speckled-band",
+            "answer",
+            answer="",
+            message_status="abstained",
+            citations=[],
+            ok=False,
+            mention_hit=False,
+        )
+    ]
+
+    summary = acceptance.summarise(rows)
+
+    assert summary["counts"]["false_abstentions"] == 1
+    assert summary["counts"]["content_misses"] == 0
+
+
+def test_a_cited_answer_that_states_the_content_is_not_a_content_miss() -> None:
+    rows = [
+        _row(
+            "plot-speckled-band",
+            "answer",
+            answer="The band was speckled with silver.",
+            citations=["[3] A Study in Scarlet p.42"],
+        )
+    ]
+
+    summary = acceptance.summarise(rows)
+
+    assert summary["counts"]["content_misses"] == 0
+    assert summary["counts"]["answer_items"] == 1
 
 
 def test_an_errored_item_is_never_an_uncited_answer_either() -> None:

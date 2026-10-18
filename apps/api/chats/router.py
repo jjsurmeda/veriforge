@@ -4,7 +4,7 @@ injected server-side on every query (CLAUDE.md non-negotiable)."""
 from uuid import UUID
 
 from fastapi import APIRouter, Request, UploadFile
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth import ratelimit
@@ -260,8 +260,16 @@ async def list_messages(
         await session.execute(
             select(Citation, Chunk, Document, Section)
             .join(Chunk, Citation.chunk_id == Chunk.id, isouter=True)
-            .join(Document, Chunk.document_id == Document.id, isouter=True)
-            .join(Section, Chunk.section_id == Section.id, isouter=True)
+            .join(
+                Document,
+                func.coalesce(Chunk.document_id, Citation.document_id) == Document.id,
+                isouter=True,
+            )
+            .join(
+                Section,
+                func.coalesce(Chunk.section_id, Citation.section_id) == Section.id,
+                isouter=True,
+            )
             .where(Citation.message_id.in_([m.id for m in messages]))
             .order_by(Citation.message_id, Citation.n)
         )
@@ -276,7 +284,7 @@ async def list_messages(
                 document_name=document.name if document is not None else None,
                 page=chunk.page if chunk is not None else None,
                 heading_path=section.heading_path if section is not None else None,
-                excerpt=(chunk.text[:240] if chunk is not None else None),
+                excerpt=(chunk.text[:240] if chunk is not None else citation.excerpt),
                 rerank_score=citation.rerank_score,
                 verdict=citation.verdict,
                 p_supported=citation.p_supported,

@@ -68,5 +68,9 @@ async def stream_answer(run: AutoRun) -> AsyncIterator[str]:
         contexts=run.contexts,
         history=run.history,
         metadata=metadata,
+        # The intent ingress already decided (TRD §7), used to pick the
+        # generator's per-intent block. No extra call: it is a value the run
+        # is already carrying.
+        intent=run.ingress.intent,
     ):
         yield token

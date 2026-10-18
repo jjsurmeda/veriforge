@@ -48,7 +48,7 @@ class _LibraryJev:
                     probability=self._probability,
                     probabilities={self._intent: self._probability},
                 )
-            elif name in SCORE_NAMES or name in {"sufficient", "conflict"}:
+            elif name in SCORE_NAMES or name == "conflict":
                 answers[name] = Answer(engine="jev", latency_ms=1, value=0.01, probability=0.01)
             else:
                 answers[name] = Answer(

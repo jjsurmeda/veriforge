@@ -16,7 +16,7 @@ function metrics(overrides: Partial<Metrics> = {}): Metrics {
       'ingress+rewrite': 900,
       retrieve: 1400,
       rerank: 300,
-      sufficient: 240,
+      evidence: 240,
       generate: 1800,
       review: 500,
     },
@@ -54,7 +54,7 @@ describe('LatencyWaterfall', () => {
       'ingress rewrite900 ms',
       'retrieve1400 ms',
       'rerank300 ms',
-      'sufficient240 ms',
+      'evidence240 ms',
       'generate1800 ms',
       'review500 ms',
     ])
@@ -71,7 +71,7 @@ describe('LatencyWaterfall', () => {
       'ingress rewrite',
       'retrieve',
       'rerank',
-      'sufficient',
+      'evidence',
       'generate',
       'review',
     ])

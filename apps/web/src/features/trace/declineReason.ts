@@ -84,9 +84,7 @@ function sentenceFor(gate: EvidenceGate, nouns: DeclineNouns): string {
       return nouns.entity
         ? `No retrieved passage is about ${nouns.entity}.`
         : 'None of the retrieved passages is about the thing you asked about.'
-    case 'relevance':
-      return 'Nothing retrieved was close enough to the question to answer from.'
-    case 'sufficient':
+    case 'evidence':
       return 'What was retrieved does not cover enough of the question to answer it.'
     default:
       return 'The retrieved sources do not contain enough evidence to answer this question.'

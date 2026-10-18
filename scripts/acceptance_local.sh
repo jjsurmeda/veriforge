@@ -54,6 +54,25 @@ PORT="${ACCEPTANCE_PORT:-8123}"
 API_URL="http://127.0.0.1:${PORT}"
 SUMMARY_OUT="${ACCEPTANCE_SUMMARY_OUT:-$root/.data/evals/summary-acceptance.json}"
 ITEMS="${1:-}"
+# ACCEPTANCE_SET picks another set file (evals/heldout/items.json). The stack
+# must have been built with the matching GUTENBERG_SET so its library holds the
+# books that set asks about.
+SET_ARGS=()
+GATE_SET=books
+if [ -n "${ACCEPTANCE_SET:-}" ]; then
+  # The runner starts in apps/api, so a repo-relative path would not resolve.
+  case "$ACCEPTANCE_SET" in /*) ;; *) ACCEPTANCE_SET="$root/$ACCEPTANCE_SET" ;; esac
+  SET_ARGS=(--set "$ACCEPTANCE_SET")
+  case "$ACCEPTANCE_SET" in
+    *heldout*) GATE_SET=heldout ;;
+    *) echo "ACCEPTANCE_SET=$ACCEPTANCE_SET has no gate; only the held-out set does" >&2; exit 2 ;;
+  esac
+fi
+# OpenRouter's free tier caps free-model requests at 20/min account-wide.
+# A full 57-item acceptance run needs ~114 calls; without pacing the cap is hit
+# around item 10 and every subsequent chat creation returns a 429. 6 s between
+# non-smalltalk items keeps the pace under the cap (10 items/min, 20 calls/min).
+PACE="${ACCEPTANCE_PACE:-0}"
 STACK_LOG="$root/.data/acceptance-stack.log"
 
 export ACCEPTANCE_DB="$DB_NAME"
@@ -117,12 +136,12 @@ runner_status=0
 if [ -n "$ITEMS" ]; then
   VERIFORGE_API_URL="$API_URL" EVAL_USER_EMAIL="$EVAL_USER_EMAIL" \
     EVAL_USER_PASSWORD="$EVAL_USER_PASSWORD" \
-    .venv/bin/python scripts/acceptance.py "$ITEMS" --summary-out "$SUMMARY_OUT" \
+    .venv/bin/python scripts/acceptance.py "$ITEMS" ${SET_ARGS[@]+"${SET_ARGS[@]}"} --summary-out "$SUMMARY_OUT" --pace "$PACE" \
     || runner_status=$?
 else
   VERIFORGE_API_URL="$API_URL" EVAL_USER_EMAIL="$EVAL_USER_EMAIL" \
     EVAL_USER_PASSWORD="$EVAL_USER_PASSWORD" \
-    .venv/bin/python scripts/acceptance.py --summary-out "$SUMMARY_OUT" \
+    .venv/bin/python scripts/acceptance.py ${SET_ARGS[@]+"${SET_ARGS[@]}"} --summary-out "$SUMMARY_OUT" --pace "$PACE" \
     || runner_status=$?
 fi
 if [ "$runner_status" -ne 0 ]; then
@@ -137,7 +156,7 @@ fi
 # the script before the status is ever captured, which would report a gate
 # failure as a bare non-zero with no verdict printed.
 gate_status=0
-.venv/bin/python -m evals.acceptance_gate "$SUMMARY_OUT" || gate_status=$?
+.venv/bin/python -m evals.acceptance_gate "$SUMMARY_OUT" "--set=$GATE_SET" || gate_status=$?
 
 if [ "$runner_status" -ne 0 ]; then
   exit "$runner_status"

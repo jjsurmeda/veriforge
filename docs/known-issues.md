@@ -7,15 +7,22 @@ The Phase column is authoritative; section placement below is from the first tri
 Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 - When you fix one, move it to the archive in the same commit, with the fixing commit hash.
 - A new finding that breaks no check is added under **post-beta** and opens no lane.
-- New IDs continue from KI-75.
+- New IDs continue from KI-84.
 
 ## Index
 
 | Phase | KI | Summary |
 | --- | --- | --- |
+| R3 (generator) | KI-78 | a false-premise question ("first name" of a man with none) is answered, not declined; IsUse passes it |
+| R3 (generator) | KI-79 | the generator flakes on multi-passage facts (plot-speckled-band: right answer 1 of 4 draws on gpt-4o-mini) |
+| R2b (chunking) | KI-80 | outside-whitman: the quoted sentence spans a chunk boundary, so no single chunk grades as answering |
+| R3 (floor) | KI-81 | the evidence floor flips on borderline items: the grade varies 0.444-0.468 around 0.455 between runs |
+| check-work (CI) | KI-82 | Playwright specs are not run in CI; paid evals are manual |
+| R3 (reviewer) | KI-83 | citation precision is claim-level support; per-citation verification is not done |
+| phase 3 (latency) | KI-84 | `our_overhead_ms` subtracts overlapping provider calls (ingress and rewrite run together); it can go negative |
 | check-work (acceptance) | KI-70 | the relevance gate abstains on broad/summary answerables; no threshold separates |
 | check-work (1d) | KI-15 | order-dependent hang in test_chats_runs.py; a flaky suite fails "repeatable" |
-| check-stable | KI-57 | degrade-to-fail when the decision fallback truncates; fault injection covers it |
+| check-stable | KI-76 | credits stay reserved if the process dies between completion and settlement |
 | check-stable | KI-32 | record of faithfulness variance; gate tolerances already set |
 | check-stable | KI-43 | absence-claim verdict flips between runs (grader quality) |
 | check-stable | KI-49 | reviewer rarely makes an unsupported judgement itself |
@@ -31,6 +38,7 @@ Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 | post-beta | KI-69 | reasoning-mandatory retry in providers/llm.py only serves free endpoints; dead on supported config |
 | check-work (acceptance) | KI-71 | ingress routes content questions to `chitchat`: ungrounded answer, no citations |
 | check-work (acceptance) | KI-73 | the rewriter's prose becomes the retrieval query, so a message with no question can answer |
+| check-work (acceptance) | KI-75 | an answer that cites the right book and states the wrong content is a failure no count caught |
 
 ---
 
@@ -45,6 +53,39 @@ an active transaction/session, racing `TRUNCATE`. Fix in `graph/runner.py`:
 `_shadow_tasks`) as well as the settle/judge tails. Commit f821d09.
 Guards added: per-test `faulthandler_timeout = 60` in pyproject,
 `SET lock_timeout = '5s'` before TRUNCATE.
+
+## CLOSED KI-75: an answer that cites the right book and states the wrong content is a failure no count caught
+
+Logged 2026-10-14 (phase R2a item 1, the bar line for the R2 row of the
+plan), closed in the same commit.
+
+- **What:** the gate measured decline accuracy, false abstention and
+  citations. It never measured whether the answer was **right**.
+  `scripts/acceptance.py` computed `mention_hit` per item and `passes()`
+  required it, so a content miss was visible only as a name in `failed_ids` —
+  which nothing counted and no clause read. A run could hold every number,
+  cite the right document on every answerable item, and be wrong about all of
+  them. `rag-reference.md`'s Evaluation row said the same thing in one line:
+  "not only safety".
+- **Fix:** `content_misses` / `content_miss_ids` in `summarise()`, counted
+  for an answer-class item that **answered, cited, and did not state the
+  required content**. `MAX_CONTENT_MISSES = 1` in `evals/acceptance_gate.py`,
+  which is the plan's bar line ("≤ 1 content miss of 32 answerables") and the
+  same arithmetic as the false-abstention rate at this mix.
+- **Not a rate, deliberately:** `content_miss` is disjoint from
+  `false_abstention` (which did not answer), `uncited_answers` (cited
+  nothing) and `confident_wrong` (a should-decline item that answered). One
+  item is counted once, in the class that describes what the run did.
+- **`mention_hit` moved onto the row.** The item's `mention` / `mention_all` /
+  `alt_mention` lists stay in `books.json`; the runner scores them once at
+  play time against the answer and records the boolean, so the number the gate
+  reads cannot disagree with `passes()`.
+- **Tests:** `tests/scripts/test_acceptance_summary.py` — a cited answer that
+  misses its content is a content miss and no other class; a declined answer
+  item is a false abstention and *not* also a content miss; a cited answer
+  that states the content is clean. `tests/evals/test_acceptance_gate.py` —
+  2 fails with both ids named, 1 passes (the boundary), and a content miss is
+  none of the other three classes. Fakes only; no provider call.
 
 ## KI-15: `tests/chats/test_chats_runs.py` hangs when its tests run in sequence
 
@@ -168,7 +209,68 @@ Guards added: per-test `faulthandler_timeout = 60` in pyproject,
   next stalls, the decisive evidence is `faulthandler_timeout` plus the two
   probes named in the 2026-10-02 note, in that order.
 
-## KI-57: The decision fallback's output cap (512) truncates the batched decision JSON, failing the whole item whenever jev degrades
+## CLOSED KI-57: The decision fallback's output cap (512) truncates the batched decision JSON, failing the whole item whenever jev degrades
+
+Closed 2026-10-15 (phase R2a-2 item 3). The truncation cause was fixed on
+2026-10-05 (P2a item 5, below); what stayed open was the behaviour behind it —
+**a fallback failure still failed the item**. Both are fixed now.
+
+The degradation half of it was confirmed live, not theorised. The R2a
+acceptance run aborted at item 25 of 57 with exactly this, from its own logs:
+
+```
+WARNING:decisions.engine:jev failed, retrying on fallback: jev http error:
+ERROR:decisions.engine:shadow fallback call failed
+decisions.fallback.FallbackError: fallback returned non-JSON: Expecting value: line 1 column 1 (char 0)
+ERROR:graph.runner:run failed
+{"event":"run.failed","error_code":"decision_unavailable"}
+```
+
+A socket timeout, then one unreadable reply, then a whole turn lost. The
+provider timeout is external; **the fail-the-run behaviour was ours.**
+
+- **Fix, at the engine** (`decisions/fallback.py`): the output cap is now sized
+  to the batch (`fallback_max_tokens`, never below the role's own cap) instead of
+  fixed, so the rerank rubric's per-passage four-way distributions — the shape
+  KI-57's note calls "bigger" — have somewhere to go; the call requests
+  `response_format={"type": "json_object"}` instead of relying on the prompt's
+  "no prose"; an unparseable reply is **retried once** and then the batch is
+  **split in half, recursively, until it is one question**, because a truncated
+  object truncates deterministically and re-asking the same batch returns the
+  same cut.
+- **Fix, at every stage** (`graph/stages/common.decide_or_degrade`, and the
+  call sites): an unreachable decision layer is now each stage's **own**
+  degradation, never a failed run. Ingress → the module's defaults (`lookup`,
+  `both`, guards `pass`). Rerank → fused order (unchanged; it already caught
+  `DecisionUnavailable`). **The gate → a FAILING gate**: below the floor, into
+  the corrective retrieval, and — while the layer is down — a skipped retry and
+  an abstention that cites nothing, because an unreachable grader is not
+  evidence. The entity guard fails with it. The sanitizer keeps every chunk, the
+  branch it already takes for a passage the grader skipped. The reviewer marks
+  every claim `unsupported`. The output guard delivers as-is. Deep's controller
+  takes another hop.
+- **The trace can tell the two apart.** `Decision.engine` gains
+  `unavailable`, a third value that is not an engine: a row reading 0.0 from
+  `jev` says "the evidence was judged thin", and this says "nobody could judge
+  it". `retry_skipped` carries it too, so a decline that skipped its corrective
+  re-query because the layer was down does not read as a judgement that the
+  evidence was clearly absent.
+
+**Tests.** `tests/decisions/test_ki57_degrade.py` (15): the cap grows with the
+batch and covers a 40-passage rubric batch; JSON output and the sized cap are
+asserted on the request; non-JSON and truncated replies, the retry, and the
+recursive split with its call bound; the Jev-timeout path unchanged; ingress's
+defaults; a whole `prepare_auto_run` with a dead engine that still returns a
+finished, abstaining run, records `unavailable` rows, and skips the corrective
+re-query. Web: `DecisionTimeline.test.tsx` (5) on the third badge state.
+
+**Log history, kept because the entry it closes is the record of it:**
+
+**Still to do, not this entry's job:** `make check-stable` phase 2 injects a Jev
+outage. That injection is what proves these paths on a live run; the tests here
+are fakes, and a fake that agrees with itself proves the wiring, not the
+provider.
+
 
 Logged 2026-10-04, P2a item 5 (the generator bake-off), from the control
 runs. During an OpenRouter degradation window (raw
@@ -410,6 +512,66 @@ is pass/fail in full, not a rate, so one item is the whole verdict.
 - **Done when:** a message containing no question never produces an
   `answer`-class reply with citations, and `smalltalk-thanks` passes.
 
+- **FIXED (2026-10-14, phase R2a item 2).** Both layers, root first. The
+  greeting allowlist is untouched (CLAUDE.md's one exception).
+
+  **Layer 1 — the rewriter's output contract.** `graph/rewrite.py` gains
+  `is_query_shape`: a reply that asks a question is a query however long it is
+  ("What is Rocinante? And who rides him?" is a two-sentence multi-part query,
+  and the follow-up path depends on long rewrites being kept); a reply that
+  never asks is a query only while it stays inside one sentence. Two sentence
+  terminators with no `?` means the model opened a *reply*, so it is dropped
+  and the run uses the user's own message. This is a test of the reply's
+  shape, not a list of phrasings.
+
+  **The variants parser needed it too, and that is the part this entry did
+  not guess.** KI-73's recorded run put **two** prose replies into the
+  retrieval set, both from `_generate_query_variants`
+  (`graph/stages/retrieve_stage.py`), not one from `rewrite_query`. Checking
+  only the rewrite would have left the recorded failure half-open. Every
+  parsed variant line now goes through the same check.
+
+  **Layer 2 — a `chitchat` routing that names nothing does not retrieve.**
+  `graph/stages/ingress_stage.py` gains `names_a_subject`. The brief specifies
+  `named_entities(message)` non-empty, and on its own that is **wrong**, with
+  the recorded item as the counter-example: `broad-sherlock` is *"tell me
+  something about the adventures of sherlock holmes"*, lowercased throughout,
+  so a capitalisation heuristic returns `[]`, the run skips retrieval, and
+  KI-71's cited answer becomes the uncited reply this product does not ship.
+  `names_a_subject` is therefore `named_entities(message)` **or** a trailing
+  non-stop word — a trailing lowercase noun phrase, which is what a lowercase
+  proper name looks like.
+
+  The bar is one word and not two, because the two failure directions are not
+  symmetric: saying "no" to a content question is an uncited answer and an
+  acceptance-gate failure (KI-75 now counts it), while saying "yes" to a social
+  turn costs one wasted fan-out and sufficiency still sends the run to the
+  same small-talk reply. The stop list is a list of function, question and
+  social **words** — it delimits the trailing noun phrase, and it is not the
+  greeting allowlist. It does contain every `GREETING_ALLOWLIST` phrase, and a
+  test asserts the two agree: they are reached by different code paths and a
+  disagreement would be a trap for the next reader.
+
+  **The honest edge, stated because it is a judgement and not a proof.** One
+  declarative sentence with no `?` passes: "I appreciate the message" is prose
+  and "Rocinante Don Quixote horse" is a keyword query, and no shape test
+  separates them without becoming the phrase list the contract exists to
+  avoid. Reading it as a query is the safe direction (a nonsense query
+  retrieves nothing; prose read as a query is this bug). The recorded failure
+  had three sentences and is caught.
+
+  **Tests** (`tests/graph/test_chitchat.py`, fakes throughout, no provider
+  call): the recorded strings read the right way round by
+  `names_a_subject`; the stop list and `GREETING_ALLOWLIST` agree; the
+  `is_query_shape` contract on both recorded prose replies and on both query
+  shapes; the one-sentence edge pinned as deliberate; `"thanks, that's
+  helpful!"` **with sources in scope** retrieves nothing, cites nothing and
+  streams the plain reply with the raw message; `broad-sherlock` and
+  `ml-es-rocinante` still retrieve and answer from evidence; a prose rewrite
+  is discarded for the original message, both as a unit and through a whole
+  run whose recorded queries carry no prose. 47 in the file, 1341 in the
+  suite.
+
 # post-beta
 
 ## KI-8: Six Playwright specs drive live LLM runs
@@ -539,6 +701,64 @@ items declined; PRD §5 allows <= 1.
   0.59 / relevance 0.32, `broad-bovary` at 0.42 / 0.56 — both would have been
   vetoed at relevance 0.60 and neither is. The rule does what the replay said
   it would.
+
+- **The relevance veto itself is GONE (2026-10-14, phase R2a item 4, ADR-006),
+  and removing it does not hold. This is now the open question in this entry,
+  and it is the owner's.**
+  `_apply_relevance_gate`, `Attempt.relevance_ok` / `relevance_max` /
+  `relevance_measured`, `relevance_decision_event`, the `relevance` Decision and
+  its hand-published trace row in `run_auto._publish_trace`, the
+  `rerank_abstain` threshold, `RETRY_SKIP_RELEVANCE_MAX` and the
+  `retrieval.retry_skip_relevance_max` setting are all deleted. `sufficient` is
+  the one evidence check; the entity guard stays as ADR-006 keeps it; the
+  corrective retrieval is one pass.
+
+  **The replay that says why, in `apps/api/tests/graph/test_one_evidence_check.py`**
+  (replaces `test_summarize_relevance_veto.py`, same recorded table):
+  **ADR-006's stated consequence does not hold.** With the veto gone, the run
+  is decided by `sufficient >= sufficient_abstain` (0.05) and the entity guard,
+  and replaying all 57 recorded rows of the two phase-1b runs turns **12
+  `not_in_sources` rows into confident wrong answers**: `outside-study-in-
+  scarlet`, `outside-emma`, `outside-looking-glass`, `ml-fr-outside`,
+  `ml-ja-outside`, `outside-holmes-mycroft`, `ml-de-bovary-animal`,
+  `ml-fr-noli-baiser`, `ml-zh-xiyou-nezha`, `ml-ja-rashomon-rokuro`, and
+  `amb-bovary-homais` twice. Not a tolerance question: the worst is 0.29,
+  nearly six times the floor.
+
+  **No threshold on this signal satisfies both PRD §5 clauses.** 0 confident
+  wrong needs ~0.30, and 0.30 already costs two recorded answers
+  (`compare-inventors` 0.13, `outside-whitman` 0.14). There is no value that
+  reaches (0 confident wrong, ≤ 1 false abstention). This is KI-28's finding
+  for the sufficiency signal and the reason this entry says **no threshold
+  moves** — a threshold move needs before/after on fast20, counterfactual and
+  entity-mismatch, which is provider credit this lane did not have.
+
+  **Why 0.05 was never decision-grade.** It was calibrated as one of three
+  signals in series: the comment above it records answer items at 0.06-0.49 and
+  not-in-sources at 0.01-0.04, which separates cleanly **as a third veto with
+  the other two beside it**. Alone it has no margin. The relevance veto was
+  doing real work on ten of the twelve — every one of them sat under 0.60 on
+  relevance, and most sat near the 0.30-0.40 band where `outside-*` and `broad-*`
+  overlap (the table in the note above is that overlap).
+
+  **What the recorded data cannot say.** For each of the twelve the veto was
+  the deciding signal, so the entity check never ran as the decider on any of
+  them and the recorded evidence says nothing about what it would have said.
+  Several are entity questions about other characters, which is exactly what
+  the guard exists for — but "the guard might hold them" is a hypothesis, and
+  the replay file says so rather than assuming it. Resolving it needs one live
+  run of the 21 `not_in_sources` ids and the 12 entity-mismatch items.
+
+  **A second-order change that was not in the brief.** `_evidence_clearly_absent`
+  previously required a corroborating relevance reading before it would skip
+  the corrective retrieval, and required a run with no relevance reading to
+  never skip. With that reading gone the sufficiency bound became the last word,
+  so `RETRY_SKIP_SUFFICIENT_MAX` moved **0.02 → 0.005**: the KI-70 replay
+  above records that among the 7 of 238 runs the correction rescued, the lowest
+  sufficiency was **0.01**, so a bound at or above 0.01 would skip exactly the
+  runs it exists to save. The skip is now nearly inert, which is the honest
+  price of one signal. Removing it entirely is the ADR-006-pure option and
+  costs one extra 13-15 s pass per decline; that is a phase-3 latency call.
 
 ## KI-71: ingress routes content questions to `chitchat`, which skipped retrieval and answered ungrounded
 
@@ -831,3 +1051,76 @@ Logged 2026-10-12 (phase 1, `make check-work` on `beta/phase1-check-work`).
 - **What:** retrieval filters (source type, document, tag, date range, file type) are accepted by the API and narrow results server-side, but the chat composer offers no control to set them.
 - **Phase:** UI redesign.
 - **Done when:** the composer sets every SR-6 filter the API accepts, with a Playwright spec proving a filter narrows the cited sources.
+
+## KI-76: credits stay reserved if the process dies between completion and settlement
+
+- **What:** `execute_run` marks a run `complete` with `settle_usage=False` while
+  async scoring runs, and settles the ledger in a background task after scoring
+  (`graph/runner.py`, the `_finalize` call and `_settle_after_scoring`). A hard
+  crash in that window leaves the `usage_ledger` row `reserved`.
+  `sweep_stale_runs` selects only `status == "running"`, so nothing ever
+  reconciles it. TRD §14: credits are settled even on failure.
+- **Found:** outside review, 2026-10-17; confirmed by reading the code, not reproduced.
+- **Phase:** check-stable (the worker-kill fault).
+- **Done when:** a sweep settles `reserved` ledger rows whose run is terminal
+  and older than the scoring timeout, with a test that kills between
+  `_finalize` and settlement and proves the row settles.
+
+## KI-78: a false-premise question is answered, not declined
+
+- **What:** "What is Count Dracula's first name?" (held-out `ho-near-vlad`). The
+  books give none. The generator answered "Dracula", quoting "I am Dracula", and
+  IsUse passed it (0.68-0.72) because the quote supports the sentence. Counted as a
+  confident wrong answer; held-out bar is 0.
+- **Found:** the held-out run, 2026-10-19 (R2a close). Reproduced twice on
+  `gpt-4o-mini`; `gpt-4o` said "the sources do not provide Count Dracula's first
+  name" where it generated.
+- **Phase:** R3 (generator ladder), re-measured on the production generator.
+- **Done when:** the held-out set passes with 0 confident wrong on the model that
+  ships; do not tune for this one item.
+
+## KI-79: the generator flakes on a fact spread over several passages
+
+- **What:** `plot-speckled-band` ("what killed Julia Stoner?"). Retrieval is fine
+  (evidence grade 0.64-0.67 in every draw); `gpt-4o-mini` wrote "fear and nervous
+  shock" in 3 of 4 draws and "swamp adder" in 1; IsUse rejected the poor ones (0.29,
+  0.32, 0.47). `gpt-4o` was right 2 of 2. The earlier "passed on retry" was luck,
+  hidden by the retry that re-rolled completed answers (removed 2026-10-18).
+- **Phase:** R3 (generator ladder): escalate to a stronger generator when IsUse fails.
+- **Done when:** books acceptance holds its false-abstention bar on the shipping model.
+
+## KI-80: outside-whitman, the quoted sentence spans a chunk boundary
+
+- **What:** the sentence "loving by allowance ... loving with personal love"
+  straddles two chunks, so no single passage grades as answering. The budgeted miss
+  in the books bar.
+- **Phase:** R2b (or the chunker): do not cut mid-sentence mid-quote, or grade the
+  expanded parent.
+
+## KI-81: the evidence floor is noisy on borderline items
+
+- **What:** `ho-near-vlad` graded 0.444-0.468 across draws against the 0.455 floor,
+  so the same item abstains or generates depending on the draw.
+- **Phase:** R3: average the grade over the query variants, or add a margin band that
+  generates and lets IsUse decide.
+
+## KI-82: Playwright specs are not run in CI
+
+- **What:** CI runs the api tests and, on the branch, vitest; the 11 Playwright specs
+  and the paid evals run only by hand. Third-party review #7.
+- **Phase:** check-work (CI).
+
+## KI-83: citation precision is claim-level, not per citation
+
+- **What:** the reviewer credits one claim verdict to every citation on the claim
+  (documented as "claim-level citation support", TRD §10). A true per-citation check
+  costs one check per claim-citation pair. Third-party review #6.
+- **Phase:** R3, once the replay shows the cost.
+
+## KI-84: the overhead metric subtracts overlapping provider calls
+
+- **What:** `evals/attribution.py` subtracts the sum of provider durations from wall
+  time, while ingress and rewrite run concurrently; the sum can exceed the wall time
+  and the result can be negative. The latency check is warn-only until phase 3.
+  Third-party review #11.
+- **Phase:** phase 3 (latency).

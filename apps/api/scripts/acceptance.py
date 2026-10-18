@@ -35,7 +35,6 @@ import base64
 import binascii
 import json
 import os
-import re
 import statistics
 import sys
 import time
@@ -48,6 +47,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import httpx
 
+from evals.abstention import NOT_IN_SOURCES as NOT_IN_SOURCES
+from evals.abstention import says_not_in_sources as says_not_in_sources
+from evals.content import forbids_hit, mentions_hit
 from scripts import smoke_chat as smoke_chat
 from textkit import detect_language
 
@@ -67,26 +69,6 @@ NO_EVAL_USER = (
     f"{EVAL_PLAN_NAME} plan. Refusing to sign up a throwaway user instead — it "
     "would score a library the eval never uses."
 )
-
-# "Says plainly it's not in the sources" — generous on purpose: batch B owns
-# the exact wording, this only has to recognise the shape.
-NOT_IN_SOURCES = tuple(
-    re.compile(p, re.IGNORECASE)
-    for p in (
-        r"not (?:in|among|covered|found|mentioned|included) (?:the|my|your|these|your) ",
-        r"(?:don'?t|do not|cannot|can'?t|couldn'?t|doesn'?t|does not) "
-        r"(?:find|have|contain|see|show)",
-        r"(?:isn'?t|is not|aren'?t|are not|wasn'?t) (?:in|among|covered|included)",
-        r"no (?:matching|relevant|such) ",
-        r"not part of ",
-        r"outside (?:the|my|your) ",
-    )
-)
-
-
-def says_not_in_sources(answer: str) -> bool:
-    return any(p.search(answer) for p in NOT_IN_SOURCES)
-
 
 # Re-authenticate this long before the token's own `exp`, not after: a token
 # that expires between the chat and its turn 401s, and the turn runner raises on
@@ -142,51 +124,6 @@ def observed_class(item: dict[str, Any], result: dict[str, Any]) -> str:
     if any(m.lower() in lowered for m in item.get("mention", [])):
         return "library"
     return "smalltalk"
-
-
-def mentions_hit(item: dict[str, Any], answer: str) -> bool:
-    """True when the answer states every string the item requires.
-
-    `mention_all` is the ambiguity-item channel: the corpus answers the question
-    two ways, so the item names **both** referents and an answer that names only
-    one has not answered the question the corpus poses. These items are expected
-    to fail today — P2's prompt change is what surfaces the ambiguity — and are
-    marked `pending_p2` so they are reported separately and do not drag down the
-    pass rate.
-    """
-    lowered = answer.lower()
-    required = [str(m).lower() for m in item.get("mention_all", [])]
-    optional = [str(m).lower() for m in item.get("mention", [])]
-    optional += [str(m).lower() for m in item.get("alt_mention", [])]
-    if required:
-        return all(m in lowered for m in required) and (
-            not optional or any(m in lowered for m in optional)
-        )
-    if not optional:
-        return True
-    return any(m in lowered for m in optional)
-
-
-def forbids_hit(item: dict[str, Any], answer: str) -> str | None:
-    """The first `forbid` string the answer contains, if any.
-
-    For a counterfactual item (evals/counterfactual) the corpus states a
-    deliberately altered fact, so the real-world value is the one a model
-    produces from memory. `forbid` names it: an answer that states the
-    document's value **and** the real one fails, because the product would have
-    handed the user a figure its own sources contradict.
-
-    Matched on word boundaries for the same reason `mention` should be: `IP68`
-    must not fire on `IP69K`, and `330` must not fire on `3300`.
-    """
-    for raw in item.get("forbid", []):
-        needle = str(raw).lower()
-        if not needle:
-            continue
-        pattern = r"(?<!\w)" + re.escape(needle) + r"(?!\w)"
-        if re.search(pattern, answer.lower()):
-            return str(raw)
-    return None
 
 
 def language_ok(item: dict[str, Any], result: dict[str, Any]) -> bool:
@@ -275,6 +212,15 @@ def summarise(
       correct. It is counted separately precisely because nothing else sees it —
       a content question routed to `chitchat` skips retrieval and answers from
       model memory, and that is the one behaviour this product does not ship.
+    - `content_miss` — an answer-class item that **answered** (did not decline)
+      and cited, but that the scorer fails: its answer does not state the
+      strings the item requires, cites another book, is in the wrong language,
+      or states a forbidden value. Every other class here would pass it: it is not a decline, not
+      an abstention, not an error, not uncited, and it cited a plausible book.
+      The content check the plan's bar names ("≤ 1 content miss of 33
+      answerables", KI-75) has to be its own count, because a run that holds
+      decline accuracy *and* false abstention *and* citations can still be
+      wrong about the thing it was asked.
     - `errored` — the run did not complete. Never a decline: an errored item
       has no behaviour to grade.
     """
@@ -284,6 +230,7 @@ def summarise(
         "unclean_declines": 0,
         "false_abstentions": 0,
         "uncited_answers": 0,
+        "content_misses": 0,
         "errored": 0,
         "answer_items": 0,
         "abstain_items": 0,
@@ -297,6 +244,7 @@ def summarise(
         "unclean_decline_ids": [],
         "false_abstention_ids": [],
         "uncited_answer_ids": [],
+        "content_miss_ids": [],
         "errored_ids": [],
         "failed_ids": [],
     }
@@ -317,6 +265,10 @@ def summarise(
         abstained = row.get("message_status") == "abstained"
         cited = bool(row.get("citations"))
         declined = abstained or says_not_in_sources(str(row.get("answer") or ""))
+        if expect == "answer" and cited and not abstained:
+            # A cited answer is an answer: a negative phrase inside it (a quoted
+            # line) must not file a correct reply as a false abstention.
+            declined = False
         if expect == "not_in_sources":
             counts["abstain_items"] += 1
             # The order here is PRD §5's, not convenience's. Whether the reply
@@ -347,6 +299,17 @@ def summarise(
                 # evidence behind it is a different product from this one.
                 counts["uncited_answers"] += 1
                 detail["uncited_answer_ids"].append(str(row["id"]))
+            elif not row.get("pass"):
+                # Answered, cited, and the scorer failed it: it did not state
+                # the thing the item asked for, or cited another book, or
+                # replied in another language, or stated a forbidden value. The
+                # other answer-class counts all pass this item, which is why
+                # correctness needs a count of its own (KI-75). Keyed on the
+                # scorer's own verdict, not on `mention_hit` alone, so the
+                # failed list and the verdict cannot disagree (third-party
+                # review #6).
+                counts["content_misses"] += 1
+                detail["content_miss_ids"].append(str(row["id"]))
         elif expect == "smalltalk":
             counts["smalltalk_items"] += 1
         elif expect == "library":
@@ -416,6 +379,7 @@ async def run(
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     set_file: Path | None = None,
     summary_out: Path | None = None,
+    concurrency: int = 4,
 ) -> None:
     path = set_file or SET_FILE
     dataset = json.loads(path.read_text())
@@ -469,41 +433,81 @@ async def run(
             token_state["expires_at"] = now + _token_lifetime(token) - TOKEN_REFRESH_MARGIN_SECONDS
             return token
 
-        for item in items:
-
+        async def score(item: dict[str, Any]) -> dict[str, Any]:
             async def play(item: dict[str, Any] = item) -> dict[str, Any]:
                 token = await fresh_token()
                 headers = {"Authorization": f"Bearer {token}"}
                 chat = await client.post("/chats", headers=headers, json={"title": None})
-                chat_id = str(chat.json()["id"])
+                body = chat.json()
+                if "id" not in body:
+                    return {
+                        "status": "failed",
+                        "reason": f"chat creation error: {chat.status_code} {str(body)[:200]}",
+                    }
+                chat_id = str(body["id"])
                 result: dict[str, Any] = {}
                 for turn in item["turns"]:
                     fresh = await fresh_token()
-                    result = await smoke_chat.run_turn(client, fresh, chat_id, turn)
+                    try:
+                        result = await smoke_chat.run_turn(client, fresh, chat_id, turn)
+                    except SystemExit as e:
+                        result = {
+                            "status": "failed",
+                            "reason": f"run error: {e}",
+                            "answer": "",
+                            "citations": [],
+                            "message_status": None,
+                        }
                 return result
 
+            # Only an infrastructure failure is measured again: a run that did
+            # not complete (provider error, rate limit, stream drop, timeout).
+            # A completed answer that the scorer fails is the product's
+            # behaviour and is scored as it came; re-rolling it would let a
+            # wrong answer or a false abstention pass on a second draw (third-
+            # party review #3). Every attempt is kept on the row.
+            attempts: list[dict[str, Any]] = []
+
+            def record(result: dict[str, Any]) -> None:
+                attempts.append(
+                    {
+                        "status": result.get("status"),
+                        "class": observed_class(item, result),
+                        "pass": passes(item, result),
+                        "answer": result.get("answer"),
+                    }
+                )
+
             result = await play()
-            # OpenRouter's free tier caps free-model requests at 20/min
-            # account-wide; a failed run usually means this item hit the cap,
-            # so wait out the window and measure the item once more.
-            if str(result.get("status", "")).startswith("failed"):
+            record(result)
+            if result.get("status") != "completed":
                 print(f"  {item['id']}: {result['status']}; retrying in 70s", flush=True)
                 await asyncio.sleep(70)
                 result = await play()
+                record(result)
             got = observed_class(item, result)
             ok = passes(item, result)
-            rows.append(
+            mention_hit = mentions_hit(item, result.get("answer") or "")
+            row: dict[str, Any] = (
                 {
                     "id": item["id"],
                     "expect": item["expect"],
                     "got": got,
                     "pass": ok,
+                    # Carried, not recomputed in `summarise`: the item's
+                    # `mention`/`mention_all`/`alt_mention` lists stay in
+                    # `books.json`, so the row records the one boolean the
+                    # content-miss count needs (KI-75). `mentions_hit` is a
+                    # pure function of the item and the answer, so scoring it
+                    # once at play time and reading it here cannot disagree.
+                    "mention_hit": mention_hit,
+                    "attempts": attempts,
                     "pending_p2": bool(item.get("pending_p2")),
                     "reason": failure_reason(item, result),
                     "q_language": detect_language(item["turns"][-1]),
                     "a_language": detect_language(result.get("answer") or ""),
                     "ttft_ms": result.get("ttft_ms"),
-                    "sufficient": result.get("sufficient"),
+                    "evidence": result.get("evidence"),
                     "status": result.get("status"),
                     "message_status": result.get("message_status"),
                     "intent": result.get("intent"),
@@ -516,18 +520,30 @@ async def run(
             )
             print(
                 f"  {item['id']}: {got} "
-                f"{'PASS' if ok else 'FAIL' + ' (' + str(rows[-1]['reason']) + ')'}",
+                f"{'PASS' if ok else 'FAIL' + ' (' + str(row['reason']) + ')'}",
                 flush=True,
             )
             # Opt-in free-model pacing (--pace N; default 0 = no sleep),
             # skipped after smalltalk items and after the last item.
             if pace and item is not items[-1] and item["expect"] != "smalltalk":
                 await sleep(pace)
+            return row
 
-    print("\n{| id | expected | got | pass | ttft ms | sufficient |")
+        # Items are independent (a fresh chat each), so they run `concurrency`
+        # at a time; 57 serial items took 42 min in R2a-4. Rows keep the set's
+        # order. Pacing for free-model limits only makes sense one at a time.
+        gate = asyncio.Semaphore(1 if pace else concurrency)
+
+        async def guarded(item: dict[str, Any]) -> dict[str, Any]:
+            async with gate:
+                return await score(item)
+
+        rows.extend(await asyncio.gather(*(guarded(i) for i in items)))
+
+    print("\n{| id | expected | got | pass | ttft ms | evidence |")
     print("|---|---|---|---|---|---|")
     for r in rows:
-        scores = ",".join(f"{s:.2f}" for s in r["sufficient"] or []) or "-"
+        scores = ",".join(f"{s:.2f}" for s in r["evidence"] or []) or "-"
         print(
             f"| {r['id']} | {r['expect']} | {r['got']} | {'pass' if r['pass'] else 'FAIL'} "
             f"| {r['ttft_ms'] if r['ttft_ms'] is not None else '-'} | {scores} |"
@@ -619,6 +635,20 @@ if __name__ == "__main__":
         "`evals.acceptance_gate` to classify. `make check-work` step 9 reads it "
         "from this path rather than scraping stdout.",
     )
+    parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=4,
+        help="items played at once (default 4; --pace forces 1)",
+    )
     args = parser.parse_args()
     only = args.only.split(",") if args.only else None
-    asyncio.run(run(only=only, pace=args.pace, set_file=args.set, summary_out=args.summary_out))
+    asyncio.run(
+        run(
+            only=only,
+            pace=args.pace,
+            set_file=args.set,
+            summary_out=args.summary_out,
+            concurrency=args.concurrency,
+        )
+    )

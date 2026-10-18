@@ -15,8 +15,9 @@ const events: StreamEvent[] = [
   { type: 'review.claim', seq: 9, claim_id: 'c1', text: 'claim', citation_ids: ['1'], verdict: 'supported', p_supported: 0.9 },
   { type: 'revision', seq: 10, revised_text: 'answer', diff: '' },
   { type: 'answer.delta', seq: 11, text: 'answer' },
-  { type: 'conflict', seq: 12, citation_ids_left: ['1'], citation_ids_right: ['2'], rule_applied: 'prefer' },
-  { type: 'abstain', seq: 13, found_summary: 'none', missing_summary: 'all' },
+  { type: 'answer.retract', seq: 12, text: 'The sources do not cover that.', reason: 'the usefulness check rejected the answer' },
+  { type: 'conflict', seq: 13, citation_ids_left: ['1'], citation_ids_right: ['2'], rule_applied: 'prefer' },
+  { type: 'abstain', seq: 14, found_summary: 'none', missing_summary: 'all' },
   { type: 'suggestions', seq: 14, questions: ['Next?'] },
   { type: 'metrics', seq: 15, latency_ms: {}, tokens_in: 1, tokens_out: 2, credits: 0, context_used: 0, context_window: 10 },
   { type: 'heartbeat', seq: 16 },
@@ -32,5 +33,11 @@ describe('describeStep', () => {
     expect(new Set(labels).size).toBeGreaterThan(8)
     expect(describeStep(events[1]).detail).toBe('Find the policy')
     expect(describeStep(events[8]).status).toBe('active')
+  })
+
+  it('names the retraction as a withdrawal, not a new answer', () => {
+    const step = describeStep({ type: 'answer.retract', seq: 12, text: 'decline', reason: 'rejected' } as never)
+    expect(step.status).toBe('warning')
+    expect(step.id).toBe('12-retract')
   })
 })

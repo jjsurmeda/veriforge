@@ -33,27 +33,20 @@ function decision(overrides: Partial<Decision> & Pick<Decision, 'name'>): Decisi
 const allPass: Decision[] = [
   decision({ name: 'intent', value: 'lookup', probability: 0.9, stage: 'ingress' }),
   decision({
-    name: 'sufficient',
+    name: 'evidence',
     value: 0.81,
-    probability: 0.81,
-    stage: 'sufficient',
-    call_id: 'call-suff',
+    probability: null,
+    stage: 'gate',
+    call_id: 'call-ev',
     batch_size: 1,
-    threshold: 0.05,
+    threshold: 0.55,
   }),
   decision({
-    name: 'relevance',
-    value: 0.72,
-    stage: 'rerank',
-    threshold: 0.6,
-    reasoning: 'max rerank score of the post-sanitize winners (6 scored passages)',
-  }),
-  decision({
-    name: 'entity_0',
+    name: 'entity_0_0',
     value: 0.66,
     probability: 0.66,
-    stage: 'sufficient',
-    call_id: 'call-suff',
+    stage: 'evidence',
+    call_id: 'call-ev',
     batch_size: 3,
     threshold: 0.5,
   }),
@@ -78,39 +71,38 @@ describe('EvidenceGateCard', () => {
     const card = screen.getByRole('region', { name: 'Evidence gates' })
     const rows = within(card).getAllByRole('meter')
     expect(rows.map((row) => row.getAttribute('aria-label'))).toEqual([
-      'Sufficiency value 0.81, threshold 0.05, answered',
-      'Relevance value 0.72, threshold 0.60, on topic',
+      'Evidence value 0.81, threshold 0.55, answered',
       'Entity match value 0.66, threshold 0.50, matched',
       'Conflict value 0.02, threshold 0.60, sources agree',
     ])
     // The value is rendered as text, not only as a bar width.
     expect(within(card).getByText('0.81')).toBeTruthy()
-    expect(within(card).getByText('vs 0.05')).toBeTruthy()
+    expect(within(card).getByText('vs 0.55')).toBeTruthy()
   })
 
   it('gives a cleared gate and a blocked gate different shapes as well as words', () => {
     const cleared = render(
       <EvidenceGateCard
-        decisions={[decision({ name: 'relevance', value: 0.9, stage: 'rerank', threshold: 0.6 })]}
+        decisions={[decision({ name: 'evidence', value: 0.9, stage: 'gate', threshold: 0.55 })]}
       />,
     )
-    const clearedShape = verdictIcon('on topic')?.innerHTML
+    const clearedShape = verdictIcon('answered')?.innerHTML
     cleanup()
 
     render(
       <EvidenceGateCard
-        decisions={[decision({ name: 'relevance', value: 0.41, stage: 'rerank', threshold: 0.6 })]}
+        decisions={[decision({ name: 'evidence', value: 0.41, stage: 'gate', threshold: 0.55 })]}
       />,
     )
     // Text verdict, and the value beside it rather than a colour alone.
-    expect(screen.getByText('off topic')).toBeTruthy()
+    expect(screen.getByText('too little evidence')).toBeTruthy()
     expect(screen.getByRole('meter').getAttribute('aria-label')).toBe(
-      'Relevance value 0.41, threshold 0.60, off topic',
+      'Evidence value 0.41, threshold 0.55, too little evidence',
     )
     // The two verdicts do not share an icon, so the rows stay distinguishable
     // with no colour perception at all.
-    expect(verdictIcon('off topic')?.innerHTML).toBeTruthy()
-    expect(verdictIcon('off topic')?.innerHTML).not.toBe(clearedShape)
+    expect(verdictIcon('too little evidence')?.innerHTML).toBeTruthy()
+    expect(verdictIcon('too little evidence')?.innerHTML).not.toBe(clearedShape)
     cleared.unmount()
   })
 
@@ -118,9 +110,9 @@ describe('EvidenceGateCard', () => {
     render(
       <EvidenceGateCard
         decisions={[
-          decision({ name: 'entity_0', value: 0.11, probability: 0.11, threshold: 0.5, batch_size: 3 }),
-          decision({ name: 'entity_1', value: 0.58, probability: 0.58, threshold: 0.5, batch_size: 3 }),
-          decision({ name: 'entity_2', value: 0.04, probability: 0.04, threshold: 0.5, batch_size: 3 }),
+          decision({ name: 'entity_0_0', value: 0.11, probability: 0.11, threshold: 0.5, batch_size: 3 }),
+          decision({ name: 'entity_1_0', value: 0.58, probability: 0.58, threshold: 0.5, batch_size: 3 }),
+          decision({ name: 'entity_2_0', value: 0.04, probability: 0.04, threshold: 0.5, batch_size: 3 }),
         ]}
       />,
     )
@@ -137,8 +129,8 @@ describe('EvidenceGateCard', () => {
     render(
       <EvidenceGateCard
         decisions={[
-          decision({ name: 'entity_0', value: 0.06, probability: 0.06, threshold: 0.5 }),
-          decision({ name: 'entity_1', value: 0.31, probability: 0.31, threshold: 0.5 }),
+          decision({ name: 'entity_0_0', value: 0.06, probability: 0.06, threshold: 0.5 }),
+          decision({ name: 'entity_1_0', value: 0.31, probability: 0.31, threshold: 0.5 }),
         ]}
       />,
     )
@@ -154,11 +146,11 @@ describe('EvidenceGateCard', () => {
       <EvidenceGateCard
         decisions={[
           decision({
-            name: 'sufficient',
-            value: 0.44,
-            probability: 0.44,
+            name: 'evidence',
+            value: 0.8,
+            probability: null,
             engine: 'fallback',
-            threshold: 0.05,
+            threshold: 0.55,
           }),
         ]}
       />,
@@ -219,14 +211,14 @@ describe('EvidenceGateCard', () => {
     render(
       <EvidenceGateCard
         decisions={[
-          decision({ name: 'sufficient', value: 0.01, probability: 0.01, threshold: 0.05 }),
-          decision({ name: 'sufficient', value: 0.79, probability: 0.79, threshold: 0.05 }),
+          decision({ name: 'evidence', value: 0.01, probability: null, threshold: 0.55 }),
+          decision({ name: 'evidence', value: 0.79, probability: null, threshold: 0.55 }),
         ]}
       />,
     )
 
     expect(screen.getByRole('meter').getAttribute('aria-label')).toBe(
-      'Sufficiency value 0.79, threshold 0.05, answered',
+      'Evidence value 0.79, threshold 0.55, answered',
     )
     // Two attempts, not two measurements: the row must not claim a count it
     // did not fold, or a reader counts passages that are not passages.
@@ -234,18 +226,18 @@ describe('EvidenceGateCard', () => {
   })
 
   it('uses the value as the number when a gate publishes it without a probability', () => {
-    // The relevance gate is computed, not asked for: `value` carries the max
-    // rerank score and `probability` is null. Reading only `probability` would
-    // show 0.00 against a 0.60 floor — a gate that looks blocked when it
+    // The evidence gate is computed, not asked for: `value` carries the mean
+    // top-3 rubric grade and `probability` is null. Reading only `probability`
+    // would show 0.00 against a 0.55 floor — a gate that looks blocked when it
     // cleared.
     render(
       <EvidenceGateCard
-        decisions={[decision({ name: 'relevance', value: 0.72, stage: 'rerank', threshold: 0.6 })]}
+        decisions={[decision({ name: 'evidence', value: 0.72, stage: 'gate', threshold: 0.55 })]}
       />,
     )
 
     expect(screen.getByRole('meter').getAttribute('aria-label')).toBe(
-      'Relevance value 0.72, threshold 0.60, on topic',
+      'Evidence value 0.72, threshold 0.55, answered',
     )
     expect(screen.getByText('0.72')).toBeTruthy()
   })

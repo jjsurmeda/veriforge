@@ -194,6 +194,46 @@
         "title": "AnswerHold",
         "type": "object"
       },
+      "AnswerRetract": {
+        "description": "AirFlow:stream, ADR-006 item 4 \u2014 a streamed answer whose post-stream\nIsUse check failed is retracted: the client replaces the rendered text\nwith the decline. The event must be idempotent-safe: any number of\nretractions lands the same replaced text, so a reconnect cannot\nresurrect text the trace already strikes.",
+        "properties": {
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "run_id": {
+            "default": "",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "seq": {
+            "default": 0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "const": "answer.retract",
+            "default": "answer.retract",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason",
+          "text"
+        ],
+        "title": "AnswerRetract",
+        "type": "object"
+      },
       "AuditOut": {
         "properties": {
           "action": {
@@ -650,7 +690,8 @@
           "engine": {
             "enum": [
               "jev",
-              "fallback"
+              "fallback",
+              "unavailable"
             ],
             "title": "Engine",
             "type": "string"
@@ -3042,6 +3083,7 @@
             "abstain": "#/components/schemas/Abstain",
             "answer.delta": "#/components/schemas/AnswerDelta",
             "answer.hold": "#/components/schemas/AnswerHold",
+            "answer.retract": "#/components/schemas/AnswerRetract",
             "conflict": "#/components/schemas/Conflict",
             "decision": "#/components/schemas/Decision",
             "heartbeat": "#/components/schemas/Heartbeat",
@@ -3088,6 +3130,9 @@
           },
           {
             "$ref": "#/components/schemas/Abstain"
+          },
+          {
+            "$ref": "#/components/schemas/AnswerRetract"
           },
           {
             "$ref": "#/components/schemas/Conflict"
@@ -5684,7 +5729,7 @@
     },
     "/healthz": {
       "get": {
-        "description": "Liveness plus the three facts an operator needs during an incident.\n\nBackward compatible by construction: `status` and `db` keep their exact\nvalues and the 200/503 split on the database is unchanged, so the\nexisting check (and `scripts/seed_gutenberg.py`'s, which reads this\nendpoint before seeding) keeps working. The new keys are additive.\n\nDeliberately *not* a readiness gate. `breaker`, `jev` and\n`worker_heartbeat_age_s` describe degraded service, and a run still\nanswers with the fallback engine while the breaker is open \u2014 returning\n503 for that would take the whole API out for something the pipeline is\ndesigned to absorb. They are reported so an alarm can read them, and the\nstatus stays 200 while the service is serving.",
+        "description": "Liveness plus the three facts an operator needs during an incident.\n\n`status` and `db` decide the 200/503 split on the database;\n`scripts/seed_gutenberg.py` reads them before seeding.\n\nDeliberately *not* a readiness gate. `breaker`, `jev` and\n`worker_heartbeat_age_s` describe degraded service, and a run still\nanswers with the fallback engine while the breaker is open \u2014 returning\n503 for that would take the whole API out for something the pipeline is\ndesigned to absorb. They are reported so an alarm can read them, and the\nstatus stays 200 while the service is serving.",
         "operationId": "healthz_healthz_get",
         "responses": {
           "200": {

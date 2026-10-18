@@ -52,6 +52,18 @@ BOOKS: list[tuple[int, str]] = [
     (1982, "羅生門"),
 ]
 
+# The held-out set's books (evals/heldout/items.json): never part of the books
+# set's library, ingested into a lane of their own (GUTENBERG_SET=heldout).
+HELDOUT_BOOKS: list[tuple[int, str]] = [
+    (345, "Dracula"),
+    (174, "The Picture of Dorian Gray"),
+    (1260, "Jane Eyre"),
+    (98, "A Tale of Two Cities"),
+    (4650, "Candide"),
+]
+if os.environ.get("GUTENBERG_SET") == "heldout":
+    BOOKS = HELDOUT_BOOKS
+
 _MARKER_FLAGS = re.IGNORECASE | re.DOTALL
 START_MARKER = re.compile(
     r"\*\*\*\s*START OF (THE|THIS) PROJECT GUTENBERG EBOOK.*?\*\*\*", _MARKER_FLAGS

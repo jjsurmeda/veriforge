@@ -142,8 +142,8 @@ async def load_items(
         if should_abstain is None:
             should_abstain = row["expect"] == "not_in_sources"
         reference_answer = row.get("reference_answer") or (
-            "forbid=" + ",".join(row["forbid"])
-            if row.get("forbid")
+            "; ".join(str(m) for m in row["mention"])
+            if row.get("mention")
             # A should-abstain item has no reference answer by definition, and
             # the column is NOT NULL, so the fact that the corpus does not cover
             # the question is what goes in. The seed set spells this as an empty

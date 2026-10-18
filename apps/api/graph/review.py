@@ -16,12 +16,13 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from decisions.engine import EngineProtocol
+from decisions.engine import DecisionUnavailable, EngineProtocol
 from prompts.load import load_prompt
 from providers.llm import complete
 from retrieval.context import count_tokens
 from retrieval.expand import ExpandedContext
 from schemas.decisions import Answer, Choice, Question
+from textkit import detect_language
 
 logger = logging.getLogger(__name__)
 
@@ -127,18 +128,25 @@ def score_review(claims: list[VerifiedClaim], citation_count: int) -> ReviewScor
 
 
 def plan_delivery(
-    *, mode: str, risk: str, sufficiency_p: float | None, sufficient_threshold: float
+    *, mode: str, risk: str, evidence_p: float | None, stream_line: float
 ) -> str:
     """'hold' (verify before delivery) or 'stream' (deliver, review after)
-    per TRD §10's risk-based delivery table. Sufficiency within 0.1 of the
-    retry threshold counts as high-risk even when ingress said low."""
+    per TRD §10's risk-based delivery table (ADR-006 item 4).
+
+    The band replaces the old ±0.1 rule: an answer whose graded evidence
+    under the stream line is held under the verifying step until IsUse
+    passes; at or above the line it streams (and a failed IsUse retracts
+    it, `answer.retract`). High-risk intents hold however graded the run
+    was; the line only sets where a low-risk, clearly-evidenced Auto
+    answer may skip the hand-off. The evidence floor plays no part here —
+    a run below it never plans, it abstains first."""
     if mode == "deep":
         return "hold"
     if mode == "fast":
         return "stream"
     if risk == "high":
         return "hold"
-    if sufficiency_p is not None and abs(sufficiency_p - sufficient_threshold) <= 0.1:
+    if evidence_p is None or evidence_p < stream_line:
         return "hold"
     return "stream"
 
@@ -378,9 +386,17 @@ async def verify_claims(
         questions: dict[str, Question] = {
             claim.claim_id: _verdict_question(claim, contexts, answer) for claim in batch
         }
-        batch_answers = await engine.decide(
-            state={"run_id": run_id, "kind": "claim_verdict"}, questions=questions
-        )
+        try:
+            batch_answers = await engine.decide(
+                state={"run_id": run_id, "kind": "claim_verdict"}, questions=questions
+            )
+        except DecisionUnavailable as exc:
+            # The reviewer degrades to "unverified", which is the branch it
+            # already takes for a claim Jev did not answer and for one whose
+            # verdict it could not parse (KI-57). It does not degrade to
+            # "supported": an unreachable grader is not evidence for a claim.
+            logger.warning("decision layer unavailable at claim_verdict (%s)", exc)
+            batch_answers = {}
         for claim in batch:
             decision = batch_answers.get(claim.claim_id)
             verdict = str(decision.value) if decision is not None else "unsupported"
@@ -445,6 +461,14 @@ async def revise_answer(
     )
     revised_text = str(revised).strip()
     if not revised_text or revised_text == answer.strip():
+        return None
+    # A revision is the answer the user is shown, so it must still be an answer
+    # in the user's language. The R2a final check-work delivered a Portuguese
+    # "this text cannot be revised" for a French summary question (broad-bovary);
+    # a revision in another language than the draft is the rewriter refusing, not
+    # revising, and the draft stands.
+    draft_language, revised_language = detect_language(answer), detect_language(revised_text)
+    if draft_language and revised_language and draft_language != revised_language:
         return None
     return revised_text
 
@@ -513,6 +537,12 @@ async def review_answer(
         )
         result.claims = re_verified
         result.scores = score_review(re_verified, citation_count)
+    else:
+        # The revision is what gets delivered, so scores left over from the
+        # original answer would describe text nobody sees. Unmeasured is the
+        # honest value, and the eval gate counts it (answers_unscored).
+        result.claims = []
+        result.scores = None
     result.revised_text = revised
     result.diff = make_diff(answer, revised)
     return result

@@ -36,9 +36,9 @@ EMAIL = "autosteps@test.dev"
 
 
 class _AutoJev:
-    """Answers every question the Auto path asks. `risk` low and
-    `sufficient` high, so `plan_delivery` chooses "stream" and deltas are
-    published as they are produced rather than held for review."""
+    """Answers every question the Auto path asks. `risk` low, so
+    `plan_delivery` chooses "stream" and deltas are published as they are
+    produced rather than held for review."""
 
     async def decide(
         self, *, state: dict[str, Any] | str, questions: dict[str, Question]
@@ -54,8 +54,6 @@ class _AutoJev:
                 answers[name] = Answer(engine="jev", latency_ms=1, value=value, probability=0.9)
             elif name == "risk":
                 answers[name] = Answer(engine="jev", latency_ms=1, value="low", probability=0.95)
-            elif name == "sufficient":
-                answers[name] = Answer(engine="jev", latency_ms=1, value=0.9, probability=0.9)
             elif name == "lexical_weight":
                 answers[name] = Answer(engine="jev", latency_ms=1, value=0.5, probability=0.5)
             else:
@@ -112,7 +110,7 @@ async def _parse_sse(lines: AsyncIterator[str]) -> AsyncIterator[tuple[str, dict
 
 
 async def _seed_one_chunk(db: AsyncSession, user: User) -> list[ScoredChunk]:
-    """One real chunk, so small-to-big expansion and the sufficiency gate
+    """One real chunk, so small-to-big expansion and the evidence gate
     have something to work with."""
     from db.models import Collection
 

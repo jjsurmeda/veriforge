@@ -31,8 +31,8 @@ VALID_EXPECTS = {"answer", "library", "not_in_sources", "smalltalk"}
 # `mention_all`. Those three carried `pending_p2` until P2 shipped and are
 # scored normally now (2026-10-12).
 EXPECTED_CLASS_COUNTS = {
-    "answer": 32,
-    "not_in_sources": 21,
+    "answer": 33,
+    "not_in_sources": 20,
     "smalltalk": 2,
     "library": 2,
 }
@@ -60,9 +60,13 @@ NEAR_MISS_ITEMS = [
     "outside-holmes-boston",
     "ml-de-bovary-animal",
     "ml-fr-noli-baiser",
-    "ml-zh-xiyou-nezha",
     "ml-ja-rashomon-rokuro",
 ]
+
+# 2026-10-17: `ml-zh-xiyou-nezha` left the near-miss list. The corpus does say
+# where the Heavenly King's household lives (「原來是天王住宅，號雲樓宮」), and
+# the probe's answer cited it; see its `label_decision`.
+RELABELLED_TO_ANSWER = ["ml-zh-xiyou-nezha"]
 
 # The reason D3 added them: only two broad/summarize answer items existed
 # (broad-sherlock, broad-frankenstein), both English, so the answer side next
@@ -147,11 +151,12 @@ def test_the_abstain_class_is_wide_enough_to_score_stably() -> None:
         assert "cite" not in item and "mention" not in item, item["id"]
 
 
-def test_the_abstain_class_reaches_twenty_one_with_two_non_english_near_misses() -> None:
+def test_the_abstain_class_has_two_non_english_near_misses() -> None:
     """P1b item 3's target was 20 should-abstain items, of which the six added
     are near-misses and at least two are asked in the book's own language.
     Phase 1c item 2 (2026-10-12) made it 21 by relabelling `amb-bovary-homais`
-    — the class got wider, not thinner, which is the direction KI-6 asked for."""
+    — the class got wider, not thinner, which is the direction KI-6 asked for.
+    2026-10-17 made it 20 again: `ml-zh-xiyou-nezha` turned out answerable."""
     by_id = {item["id"]: item for item in ITEMS}
     for id_ in NEAR_MISS_ITEMS:
         assert id_ in by_id, id_
@@ -167,6 +172,18 @@ def test_the_abstain_class_reaches_twenty_one_with_two_non_english_near_misses()
     ]
     assert len(multilingual) >= 2, multilingual
 
+
+
+def test_an_item_relabelled_to_answer_is_scored_on_its_content() -> None:
+    """A relabelled should-decline becomes an ordinary answer item: it cites its
+    book and names what the answer must contain, or the content-miss rule
+    (KI-75) could not fail it."""
+    by_id = {item["id"]: item for item in ITEMS}
+    for id_ in RELABELLED_TO_ANSWER:
+        item = by_id[id_]
+        assert item["expect"] == "answer", id_
+        assert item.get("cite") and item.get("mention"), id_
+        assert item.get("label_decision"), id_
 
 def test_the_ambiguity_items_name_both_referents_and_are_scored_normally() -> None:
     """KI-27's Wukong shape: the corpus answers two ways, so the item lists both.

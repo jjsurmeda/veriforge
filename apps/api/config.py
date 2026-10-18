@@ -143,6 +143,7 @@ class Settings(BaseSettings):
         "claim_extractor": 2048,
         "planner": 1024,
         "async_judge": 1024,
+        "summariser": 2048,
         # The fallback engine answers the WHOLE batched decide call in one
         # JSON object. The largest batch is the post-sanitize sufficiency
         # call with its per-passage entity questions (8-12 Noul answers,

@@ -1,8 +1,10 @@
 """Hybrid retrieval query (TRD §9.2): vector + BM25 in one SQL, RRF fusion.
 
 vec CTE (top 50 cosine, scope-filtered), lex CTE (top 50 pg_search BM25,
-same scope), fused = Σ weight_i / (60 + rank_i), top 40 out. Rerank,
-dedupe and small-to-big expansion live in rerank.py/expand.py.
+same scope), fused = Σ weight_i / (60 + rank_i). The pool is the fused top
+40 plus the first 8 BM25-only candidates (lex rank order) that no weight
+would carry over the vector top-40 (see `LEX_RESERVE`). Rerank, dedupe and
+small-to-big expansion live in rerank.py/expand.py.
 
 The ownership scope is always injected (filters.build_scope); the fusion
 weight is the `lexical_weight` Score decision from ingress (TRD §8). The
@@ -29,6 +31,21 @@ logger = logging.getLogger(__name__)
 VEC_LIMIT = 50
 LEX_LIMIT = 50
 FUSED_LIMIT = 40
+# The BM25 leg's own top candidates ride IN ADDITION to the fused order: the
+# pool is the fused top `FUSED_LIMIT` plus up to `LEX_RESERVE` lex-only rows
+# (no vector score) the fused order never carries. The ingress
+# `lexical_weight` Score reads 0.00-0.04 on the books set, and the RRF score is
+# proportional to the weight, so a fact that matches lexically but embeds far
+# from the query (`ml-zh-xiyou-nezha`'s answer passage) never reached the
+# rerank. Measured 2026-10-18 with `scripts/measure_recall.py` over the R2a-4
+# proof's recorded queries (23 answer passages, books):
+#   recorded weight 22/23 (misses nezha) · floor 0.2-0.4 22/23 (same miss)
+#   floor 0.5 22/23 (misses frame-walton) · floor 0.6 19/23 · floor 0.8 16/23
+#   reserve 8 23/23, mean pool 48 · reserve 12 23/23, 52 · reserve 24 23/23, 64
+# A reserve keeps the fused top 40 unchanged, so the thresholds calibrated on
+# it still apply; 8 is the smallest measured value that reaches every passage.
+LEX_RESERVE = 8
+
 RRF_K = 60
 
 # Must stay in step with the `text` tokenizer in migration 0013. The
@@ -60,19 +77,36 @@ fused AS (
   SELECT COALESCE(v.id, l.id) AS id,
          v.score AS vector_score,
          l.score AS bm25_score,
+         l.rank AS lex_rank,
          COALESCE(CAST(:vec_w AS float8) / ({rrf_k} + v.rank), 0)
            + COALESCE(CAST(:lex_w AS float8) / ({rrf_k} + l.rank), 0) AS fused_score
   FROM vec v FULL OUTER JOIN lex l ON l.id = v.id
-)
+),
+kept AS (
+  SELECT id, vector_score, bm25_score, fused_score
+  FROM fused
+  WHERE id IS NOT NULL
+  ORDER BY fused_score DESC, id
+  LIMIT :fused_limit
+),
+rescued AS (
+  SELECT id, vector_score, bm25_score, fused_score
+  FROM fused
+  WHERE id IS NOT NULL
+    AND vector_score IS NULL
+    AND id NOT IN (SELECT id FROM kept)
+  ORDER BY lex_rank, id
+  LIMIT :lex_reserve
+),
+pool AS (SELECT * FROM kept UNION ALL SELECT * FROM rescued)
 SELECT c.id, c.document_id, c.section_id, c.ord, c.page, c.text, c.source_type,
        d.name AS document_name, s.heading_path,
-       f.vector_score, f.bm25_score, f.fused_score
-FROM fused f
-JOIN chunks c ON c.id = f.id
+       p.vector_score, p.bm25_score, p.fused_score
+FROM pool p
+JOIN chunks c ON c.id = p.id
 LEFT JOIN documents d ON d.id = c.document_id
 LEFT JOIN sections s ON s.id = c.section_id
-ORDER BY f.fused_score DESC
-LIMIT :fused_limit
+ORDER BY p.fused_score DESC
 """
 
 
@@ -111,6 +145,7 @@ async def hybrid_search(
     vec_limit = int(runtime_value("retrieval.vec_limit", VEC_LIMIT))
     lex_limit = int(runtime_value("retrieval.lex_limit", LEX_LIMIT))
     fused_limit = int(runtime_value("retrieval.fused_limit", FUSED_LIMIT))
+    lex_reserve = int(runtime_value("retrieval.lex_reserve", LEX_RESERVE))
     rrf_k = int(runtime_value("retrieval.rrf_k", RRF_K))
     scope, params = build_scope(ownership, filters or ClientFilters())
     params.update(
@@ -121,6 +156,7 @@ async def hybrid_search(
             "vec_limit": vec_limit,
             "lex_limit": lex_limit,
             "fused_limit": fused_limit,
+            "lex_reserve": lex_reserve,
             "vec_w": 1.0 - weight,
             "lex_w": weight,
         }

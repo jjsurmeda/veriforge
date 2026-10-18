@@ -13,6 +13,15 @@ GOOD = """```json
 {"context_precision": 0.6, "context_recall": 0.75, "answer_relevance": 0.9}
 ```"""
 
+@pytest.fixture(autouse=True)
+def _latency_gated(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests pin the latency check as P3 runs it; until then it only
+    warns (`LATENCY_GATED`, owner decision 2026-10-18)."""
+    from evals import gate as _gate
+
+    monkeypatch.setattr(_gate, "LATENCY_GATED", True)
+
+
 
 def test_parse_judge_response_valid_json() -> None:
     scores = parse_judge_response(
@@ -255,3 +264,15 @@ def test_aggregate_reports_zero_coverage_when_nothing_was_attributed() -> None:
     summary = aggregate([(_item(), _result(6000, {"provider_ms": 0}))])
     assert summary["p50_our_overhead_ms"] is None
     assert summary["overhead_items_attributed"] == 0.0
+
+
+def test_a_latency_rise_only_warns_before_p3(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Owner decision 2026-10-18: a latency rise must not fail (and so retry)
+    the gate while R2 works on correctness."""
+    from evals import gate as _gate
+
+    monkeypatch.setattr(_gate, "LATENCY_GATED", False)
+    baseline = {"faithfulness": 0.96, "abstention_accuracy": None, "p50_latency_ms": 2000.0}
+    current = {"faithfulness": 0.96, "abstention_accuracy": None, "p50_latency_ms": 3000.0}
+    assert _gate.compare(baseline, current) == []
+    assert any("latency" in w for w in _gate.notes(baseline, current))

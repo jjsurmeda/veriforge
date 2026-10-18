@@ -116,7 +116,7 @@ flowchart TD
   G --> H{Agent: search again<br/>or answer?}
   H -->|need more| G
   E -->|yes| I[Conflict check]
-  H -->|sufficient| I
+  H -->|answer| I
   E -->|no, exhausted| Z[Abstain]
   H -->|budget spent| Z
   I --> J[Generate]
@@ -135,10 +135,11 @@ finish. Auto, Fast and Deep compose the same stages; OKF link expansion
 **Auto is adaptive + hybrid, single-hop.** Ingress picks the intent; the
 intent selects the generator instructions and, for gist questions, adds
 section summaries to the evidence. The evidence check is **one corrective
-check** (PRD TR-4): insufficient → one corrected retrieval (rewritten or
-decomposed query, summaries) → check again → answer or abstain. A
-named-entity guard keeps passages about a different entity out of the
-evidence. Abstentions carry no citations.
+check** (PRD TR-4): below the rubric mean-of-top-3 floor (default 0.56) → one
+corrected retrieval (rewritten or decomposed query, summaries) → check again →
+answer or abstain. A named-entity guard keeps passages about a different entity
+out of the evidence, even when the rubric mean clears the floor. Abstentions
+carry no citations.
 
 **Deep is agentic.** An agent loop over the same stages: decide the next
 sub-question, retrieve, extract notes, then decide to search again or
@@ -149,7 +150,7 @@ answer (DecisionEngine `Choice`), up to 4 hops or the credit budget.
 | Ingress | Jev, one call | Questions: `guard_injection`, `guard_jailbreak`, `guard_pii`, `off_topic` (noul); `intent` (choice: chitchat, lookup, compare, summarize, multi-part, follow-up, library); `source` (choice, if source = Auto); `complexity` (choice, if mode = Auto); `lexical_weight` (score 0–1); `risk` (choice: low, high). `intent = chitchat` (and not `off_topic`) routes to a direct small-talk reply: no retrieval, no citations, no reviewer, no abstention. *(Amended 2026-09-28, batch A — greeting fast path: a raw message of ≤ 40 chars whose normalised form (NFKC, lowercase, letters/spaces only, ≤ 4 words) exactly matches the greeting allowlist skips ingress and retrieval; the generator receives the canonical phrase only.)* *(Amended 2026-09-30, C2 — `intent = library` answers "what books do we have" / "how many documents are in my sources" from the document list of the chat's own scope (its container plus Shared, the same ids retrieval is given), not from retrieval: no retrieval, no citations, no reviewer. Only documents in a searchable state are listed. Language per book is not reported — no document language is stored.)* |
 | Rewrite + summary | Small LLM | Condenses the question with history; refreshes the rolling chat summary every 10 turns. |
 | Multi-query retrieve | Small LLM + SQL | 3 query variants (Auto only), each through hybrid search; results fused. Fast uses the rewritten query only. |
-| Evidence check | Decision provider | `sufficient` noul over the question and the reranked evidence (children first, then parent context within the 9,000-char budget; section summaries for `summarize` intent). Below the provider's threshold: one corrective retrieval, then check again; still below → abstain. |
+| Evidence floor | Computed from the reranker's rubric | The floor is the mean answer-containment grade of the best three post-sanitize passages (`evidence_floor`, ADR-006). Default 0.455: below it the evidence is "clearly absent" — one corrective retrieval, then check again; still below → abstain without generating. Everything above the floor generates, and IsUse (the usefulness check) decides delivery afterwards. The `summarize` intent adds section summaries to the evidence. |
 | Entity guard | Decision provider | When the question names an entity, each passage is asked whether it concerns any one of the named entities; every named entity must be covered by a passing passage. |
 | Agent: plan next step | Planner LLM + decision provider | Picks the next sub-question from the notes so far; streams it to the trace. |
 | Hop retrieve | SQL + small LLM | Independent sub-questions run in parallel; notes extracted per hop with chunk ids kept. |
@@ -157,7 +158,8 @@ answer (DecisionEngine `Choice`), up to 4 hops or the credit budget.
 | Abstain | Generator LLM | Fixed template: what was found (**plain text, no citations**, KI-25), what is missing, offers Web or Deep as buttons. English questions get the template with no model call; other languages get it translated, with the target language named (KI-29). |
 | Conflict check | Jev | `conflict` noul across top chunks from different documents or source types. If yes, the priority rule and both citations go into the prompt. *(2026-10-02: today's side assignment is a midpoint split of document ids and the call is untimed: KI-34.)* |
 | Generate | Generator LLM | Streams the answer with `[n]` markers. Base prompt (sources-are-data, citation and grounding rules) plus one block per intent (lookup, summarize, compare, multi-part). Best-ranked passages at the start and end of the sources block. No tools. |
-| Review + deliver | Section 10 | Risk-based delivery; claim verdicts; optional single revision; output guardrail; suggestions in parallel. |
+| IsUse | Decision provider | Post-generation usefulness check, grounded Auto answers only (ADR-006, PRD TR-4): *does this answer directly answer the question asked, from these sources?* — the question as asked, the full generated answer, the sources (each truncated at 1200 chars, exactly as the calibration probe did). Fails closed on a decision outage (KI-57). A fail replaces the answer with the fixed-abstention template, drops its citations, and records the run as an abstention that still completes; on a streamed plan a retraction (`answer.retract`) is published before the text is replaced. |
+| Review + deliver | Section 10 | Risk-based delivery (`plan_delivery`: the stream line decides); claim verdicts; optional single revision; output guardrail; suggestions in parallel. |
 
 **Mode behaviour**
 
@@ -190,7 +192,7 @@ process can stream or cancel any run and Uvicorn can run several workers.
 Targets are client-side, from send, per reply path: answers, declines, held
 answers. `run_events` give the per-stage breakdown. Measured at D4 (fast20
 per-stage p50): ingress+rewrite 1.2–1.5 s, **retrieve 4.1–4.7 s**, rerank
-~0.4 s, sanitize ~0.4 s, sufficient ~0.4 s, generator first token ~0.5 s.
+~0.4 s, sanitize ~0.4 s, evidence check ~0.4 s, generator first token ~0.5 s.
 Declines run the full retry, so they take about twice as long.
 
 Planned structural changes (P3, each measured against the baseline):
@@ -244,6 +246,20 @@ Choice asks for a probability per option, normalised to sum to 1.
 - Every decision event carries `engine`; the trace marks fallback
   decisions.
 
+**Degradation, not failure (KI-57).** A decision-layer outage degrades the
+stage that asked and **never fails a run**: a run ends `completed`, answered or
+abstained. The fallback's output cap is sized to the batch it was asked, its
+call requests JSON explicitly, and an unparseable reply is retried once and
+then the batch is split in half until it is a single question. If a question
+still cannot be answered, each stage takes **its own** defined default rather
+than an invented reading: ingress → its defaults, rerank → fused order, **the
+gate → a failing gate** (corrective retrieval, then abstain), the entity guard
+→ fails, the sanitizer → drops every unanswered chunk, the reviewer → `unsupported`, the
+output guard → delivers as-is, Deep's controller → another hop. A decision
+answered by no engine is published with `engine: "unavailable"` — a third
+value that is not an engine, and the difference between "the evidence was
+judged thin" and "nobody could judge it" in a trace.
+
 **Shadow mode and comparison.** For a configurable sample (default 2%), a
 second provider also answers asynchronously; results are stored in
 `decision_shadow`. The comparison view (PRD AD-11) replays one question
@@ -260,7 +276,9 @@ side.
 | intent, source, complexity, risk | Choice | Ingress | Argmax; below 0.5 confidence falls back to safe default (Both, single, high) |
 | lexical_weight | Score 0–1 | Retrieval fusion | Used as weight |
 | chunk_injection | Noul | Sanitizer | Drop at ≥ 0.7 |
-| sufficient | Noul | Single-hop loop | Answer-first: generate at or above `sufficient_abstain`; below it one rewrite + retry, then abstain. `sufficient_retry` is removed; default floor 0.05 |
+| evidence_floor | Computed | Single-hop floor | Mean answer-containment grade of the best 3 post-sanitize passages. Default 0.455; admin key `thresholds.evidence_floor`. Not a delivery gate (ADR-006): below the floor → one corrective retrieval, then abstain; above it the run generates and IsUse decides. |
+| is_use | Noul | IsUse (post-generation) | Yes ≥ 0.47 (admin key `thresholds.is_use`); a fail replaces the answer with the decline (TR-4). A decision outage counts as a fail. |
+| stream_line | Computed | Delivery | A grounded Auto answer with rubric mean ≥ 0.60 (admin key `thresholds.stream_line`) streams; under the line it is held under the verifying step. `plan_delivery`; ADR-006 item 4. |
 | entity_match | Noul per passage | Entity guard | Per provider; a passage passes when it concerns any named entity |
 | agent_step | Choice | Deep agent loop | Argmax (`search_again`, `answer`; `follow_link` in v1.1) |
 | conflict | Noul | Conflict check | Disclose at ≥ 0.6 |
@@ -326,7 +344,9 @@ WITH vec AS (top 50 by cosine distance, filtered),
      lex AS (top 50 by pg_search BM25, same filter)
 fused  = Σ weight_i / (60 + rank_i)
          weight: vector = 1 − w, bm25 = w, w = lexical_weight from ingress
-→ top 40 → rerank (pluggable, §9.6) → top 8 → dedupe adjacent → expand
+→ top 40, plus up to 8 BM25-only candidates the fusion leaves out (amended
+  2026-10-18: recall 22/23 → 23/23 on the books answer passages)
+→ rerank (pluggable, §9.6) → top 8 → dedupe adjacent → expand
 ```
 
 - **Filter.** `owner_id or shared` and `collection_id in (scope)` are
@@ -369,7 +389,8 @@ asked "Does the passage contain the information needed to answer or verify
 the question?" graded off-topic / related / partly / fully, ranked by the
 expected level), an **LLM judge** (same rubric, a chat model), and **fused
 order** (no rerank). Chosen per run like decision providers (PRD AD-10). A
-rerank outage degrades to fused order and never fails the run.
+rerank outage degrades to fused order and never fails the run — and, with
+KI-57, an outage of the decision layer underneath it degrades the same way.
 
 ### 9.5 OKF bundles *(v1.1, PRD §4.7, ADR-004)*
 
@@ -391,7 +412,7 @@ rerank outage degrades to fused order and never fails the run.
 - **Edges:** an `okf_links` table (source concept, target bundle + path,
   or `resource` id for cross-bundle links). Resolved at query time,
   **inside scope only**.
-- **Expansion (Auto):** after both evidence gates pass, add passages from
+- **Expansion (Auto):** after the evidence gate passes, add passages from
   directly linked, in-scope, non-excluded concepts, up to the admin limit.
   They go through the sanitizer and are timed as `okf_expand`. A skipped
   link is reported identically, whatever the reason, with no target title
@@ -427,21 +448,33 @@ decision from ingress.
    - Faithfulness = (supported + 0.5 × partial) / factual claims.
    - Minimum claim support = the lowest P(supported) across factual
      claims.
-   - Citation precision = share of citations whose chunk supports the
-     claim they are attached to.
+   - Claim-level citation support (field `citation_precision`) = share of
+     (claim, citation) pairs whose claim is `supported`. The claim is verified
+     against its cited passages together and that one verdict is credited to
+     every citation it carries, so a claim supported by [1] also credits an
+     irrelevant [2]. It is an upper bound on citation precision, not the
+     measure; per-citation verification (one check per claim–citation pair,
+     more provider calls) is scheduled after the R2 replay shows its cost.
+     Reported as "claim-level citation support" wherever it is shown.
 5. **Revision.** If minimum claim support < 0.5 or any claim is
    contradicted, one revision pass: the generator rewrites only the
    flagged claims using the same context, or removes them. Verification
    reruns on revised claims only. At most one revision per answer.
 
-**Risk-based delivery**
+**Risk-based delivery** (`plan_delivery`, ADR-006 item 4)
 
-| Risk (ingress) | Mode | Delivery |
+| Risk (ingress) | Grade vs stream line | Delivery |
 | --- | --- | --- |
-| Low | Auto | Stream answer; chips recolour as verdicts arrive; if revised, a "Reviewer revised this answer" banner with diff |
-| High, or sufficiency within 0.1 of threshold | Auto | Show "Verifying…" with the trace live; deliver the reviewed answer |
-| Any | Deep | Always verified before delivery |
-| Any | Fast | Stream; review runs asynchronously; chips update when done |
+| Low | `mean_top3` ≥ stream line (0.60) | Stream answer; chips recolour as verdicts arrive; if revised, a "Reviewer revised this answer" banner with diff; a failed IsUse retracts (`answer.retract`) |
+| Low | in band (evidence floor 0.455 … stream line) | Show "Verifying…" with the trace live; IsUse passes before the answer is delivered |
+| High | any grade | Show "Verifying…"; deliver the reviewed answer |
+| Any | — | Deep always verified before delivery |
+| Any | — | Fast streams; review runs asynchronously; chips update when done |
+
+The stream line sits above every should-decline rubric reading recorded
+(0.559, `outside-holmes-boston`); the band's other bound — the evidence
+floor — never plans delivery itself (a run below it abstains before
+generation).
 
 **In parallel with review:** suggested follow-ups (small LLM, 3 questions
 grounded in retrieved chunks the answer did not use) and the output
@@ -471,8 +504,10 @@ data isolation is enforced in SQL, never by the model.
 4. **Sanitizer.** Jev `chunk_injection` on every chunk that reaches the
    generator (the post-rerank top-k) and every web page used; dropped
    chunks show in the Sources tab, and a dropped chunk is not backfilled
-   from beyond the reranked set. Chunks that rerank drops never reach the generator, so they are not
-   checked.
+   from beyond the reranked set. A chunk the grader could not answer is
+   dropped too (fail-closed), so a decision outage empties the top-k and
+   the run abstains rather than answering from unsanitised passages. Chunks
+   that rerank drops never reach the generator, so they are not checked.
 5. **Ingress checks.** Jev injection and jailbreak checks on the user
    message. *(Exception: the greeting fast path
    in §7's ingress row bypasses these checks for a fixed allowlist. It is
@@ -553,6 +588,7 @@ generated from it.
 | `retrieval` | hop, query, chunks with vector, bm25, fused and rerank scores, dropped flag |
 | `answer.delta` | text |
 | `answer.hold` | reason (verifying) |
+| `answer.retract` | reason, replacement text — a streamed answer IsUse rejected; the client replaces the delivered text (ADR-006) |
 | `review.claim` | claim id, text, citation ids, verdict, p_supported |
 | `revision` | revised text, diff |
 | `abstain` | found summary, missing summary, offered actions |
@@ -837,8 +873,8 @@ duration in `latency` instead — verified live on two probes (22 and 1590
 native tokens; `generation_time` 0 both times, `latency` 241 and 242 ms). Jev
 provider time is therefore read from `latency`; LLM generations keep
 `generation_time`. Reading `generation_time` for Jev credited it with 0 ms,
-which charged every Jev millisecond — rerank batches, sufficient, sanitize,
-conflict, ingress and review verification — to our own overhead in the one
+which charged every Jev millisecond — rerank batches, sanitize, conflict,
+ingress and review verification — to our own overhead in the one
 figure this section gates. A record with neither field is not attributed at
 all, which is a coverage gap the summary reports, never a fabricated zero.
 

@@ -148,7 +148,7 @@ async def test_decision_stats_use_call_latency_and_collapse_dynamic_names(
                 engine="jev",
                 latency_ms=250,
                 call_id="call-e",
-                stage="sufficient",
+                stage="evidence",
                 batch_size=2,
                 threshold=0.50,
             ),
@@ -160,7 +160,7 @@ async def test_decision_stats_use_call_latency_and_collapse_dynamic_names(
                 engine="jev",
                 latency_ms=250,
                 call_id="call-e",
-                stage="sufficient",
+                stage="evidence",
                 batch_size=2,
                 threshold=0.50,
             ),
@@ -313,14 +313,14 @@ class TestDemoRoleDecisionStats:
             _decision_event(
                 run_id,
                 1,
-                name="sufficient",
+                name="evidence",
                 value=0.7,
                 engine="jev",
                 latency_ms=200,
                 call_id="call-a",
-                stage="sufficient",
+                stage="gate",
                 batch_size=1,
-                threshold=0.05,
+                threshold=0.55,
             )
         )
         await db.commit()

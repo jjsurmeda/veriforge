@@ -2,6 +2,7 @@ import type {
   Abstain,
   AnswerDelta,
   AnswerHold,
+  AnswerRetract,
   Conflict,
   Decision,
   Heartbeat,
@@ -30,6 +31,7 @@ export type StreamEvent =
   | Retrieval
   | AnswerDelta
   | Abstain
+  | AnswerRetract
   | Conflict
   | ReviewClaim
   | AnswerHold

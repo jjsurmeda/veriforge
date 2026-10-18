@@ -11,34 +11,98 @@ import re
 from collections.abc import Iterable
 from itertools import combinations
 
-from decisions.thresholds import Engine
 from retrieval.expand import ExpandedContext
 from retrieval.hybrid import ScoredChunk
 from runtime import runtime_value
 from schemas.decisions import Answer, Choice, Noul, Score
-from schemas.events import Decision
 
-TOP_CHUNKS_FOR_SUFFICIENT = 5
-SUFFICIENT_EVIDENCE_CHARS = 9_000
+#: How many post-sanitize passages the evidence checks read, and the character
+#: budget their batched questions share. Both are about the checks that remain
+#: — the entity guard and the conflict pairs — not about a sufficiency question,
+#: which ADR-006 as corrected no longer asks (the gate is the rerank rubric).
+TOP_CHUNKS_FOR_CHECKS = 5
+EVIDENCE_CHARS = 9_000
 
-# When the evidence is clearly absent, the rewrite + retry is another 13-15 s
-# to reach the same abstention, so it is skipped. Both bounds sit far below
-# their floors because the failure direction of a skip is a decline that could
-# have been an answer.
+# --- the evidence gate (ADR-006 as corrected) --------------------------------
+
+#: How many of the best-graded passages the gate averages.
+GATE_TOP_N = 3
+
+
+def rubric_mean_top3(grades: list[float]) -> float | None:
+    """The gate's own number: the mean grade of the best `GATE_TOP_N` passages.
+
+    `None` when there is nothing to average — no passage was graded, or the
+    rerank scored none of them. **`None` is not 0.0**, and the difference is the
+    whole safety direction: 0.0 means "the rubric graded every passage
+    off-topic", which is a measurement and a failing gate; `None` means "there
+    was no reading", which the caller degrades on its own terms (see
+    `evidence_stage._read_answers`).
+
+    Averaging three rather than taking the best is what separates a gist
+    question from a lucky passage. One strong passage in a fan-out is the
+    normal state of retrieval — the third-best chunk in a fan-out almost never
+    answers anything, and a max would grade every corpus on it.
+    """
+    usable = [g for g in grades if g is not None]
+    if not usable:
+        return None
+    ordered = sorted(usable, reverse=True)
+    return sum(ordered[:GATE_TOP_N]) / len(ordered[:GATE_TOP_N])
+
+
+def rubric_gate_passes(mean_top3: float | None, floor: float) -> bool:
+    """One comparison. A missing reading fails, which is the safe direction:
+    an unreachable grader is not evidence that the corpus can answer."""
+    return mean_top3 is not None and mean_top3 >= floor
+
+
+def rubric_grades(winners: list[ScoredChunk]) -> list[float]:
+    """The rubric's grade for each post-sanitize winner.
+
+    `rerank_score` IS the answer-containment expected level, normalised to 0-1
+    by `retrieval/rerank.answer_containment_score` — the rubric ranks by
+    expected level rather than by argmax precisely so this number carries the
+    distribution the grader returned.
+    """
+    return [c.rerank_score for c in winners if c.rerank_score is not None]
+
+# When the evidence is clearly absent, the corrective re-query is another
+# 13-15 s to reach the same abstention, so it is skipped. Both bounds sit far
+# below their floors because the failure direction of a skip is a decline that
+# could have been an answer.
 #
-# The two bounds come from a replay of the recorded runs, not from taste: among
-# the runs the retry RESCUED, sufficiency went as low as 0.01, so sufficiency
-# alone decides nothing and the skip needs BOTH readings far below their floors.
-# A run with no relevance reading never skips; a run with no entity reading is
-# not blocked by it either, because only a handful of runs carry one. The bounds
-# are admin-overridable (`retrieval.retry_skip_*`); a null disables the skip.
-RETRY_SKIP_SUFFICIENT_MAX = 0.02
-RETRY_SKIP_RELEVANCE_MAX = 0.40
+# The gate bound is re-derived from the rubric gate's own calibration
+# (R2a-2 item 2), not inherited from the `sufficient` reading it replaced.
+# `scripts/calibrate_gate.py` recorded a mean-of-top-3 for all 53 gated items of
+# the books set and all 12 of the entity-mismatch set; the lowest value in that
+# table for an item the correction could conceivably rescue is 0.224
+# (`outside-whitman`, an answerable item), and the should-decline values the
+# shipped 0.455 floor still blocks sit between outside-dracula's 0.007 and
+# ml-de-bovary-animal's 0.441. 0.10 therefore misses some blocked rows either
+# way and is not a floor replica: it is a "clearly absent" bound, and sitting
+# below every answerable reading that could be rescued and above the 0.0 a run
+# with nothing usable produces is what makes a skip fire only when a re-query
+# has nothing to find. Higher failing readings (0.520-0.559, e.g.
+# `outside-holmes-boston`) are no longer on any wrong side: above the floor
+# they generate, and IsUse is the check that decides them.
+#
+# It replaces `RETRY_SKIP_SUFFICIENT_MAX = 0.005`, which R2a had moved down from
+# 0.02 and which was by then nearly inert — under the `sufficient` reading almost
+# nothing scored that low, so the skip bought almost nothing while still
+# carrying a decision. The bound is re-derivable rather than inherited precisely
+# because the signal it was derived from is no longer the gate.
+#
+# The entity bound keeps its value and its job: a matched entity still blocks
+# the skip outright, which is the reading that directly contradicts "clearly
+# absent". Both bounds are admin-overridable (`retrieval.retry_skip_*`); a null
+# disables that half of the test.
+RETRY_SKIP_RUBRIC_MAX = 0.10
 RETRY_SKIP_ENTITY_MAX = 0.50
 
 # The conflict check asks one question per candidate PAIR of passages, batched
 # into a single DecisionEngine call. With at most
-# TOP_CHUNKS_FOR_SUFFICIENT sides there are 10 pairs, which is the cap: it
+# TOP_CHUNKS_FOR_CHECKS sides there are 10 pairs, which is the cap: it
 # bounds one call's prompt size without dropping a pair that could be the real
 # conflict.
 CONFLICT_MAX_PAIRS = 10
@@ -125,43 +189,6 @@ _ENTITY_STOP = {
 }
 
 
-def _sufficient_question(question: str, top_contexts: list[ExpandedContext]) -> Noul:
-    """Is the evidence enough to answer correctly and completely?
-
-    Whole children first, in rank order; parent context follows only if the
-    budget has room after every child that fits took its turn. Interleaving
-    each entry's parent before the next entry's child instead let the first
-    source's parent eat the budget, so a two-source judge saw one of them.
-    """
-    remaining = SUFFICIENT_EVIDENCE_CHARS
-    entries: list[str] = []
-    for i, context in enumerate(top_contexts):
-        if remaining <= 0:
-            break
-        text = context.chunk.text[:remaining]
-        remaining -= len(text)
-        entries.append(f"[{i + 1}] [matched passage]\n{text}")
-    parents: list[str] = []
-    for i, context in enumerate(top_contexts):
-        if remaining <= 0 or i >= len(entries):
-            break
-        parent = context.context_text
-        if parent == context.chunk.text:
-            continue
-        excerpt = parent[:remaining]
-        parents.append(f"[{i + 1}] [parent context]\n{excerpt}")
-        remaining -= len(excerpt)
-    evidence = "\n\n".join([*entries, *parents]) or "(no evidence retrieved)"
-    return Noul(
-        prompt=(
-            "Do the following retrieved chunks together contain enough "
-            "evidence to answer the question correctly and completely? "
-            "Answer yes only if the answer is fully grounded in the "
-            f"evidence.\n\n[question]\n{question}\n\n[evidence]\n{evidence}"
-        )
-    )
-
-
 def named_entities(question: str) -> list[str]:
     """The entities a question names, conservatively.
 
@@ -188,9 +215,9 @@ def _entity_passage_questions(
     question: str, entities: list[str], top_contexts: list[ExpandedContext]
 ) -> dict[str, Noul]:
     """One Noul per (top-k passage, named entity) pair, "is this passage about
-    THIS entity?", batched into the existing post-sanitize sufficiency call — no
-    extra round trip. Skipped when the question names no entity or nothing
-    survived to the top-k.
+    THIS entity?", batched into the post-sanitize evidence call — the same call
+    that carries the conflict pairs, so there is no extra round trip. Skipped
+    when the question names no entity or nothing survived to the top-k.
 
     One entity per question, never the conjunction: a conjunction over passages
     can never be satisfied when the rerank stage deliberately splits a compare
@@ -254,45 +281,58 @@ def _entity_passage_decision(
 
 def _evidence_clearly_absent(
     *,
-    p_sufficient: float,
-    relevance_max: float | None,
-    relevance_measured: bool,
+    gate_mean_top3: float | None,
     entity_max: float | None,
     entity_measured: bool,
     entity_ok: bool,
 ) -> bool:
-    """Is the evidence CLEARLY absent, so the rewrite + retry is pointless?
+    """Is the evidence CLEARLY absent, so the corrective re-query is pointless?
 
-    Every signal must be far below its floor, and a signal that was not
-    measured blocks the skip:
+    Two readings, and both must be far below their floor:
 
-    * A relevance reading is required, not optional. The replay of the
-      recorded runs says plainly that sufficiency alone cannot decide this,
-      and no run with a relevance reading inside the skip band was rescued by
-      a retry.
-    * A matched entity blocks the skip too: it is the one signal that
-      contradicts "clearly absent" directly.
+    * **The gate** — and "far below" is now a genuinely small band rather than
+      the near-inert 0.005 it was under the `sufficient` reading. The gate is
+      the mean grade of the best three passages, so it is 0.0 only when nothing
+      was graded or nothing was retrieved; the lowest band the calibration ever
+      *measured* is 0.224 (`outside-whitman`, an answerable item whose evidence
+      the correction is the last chance for). 0.10 sits below every reading the
+      calibration recorded and above the readings a run with no usable evidence
+      produces, so the skip fires exactly where a re-query cannot help and
+      nowhere else.
+
+      The old bound was derived from KI-70's `sufficient` replay (lowest rescued
+      reading 0.01, of 7 rescues in 238 runs) and R2a moved it to 0.005, which
+      made it nearly inert — almost nothing scored that low. It is re-derived
+      here from the gate's own distribution rather than inherited.
+    * A matched entity blocks the skip: it is the one signal that contradicts
+      "clearly absent" directly, and it is the guard that catches a question
+      whose evidence is all about the wrong thing.
+
+    The third reading this used to need — a relevance score — is gone with the
+    relevance floor (ADR-006, R2a item 4). It was a lexical-overlap number
+    standing in for "is this evidence relevant", which for a gist question it
+    demonstrably cannot be: the recorded `broad-alice` run scored the correct
+    passages 0.36 on relevance and 0.97 on the entity check.
     """
-    if not relevance_measured or relevance_max is None:
-        return False
     if entity_measured and entity_ok:
         return False
     entity_bound = runtime_value("retrieval.retry_skip_entity_max", RETRY_SKIP_ENTITY_MAX)
     if entity_max is not None and entity_bound is not None and entity_max > float(entity_bound):
         return False
-    sufficient_bound = runtime_value(
-        "retrieval.retry_skip_sufficient_max", RETRY_SKIP_SUFFICIENT_MAX
-    )
-    relevance_bound = runtime_value("retrieval.retry_skip_relevance_max", RETRY_SKIP_RELEVANCE_MAX)
-    # An admin can turn the skip off by setting either bound to null.
-    if sufficient_bound is None or relevance_bound is None:
+    gate_bound = runtime_value("retrieval.retry_skip_rubric_max", RETRY_SKIP_RUBRIC_MAX)
+    # An admin can turn the skip off by setting the bound to null.
+    if gate_bound is None:
         return False
-    return p_sufficient <= float(sufficient_bound) and relevance_max <= float(relevance_bound)
+    # No reading at all is clearly absent: nothing was retrieved, or nothing was
+    # graded, and a re-query of the same corpus cannot change either.
+    if gate_mean_top3 is None:
+        return True
+    return gate_mean_top3 <= float(gate_bound)
 
 
 def _conflict_sides(winners: list[ScoredChunk]) -> list[ScoredChunk]:
     """The top passages eligible to be a conflict side: at most
-    `TOP_CHUNKS_FOR_SUFFICIENT`, one per document.
+    `TOP_CHUNKS_FOR_CHECKS`, one per document.
 
     One per document because a conflict is a disagreement *between sources*.
     Two chunks of the same document are the same source, and pairing them
@@ -306,7 +346,7 @@ def _conflict_sides(winners: list[ScoredChunk]) -> list[ScoredChunk]:
             continue
         seen.add(key)
         sides.append(chunk)
-        if len(sides) >= TOP_CHUNKS_FOR_SUFFICIENT:
+        if len(sides) >= TOP_CHUNKS_FOR_CHECKS:
             break
     return sides
 
@@ -327,7 +367,7 @@ def _conflict_pair_questions(
     At most `CONFLICT_MAX_PAIRS` pairs, so a long passage list cannot turn one
     call into an unbounded question set.
     """
-    budget = SUFFICIENT_EVIDENCE_CHARS // max(1, len(sides) * (len(sides) - 1) // 2)
+    budget = EVIDENCE_CHARS // max(1, len(sides) * (len(sides) - 1) // 2)
     questions: dict[str, Noul | Choice | Score] = {}
     for index, (left, right) in enumerate(combinations(sides, 2)):
         if index >= CONFLICT_MAX_PAIRS:
@@ -348,36 +388,3 @@ def _conflict_pair_questions(
             )
         )
     return questions
-
-
-def relevance_decision_event(
-    run_id: str,
-    *,
-    relevance_max: float,
-    engine: Engine,
-    threshold_value: float,
-    scored: int,
-    exempt: bool,
-) -> Decision:
-    """The trace row for the relevance veto, which is read off the rerank
-    scores rather than asked as its own question."""
-    return Decision(
-        run_id=run_id,
-        name="relevance",
-        value=relevance_max,
-        probability=None,
-        probabilities=None,
-        engine=engine,
-        latency_ms=0,
-        stage="rerank",
-        threshold=threshold_value,
-        reasoning=(
-            f"max rerank score of the post-sanitize winners ({scored} scored passages)"
-            + (
-                "; veto waived — a summarize question is judged by sufficiency "
-                "and the entity check alone (KI-70)"
-                if exempt
-                else ""
-            )
-        ),
-    )

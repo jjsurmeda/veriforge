@@ -2,7 +2,7 @@
 
 `generate` measures only the generator's own loop. The number a person waiting
 on a chat feels is everything before it — runtime resolution, ingress, rewrite,
-retrieval, rerank, the sufficiency gate — so TTFT is measured from the moment
+retrieval, rerank, the evidence gate — so TTFT is measured from the moment
 `execute_run` starts, not from when the generator does.
 
 The end-to-end shape is borrowed wholesale from `test_auto_steps.py`: a real
@@ -37,7 +37,7 @@ EMAIL = "ttft@test.dev"
 
 
 class _AutoJev:
-    """`sufficient` high and `risk` low, so the run streams and a first
+    """The gate passes and `risk` is low, so the run streams and a first
     token exists at all."""
 
     async def decide(
@@ -52,8 +52,6 @@ class _AutoJev:
                 answers[name] = Answer(engine="jev", latency_ms=1, value=value, probability=0.9)
             elif name == "risk":
                 answers[name] = Answer(engine="jev", latency_ms=1, value="low", probability=0.95)
-            elif name == "sufficient":
-                answers[name] = Answer(engine="jev", latency_ms=1, value=0.9, probability=0.9)
             else:
                 answers[name] = Answer(engine="jev", latency_ms=1, value=0.01, probability=0.01)
         return answers

@@ -111,7 +111,7 @@
  },
  {
   "kind": "search",
-  "n": 1,
+  "n": 2,
   "query": "AW-2000 warranty length"
  },
  {
@@ -144,7 +144,8 @@
  {
   "kind": "rerank",
   "questions": [
-   "passage_0"
+   "passage_0",
+   "passage_1"
   ]
  },
  {
@@ -168,7 +169,8 @@
  {
   "kind": "sanitize",
   "questions": [
-   "chunk_injection_0"
+   "chunk_injection_0",
+   "chunk_injection_1"
   ]
  },
  {
@@ -182,7 +184,7 @@
  },
  {
   "event": {
-   "label": "sufficient",
+   "label": "evidence",
    "node": "auto",
    "seq": 0,
    "type": "step.started"
@@ -190,15 +192,34 @@
   "kind": "event"
  },
  {
-  "kind": "sufficient",
+  "kind": "evidence",
   "questions": [
+   "conflict_0",
    "entity_0_0",
-   "sufficient"
+   "entity_1_0"
   ]
  },
  {
   "event": {
-   "label": "sufficient",
+   "label": "evidence",
+   "node": "auto",
+   "seq": 0,
+   "type": "step.completed"
+  },
+  "kind": "event"
+ },
+ {
+  "event": {
+   "label": "conflict",
+   "node": "auto",
+   "seq": 0,
+   "type": "step.started"
+  },
+  "kind": "event"
+ },
+ {
+  "event": {
+   "label": "conflict",
    "node": "auto",
    "seq": 0,
    "type": "step.completed"
@@ -216,7 +237,19 @@
      "fused_score": 1.0,
      "heading_path": "Section 0",
      "page": null,
-     "rerank_score": 0.1,
+     "rerank_score": 0.6666666666666666,
+     "source_type": "document",
+     "vector_score": 1.0
+    },
+    {
+     "bm25_score": null,
+     "document_name": "manual.md",
+     "dropped": false,
+     "excerpt": "The AW-2000 manual covers maintenance and the E-41 fault code.",
+     "fused_score": 0.5,
+     "heading_path": "Section 0",
+     "page": null,
+     "rerank_score": 0.3333333333333333,
      "source_type": "document",
      "vector_score": 1.0
     }
@@ -230,30 +263,9 @@
  },
  {
   "event": {
-   "batch_size": null,
-   "engine": "jev",
-   "name": "relevance",
-   "probabilities": null,
-   "probability": null,
-   "reasoning": "max rerank score of the post-sanitize winners (1 scored passages)",
+   "reason": "verifying",
    "seq": 0,
-   "stage": "rerank",
-   "threshold": 0.6,
-   "type": "decision",
-   "value": 0.1
-  },
-  "kind": "event"
- },
- {
-  "event": {
-   "found_summary": "Your sources cover warranty.md.\n- warranty.md Section 0",
-   "missing_summary": "The retrieved sources do not contain enough evidence to answer this question.",
-   "offered_actions": [
-    "web",
-    "deep"
-   ],
-   "seq": 0,
-   "type": "abstain"
+   "type": "answer.hold"
   },
   "kind": "event"
  },
@@ -267,6 +279,10 @@
   "kind": "event"
  },
  {
+  "kind": "llm",
+  "role": "generator"
+ },
+ {
   "event": {
    "label": "generate",
    "node": "auto",
@@ -277,8 +293,50 @@
  },
  {
   "event": {
+   "label": "isuse",
+   "node": "auto",
    "seq": 0,
-   "text": "I could not find enough evidence to answer that question.\n\nWhat I found:\nYour sources cover warranty.md.\n- warranty.md Section 0\n\nWhat is missing:\nThe retrieved sources do not contain enough evidence to answer this question.\n\nYou can try:\n- Turn on the Web search toggle\n- Turn on the Deep search toggle for multi-step reasoning across documents\n",
+   "type": "step.started"
+  },
+  "kind": "event"
+ },
+ {
+  "kind": "isuse",
+  "questions": [
+   "is_use"
+  ]
+ },
+ {
+  "event": {
+   "label": "isuse",
+   "node": "auto",
+   "seq": 0,
+   "type": "step.completed"
+  },
+  "kind": "event"
+ },
+ {
+  "kind": "prose_decline",
+  "questions": [
+   "prose_decline"
+  ]
+ },
+ {
+  "kind": "llm",
+  "role": "review"
+ },
+ {
+  "kind": "llm",
+  "role": "suggestions"
+ },
+ {
+  "kind": "llm",
+  "role": "guard"
+ },
+ {
+  "event": {
+   "seq": 0,
+   "text": "24 months.",
    "type": "answer.delta"
   },
   "kind": "event"
@@ -289,7 +347,7 @@
  },
  {
   "event": {
-   "context_used": 0,
+   "context_used": 4,
    "context_window": 128000,
    "faithfulness": null,
    "min_support": null,
@@ -301,9 +359,13 @@
   "kind": "event"
  },
  {
+  "kind": "llm",
+  "role": "async_scoring"
+ },
+ {
   "event": {
    "seq": 0,
-   "status": "abstained",
+   "status": "completed",
    "type": "run.completed"
   },
   "kind": "event"

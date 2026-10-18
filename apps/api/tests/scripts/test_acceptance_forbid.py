@@ -19,7 +19,8 @@ which is the same defect as KI-36 — a check stricter than the corpus.
 
 from typing import Any
 
-from scripts.acceptance import failure_reason, forbids_hit, mentions_hit, passes
+from evals.content import forbids_hit, mentions_hit
+from scripts.acceptance import failure_reason, passes
 
 
 def result(answer: str, *, citations: list[str] | None = None) -> dict[str, Any]:

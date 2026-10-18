@@ -22,6 +22,7 @@ from db.models import EvalDataset, EvalItem, Plan, User
 from evals import runner
 from evals.attribution import Attribution
 from evals.loader import EVAL_USER_EMAIL
+from graph.stages.usefulness_stage import UsefulnessOutcome
 
 pytestmark = pytest.mark.asyncio
 
@@ -33,8 +34,12 @@ class _FakeRun:
         self.latency_ms: dict[str, int] = {}
         self.contexts: list[Any] = []
         self.abstain_event = None
+        self.decision_events: list[Any] = []
         self.rewritten = "q"
         self.history: list[tuple[str, str]] = []
+        # The IsUse stage (ADR-006) reads these on the real run.
+        self.chitchat = False
+        self.library_names: list[str] | None = None
 
     async def stream_answer(self) -> AsyncIterator[str]:
         yield "answer"
@@ -130,6 +135,9 @@ async def _run_one_item(
     async def fake_judge(**kwargs: Any) -> None:
         return None
 
+    async def fake_usefulness(engine: Any, **kwargs: Any) -> Any:
+        return UsefulnessOutcome(state="pass", value=0.9, engine="jev")
+
     monkeypatch.setattr(runner, "prepare_auto_run", fake_prepare_auto)
     monkeypatch.setattr(runner, "prepare_deep_run", fake_prepare_deep)
     monkeypatch.setattr(runner, "finalize_auto_run", fake_finalize)
@@ -138,6 +146,7 @@ async def _run_one_item(
     monkeypatch.setattr(runner, "attribute", fake_attribute)
     monkeypatch.setattr(runner, "review_answer", fake_review)
     monkeypatch.setattr(runner, "judge_answer", fake_judge)
+    monkeypatch.setattr(runner, "run_usefulness", fake_usefulness)
 
     from db.models import EvalRun
     from db.session import get_session_factory

@@ -121,33 +121,55 @@ class TestScoringMath:
 
 
 class TestPlanDelivery:
+    LINE = 0.6
+
     def test_deep_always_holds(self) -> None:
         assert (
-            plan_delivery(mode="deep", risk="low", sufficiency_p=0.99, sufficient_threshold=0.6)
-            == "hold"
+            plan_delivery(mode="deep", risk="low", evidence_p=0.99, stream_line=self.LINE) == "hold"
         )
 
     def test_fast_always_streams(self) -> None:
         assert (
-            plan_delivery(mode="fast", risk="high", sufficiency_p=0.1, sufficient_threshold=0.6)
+            plan_delivery(mode="fast", risk="high", evidence_p=0.1, stream_line=self.LINE)
             == "stream"
         )
 
     def test_auto_high_risk_holds(self) -> None:
         assert (
-            plan_delivery(mode="auto", risk="high", sufficiency_p=0.95, sufficient_threshold=0.6)
+            plan_delivery(mode="auto", risk="high", evidence_p=0.95, stream_line=self.LINE)
             == "hold"
         )
 
-    def test_auto_sufficiency_within_0_1_of_threshold_holds(self) -> None:
+    def test_auto_at_the_line_streams(self) -> None:
+        """>= the line streams: the line is the *floor* of the streaming band,
+        so a run exactly at 0.60 skips the verifying step."""
         assert (
-            plan_delivery(mode="auto", risk="low", sufficiency_p=0.68, sufficient_threshold=0.6)
+            plan_delivery(mode="auto", risk="low", evidence_p=0.6, stream_line=self.LINE)
+            == "stream"
+        )
+
+    def test_auto_under_the_line_holds(self) -> None:
+        """The band between the floor (0.455) and the line holds, however
+        the grade got there — 0.4721 is the probe's lowest answerable and it
+        is still a verifying-step answer."""
+        assert (
+            plan_delivery(mode="auto", risk="low", evidence_p=0.599, stream_line=self.LINE)
             == "hold"
+        )
+        assert (
+            plan_delivery(mode="auto", risk="low", evidence_p=0.4721, stream_line=self.LINE)
+            == "hold"
+        )
+
+    def test_auto_without_a_grade_holds(self) -> None:
+        """A missing rubric reading is not evidence the run could stream on."""
+        assert (
+            plan_delivery(mode="auto", risk="low", evidence_p=None, stream_line=self.LINE) == "hold"
         )
 
     def test_auto_low_risk_confident_streams(self) -> None:
         assert (
-            plan_delivery(mode="auto", risk="low", sufficiency_p=0.9, sufficient_threshold=0.6)
+            plan_delivery(mode="auto", risk="low", evidence_p=0.9, stream_line=self.LINE)
             == "stream"
         )
 
@@ -363,6 +385,93 @@ class TestRevisionLoop:
         assert result.diff is not None and "-The battery lasts 100 years [1]" in result.diff
         assert result.scores is not None
         assert result.scores.faithfulness == pytest.approx(1.0)
+
+    async def test_a_revision_with_no_extractable_claims_leaves_scores_unmeasured(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Third-party review #3: the revision is what gets delivered, so the
+        original answer's scores must not stay attached to it."""
+
+        async def fake_complete(
+            *,
+            litellm_model: str,
+            messages: list[dict[str, str]],
+            metadata: dict[str, str],
+            **kwargs: object,
+        ) -> str:
+            job = metadata.get("job", "")
+            if job == "claim_extraction":
+                answer = messages[1]["content"] if len(messages) > 1 else ""
+                if "revised" in answer:
+                    return "[]"
+                return (
+                    '[{"claim": "the battery lasts 100 years", '
+                    '"citation_ids": [1], "is_factual": true}]'
+                )
+            if job == "revision":
+                return "The battery lasts ten hours [1] (revised)."
+            raise AssertionError(f"unexpected job {job}")
+
+        engine = _RecordingEngine()
+
+        async def contradicts(*, state, questions):  # type: ignore[no-untyped-def]
+            return {
+                name: Answer(
+                    engine="jev",
+                    latency_ms=1,
+                    value="contradicted",
+                    probability=0.1,
+                    probabilities={"contradicted": 0.9},
+                )
+                for name in questions
+            }
+
+        monkeypatch.setattr(engine, "decide", contradicts)
+        result = await review_answer(
+            engine=engine,
+            run_id="r",
+            answer="The battery lasts 100 years [1]",
+            contexts=_ctx(),
+            citation_count=1,
+            small_model="small",
+            litellm_model="big",
+            complete_fn=fake_complete,
+        )
+        assert result.revised_text is not None
+        assert result.scores is None
+        assert result.claims == []
+
+    async def test_a_revision_in_another_language_is_the_rewriter_refusing_not_revising(
+        self,
+    ) -> None:
+        """broad-bovary (R2a final check-work): a French summary question was
+        answered with a Portuguese 'this text cannot be revised'. The draft stands."""
+
+        async def fake_complete(**kwargs: object) -> str:
+            return (
+                "Esse texto não pode ser revisto conforme solicitado porque as fontes "
+                "fornecidas não contêm informações que suportem as alegações do texto original."
+            )
+
+        flagged = [
+            VerifiedClaim(
+                claim=ExtractedClaim(
+                    claim_id="c1", text="Emma meurt", citation_ids=[1], is_factual=True
+                ),
+                verdict="contradicted",
+                p_supported=0.1,
+                engine="jev",
+            )
+        ]
+        revised = await revise_answer(
+            answer="Emma Bovary, épouse d'un médecin de campagne, s'ennuie et s'endette, puis "
+            "elle meurt empoisonnée à l'arsenic après avoir été abandonnée par ses amants.",
+            flagged=flagged,
+            contexts=_ctx(),
+            litellm_model="big",
+            complete_fn=fake_complete,
+        )
+        assert revised is None
 
     async def test_no_revision_when_all_supported(self) -> None:
         calls: list[str] = []
@@ -685,9 +794,7 @@ class TestAbsenceVerification:
         engine = _CapturingEngine()
         claims = [
             ExtractedClaim("c1", "The battery lasts ten hours.", [1], True),
-            ExtractedClaim(
-                "c2", "The sources do not mention a leather carrying case.", [], True
-            ),
+            ExtractedClaim("c2", "The sources do not mention a leather carrying case.", [], True),
         ]
         verified, _ = await verify_claims(
             engine,
@@ -807,9 +914,7 @@ class TestGroundedAnswerV4Captures:
         for answer_id in single_part:
             v4 = self._CAPTURES[answer_id]["v4_answer"]
             offending = [
-                s
-                for s in self._sentences(v4)
-                if is_absence_claim(ExtractedClaim("c", s, [], True))
+                s for s in self._sentences(v4) if is_absence_claim(ExtractedClaim("c", s, [], True))
             ]
             assert not offending, f"{answer_id}: v4 answer still carries {offending!r}"
 

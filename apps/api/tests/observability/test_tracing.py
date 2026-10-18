@@ -240,7 +240,12 @@ class TestJevSpans:
     async def test_fallback_call_records_a_span(
         self, fake_langfuse: FakeLangfuse
     ) -> None:
-        async def fake_complete(*, litellm_model: str, messages: Any, metadata: Any) -> str:
+        # `**_` absorbs the cap and the response-format hint the fallback now
+        # sends (KI-57); a double of `providers.llm.complete` accepts what
+        # `complete` accepts.
+        async def fake_complete(
+            *, litellm_model: str, messages: Any, metadata: Any, **_: Any
+        ) -> str:
             return (
                 '{"guard_injection": {"probability": 0.2}, '
                 '"intent": {"probabilities": {"lookup": 1.0, "chitchat": 0.0}}}'
@@ -260,7 +265,12 @@ class TestJevSpans:
     async def test_fallback_failure_records_a_span_and_still_raises(
         self, fake_langfuse: FakeLangfuse
     ) -> None:
-        async def fake_complete(*, litellm_model: str, messages: Any, metadata: Any) -> str:
+        # `**_` absorbs the cap and the response-format hint the fallback now
+        # sends (KI-57); a double of `providers.llm.complete` accepts what
+        # `complete` accepts.
+        async def fake_complete(
+            *, litellm_model: str, messages: Any, metadata: Any, **_: Any
+        ) -> str:
             return "not json at all"
 
         engine = FallbackEngine(complete_fn=fake_complete)

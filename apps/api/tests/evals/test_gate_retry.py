@@ -82,6 +82,8 @@ def run(
         "answerable_answered": answerable_answered,
         "should_abstain_total": 8.0,
         "answerable_total": 12.0,
+        "answers_delivered": 12.0,
+        "answers_unscored": 0.0,
         "min_support_share": 0.95,
         "answers_with_min_support": 12.0,
         "answers_total": 12.0,
@@ -409,14 +411,28 @@ def test_a_mean_above_the_floor_passes_even_though_one_run_was_below_it(gate: Ga
 
 
 def test_the_floor_is_not_applied_to_the_best_run(gate: GateHarness) -> None:
-    """A gate judging on the *best* of three would pass any regression the other
-    two caught. Here the best run is 0.96 and the mean is 0.91; the mean is above
-    the floor, so this asserts the fact that matters — the mean decides — and
-    `test_the_floor_applies_to_the_mean_not_to_each_run` is the case where
-    best-run judging and mean judging disagree the other way."""
+    """A gate judging on the *best* draw would pass any regression the earlier
+    draws caught. Faithfulness 0.87 / 0.90 / 0.96: the last draw passes on its
+    own, the mean (0.91) is more than 0.06 under the 0.976 baseline, and the
+    mean decides. This pinned the opposite (a pass) until the third-party
+    review found the loop stopping at the first passing draw."""
     result = gate([run(faithfulness=0.87), run(faithfulness=0.90), run(faithfulness=0.96)])
 
-    assert result.exit_code == 0, "the mean is 0.91, above the floor"
+    assert result.exit_code == 1, "the mean 0.91 is a drop > 0.06 from the baseline"
+    assert "mean of 3" in result.everything
+
+
+def test_a_failure_then_a_pass_runs_the_whole_batch_and_judges_the_mean(
+    gate: GateHarness,
+) -> None:
+    """Run 1 fails, run 2 passes alone. Stopping there would judge the one
+    favourable draw, so all three run and the mean decides (0.88, 0.97, 0.97
+    averages 0.94, inside the 0.06 drop and above the floor)."""
+    result = gate([run(faithfulness=0.88), run(faithfulness=0.97), run(faithfulness=0.97)])
+
+    assert result.exit_code == 0
+    assert "mean of 3" in result.out
+    assert "the run that passed" not in result.out
 
 
 # --- a failure a re-run cannot fix is not retried --------------------------------

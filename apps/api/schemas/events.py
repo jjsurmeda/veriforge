@@ -109,7 +109,12 @@ class Decision(RunEvent):
     value: str | float
     probability: float | None = None
     probabilities: dict[str, float] | None = None
-    engine: Literal["jev", "fallback"]
+    # `unavailable` is the third value and is not an engine: it is the record of
+    # a question the decision layer could not answer at all, carrying the
+    # stage's own default rather than a reading (KI-57). It has to be
+    # distinguishable in the trace, because a row reading 0.0 from `jev` says
+    # "the evidence was judged thin" and this says "nobody could judge it".
+    engine: Literal["jev", "fallback", "unavailable"]
     latency_ms: int
     reasoning: str | None = None
     stage: str | None = None
@@ -172,6 +177,18 @@ class AnswerHold(RunEvent):
     reason: str = "verifying"
 
 
+class AnswerRetract(RunEvent):
+    """AirFlow:stream, ADR-006 item 4 — a streamed answer whose post-stream
+    IsUse check failed is retracted: the client replaces the rendered text
+    with the decline. The event must be idempotent-safe: any number of
+    retractions lands the same replaced text, so a reconnect cannot
+    resurrect text the trace already strikes."""
+
+    type: Literal["answer.retract"] = "answer.retract"
+    reason: str
+    text: str
+
+
 class Revision(RunEvent):
     """The reviewer rewrote flagged claims (TRD §10, max one pass)."""
 
@@ -209,6 +226,7 @@ RunStreamEvent = Annotated[
     | Retrieval
     | AnswerDelta
     | Abstain
+    | AnswerRetract
     | Conflict
     | ReviewClaim
     | AnswerHold

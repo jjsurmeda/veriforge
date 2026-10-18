@@ -13,10 +13,12 @@ from itertools import combinations
 from db.models import Citation
 from decisions import threshold
 from graph.abstain import build_abstain_event
+from graph.generate import order_for_lost_in_the_middle
 from graph.stages.checks import _conflict_pair_questions
 from graph.stages.common import no_call
 from graph.stages.evidence_stage import Attempt
 from graph.stages.ingress_stage import direct_run
+from graph.stages.retrieve_stage import SUMMARY_SOURCE_TYPE
 from graph.stages.state import AutoRun, AutoRunState, StageEnv
 from retrieval.context import count_tokens, trim_context
 from retrieval.hybrid import ScoredChunk
@@ -29,7 +31,10 @@ async def finish(env: StageEnv, state: AutoRunState, attempt: Attempt) -> AutoRu
     """The last attempt's verdict, the contexts or the abstention, and the
     citation rows the generator will answer from."""
     _mark_dropped(state)
-    state.sufficiency_p = _final_sufficiency(state)
+    # The gate's own number. `plan_delivery` reads it to decide hold-vs-stream,
+    # and a run must be held or streamed on the signal that decided whether it
+    # answered at all.
+    state.gate_mean_top3 = attempt.gate_mean_top3
     if attempt.enough:
         await _resolve_conflict(env, state, attempt)
         state.contexts = attempt.expanded
@@ -60,7 +65,7 @@ async def finish(env: StageEnv, state: AutoRunState, attempt: Attempt) -> AutoRu
         context_used=state.context_used,
         ingress=state.ingress,
         seams=env.seams,
-        sufficiency_p=state.sufficiency_p,
+        gate_mean_top3=state.gate_mean_top3,
         retry_skipped=state.retry_skipped,
     )
 
@@ -73,17 +78,6 @@ def _mark_dropped(state: AutoRunState) -> None:
         for chunk in event.chunks:
             if chunk.chunk_id in dropped_ids:
                 chunk.dropped = True
-
-
-def _final_sufficiency(state: AutoRunState) -> float:
-    """The last sufficiency reading, or 0.0. `relevance` is emitted before
-    `sufficient` in the loop, so the last decision being `sufficient` still
-    means the sufficiency floor was met; an abstention with p_sufficient above
-    the floor is the relevance gate."""
-    last = state.decision_events[-1] if state.decision_events else None
-    if last is not None and last.name == "sufficient":
-        return float(last.value)
-    return 0.0
 
 
 async def _resolve_conflict(env: StageEnv, state: AutoRunState, attempt: Attempt) -> None:
@@ -140,11 +134,12 @@ def _best_conflict(
 
 def _trim(env: StageEnv, state: AutoRunState) -> None:
     history_tokens = sum(count_tokens(text) for _, text in state.history[-6:])
-    state.contexts, state.context_used = trim_context(
+    trimmed, state.context_used = trim_context(
         state.contexts,
         window_tokens=env.params.context_window,
         history_tokens=history_tokens,
     )
+    state.contexts = order_for_lost_in_the_middle(trimmed)
 
 
 def _cite(env: StageEnv, state: AutoRunState) -> None:
@@ -152,8 +147,25 @@ def _cite(env: StageEnv, state: AutoRunState) -> None:
         Citation(
             message_id=env.params.message_id,
             n=index + 1,
-            chunk_id=context.chunk.chunk_id,
+            # Summaries carry a synthetic chunk_id that matches no row in
+            # `chunks`; the foreign key is nullable so a summary citation
+            # points through document_id/section_id instead (_merge_summaries).
+            chunk_id=context.chunk.chunk_id
+            if context.chunk.source_type != SUMMARY_SOURCE_TYPE
+            else None,
             rerank_score=context.chunk.rerank_score,
+            # A summary has no chunk row, so the document, section and the text
+            # shown are kept on the citation itself and the evidence survives a
+            # reload. Chunk citations resolve through their chunk, as before.
+            document_id=context.chunk.document_id
+            if context.chunk.source_type == SUMMARY_SOURCE_TYPE
+            else None,
+            section_id=context.chunk.section_id
+            if context.chunk.source_type == SUMMARY_SOURCE_TYPE
+            else None,
+            excerpt=context.chunk.text[:240]
+            if context.chunk.source_type == SUMMARY_SOURCE_TYPE
+            else None,
         )
         for index, context in enumerate(state.contexts)
     )

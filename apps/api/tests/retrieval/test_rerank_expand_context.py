@@ -14,15 +14,40 @@ from retrieval.context import count_tokens, trim_context
 from retrieval.expand import ExpandedContext, dedupe_adjacent, expand_context
 from retrieval.hybrid import ScoredChunk
 from retrieval.rerank import (
+    ANSWER_LEVEL_VALUE,
+    ANSWER_LEVELS,
     CohereRerank,
     FusedOrderRerank,
     JevRerank,
     NvidiaRerank,
+    answer_containment_question,
+    answer_containment_score,
     apply_rerank,
     get_reranker,
 )
-from schemas.decisions import Answer
+from schemas.decisions import Answer, Choice
 from tests.retrieval.conftest import make_collection
+
+
+def graded(level: str, **spread: float) -> Answer:
+    """An `Answer` shaped the way the rubric is answered: the chosen level plus
+    the distribution over all four, which is what the ranking reads.
+
+    `spread` gives the mass on the *other* levels; the chosen level takes the
+    remainder, so `graded("fully …", **{"partly …": 0.4})` is a 0.6/0.4 split
+    rather than a 1.0/0.4 one that sums past 1.
+    """
+    probabilities = {name: 0.0 for name in ANSWER_LEVELS}
+    for name, value in spread.items():
+        probabilities[name] = value
+    probabilities[level] = max(0.0, 1.0 - sum(spread.values()))
+    return Answer(
+        engine="jev",
+        latency_ms=1,
+        value=level,
+        probability=probabilities[level],
+        probabilities=probabilities,
+    )
 
 
 def _chunk(
@@ -247,8 +272,13 @@ async def test_apply_rerank_falls_back_to_fused_order_when_the_provider_fails() 
 
 
 class _ScoreJev:
-    """Fake DecisionEngine: scores a passage by whether its text contains
-    'good', so the expected order is obvious by inspection."""
+    """Fake DecisionEngine: grades a passage by whether its text contains
+    'good', so the expected order is obvious by inspection.
+
+    Answers the way the real rubric is answered — an answer-containment `Choice`
+    with a distribution over the four levels — not with a bare 0-1 number, so
+    these tests exercise the path `JevRerank` actually takes.
+    """
 
     def __init__(self) -> None:
         self.calls: list[int] = []
@@ -256,12 +286,7 @@ class _ScoreJev:
     async def decide(self, *, state: Any, questions: dict[str, Any]) -> dict[str, Any]:
         self.calls.append(len(questions))
         return {
-            name: Answer(
-                engine="jev",
-                latency_ms=1,
-                value=0.9 if "good" in q.prompt else 0.1,
-                probability=None,
-            )
+            name: graded("fully answers the question" if "good" in q.prompt else "off-topic")
             for name, q in questions.items()
         }
 
@@ -274,10 +299,140 @@ async def test_jev_rerank_orders_by_score_and_caps_top_n() -> None:
     ranked = await provider.rerank(query="q", documents=documents, top_n=2)
 
     assert [i for i, _ in ranked] == [1, 3]
-    assert {s for _, s in ranked} == {0.9}
+    assert {s for _, s in ranked} == {1.0}
     assert len(ranked) == 2
     # one batched call, not one call per passage
     assert jev.calls == [4]
+
+
+# --- the answer-containment rubric (TRD §9.6) --------------------------------
+
+
+def test_the_rerank_question_is_the_answer_containment_one() -> None:
+    """The question and its four levels, verbatim from TRD §9.6. This is the
+    whole point of the change: the old question asked how *relevant* a passage
+    was, which is a lexical-overlap judgement, and KI-70 measured what that
+    costs — the correct passages for a gist question scored 0.35 while the
+    entity check scored the same passages 0.97."""
+    question = answer_containment_question("what is rocinante", "a passage")
+
+    assert isinstance(question, Choice)
+    assert (
+        "Does the passage contain the information needed to answer or verify the question?"
+        in question.prompt
+    )
+    assert "what is rocinante" in question.prompt
+    assert "a passage" in question.prompt
+    assert question.options == list(ANSWER_LEVELS)
+    assert question.options == [
+        "off-topic",
+        "related but does not answer the question",
+        "partly answers the question",
+        "fully answers the question",
+    ]
+    # The old question is gone, not merely unused.
+    assert "How relevant is this passage" not in question.prompt
+
+
+def test_the_rubric_scores_by_expected_level_not_by_the_chosen_one() -> None:
+    """A graded distribution is a mean, not an argmax. 60/40 across "partly"
+    and "fully" is more useful evidence than 51/49 the other way round, and
+    the argmax throws that away into a tie."""
+    mostly_fully = graded("fully answers the question", **{"partly answers the question": 0.4})
+    mostly_partly = graded("partly answers the question", **{"fully answers the question": 0.4})
+    # 0.6/0.4 across the top two levels, either way round.
+    assert answer_containment_score(mostly_fully) == pytest.approx(
+        1.0 * 0.6 + ANSWER_LEVEL_VALUE["partly answers the question"] * 0.4
+    )
+    assert answer_containment_score(mostly_partly) == pytest.approx(
+        ANSWER_LEVEL_VALUE["partly answers the question"] * 0.6 + 1.0 * 0.4
+    )
+    assert answer_containment_score(mostly_fully) > answer_containment_score(mostly_partly)
+
+
+def test_the_rubric_spans_zero_to_one_across_the_four_levels() -> None:
+    """The normalised expected level is what `ScoredChunk.rerank_score`, the
+    citation row and the trace all already speak, so the four levels have to
+    land on 0..1 in order."""
+    scores = [answer_containment_score(graded(level)) for level in ANSWER_LEVELS]
+
+    assert scores == pytest.approx([0.0, 1 / 3, 2 / 3, 1.0])
+    assert scores == sorted(scores)
+
+
+def test_the_rubric_falls_back_to_the_chosen_level_without_a_distribution() -> None:
+    """The LLM fallback engine and a grader that answered with a bare label
+    both produce an `Answer` with no `probabilities`. The level is still
+    readable, so the run keeps its ordering; only the resolution is lost."""
+    bare = Answer(engine="fallback", latency_ms=1, value="partly answers the question")
+
+    assert answer_containment_score(bare) == pytest.approx(2 / 3)
+    # An unrecognised label and an unanswered passage both score 0.0 rather
+    # than raising: one bad passage must not fail the run.
+    assert answer_containment_score(Answer(engine="fallback", latency_ms=1, value="???")) == 0.0
+    assert answer_containment_score(None) == 0.0
+
+
+async def test_jev_rerank_ranks_by_the_rubric_and_keeps_top_n_and_the_cut() -> None:
+    """Ordering, top-n and the 2,000-char passage cut, all through the rubric
+    and still in ONE batched call."""
+
+    class _RubricJev:
+        def __init__(self) -> None:
+            self.calls: list[int] = []
+            self.passages: list[str] = []
+
+        async def decide(self, *, state: Any, questions: dict[str, Any]) -> dict[str, Any]:
+            self.calls.append(len(questions))
+            grades = {
+                "off-topic": "off-topic",
+                "related": "related but does not answer the question",
+                "half": "partly answers the question",
+                "full": "fully answers the question",
+            }
+            out = {}
+            for name, question in questions.items():
+                passage = question.prompt.split("[Passage]\n", 1)[1]
+                self.passages.append(passage)
+                level = next(v for k, v in grades.items() if k in passage)
+                out[name] = graded(level)
+            return out
+
+    jev = _RubricJev()
+    documents = [
+        "off-topic: a different book entirely",
+        "related: the same book, none of the answer",
+        "half: mentions the name once",
+        "full: states the answer outright",
+    ]
+
+    ranked = await JevRerank(jev, "run").rerank(  # type: ignore[arg-type]
+        query="q", documents=documents, top_n=2
+    )
+
+    # Best first: "full" (1.0), then "half" (2/3). "related" and "off-topic"
+    # are cut by top_n.
+    assert [i for i, _ in ranked] == [3, 2]
+    assert [s for _, s in ranked] == pytest.approx([1.0, 2 / 3])
+    assert jev.calls == [4], "the rubric must stay one batched call"
+    # The passage cut is unchanged: nothing past 2,000 chars is graded.
+    assert all(len(passage) <= 2_000 for passage in jev.passages)
+
+
+async def test_jev_rerank_breaks_a_tie_by_the_fused_order_it_was_given() -> None:
+    """Two passages graded the same level keep the order retrieval fused them
+    in, because `pairs` is built in document order and the sort is stable.
+    Without this the fused score is silently discarded on every tie."""
+
+    class _FlatJev:
+        async def decide(self, *, state: Any, questions: dict[str, Any]) -> dict[str, Any]:
+            return {name: graded("partly answers the question") for name in questions}
+
+    ranked = await JevRerank(_FlatJev(), "run").rerank(  # type: ignore[arg-type]
+        query="q", documents=["a", "b", "c"], top_n=3
+    )
+
+    assert [i for i, _ in ranked] == [0, 1, 2]
 
 
 async def test_jev_rerank_scores_an_unanswered_passage_zero() -> None:
@@ -292,7 +447,12 @@ async def test_jev_rerank_scores_an_unanswered_passage_zero() -> None:
     assert [s for _, s in ranked] == [0.0, 0.0]
 
 
-async def test_jev_rerank_clamps_and_survives_a_non_numeric_answer() -> None:
+async def test_jev_rerank_survives_an_unrecognised_label_or_a_bare_number() -> None:
+    """A grader that answers with something the rubric does not define — a
+    number, a stray word — scores 0.0 instead of raising. One bad passage must
+    not fail the run; `apply_rerank` still catches a transport error and falls
+    back to the fused order, and this is the same contract one layer in."""
+
     class _Weird(_ScoreJev):
         async def decide(self, *, state: Any, questions: dict[str, Any]) -> dict[str, Any]:
             return {
@@ -304,7 +464,7 @@ async def test_jev_rerank_clamps_and_survives_a_non_numeric_answer() -> None:
         query="q", documents=["a", "b"], top_n=2
     )
 
-    assert dict(ranked) == {0: 1.0, 1: 0.0}
+    assert dict(ranked) == {0: 0.0, 1: 0.0}
 
 
 async def test_a_breaker_open_jev_falls_back_to_fused_order() -> None:

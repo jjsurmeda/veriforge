@@ -37,7 +37,7 @@ export const TOUR_QUESTIONS: TourQuestion[] = [
     expect:
       'Alice’s Adventures in Wonderland, the Mock Turtle’s "Beautiful Soup" passage, ' +
       'ranks in the top four hybrid hits (bm25 23.0, vector 0.62). Rehearsed: ' +
-      'sufficiency 0.45, relevance 0.82, entity 0.93, all cleared.',
+      'evidence gate 0.81 and entity 0.93, both cleared.',
   },
   {
     id: 'abstain',
@@ -45,10 +45,10 @@ export const TOUR_QUESTIONS: TourQuestion[] = [
     shows: 'An abstention.',
     expect:
       'Retrieval returns the Gutenberg front matter and table of contents, which ' +
-      'contain no ISBN. Rehearsed: sufficiency 0.02 and relevance 0.03 both below ' +
-      'their floors, so the run declined and named the sufficiency gate. The ' +
-      'abstention text still offers Web and Deep — the server-written template ' +
-      'does not know the account — but a demo account is not shown those buttons.',
+      'contain no ISBN. Rehearsed: evidence gate 0.02 below the 0.55 floor, so ' +
+      'the run declined. The abstention text still offers Web and Deep — the ' +
+      'server-written template does not know the account — but a demo account is ' +
+      'not shown those buttons.',
   },
   {
     id: 'conflict',
@@ -57,10 +57,10 @@ export const TOUR_QUESTIONS: TourQuestion[] = [
     expect:
       'HONEST GAP, NOT THE BEHAVIOUR THE BRIEF ASKS FOR. The books are the only ' +
       'Shared collection, so there is nothing here that two sources disagree ' +
-      'about: rehearsed, this abstains with sufficiency 0.02 and relevance 0.01, ' +
-      'which is a second abstention rather than a conflict disclosure. A real ' +
-      'conflict needs two conflicting warranty documents in Shared; they live in ' +
-      'the private eval corpora, which must stay private. See docs/showcase.md.',
+      'about: rehearsed, this abstains with evidence gate 0.01, which is a second ' +
+      'abstention rather than a conflict disclosure. A real conflict needs two ' +
+      'conflicting warranty documents in Shared; they live in the private eval ' +
+      'corpora, which must stay private. See docs/showcase.md.',
   },
   {
     id: 'entity',
@@ -69,8 +69,8 @@ export const TOUR_QUESTIONS: TourQuestion[] = [
     expect:
       'Retrieval returns books that merely resemble the phrasing (top vector 0.19, ' +
       'no bm25 above 12.7) and no AW-2000 passage at all. Rehearsed: entity 0.01 ' +
-      'against a 0.50 floor while sufficiency also failed, so the decline names ' +
-      'whichever gate the run acted on.',
+      'against a 0.50 floor while the evidence gate also failed, so the decline ' +
+      'names whichever gate the run acted on.',
   },
   {
     id: 'multilingual',

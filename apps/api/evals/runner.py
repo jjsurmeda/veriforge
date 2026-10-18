@@ -53,12 +53,14 @@ from db.models import Chat, EvalDataset, EvalItem, EvalResult, EvalRun, Message,
 from decisions import DecisionEngine
 from evals.abstention import is_confident_wrong
 from evals.attribution import GenerationRef, attribute, record_generation_ids
+from evals.content import cited_documents
 from evals.judge import judge_answer
 from evals.loader import EVAL_USER_EMAIL, STATE_FILE
 from graph.auto import AutoRunInput, finalize_auto_run, prepare_auto_run
 from graph.deep import DeepRunInput, finalize_deep_run, prepare_deep_run
 from graph.generate import build_grounded_messages
 from graph.review import review_answer
+from graph.stages.usefulness_stage import run_usefulness, usefulness_decline
 from retrieval.context import count_tokens
 from retrieval.filters import ClientFilters
 
@@ -288,6 +290,7 @@ async def _run_item(
             )
             abstained = deep_run.abstain_event is not None
             contexts = deep_run.contexts
+            decisions = deep_run.decision_events
         else:
             run = await prepare_auto_run(
                 factory,
@@ -321,6 +324,30 @@ async def _run_item(
             )
             abstained = run.abstain_event is not None
             contexts = run.contexts
+            decisions = run.decision_events
+            # ADR-006: the same post-generation usefulness check the product's
+            # Auto path runs, so a fast20 number is measured against what
+            # ships. Only a grounded answer carries sources to check against;
+            # an abstention, a chitchat route or a library listing checked
+            # nothing.
+            if abstained or run.chitchat or run.library_names is not None:
+                usefulness = None
+            else:
+                usefulness = await run_usefulness(
+                    engine,
+                    run_id=str(pipeline_run_id),
+                    question=item.question,
+                    answer=answer,
+                    contexts=run.contexts,
+                    decisions=run.decision_events,
+                )
+                if usefulness.state != "pass":
+                    # The benefit of the check is what the product does with
+                    # it: the drafted answer is replaced by the TR-4 decline,
+                    # and the item is recorded as an abstention.
+                    abstained = True
+                    answer = usefulness_decline(str(pipeline_run_id), run.contexts)
+                    tokens_out = count_tokens(answer)
 
     # KI-18 (D2 2c): the generation ids are collected here but the stats
     # lookups are deferred to run_eval — a generation's record lands ~20 s
@@ -392,6 +419,10 @@ async def _run_item(
             for verified in review.claims
         ]
         stage_ms["review_revised"] = int(review.revised_text is not None)
+        if review.revised_text is not None:
+            # The product delivers the revision, and its claims and scores were
+            # computed on it: store and judge that text, not the draft.
+            answer = review.revised_text
     else:
         faithfulness = 1.0
         citation_precision = 1.0
@@ -426,7 +457,19 @@ async def _run_item(
         stage_ms=stage_ms,
         tokens_in=tokens_in,
         tokens_out=tokens_out,
-        review_detail={"claims": claim_detail, "contexts": context_detail},
+        # Every decision the run took, as `[name, value, engine]`: the gate
+        # grade, the rerank grades, the sanitizer's verdicts. An eval run
+        # publishes no run events and `eval-gate-local` drops the database, so
+        # without this an abstention is a bare `true` and the only way to ask
+        # why it abstained is a paid rerun.
+        review_detail={
+            "claims": claim_detail,
+            "contexts": context_detail,
+            "decisions": [[d.name, d.value, d.engine] for d in decisions],
+            "cited_documents": cited_documents(
+                answer, [context.chunk.document_name for context in contexts]
+            ),
+        },
     )
     async with factory() as session, session.begin():
         session.add(result)
@@ -787,6 +830,11 @@ def aggregate(results: list[tuple[EvalItem, EvalResult]]) -> dict[str, float | N
     # nothing, so it has no weakest claim and is not part of the share. It
     # scores 1.0 in the column for uniformity with faithfulness, and counting
     # that 1.0 here would pad the share with items that were never answered.
+    # An answer the reviewer could not score (no claims extracted, a failed
+    # review) is not a pass. aggregate drops None from every mean, so without
+    # this count eight perfect abstentions hide unscored answers.
+    answers = [(_, r) for _, r in scored if not r.abstained]
+    answers_unscored = sum(1 for _, r in answers if r.faithfulness is None)
     support_eligible = [(_, r) for _, r in scored if not r.abstained and r.min_support is not None]
     supports = [float(value) for _, r in support_eligible if (value := r.min_support) is not None]
     min_support_share = (
@@ -836,6 +884,8 @@ def aggregate(results: list[tuple[EvalItem, EvalResult]]) -> dict[str, float | N
         # and "7 of 6" are both `7`, and only the second is a regression.
         "should_abstain_total": float(len(abstain_items)),
         "answerable_total": float(len(answerable)),
+        "answers_delivered": float(len(answers)),
+        "answers_unscored": float(answers_unscored),
         "p50_latency_ms": p50,
         "p50_our_overhead_ms": (float(statistics.median(overheads)) if overheads else None),
         "overhead_items_attributed": float(len(overheads)),

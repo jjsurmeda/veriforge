@@ -342,3 +342,17 @@ def test_books_gate_subset_is_stratified() -> None:
     expects = {by_id[i]["expect"] for i in ids}
     assert "answer" in expects and "not_in_sources" in expects, expects
     assert {by_id[i]["corpus"] for i in ids} == {"books"}
+
+
+def test_an_answer_the_reviewer_could_not_score_is_counted_not_hidden() -> None:
+    """Eight perfect abstentions must not conceal an unscored answer
+    (third-party review #5): faithfulness drops the None from its mean, so the
+    gap has to be its own count."""
+    rows = [
+        (item(), result(faithfulness=None, min_support=None)),
+        (item(should_abstain=True), result(abstained=True, faithfulness=1.0, min_support=1.0)),
+    ]
+    summary = aggregate(rows)
+    assert summary["answers_delivered"] == 1.0
+    assert summary["answers_unscored"] == 1.0
+    assert summary["answers_total"] == 0.0  # measured answers only

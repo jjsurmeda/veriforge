@@ -37,6 +37,7 @@ def _summary(**overrides: Any) -> dict[str, Any]:
             "confident_wrong": 0,
             "false_abstentions": 0,
             "uncited_answers": 0,
+            "content_misses": 0,
             "errored": 0,
         },
         "detail": {
@@ -45,6 +46,7 @@ def _summary(**overrides: Any) -> dict[str, Any]:
             "unclean_decline_ids": [],
             "false_abstention_ids": [],
             "uncited_answer_ids": [],
+            "content_miss_ids": [],
             "errored_ids": [],
             "failed_ids": [],
         },
@@ -71,26 +73,26 @@ def test_one_confident_wrong_fails() -> None:
     assert any("outside-study-in-scarlet" in failure for failure in failures)
 
 
-def test_eighteen_of_twenty_one_clean_declines_fails() -> None:
-    """18/21 = 85.7%, under PRD §5's 90%."""
-    summary = _summary(clean_declines=18, unclean_declines=3)
+def test_seventeen_of_twenty_clean_declines_fails() -> None:
+    """17/20 = 85%, under PRD §5's 90%."""
+    summary = _summary(clean_declines=17, unclean_declines=3)
     summary["detail"]["unclean_decline_ids"] = ["a", "b", "c"]
 
     failures = acceptance_failures(summary)
 
-    assert any("18 of 21 clean declines" in failure for failure in failures)
-    assert any("at least 19" in failure for failure in failures)
+    assert any("17 of 20 clean declines" in failure for failure in failures)
+    assert any("at least 18" in failure for failure in failures)
 
 
-def test_nineteen_of_twenty_one_clean_declines_passes() -> None:
-    """The boundary: -(-21 * 90 // 100) = 19, so 19/21 = 90.5% passes."""
-    assert acceptance_failures(_summary(clean_declines=19, unclean_declines=2)) == []
+def test_eighteen_of_twenty_clean_declines_passes() -> None:
+    """The boundary: -(-20 * 90 // 100) = 18, so 18/20 = 90% passes."""
+    assert acceptance_failures(_summary(clean_declines=18, unclean_declines=2)) == []
 
 
 def test_an_unclean_decline_fails_on_the_count_not_as_confident_wrong() -> None:
     """A prose "the sources don't cover that" with citations is a decline (PRD §5),
     not a confident wrong answer — but it is not clean either."""
-    summary = _summary(clean_declines=18, unclean_declines=3)
+    summary = _summary(clean_declines=17, unclean_declines=3)
 
     failures = acceptance_failures(summary)
 
@@ -98,19 +100,19 @@ def test_an_unclean_decline_fails_on_the_count_not_as_confident_wrong() -> None:
     assert not any("confident wrong" in failure for failure in failures)
 
 
-def test_two_of_thirty_two_false_abstentions_fails() -> None:
+def test_two_of_thirty_three_false_abstentions_fails() -> None:
     """KI-56's shape: two real answers the run declined on."""
     summary = _summary(false_abstentions=2)
     summary["detail"]["false_abstention_ids"] = ["rp77-torque", "other"]
 
     failures = acceptance_failures(summary)
 
-    assert any("2 of 32 answerable items declined" in failure for failure in failures)
+    assert any("2 of 33 answerable items declined" in failure for failure in failures)
     assert any("rp77-torque" in failure for failure in failures)
 
 
-def test_one_of_thirty_two_false_abstentions_passes() -> None:
-    """The boundary: 1/32 = 3%, under PRD §5's 5%."""
+def test_one_of_thirty_three_false_abstentions_passes() -> None:
+    """The boundary: 1/33 = 3%, under PRD §5's 5%."""
     assert acceptance_failures(_summary(false_abstentions=1)) == []
 
 
@@ -150,6 +152,45 @@ def test_an_uncited_answer_is_not_a_false_abstention() -> None:
     failures = acceptance_failures(summary)
 
     assert not any("false abstention" in f for f in failures)
+    assert not any("confident wrong" in f for f in failures)
+
+
+def test_two_content_misses_fail() -> None:
+    """KI-75. Two answer-class items answered, cited the right book, and still
+    did not state what the item asked for. Nothing above this line can see
+    that: the run held decline accuracy, false abstention and citations."""
+    summary = _summary(content_misses=2)
+    summary["detail"]["content_miss_ids"] = ["plot-speckled-band", "broad-time-machine"]
+
+    failures = acceptance_failures(summary)
+
+    assert any("2 of 33 answerable items answered but did not state" in f for f in failures)
+    assert any("plot-speckled-band" in f for f in failures)
+    assert any("broad-time-machine" in f for f in failures)
+    assert any("≤ 1 content miss" in f for f in failures)
+
+
+def test_one_content_miss_passes() -> None:
+    """The bar line: ≤ 1 of 33 answerables, the same arithmetic as the false
+    abstention rate at this mix."""
+    summary = _summary(content_misses=1)
+    summary["detail"]["content_miss_ids"] = ["plot-speckled-band"]
+
+    assert acceptance_failures(summary) == []
+
+
+def test_a_content_miss_is_not_any_of_the_other_classes() -> None:
+    """The three answer-class counts are disjoint and the gate reports them
+    apart. A cited, non-declining reply is not an abstention, not an uncited
+    answer, and (for an answer-class item) not a confident wrong — calling it
+    any of those hides the one that is true."""
+    summary = _summary(content_misses=1)
+    summary["detail"]["content_miss_ids"] = ["plot-speckled-band"]
+
+    failures = acceptance_failures(summary)
+
+    assert not any("false abstention" in f for f in failures)
+    assert not any("uncited" in f for f in failures)
     assert not any("confident wrong" in f for f in failures)
 
 
@@ -225,11 +266,14 @@ def test_the_expected_counts_are_the_relabelled_set() -> None:
     """Pinned so a set edit that changes the mix has to change the bar in the
     same commit, rather than silently passing against a stale expectation.
     32/21, not 33/20: `amb-bovary-homais` moved to `not_in_sources` on
-    2026-10-12 (phase 1c item 2) because its premise is not in this corpus."""
+    2026-10-12 (phase 1c item 2) because its premise is not in this corpus.
+    Back to 33/20 on 2026-10-17 (ADR-006): `ml-zh-xiyou-nezha` moved the
+    other way — the corpus states the Heavenly King lives in the Cloud
+    Tower Palace and calls Nezha there."""
     assert EXPECTED_COUNTS == {
         "items": 57,
-        "answer_items": 32,
-        "abstain_items": 21,
+        "answer_items": 33,
+        "abstain_items": 20,
         "smalltalk_items": 2,
         "library_items": 2,
     }
@@ -260,3 +304,51 @@ def test_every_item_id_in_the_set_is_unique() -> None:
     ids = [str(item["id"]) for item in json.loads(path.read_text())["items"]]
 
     assert len(ids) == len(set(ids))
+
+
+# --- the held-out set has its own verdict (third-party review #4) -----------
+
+
+def _heldout_summary(**overrides: Any) -> dict[str, Any]:
+    summary = _summary()
+    counts = acceptance_gate.HELDOUT_COUNTS
+    summary["counts"].update(
+        {
+            "items": counts["items"],
+            "answer_items": counts["answer_items"],
+            "abstain_items": counts["abstain_items"],
+            "smalltalk_items": 0,
+            "library_items": 0,
+            "clean_declines": counts["abstain_items"],
+        }
+    )
+    summary["counts"].update(overrides)
+    return summary
+
+
+def test_a_clean_heldout_run_passes_its_own_gate_and_fails_the_books_gate() -> None:
+    assert acceptance_failures(_heldout_summary(), "heldout") == []
+    assert acceptance_failures(_heldout_summary(), "books"), "wrong mix for the books set"
+
+
+def test_the_heldout_bar_is_zero_confident_wrong_and_at_most_one_false_abstention() -> None:
+    wrong = acceptance_failures(_heldout_summary(confident_wrong=1), "heldout")
+    assert any("confident wrong" in f for f in wrong)
+    assert acceptance_failures(_heldout_summary(false_abstentions=1), "heldout") == []
+    two = acceptance_failures(_heldout_summary(false_abstentions=2), "heldout")
+    assert any("answerable items declined" in f for f in two)
+
+
+def test_a_filtered_heldout_run_is_not_a_whole_set_verdict() -> None:
+    failures = acceptance_failures(_heldout_summary(items=5), "heldout")
+    assert any("not a whole-set measurement" in f for f in failures)
+
+
+def test_clean_declines_are_reported_not_gated_for_the_heldout_set() -> None:
+    assert acceptance_failures(_heldout_summary(clean_declines=5), "heldout") == []
+
+
+def test_the_category_report_counts_passes_per_category() -> None:
+    summary = {"items": [{"id": "a", "pass": True}, {"id": "b", "pass": False}, {"id": "c"}]}
+    lines = acceptance_gate.category_report(summary, {"a": "lookup", "b": "lookup", "c": "gist"})
+    assert lines == ["  gist: 0/1", "  lookup: 1/2"]

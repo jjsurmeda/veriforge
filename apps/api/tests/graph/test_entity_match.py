@@ -153,23 +153,24 @@ def test_named_entities(question: str, expected: list[str]) -> None:
 
 
 class _EntityJev(_IngressJev):
-    """Ingress as usual, `sufficient` high, and one entity answer per
-    passage: yes iff the passage carries a marker in `matching`, which
-    plays the judge's "is this passage about the entity?" call on the
-    same text the real engine would read."""
+    """Ingress as usual, and one entity answer per passage: yes iff the
+    passage carries a marker in `matching`, which plays the judge's "is this
+    passage about the entity?" call on the same text the real engine would
+    read. Records the batched evidence call (the entity guard and the conflict
+    pairs), which is what replaced the old `sufficient` call."""
 
     def __init__(self, matching: list[str], *, yes: float = 0.9, no: float = 0.05) -> None:
         super().__init__("lookup")
         self._matching = matching
         self._yes = yes
         self._no = no
-        self.sufficient_calls: list[dict[str, Question]] = []
+        self.evidence_calls: list[dict[str, Question]] = []
 
     async def decide(
         self, *, state: dict[str, Any] | str, questions: dict[str, Question]
     ) -> dict[str, Answer]:
-        if "sufficient" in questions:
-            self.sufficient_calls.append(dict(questions))
+        if any(name.startswith("entity_") or name.startswith("conflict_") for name in questions):
+            self.evidence_calls.append(dict(questions))
         answers: dict[str, Answer] = {}
         for name in questions:
             question = questions[name]
@@ -182,8 +183,6 @@ class _EntityJev(_IngressJev):
                 answers[name] = Answer(
                     engine="jev", latency_ms=1, value=entity_value, probability=entity_value
                 )
-            elif name == "sufficient":
-                answers[name] = Answer(engine="jev", latency_ms=1, value=0.9, probability=0.9)
             elif name in SCORE_NAMES:
                 answers[name] = Answer(engine="jev", latency_ms=1, value=0.01, probability=0.01)
             elif name in CHOICE_ANSWERS:
@@ -363,8 +362,8 @@ async def test_aw2000_question_with_aw2000_passages_answers(
 
     assert run.abstain_event is None
     assert len(run.contexts) == 3
-    # It passed the first bar: one sufficiency call, no rewrite + retry.
-    assert len(jev.sufficient_calls) == 1
+    # It passed the gate on the first bar: one evidence call, no rewrite + retry.
+    assert len(jev.evidence_calls) == 1
 
 
 async def test_one_matching_passage_keeps_the_run(
@@ -412,11 +411,11 @@ async def test_question_without_named_entity_makes_no_entity_call(
     )
 
     assert run.abstain_event is None
-    for call in jev.sufficient_calls:
+    for call in jev.evidence_calls:
         assert not [name for name in call if name.startswith("entity_")]
 
 
-async def test_entity_noul_rides_the_sufficient_call(
+async def test_entity_noul_rides_the_evidence_call(
     db: AsyncSession, user_a: Any, no_llm: dict[str, list[str]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """TRD §7.1: the per-passage Noul is batched into the existing
@@ -438,9 +437,9 @@ async def test_entity_noul_rides_the_sufficient_call(
         DecisionEngine(jev=jev, mode="jev_only"),
     )
 
-    assert jev.sufficient_calls, "the sufficiency call must have run"
-    for call in jev.sufficient_calls:
-        assert "sufficient" in call
+    assert jev.evidence_calls, "the evidence call must have run"
+    for call in jev.evidence_calls:
+        assert any(name.startswith("entity_") for name in call)
         entity_names = [name for name in call if name.startswith("entity_")]
         assert len(entity_names) == 3, "one Noul per top-k passage, in the same call"
         # The prompt carries the question and the passage, never a bare

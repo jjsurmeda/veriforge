@@ -25,6 +25,8 @@ from db.session import get_session_factory
 from evals import runner
 from evals.attribution import Attribution
 from evals.loader import EVAL_USER_EMAIL
+from graph.stages.usefulness_stage import UsefulnessOutcome
+from schemas.events import Decision
 
 pytestmark = pytest.mark.asyncio
 
@@ -38,6 +40,11 @@ class _FakeRun:
         self.abstain_event = None
         self.rewritten = "q"
         self.history: list[tuple[str, str]] = []
+        self.decision_events: list[Any] = []
+        # The IsUse stage only asks a grounded answer (ADR-006): these are the
+        # same attributes the real run carries and the stage reads.
+        self.chitchat = False
+        self.library_names: list[str] | None = None
 
     async def stream_answer(self) -> AsyncIterator[str]:
         yield "answer"
@@ -108,6 +115,11 @@ async def _run_one(
     run = _FakeRun(contexts)
     if abstain:
         run.abstain_event = cast(Any, object())
+        run.decision_events = [
+            Decision(
+                run_id=str(UUID(int=9)), name="evidence", value=0.21, engine="jev", latency_ms=1
+            )
+        ]
 
     async def fake_prepare(*_a: Any, **_k: Any) -> _FakeRun:
         return run
@@ -127,12 +139,16 @@ async def _run_one(
     async def fake_review(**_k: Any) -> Any:
         return review
 
+    async def fake_usefulness(engine: Any, **_k: Any) -> Any:
+        return UsefulnessOutcome(state="pass", value=0.9, engine="jev")
+
     monkeypatch.setattr(runner, "prepare_auto_run", fake_prepare)
     monkeypatch.setattr(runner, "finalize_auto_run", fake_finalize)
     monkeypatch.setattr(runner, "resolve_scope", fake_resolve_scope)
     monkeypatch.setattr(runner, "attribute", fake_attribute)
     monkeypatch.setattr(runner, "judge_answer", fake_judge)
     monkeypatch.setattr(runner, "review_answer", fake_review)
+    monkeypatch.setattr(runner, "run_usefulness", fake_usefulness)
 
     eval_run_id = (await db.execute(select(EvalRun.id))).scalar_one()
     result, _ = await runner._run_item(
@@ -304,6 +320,8 @@ async def test_an_abstention_records_contexts_and_no_claims(
     assert detail is not None
     assert detail["claims"] == []
     assert len(detail["contexts"]) == 2
+    # Why it abstained has to survive the dropped database.
+    assert detail["decisions"] == [["evidence", 0.21, "jev"]]
 
 
 async def test_the_export_column_is_jsonb_on_the_model() -> None:

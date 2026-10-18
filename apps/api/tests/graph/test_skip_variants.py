@@ -142,8 +142,8 @@ def test_the_runtime_setting_can_be_set_and_does_nothing() -> None:
 
 
 class _AnsweringJev(_IngressJev):
-    """Sufficiency high enough to answer, and a fixed verdict per rerank
-    passage. Records how many phrasings the small model was asked for."""
+    """A generous rubric grade on every rerank passage, so the gate passes.
+    Records how many phrasings the small model was asked for."""
 
     def __init__(self, intent: str = "lookup") -> None:
         super().__init__(intent)
@@ -153,9 +153,7 @@ class _AnsweringJev(_IngressJev):
         self.rewriter_calls += 0  # the small LLM is counted in the test, not here
         answers = await super().decide(state=state, questions=questions)
         for name in questions:
-            if name == "sufficient":
-                answers[name] = Answer(engine="jev", latency_ms=1, value=0.9, probability=0.9)
-            elif name.startswith("passage_"):
+            if name.startswith("passage_"):
                 answers[name] = Answer(engine="jev", latency_ms=1, value=0.9, probability=None)
         return answers
 

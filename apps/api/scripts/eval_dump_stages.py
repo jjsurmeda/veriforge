@@ -35,6 +35,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from db.models import EvalItem, EvalResult, EvalRun
 from db.session import get_session_factory
@@ -63,11 +64,19 @@ def measured_sha() -> str:
     return sha if out.returncode == 0 and sha else "unknown"
 
 
-def write_export(payload: str, *, now: datetime | None = None) -> Path:
-    """Write the dump to `.data/evals/<timestamp>-<sha>.json`, return the path."""
+def write_export(payload: str, *, run_id: str | None, now: datetime | None = None) -> Path:
+    """Write the dump to `.data/evals/<timestamp>-<run-id>-<sha>.json`.
+
+    The run id rides the name because the gate's export is compared against
+    the fast20 exports and the books calibration — all named per run — and a
+    dump whose name cannot say which run it measured is a dump nobody greps
+    two phases later. The SHA (the commit the data was measured under) stays
+    last so the three fields read left to right from the least to the most
+    volatile.
+    """
     stamp = (now or datetime.now(UTC)).strftime("%Y%m%d-%H%M%S")
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    path = OUT_DIR / f"{stamp}-{measured_sha()}.json"
+    path = OUT_DIR / f"{stamp}-{run_id or 'unknown-run'}-{measured_sha()}.json"
     path.write_text(payload + "\n")
     return path
 
@@ -79,19 +88,29 @@ def p50(values: list[float]) -> float | None:
 async def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-id", default=None, help="default: the most recent eval run")
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help="dump every eval run in the database (the gate judges up to 3 per subset)",
+    )
     args = parser.parse_args()
 
     factory = get_session_factory()
     async with factory() as session:
-        run: EvalRun | None
+        query = select(EvalRun)
         if args.run_id:
-            run = (
-                await session.execute(select(EvalRun).where(EvalRun.id == args.run_id))
-            ).scalar_one()
+            query = query.where(EvalRun.id == args.run_id)
+        elif args.all:
+            query = query.order_by(EvalRun.created_at)
         else:
-            run = (
-                await session.execute(select(EvalRun).order_by(EvalRun.created_at.desc()).limit(1))
-            ).scalar_one()
+            query = query.order_by(EvalRun.created_at.desc()).limit(1)
+        runs = list((await session.execute(query)).scalars().all())
+    for run in runs:
+        await _dump(factory, run)
+
+
+async def _dump(factory: async_sessionmaker[AsyncSession], run: EvalRun) -> None:
+    async with factory() as session:
         results = (
             (
                 await session.execute(
@@ -196,7 +215,7 @@ async def main() -> None:
     # citations, stage_ms — is written out as well as printed. Named for the
     # commit that produced it, because a faithfulness number without the SHA it
     # was measured at cannot be reproduced.
-    written = write_export(printed)
+    written = write_export(printed, run_id=str(run.id))
     print(f"exported to {written}")
 
 

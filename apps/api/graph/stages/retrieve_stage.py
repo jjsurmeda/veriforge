@@ -12,20 +12,31 @@ import asyncio
 import re
 from dataclasses import replace as dc_replace
 from functools import partial
-from uuid import UUID
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from graph.ingress import IngressOutcome
-from graph.rewrite import CompleteFn
+from graph.rewrite import CompleteFn, is_query_shape
 from graph.stages.state import AutoRunInput, AutoRunState, StageEnv
 from retrieval.cache import get_query_embeddings
 from retrieval.filters import Ownership
 from retrieval.hybrid import ScoredChunk, hybrid_search
+from retrieval.summaries import ScoredSummary, search_summaries, summaries_allowed_for
 from retrieval.web import ensure_web_chunks
 from schemas.events import Retrieval, RetrievedChunk
 
 EXCERPT_CHARS = 240
+
+#: How a summary candidate identifies itself in the pool. Not a `chunks`
+#: `source_type` (it is not a passage and must never be confused with one in a
+#: citation), and its own string so a filter or a UI can tell the two apart.
+SUMMARY_SOURCE_TYPE = "summary"
+
+#: UUIDv5 namespace for the synthetic candidate id of a summary row. Fixed for
+#: ever: changing it would change every summary's id, and the ids are written
+#: into trace events.
+NAMESPACE_SUMMARY = NAMESPACE_URL
 MULTI_QUERY_VARIANTS = 3
 # A multi-part question ("... and how does she answer?") retrieves on the
 # whole question as one query, so the part after the "and" is out of the
@@ -77,6 +88,12 @@ async def retrieve_queries(
     provenance map that tells the rerank stage which query surfaced each chunk.
     """
     variants, part_queries = await _queries_for(env, state, query)
+    # TRD §9.1 step 6: the gist-question index joins the pool for a `summarize`
+    # question, and for the corrective retrieval of any question (see
+    # `summaries_allowed_for`). `loop.current_query` changes between attempts,
+    # so this is re-decided per attempt rather than once per run — the first
+    # attempt of a gist question and its corrective pass want the same index.
+    with_summaries = summaries_allowed_for(state.ingress.intent, corrective=state.corrective)
     # TRD §7.1: one embedding call for every query, and the searches
     # themselves in parallel. Each search runs on its OWN session from the
     # factory — one AsyncSession cannot run concurrent statements.
@@ -98,6 +115,7 @@ async def retrieve_queries(
                     embedding=embedding,
                     env=env,
                     state=state,
+                    with_summaries=with_summaries,
                 ),
             )
             for variant, embedding in zip(variants, embeddings, strict=True)
@@ -195,7 +213,12 @@ async def _generate_query_variants(
     variants = [question] if instruction is None else []
     for line in response.strip().splitlines():
         line = line.strip().lstrip("0123456789.-) ")
-        if line and line not in variants:
+        # Every line of a rewriter reply is rewriter output, so the rewrite's
+        # output contract (graph/rewrite.is_query_shape) applies to each of
+        # them. KI-73's run put TWO prose replies into the retrieval set from
+        # this parser, not one from `rewrite_query` alone, so checking only the
+        # rewrite would have left the recorded failure half-open.
+        if line and is_query_shape(line) and line not in variants:
             variants.append(line)
         if len(variants) >= n:
             break
@@ -277,6 +300,7 @@ async def _search_one_variant_on_own_session(
     embedding: list[float],
     env: StageEnv,
     state: AutoRunState,
+    with_summaries: bool,
 ) -> list[ScoredChunk]:
     """One query's search on its OWN session, so the fan-out can run
     concurrently (one AsyncSession cannot run two statements at once).
@@ -284,9 +308,14 @@ async def _search_one_variant_on_own_session(
     Read-only, so it needs no explicit transaction: the `async with` rolls
     back on the way out and there is nothing to commit. The rest of the run
     keeps its single transaction.
+
+    `with_summaries` adds the gist-question index (TRD §9.1 step 6) to the same
+    candidate pool, not as a second result set — the reranker grades one pool,
+    and two pools would mean two gates. See `as_candidates` for how a summary
+    row becomes something the rest of the pipeline can carry.
     """
     async with session_factory() as session:
-        return await env.seams.hybrid_search(
+        chunks = await env.seams.hybrid_search(
             session,
             query_text=variant,
             query_embedding=embedding,
@@ -294,6 +323,73 @@ async def _search_one_variant_on_own_session(
             filters=env.params.client_filters,
             lexical_weight=state.ingress.lexical_weight,
         )
+        if not with_summaries:
+            return chunks
+        summaries = await search_summaries(
+            session,
+            query_text=variant,
+            query_embedding=embedding,
+            ownership=_ownership(env.params),
+            filters=env.params.client_filters,
+            lexical_weight=state.ingress.lexical_weight,
+        )
+        return _merge_summaries(chunks, summaries)
+
+
+def _merge_summaries(
+    chunks: list[ScoredChunk], summaries: list[ScoredSummary]
+) -> list[ScoredChunk]:
+    """Summaries into the chunk pool, at the fused score they earned.
+
+    **A summary is a candidate, not a citation target.** It is presented to the
+    reranker (so the rubric can grade whether it answers the question) and to
+    the gate, and it appears in the trace — but its synthetic `chunk_id` matches
+    no row in `chunks`, so if the generator cites one the citation's
+    `chunk_id` is written NULL and the Sources tab names the document and
+    section from the citation's own columns.
+
+    That is a real trade and it is the price of the index: RAPTOR's answer is
+    that the summary *is* the evidence, and a system that refuses to let it be
+    cited cannot use it for a gist question. The alternative — summaries that
+    inform the gate but never reach the generator — would leave every
+    `broad-*` item declining for the same reason it does today.
+
+    Interleaved by fused score rather than appended, so a strong summary
+    outranks a weak passage and a weak one does not displace the passages a
+    lookup needed.
+    """
+    if not summaries:
+        return chunks
+    pool = list(chunks)
+    for summary in summaries:
+        pool.append(
+            ScoredChunk(
+                chunk_id=summary_candidate_id(summary.summary_id),
+                document_id=summary.document_id,
+                document_name=summary.document_name,
+                section_id=summary.section_id,
+                ord=summary.ord,
+                page=None,
+                text=summary.text,
+                heading_path=summary.heading_path or None,
+                source_type=SUMMARY_SOURCE_TYPE,
+                vector_score=summary.vector_score,
+                bm25_score=summary.bm25_score,
+                fused_score=summary.fused_score,
+            )
+        )
+    return sorted(pool, key=lambda c: c.fused_score, reverse=True)
+
+
+def summary_candidate_id(summary_id: UUID) -> UUID:
+    """A stable synthetic chunk id for a summary candidate.
+
+    Derived, not random, so the same summary has the same id across the run's
+    two retrieval attempts and across a re-run — otherwise the reranker's
+    per-candidate bookkeeping and the multi-query fusion would each treat one
+    summary as several different passages.
+    """
+    return uuid5(NAMESPACE_SUMMARY, str(summary_id))
 
 
 def _retrieval_event(env: StageEnv, variant: str, chunks: list[ScoredChunk]) -> Retrieval:

@@ -217,6 +217,7 @@ def _request_kwargs(
     *,
     reasoning: bool = False,
     temperature: float | None = None,
+    max_tokens: int | None = None,
 ) -> dict[str, Any]:
     settings = get_settings()
     role = metadata.get("role", "unknown")
@@ -236,6 +237,13 @@ def _request_kwargs(
         "timeout": settings.llm_timeout_seconds,
         "metadata": call_metadata,
     }
+    # A caller that knows the shape of its own reply asks for a cap to match it
+    # (KI-57: the decision fallback's answer grows with the number of questions
+    # in the batch). It only ever RAISES the role's cap — a smaller one would be
+    # a truncation the caller cannot see coming — and it is rebuilt here rather
+    # than carried in `extra` so the one-hop failover gets the same one.
+    if max_tokens is not None:
+        kwargs["max_tokens"] = max(int(max_tokens), int(kwargs["max_tokens"]))
     # Absent (None) means "send nothing", so the provider's own default applies
     # and every caller that predates this parameter behaves exactly as before
     #. A pinned value is rebuilt here rather than carried in `extra` so
@@ -254,17 +262,28 @@ def _request_kwargs(
 async def _acomplete(
     model: str, messages: list[dict[str, str]], kwargs: dict[str, Any], extra: dict[str, Any]
 ) -> Any:
-    """One completion. Some free endpoints (openrouter/free resolving to
-    nemotron-3.5-lightning:free) reject reasoning-disabled calls outright
-    ("Reasoning is mandatory"); retry once letting the provider default
-    (reasoning on) apply rather than failing the run."""
+    """One completion. Two provider quirks are absorbed here rather than by
+    every caller.
+
+    * Reasoning-disabled calls are rejected outright by some free endpoints
+      ("Reasoning is mandatory"): retry once letting the provider default
+      (reasoning on) apply rather than failing the run.
+    * `response_format` is rejected by providers that do not implement it. A
+      caller that asks for structured output cannot know that in advance, so the
+      request is retried without the hint — the prompt already demands JSON, so
+      the retry loses determinism, not the feature.
+    """
     try:
         return await litellm.acompletion(model=model, messages=messages, **kwargs, **extra)
     except BadRequestError as exc:
-        if "reasoning is mandatory" not in str(exc).lower() or not kwargs.get("extra_body"):
-            raise
-        kwargs = {k: v for k, v in kwargs.items() if k != "extra_body"}
-        return await litellm.acompletion(model=model, messages=messages, **kwargs, **extra)
+        message = str(exc).lower()
+        if "reasoning is mandatory" in message and kwargs.get("extra_body"):
+            kwargs = {k: v for k, v in kwargs.items() if k != "extra_body"}
+            return await litellm.acompletion(model=model, messages=messages, **kwargs, **extra)
+        if "response_format" in message and extra.get("response_format"):
+            extra = {k: v for k, v in extra.items() if k != "response_format"}
+            return await litellm.acompletion(model=model, messages=messages, **kwargs, **extra)
+        raise
 
 
 async def _open(
@@ -274,6 +293,7 @@ async def _open(
     *,
     reasoning: bool = False,
     temperature: float | None = None,
+    max_tokens: int | None = None,
     **extra: Any,
 ) -> tuple[str, Any]:
     """Start one completion, capped per model; on a transient failure hop once
@@ -282,9 +302,12 @@ async def _open(
     The cap covers opening the call, not reading a stream: provider limits
     count requests started. A stream never fails over after its first token.
     `temperature` is re-applied on the failover attempt: a request that
-    restarts on llm_fallback_model must not silently lose it.
+    restarts on llm_fallback_model must not silently lose it, and so is
+    `max_tokens`.
     """
-    kwargs = _request_kwargs(model, metadata, reasoning=reasoning, temperature=temperature)
+    kwargs = _request_kwargs(
+        model, metadata, reasoning=reasoning, temperature=temperature, max_tokens=max_tokens
+    )
     try:
         async with _slot(model):
             return model, await _acomplete(model, messages, kwargs, extra)
@@ -298,7 +321,12 @@ async def _open(
         same_provider = model.split("/", 1)[0] == fallback.split("/", 1)[0]
         inherited = kwargs.get("api_key") if same_provider else None
         fallback_kwargs = _request_kwargs(
-            fallback, metadata, inherited, reasoning=reasoning, temperature=temperature
+            fallback,
+            metadata,
+            inherited,
+            reasoning=reasoning,
+            temperature=temperature,
+            max_tokens=max_tokens,
         )
         async with _slot(fallback):
             return fallback, await _acomplete(fallback, messages, fallback_kwargs, extra)
@@ -440,6 +468,8 @@ async def complete(
     messages: list[dict[str, str]],
     metadata: dict[str, str],
     temperature: float | None = None,
+    max_tokens: int | None = None,
+    response_format: dict[str, str] | None = None,
 ) -> str:
     """One non-streamed completion; returns the assistant message content.
 
@@ -452,10 +482,20 @@ async def complete(
     and the one-hop failover to llm_fallback_model. Claim extraction
     pins 0 because a parsing call whose claim list feeds a mean has no reason
     to be stochastic; every other caller stays unpinned until measured.
+
+    `max_tokens` raises the role's cap for a caller whose reply size it knows
+    (the decision fallback, KI-57) and `response_format` asks the provider for
+    JSON directly rather than relying on the prompt to get it. Both are None —
+    send nothing — for every caller that predates them.
     """
     _configure_langfuse()
     model = await _resolved_model(litellm_model, metadata)
-    model, response = await _open(model, messages, metadata, temperature=temperature)
+    extra: dict[str, Any] = {}
+    if response_format is not None:
+        extra["response_format"] = response_format
+    model, response = await _open(
+        model, messages, metadata, temperature=temperature, max_tokens=max_tokens, **extra
+    )
     usage = _usage(response)
     if usage is not None:
         await _record_usage(model, metadata, *usage)

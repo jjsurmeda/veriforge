@@ -28,7 +28,7 @@ from functools import cache
 from pathlib import Path
 
 # apps/api/build_info.py -> the repository root.
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 UNKNOWN = "unknown"
 

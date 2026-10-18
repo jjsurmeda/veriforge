@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const me = { email: 'someone@example.com', role: 'user' as 'user' | 'admin' }
-type SettingsPatchBody = { thresholds: { sufficient_abstain: Record<string, number> } }
+type SettingsPatchBody = { thresholds: { evidence_floor: Record<string, number> } }
 const patchSettings = vi.fn(async (_args: { body: SettingsPatchBody }) => ({ data: {} }))
 const providersGet = vi.fn(async () => ({ data: [] as unknown[] }))
 const emptyOk = async () => ({ data: [] })
@@ -67,17 +67,17 @@ describe('failed reads', () => {
   })
 })
 
-describe('sufficient thresholds', () => {
-  it('the abstention threshold is editable and saved per engine (AD-4)', async () => {
+describe('gate threshold', () => {
+  it('the evidence_floor floor is editable and saved per engine (AD-4)', async () => {
     me.role = 'admin'
     renderPage()
 
-    const field = await screen.findByLabelText('Abstention threshold')
+    const field = await screen.findByLabelText('Gate floor (mean top-3)')
     fireEvent.change(field, { target: { value: '0.42' } })
     fireEvent.click(screen.getByRole('button', { name: 'Create version' }))
 
     await waitFor(() => expect(patchSettings).toHaveBeenCalled())
     const { thresholds } = patchSettings.mock.calls[0]![0].body
-    expect(thresholds.sufficient_abstain).toEqual({ jev: 0.42, fallback: 0.42 })
+    expect(thresholds.evidence_floor).toEqual({ jev: 0.42, fallback: 0.42 })
   })
 })

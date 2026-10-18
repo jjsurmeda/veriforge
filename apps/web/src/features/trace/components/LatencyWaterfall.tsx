@@ -11,7 +11,7 @@ const STAGE_ORDER = [
   'retrieve',
   'rerank',
   'sanitize',
-  'sufficient',
+  'evidence',
   'conflict',
   'generate',
   'review',

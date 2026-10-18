@@ -1,6 +1,6 @@
 """Beta lane B, item 4: one Jev call instead of two (TRD §7.1).
 
-The conflict pairs used to be a SECOND `decide` call after the sufficiency
+The conflict pairs used to be a SECOND `decide` call after the evidence
 call: two sequential round trips per attempt, the second one about 0.4 s (and,
 before KI-34, untimed so its cost appeared in no latency figure at all).
 
@@ -72,8 +72,6 @@ class _BatchJev(_IngressJev):
                     value=0.95 if dropped else 0.01,
                     probability=0.95 if dropped else 0.01,
                 )
-            elif name == "sufficient":
-                answers[name] = Answer(engine="jev", latency_ms=1, value=0.9, probability=0.9)
             elif name in SCORE_NAMES:
                 answers[name] = Answer(engine="jev", latency_ms=1, value=0.01, probability=0.01)
             elif name in CHOICE_ANSWERS:
@@ -181,8 +179,9 @@ async def test_the_pairs_ride_the_post_sanitize_call_and_the_run_makes_one_jev_c
     run, jev = await _run(db, user_a, monkeypatch)
 
     assert len(jev.calls) == 1, f"one round trip for the pairs, not two: {len(jev.calls)}"
-    assert "sufficient" in jev.calls[0], "the pairs ride the post-sanitize call"
-    assert any(name.startswith("conflict_") for name in jev.calls[0])
+    assert any(name.startswith("conflict_") for name in jev.calls[0]), (
+        "the pairs ride the post-sanitize call"
+    )
     assert "conflict" in run.latency_ms, "the stage is still timed"
     assert run.conflict_event is not None, "the conflict is still disclosed"
 
@@ -201,7 +200,9 @@ async def test_batching_changes_nothing_about_the_conflict_itself(
     separate_run, separate_jev = await _run(db, user_b, monkeypatch, drop=INJECTED)
 
     assert len(separate_jev.calls) == 1, "the re-ask is its own call, over the kept set"
-    assert "sufficient" not in separate_jev.calls[0], "the re-ask carries only the pairs"
+    assert any(name.startswith("conflict_") for name in separate_jev.calls[0]), (
+        "the re-ask carries the pairs"
+    )
     assert len(separate_run.dropped_chunks) == 1, "the sanitizer dropped the injected passage"
 
     assert batched_run.conflict_event is not None

@@ -5,6 +5,7 @@ at ~100% branch coverage of build_scope."""
 from collections.abc import Awaitable, Callable
 from uuid import UUID
 
+import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import Document, Section, User
@@ -191,6 +192,58 @@ async def test_lexical_weight_selects_dominant_leg(
     assert lex_first[0].chunk_id == bm25_hit.id
     vec_first = await _search(db, ownership, lexical_weight=0.0)
     assert vec_first[0].chunk_id == vec_hit.id
+
+
+async def test_lexical_only_facts_survive_a_vec_dominant_weight(
+    db: AsyncSession,
+    user_a: User,
+    seed_document: Callable[..., Awaitable[tuple[Document, Section]]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The R2a-4 live proof's failure (`ml-zh-xiyou-nezha`): the answer
+    passage sits at BM25 rank 20 for its own question, but a low ingress
+    lexical weight lets every vector-top candidate out-carry it, and the
+    fused cap of 40 was filled by the vector top-40 at any weight.
+
+    The last slots are therefore RESERVED FOR the BM25 leg's own top
+    candidates, ADDED to the fused order rather than displacing it: a
+    pure-lexical chunk must reach the pool at a vec-dominant weight, so the
+    rerank can grade the passage instead of grading its absence. Scaled
+    down: lex_reserve 2 ADDED to fused_limit 3, six vec-near chunks flooding
+    the fused order, the answer chunk embedding-far and lexically exact.
+    """
+    from retrieval import hybrid
+
+    monkeypatch.setattr(hybrid, "VEC_LIMIT", 3)
+    monkeypatch.setattr(hybrid, "LEX_LIMIT", 5)
+    monkeypatch.setattr(hybrid, "FUSED_LIMIT", 3)
+    monkeypatch.setattr(hybrid, "LEX_RESERVE", 2)
+
+    coll = await make_collection(db, user_a, "a")
+    doc, section = await seed_document(db, coll)
+    for i in range(6):
+        await add_chunk(
+            db, document=doc, section=section, ord=i, text_=f"unrelated prose {i}",
+            embedding=vec(1, bump=0.01 * i), page=i,
+        )
+    # The answer: lexically exact, embedding far from the query — the shape
+    # of a fact named in the question but far from its retrieval
+    # neighbourhood (a residence sentence inside a battle-heavy epic).
+    answer = await add_chunk(
+        db, document=doc, section=section, ord=9, text_=QUERY_TEXT,
+        embedding=vec(99), page=9,
+    )
+    ownership = Ownership(user_id=user_a.id, collection_ids=[coll.id])
+
+    results = await _search(db, ownership, lexical_weight=0.05)
+
+    pooled = [r.chunk_id for r in results]
+    assert answer.id in pooled
+    # It rides the reserve, not the fused order: its fused score loses to
+    # every vec-near candidate at this weight, so it lands after them.
+    # The fused order itself is UNCHANGED by the reserve — nothing was
+    # displaced, only widened.
+    assert answer.id not in pooled[:3]
 
 
 async def test_client_filters_only_narrow(

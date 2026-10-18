@@ -176,8 +176,7 @@ export function AdminPage() {
     hop_limit: 4,
     retry_limit: 2,
     deep_cap: 40000,
-    threshold: 0.6,
-    abstain_threshold: 0.6,
+    threshold: 0.55,
     mode: 'auto',
     guardrails: true,
     injection_action: 'block',
@@ -301,10 +300,9 @@ export function AdminPage() {
           },
           deep: { per_run_credit_cap: settingsDraft.deep_cap },
           thresholds: {
-            sufficient_retry: { jev: settingsDraft.threshold, fallback: settingsDraft.threshold },
-            sufficient_abstain: {
-              jev: settingsDraft.abstain_threshold,
-              fallback: settingsDraft.abstain_threshold,
+            evidence_floor: {
+              jev: settingsDraft.threshold,
+              fallback: settingsDraft.threshold,
             },
           },
           guardrails: {
@@ -374,7 +372,7 @@ export function AdminPage() {
   const current = settings.data
   const data = (current?.data ?? {}) as Record<string, unknown>
   const currentTopK = valueAt(data, 'retrieval.top_k', settingsDraft.top_k)
-  const currentThreshold = valueAt(data, 'thresholds.sufficient_retry.jev', settingsDraft.threshold)
+  const currentThreshold = valueAt(data, 'thresholds.evidence_floor.jev', settingsDraft.threshold)
   const currentMode = typeof data.decision_engine_mode === 'string' ? data.decision_engine_mode : settingsDraft.mode
   const tabs: Array<[Section, string, React.ReactNode]> = [
     ['decisions', 'Decision layer', <Activity key="decisions" size={14} aria-hidden="true" />],
@@ -443,7 +441,7 @@ export function AdminPage() {
                   <Field label="Retrieval top-k">
                     <input className={inputClass} type="number" min={1} value={settingsDraft.top_k} onChange={(e) => setSettingsDraft({ ...settingsDraft, top_k: Number(e.target.value) })} />
                   </Field>
-                  <Field label="Sufficiency threshold">
+                  <Field label="Gate floor (mean top-3)">
                     <input className={inputClass} type="number" min={0} max={1} step="0.01" value={settingsDraft.threshold} onChange={(e) => setSettingsDraft({ ...settingsDraft, threshold: Number(e.target.value) })} />
                   </Field>
                   <Field label="Decision engine">
@@ -460,7 +458,6 @@ export function AdminPage() {
                   <Field label="Hop limit"><input className={inputClass} type="number" min={1} max={4} value={settingsDraft.hop_limit} onChange={(e) => setSettingsDraft({ ...settingsDraft, hop_limit: Number(e.target.value) })} /></Field>
                   <Field label="Retry limit"><input className={inputClass} type="number" min={0} value={settingsDraft.retry_limit} onChange={(e) => setSettingsDraft({ ...settingsDraft, retry_limit: Number(e.target.value) })} /></Field>
                   <Field label="Deep credit cap"><input className={inputClass} type="number" min={1} value={settingsDraft.deep_cap} onChange={(e) => setSettingsDraft({ ...settingsDraft, deep_cap: Number(e.target.value) })} /></Field>
-                  <Field label="Abstention threshold"><input className={inputClass} type="number" min={0} max={1} step="0.01" value={settingsDraft.abstain_threshold} onChange={(e) => setSettingsDraft({ ...settingsDraft, abstain_threshold: Number(e.target.value) })} /></Field>
                   <Field label="Guardrails"><select className={inputClass} value={settingsDraft.guardrails ? 'on' : 'off'} onChange={(e) => setSettingsDraft({ ...settingsDraft, guardrails: e.target.value === 'on' })}><option value="on">Enabled</option><option value="off">Disabled</option></select></Field>
                   <Field label="Injection action"><select className={inputClass} value={settingsDraft.injection_action} onChange={(e) => setSettingsDraft({ ...settingsDraft, injection_action: e.target.value })}><option value="block">Block</option><option value="warn">Warn</option><option value="off">Off</option></select></Field>
                   <Field label="Web provider"><select className={inputClass} value={settingsDraft.web_provider} onChange={(e) => setSettingsDraft({ ...settingsDraft, web_provider: e.target.value })}><option value="tavily">Tavily</option><option value="brave">Brave</option></select></Field>

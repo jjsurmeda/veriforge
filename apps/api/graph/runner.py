@@ -502,6 +502,7 @@ async def _finish_answer(
     instant_title: str | None,
     chitchat: bool = False,
     revert_title: bool = False,
+    decline_text: str | None = None,
     mode: str = "auto",
     on_first_delta: Callable[[], None] = lambda: None,
     first_token_ms: Callable[[], int | None] = lambda: None,
@@ -519,6 +520,10 @@ async def _finish_answer(
 
     `mode` exists for P2a item 3 only: the prose-decline Noul runs in auto
     mode, where the three broad-question declines were observed.
+
+    `decline_text` (ADR-006) replaces the drafted answer with the TR-4
+    decline the usefulness stage built: the persisted text, the citations and
+    the status all flip to the abstention shape, and the reviewer is skipped.
     """
     final_text = text
     review: ReviewResult | None = None
@@ -526,9 +531,19 @@ async def _finish_answer(
     guard: OutputGuardResult | None = None
     blocked = False
     prose_declined = False
+    # ADR-006: IsUse failed (or could not be asked), so the drafted answer is
+    # replaced by the TR-4 decline. The tail below persists that, records an
+    # abstention and skips the reviewer — the decline is the fixed template,
+    # so there are no claims to verify, and the usefulness decision row is
+    # already on the trace.
+    usefulness_declined = decline_text is not None
+    if usefulness_declined:
+        # The type-narrow above (`is not None`) is lost to mypy across the
+        # boolean, so pin it: the decline is only ever a non-empty template.
+        final_text = decline_text or ""
     # A direct reply skips the reviewer (no claims, no citations) but is NOT
     # an abstention — its message status is complete (batch A item 3).
-    if not abstained and not chitchat:
+    if not usefulness_declined and not abstained and not chitchat:
         # P2a item 3: a reply that says the sources cannot answer becomes an
         # abstention. The Noul rides alongside the review, so it adds no
         # latency post-delivery; a failure classifies as "not declined" —
@@ -587,7 +602,15 @@ async def _finish_answer(
         # plan == "stream" + blocked: the answer already streamed; the
         # blocked verdict replaces the persisted content, which is what a
         # reload shows (TRD §11 "output toxicity (block)").
-    if prose_declined:
+    if usefulness_declined and plan == "hold":
+        # A held run delivered nothing while generating, so the decline is
+        # the one delta the reader sees. A streamed run already delivered the
+        # drafted answer; replacing it is the retraction, and it is the
+        # caller's (run_auto's) to publish before the tail replaces the
+        # persisted text.
+        on_first_delta()
+        await bus.publish(run_id, AnswerDelta(run_id=str(run_id), text=final_text))
+    if prose_declined or usefulness_declined:
         await _drop_citations(session_factory, message_id)
 
     async def refine_title(session: AsyncSession) -> None:
@@ -620,7 +643,7 @@ async def _finish_answer(
     ttft_ms = first_token_ms()
     # P2a item 3: an abstention carries no review scores, whatever the
     # parallel review computed.
-    if prose_declined:
+    if prose_declined or usefulness_declined:
         scores = None
     await bus.publish(
         run_id,
@@ -652,8 +675,10 @@ async def _finish_answer(
         "suggestions": suggestions,
     }
     # P2a item 3: a prose decline ends the run as an abstention too — no
-    # scoring task, no "complete" status.
-    is_abstained = abstained or prose_declined
+    # scoring task, no "complete" status. Same for an IsUse decline (ADR-006):
+    # the delivered text is the TR-4 template, so the message is an
+    # abstention; the run still terminates through this tail (no run.failed).
+    is_abstained = abstained or prose_declined or usefulness_declined
     status = "abstained" if is_abstained else "complete"
     scoring_task = (
         None
@@ -1120,6 +1145,7 @@ async def _finish_run(
         abstained=request.abstained,
         chitchat=request.chitchat,
         revert_title=request.revert_title,
+        decline_text=request.decline_text,
         plan=request.plan,
         chat_id=chat_id,
         instant_title=instant_title,

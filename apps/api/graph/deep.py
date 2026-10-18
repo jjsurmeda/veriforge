@@ -18,7 +18,7 @@ from decisions import DecisionEngine
 from graph import rewrite as rewrite_node
 from graph.abstain import build_abstain_event, stream_abstention
 from graph.controller import controller_decide
-from graph.generate import stream_grounded_answer
+from graph.generate import order_for_lost_in_the_middle, stream_grounded_answer
 from graph.history import history_messages
 from graph.hop_retrieve import HopNote, ready_sub_questions, run_hop_batch
 from graph.ingress import IngressOutcome, run_ingress
@@ -344,6 +344,7 @@ async def prepare_deep_run(
         contexts, context_used = trim_context(
             contexts, window_tokens=params.context_window, history_tokens=history_tokens
         )
+        contexts = order_for_lost_in_the_middle(contexts)
         session.add_all(
             Citation(
                 message_id=params.message_id,

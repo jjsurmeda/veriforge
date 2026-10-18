@@ -29,9 +29,8 @@ function decision(overrides: Partial<Decision> & Pick<Decision, 'name'>): Decisi
 
 /** Every gate clears — this run answered. */
 const answered: Decision[] = [
-  decision({ name: 'sufficient', value: 0.81, probability: 0.81, threshold: 0.05 }),
-  decision({ name: 'relevance', value: 0.72, threshold: 0.6 }),
-  decision({ name: 'entity_0', value: 0.66, probability: 0.66, threshold: 0.5 }),
+  decision({ name: 'evidence', value: 0.81, probability: null, threshold: 0.55 }),
+  decision({ name: 'entity_0_0', value: 0.66, probability: 0.66, threshold: 0.5 }),
 ]
 
 describe('questionEntities', () => {
@@ -66,9 +65,8 @@ describe('DeclineReason', () => {
       <DeclineReason
         declined
         decisions={[
-          decision({ name: 'sufficient', value: 0.42, probability: 0.42, threshold: 0.05 }),
-          decision({ name: 'relevance', value: 0.71, threshold: 0.6 }),
-          decision({ name: 'entity_0', value: 0.11, probability: 0.11, threshold: 0.5 }),
+          decision({ name: 'evidence', value: 0.81, probability: null, threshold: 0.55 }),
+          decision({ name: 'entity_0_0', value: 0.11, probability: 0.11, threshold: 0.5 }),
         ]}
         question="How long does a flat-to-full charge take on the Kestrel K9?"
         retrieved={[{ document_name: 'manual.md', page: 3 }]}
@@ -82,25 +80,11 @@ describe('DeclineReason', () => {
     expect(screen.getByText('No retrieved passage is about Kestrel.')).toBeTruthy()
   })
 
-  it('names the relevance gate without inventing an entity', () => {
+  it('names the evidence gate when that is what blocked', () => {
     render(
       <DeclineReason
         declined
-        decisions={[decision({ name: 'relevance', value: 0.22, threshold: 0.6 })]}
-        question="What is the warranty policy?"
-      />,
-    )
-
-    expect(
-      screen.getByText('Nothing retrieved was close enough to the question to answer from.'),
-    ).toBeTruthy()
-  })
-
-  it('names the sufficiency gate when that is what blocked', () => {
-    render(
-      <DeclineReason
-        declined
-        decisions={[decision({ name: 'sufficient', value: 0.02, probability: 0.02, threshold: 0.05 })]}
+        decisions={[decision({ name: 'evidence', value: 0.22, probability: null, threshold: 0.55 })]}
         question="Summarise the risk register."
       />,
     )
@@ -119,7 +103,7 @@ describe('DeclineReason', () => {
       <DeclineReason
         declined
         decisions={[
-          decision({ name: 'sufficient', value: 0.9, probability: 0.9, threshold: 0.05 }),
+          decision({ name: 'evidence', value: 0.9, probability: null, threshold: 0.55 }),
           decision({ name: 'conflict_0', value: 0.94, probability: 0.94, threshold: 0.6 }),
         ]}
         question="How long is the warranty?"
@@ -147,7 +131,7 @@ describe('DeclineReason', () => {
     render(
       <DeclineReason
         declined
-        decisions={[decision({ name: 'entity_0', value: 0.09, probability: 0.09, threshold: 0.5 })]}
+        decisions={[decision({ name: 'entity_0_0', value: 0.09, probability: 0.09, threshold: 0.5 })]}
         question="summarise the risk register"
       />,
     )
@@ -163,7 +147,7 @@ describe('DeclineReason', () => {
     const { container } = render(
       <DeclineReason
         declined={false}
-        decisions={[decision({ name: 'entity_0', value: 0.09, probability: 0.09, threshold: 0.5 })]}
+        decisions={[decision({ name: 'entity_0_0', value: 0.09, probability: 0.09, threshold: 0.5 })]}
         question="How long is the warranty?"
       />,
     )
@@ -174,12 +158,12 @@ describe('DeclineReason', () => {
     render(
       <DeclineReason
         declined
-        decisions={[decision({ name: 'relevance', value: 0.22, threshold: 0.6 })]}
+        decisions={[decision({ name: 'evidence', value: 0.22, probability: null, threshold: 0.55 })]}
         question="What is the warranty policy?"
         onShowGates={() => undefined}
       />,
     )
 
-    expect(screen.getByRole('button', { name: 'See the relevance gate' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'See the evidence gate' })).toBeTruthy()
   })
 })

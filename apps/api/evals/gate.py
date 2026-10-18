@@ -27,7 +27,8 @@ from pathlib import Path
 
 from evals.baseline import AGGREGATE_METRICS
 from evals.baseline import record as record_summary
-from evals.loader import STATE_FILE
+from evals.content import counterfactual_counts, load_spec
+from evals.loader import COUNTERFACTUAL_DIR, STATE_FILE
 from evals.runner import (
     BASELINE_CF_GATE_FILE,
     BASELINE_FAST20_FILE,
@@ -83,6 +84,12 @@ OVERHEAD_RISE_FACTOR = 1.35
 # neither run attributed a call at all, so it is a floor that stops the check
 # being silently disabled rather than a measured tolerance.
 LATENCY_RISE_FACTOR = 1.20
+# Owner decision, 2026-10-18: until P3 (latency) starts, a latency rise is a
+# warning, not a failure. In R2a-4 the overhead check alone made fast20 and the
+# counterfactual subset run twice each with identical correctness, which made
+# every proof cost up to 3x for a number this phase does not work on. P3 sets
+# this back to True together with its OVERHEAD_RISE_FACTOR reset.
+LATENCY_GATED = False
 # Owner decision A7 (2026-10-02, KI-6/A7): abstention accuracy and answer
 # rate are compared as item counts, not percentage points. Evidence: fast20
 # holds 8 should-abstain items and 12 answerable items, so ONE item flipping
@@ -116,6 +123,16 @@ ITEM_FLIP_LIMIT = 2
 # A first-run pass costs nothing extra — the loop returns after one run.
 GATE_ATTEMPTS = 3
 
+# Content counts the counterfactual subset adds to a run (`evals.content`).
+# Their bar is zero: the subset exists to catch an answer that states the
+# real-world value its own document contradicts, or that misses the altered
+# fact, and one such item is the failure, not noise.
+CONTENT_KEYS = ("forbidden_hits", "content_misses", "wrong_document")
+# Counts where one bad draw is the finding, so retries are judged on the worst
+# draw, not the mean. `answers_unscored` is answered items the reviewer could
+# not score (third-party review #5); its bar is zero too.
+WORST_DRAW_KEYS = (*CONTENT_KEYS, "answers_unscored")
+
 
 def _mean_of(runs: list[dict[str, float | None]]) -> dict[str, float | None]:
     """The per-metric mean of several runs' `aggregate` output.
@@ -141,12 +158,16 @@ def _mean_of(runs: list[dict[str, float | None]]) -> dict[str, float | None]:
             if value is not None:
                 values.append(float(value))
         means[key] = statistics.mean(values) if values else None
+    for key in WORST_DRAW_KEYS:
+        recorded = [float(v) for run in runs if (v := run.get(key)) is not None]
+        if recorded:
+            # The worst draw, not the mean: a forbidden value stated in one of
+            # three draws is still a wrong answer the product gave.
+            means[key] = max(recorded)
     return means
 
 
-def compare_models(
-    baseline: Mapping[str, object], current: Mapping[str, object]
-) -> list[str]:
+def compare_models(baseline: Mapping[str, object], current: Mapping[str, object]) -> list[str]:
     """Refuse to compare runs that did not use the same models.
 
     A faithfulness or latency number from gpt-4o-mini says nothing about the
@@ -392,16 +413,27 @@ def check(
         gate_key, factor = "p50_latency_ms", LATENCY_RISE_FACTOR
     base_p50, curr_p50 = baseline.get(gate_key), current.get(gate_key)
     if base_p50 and curr_p50 and curr_p50 > base_p50 * factor:
-        failures.append(
+        (failures if LATENCY_GATED else warnings).append(
             f"{gate_key} {base_p50:.0f} → {curr_p50:.0f} ms "
             f"(rise > {factor:.2f}x = {factor - 1:.0%})"
         )
+    unscored = current.get("answers_unscored")
+    if unscored:
+        failures.append(
+            f"{unscored:.0f} of {current.get('answers_delivered') or 0:.0f} answers have no "
+            "review score (claim extraction or review failed): unmeasured is not passing"
+        )
+    for key in CONTENT_KEYS:
+        count = current.get(key)
+        if count:
+            failures.append(
+                f"{key} = {count:.0f} on the counterfactual subset (bar: 0): an answer "
+                "stated a forbidden value, missed the altered fact, or cited another document"
+            )
     return failures, warnings
 
 
-def blockers(
-    baseline: dict[str, float | None], current: dict[str, float | None]
-) -> list[str]:
+def blockers(baseline: dict[str, float | None], current: dict[str, float | None]) -> list[str]:
     """Failures a re-run cannot fix: a model mismatch or an item-set mismatch.
 
     Both are properties of the *configuration*, not of the draw. Re-running
@@ -440,6 +472,7 @@ async def _run_subset_gate(
     dataset_name: str,
     baseline_path: Path,
     baseline_hint: str,
+    content_spec: Path | None = None,
 ) -> bool:
     """The D8 gate loop, once per subset: one run, retry to a mean of three on
     failure, the same tolerances either way. `main` calls it for fast20 and
@@ -452,11 +485,28 @@ async def _run_subset_gate(
         return True
     baseline = json.loads(await asyncio.to_thread(baseline_path.read_text))
 
+    spec = load_spec(content_spec) if content_spec is not None else {}
     runs: list[dict[str, float | None]] = []
     verdicts: list[tuple[list[str], list[str]]] = []
     for attempt in range(1, GATE_ATTEMPTS + 1):
         eval_run, results = await run_eval(subset=subset, baseline=False, dataset_name=dataset_name)
         current = aggregate(results)
+        if content_spec is not None:
+            current.update(
+                counterfactual_counts(
+                    spec,
+                    [
+                        (
+                            item.question,
+                            result.answer,
+                            bool(result.abstained),
+                            (result.review_detail or {}).get("cited_documents") or [],
+                        )
+                        for item, result in results
+                        if not result.error
+                    ],
+                )
+            )
         summary_path = record_summary(
             {"eval_run": str(eval_run.id), "models": models_on_record(), **current}
         )
@@ -469,7 +519,12 @@ async def _run_subset_gate(
                 print(f"GATE FAIL: run {attempt} ({label}): {failure}", file=sys.stderr)
         runs.append(current)
         verdicts.append((failures, warnings))
-        if not failures:
+        # A first-run pass is judged alone and costs one run. After any failure
+        # the whole batch is run and its mean judged: stopping at the first
+        # passing retry would judge the one favourable draw (best-of-N),
+        # e.g. faithfulness 0.80 / 0.87 / 0.94 passing on the last draw
+        # although the mean 0.87 is under the 0.90 floor.
+        if not failures and len(runs) == 1:
             break
         stuck = blockers(baseline, current)
         if stuck:
@@ -485,9 +540,13 @@ async def _run_subset_gate(
             file=sys.stderr,
         )
 
-    passed = not verdicts[-1][0]
-    judged = runs[-1] if passed else _mean_of(runs)
-    judged_failures, judged_warnings = ([], []) if passed else _judge(baseline, judged)
+    if len(runs) == 1:
+        judged = runs[0]
+        judged_failures, judged_warnings = verdicts[0]
+    else:
+        judged = _mean_of(runs)
+        judged_failures, judged_warnings = _judge(baseline, judged)
+    passed = not judged_failures
 
     print(
         json.dumps(
@@ -497,13 +556,15 @@ async def _run_subset_gate(
                 "models": models_on_record(),
                 "baseline": baseline,
                 "runs": runs,
-                "judged_on": "the run that passed" if passed else f"the mean of {len(runs)} runs",
+                "judged_on": ("the run that passed" if passed else "the only run")
+                if len(runs) == 1
+                else f"the mean of {len(runs)} runs",
                 "judged": judged,
             },
             indent=2,
         )
     )
-    if not passed:
+    if not passed and len(runs) > 1:
         for warning in judged_warnings:
             print(f"GATE WARN: mean of {len(runs)} ({label}): {warning}", file=sys.stderr)
         for failure in judged_failures:
@@ -535,6 +596,7 @@ async def main() -> None:
         dataset_name="counterfactual",
         baseline_path=BASELINE_CF_GATE_FILE,
         baseline_hint="run evals.runner --subset counterfactual_gate --baseline first",
+        content_spec=COUNTERFACTUAL_DIR / "items.json",
     )
     if not (ok_fast20 and ok_cf):
         sys.exit(1)

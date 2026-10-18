@@ -32,31 +32,72 @@ _DEFAULTS: dict[str, dict[Engine, float]] = {
     "library_min_confidence": {"jev": 0.70, "fallback": 0.70},
     "chunk_injection_drop": {"jev": 0.70, "fallback": 0.70},
     # Answer-first (batch A, 2026-09-28): generate at or above the floor,
-    # one rewrite + retry below it, then abstain. 0.05 measured on the
-    # books acceptance set: answer-class items scored 0.06-0.49 while
-    # not-in-sources items scored 0.01-0.04, so 0.05 separates the groups
-    # (thin margin — rerank score is the fallback second signal if it
-    # closes). sufficient_retry is removed: with one retry there is one bar.
-    "sufficient_abstain": {"jev": 0.05, "fallback": 0.05},
-    # The second signal closed (D2 item 4). `sufficient` alone can't
-    # separate answer from should-abstain (margin -0.06 in both D1
-    # acceptance runs), but the max Jev rerank score of the post-sanitize
-    # winners can. Offline replay of D1's two runs (max rerank score in the
-    # final retrieval event, per class):
+    # one corrective retrieval below it, then abstain.
     #
-    # | run      | answer items (n=23) min | should-abstain (n=14) max |
-    # | 183311   | 0.70 (broad-frankenstein) | 0.49 (ml-fr-outside)    |
-    # | 184634   | 0.73 (broad-frankenstein) | 0.52 (ml-fr-outside)    |
+    # ADR-006 (accepted 2026-10-17): **this is not a delivery gate any
+    # more.** No cutoff on the rubric grade separates should-decline from
+    # answerable items — measured over fast20 x3 and the books calibration
+    # (`docs/history/reports/2026-10-17-0140-r2a-gate-findings.md`):
+    # should-declines reach 0.49 on fast20 (`abstain-10`) and 0.559 on
+    # after-summaries books re-runs (`outside-holmes-boston`), while
+    # answerables bottom out at 0.47 (`injection-01`, `keyword-04`). What
+    # the old 0.56 gate kept, the post-generation IsUse check (`is_use`
+    # below) now decides instead; delivery between the floor and the
+    # stream line (0.60, `plan_delivery`) is held under the verifying step.
     #
-    # 0.60 clears both sides in both runs (0.10-0.13 above the answer min,
-    # 0.08-0.11 below the abstain max); 0.50 loses ml-fr-outside in 184634
-    # (0.52 answers). Offline replay: 40/41 at 0.50-0.65 in run 183311 and
-    # 0.55-0.65 in 184634, only xl-en-wukong-master (content) left.
-    # The fallback cell is UNMEASURED — only Jev-answered scores were seen;
-    # it mirrors jev because Jev is the reference scale. Applies only to
-    # scores JevRerank answered (NVIDIA/Cohere use other scales; fused
-    # order is 1/(1+i), top always 1.0).
-    "rerank_abstain": {"jev": 0.60, "fallback": 0.60},
+    # The floor's remaining job: catch evidence that is clearly absent, so
+    # the run spends one corrective retrieval and then abstains instead of
+    # generating from nothing. It must sit below every answerable reading
+    # except the one known miss (`outside-whitman`, the brief's allowed
+    # miss), and above the should-decline cluster it still blocks:
+    #
+    #     class         set                     item                   mean-top-3
+    #     ------------  ----------------------  ---------------------  ----------
+    #     answerable    books probe (forced)    broad-sherlock           0.4721
+    #     answerable    fast20 x3 (attempt 1)   injection-01             0.4867
+    #     answerable    fast20 x3 (attempt 1)   keyword-04               0.4878-0.5000
+    #     answerable    books calibration       broad-alice              0.4989
+    #     blocked       books calibration       amb-bovary-homais        0.4233
+    #     blocked       books probe (forced)    ml-de-bovary-animal      0.4278
+    #     blocked       books calibration       ml-de-bovary-animal      0.4356 / 0.4411
+    #
+    # 0.455 is the value between them with the margins those rows give:
+    # 0.017 below the lowest answerable reading (0.4721, `broad-sherlock`
+    # probe) and 0.014 above the highest reading that stays blocked
+    # (0.4411, `ml-de-bovary-animal` calibration run 2). Everything above
+    # the floor generates and is classified *after* generation — IsUse,
+    # not the floor, is what a web of true sentences that ignores the
+    # question runs into (probe readings 0.09-0.37 vs answerables
+    # 0.56-0.93, `isuse-probe-a03a3a8.json`).
+    #
+    # Known tension, owned by the ADR: `ml-zh-xiyou-nezha` was relabelled
+    # `answer` on 2026-10-17 and its single-pass readings (0.3967 probe,
+    # 0.4011-0.4411 calibration) sit below even this floor. Its rescue is
+    # the corrective-retrieval step the floor triggers — the calibration
+    # numbers predate that path (it was abstained outright at 0.56) — and
+    # the proof run grades whether the rescue holds.
+    "evidence_floor": {"jev": 0.455, "fallback": 0.455},
+    # Stream line (ADR-006 item 4, TRD §10): a grounded Auto answer whose
+    # rubric mean reaches the line *streams*, and IsUse runs after delivery
+    # (a failure retracts). Below the line — the band between the floor and
+    # the line — the run is held under the verifying step until IsUse passes.
+    # The line sits ABOVE every should-decline reading recorded, so streaming
+    # stays safe:
+    #
+    #     class         set                     item                   mean-top-3
+    #     ------------  ----------------------  ---------------------  ----------
+    #     should-dcln   books calibration       outside-holmes-boston  0.5200 / 0.5589
+    #     should-dcln   books probe (forced)    outside-holmes-boston  0.5344
+    #     should-dcln   books calibration       outside-moby-dick      0.5178
+    #     should-dcln   fast20 x3 (attempt 1)   abstain-10             0.4844-0.4900
+    #     answerable    books probe (forced)    broad-sherlock         0.4721
+    #
+    # 0.60 is the lowest tenth above the 0.559 maximum, a 0.041 margin the
+    # high end, and it keeps every answerable *held* reading (0.4721-0.559)
+    # on the verifying path where a wrong answer is likely, which is the
+    # split ADR-006 item 4 orders. The evidence_floor is not part of this
+    # choice: a run below it never plans delivery.
+    "stream_line": {"jev": 0.60, "fallback": 0.60},
     "conflict_disclose": {"jev": 0.60, "fallback": 0.60},
     "output_toxicity_block": {"jev": 0.85, "fallback": 0.85},
     # Slice 6: 0.60 abstained Deep runs on corpus-answerable questions —
@@ -77,6 +118,41 @@ _DEFAULTS: dict[str, dict[Engine, float]] = {
     # the run abstains only when NO top-k passage matches. The question
     # names no entity -> the check is skipped, never an abstention.
     "entity_match": {"jev": 0.50, "fallback": 0.50},
+    # IsUse (ADR-006, accepted 2026-10-17): after generation, does the
+    # grounded answer directly answer what was asked, from these sources?
+    # Calibrated on the IsUse probe (`.data/evals/isuse-probe-a03a3a8.json`):
+    # 19 in-band books items, the evidence gate forced open, every generated
+    # answer scored once by Jev. The full per-item table:
+    #
+    #     class           item                         isuse   reviewer min_support
+    #     --------------  ---------------------------  ------  --------------------
+    #     should-decline  ml-ja-rashomon-rokuro         0.09   0.81 (passes)
+    #     should-decline  amb-bovary-homais             0.17   0.0
+    #     should-decline  ml-fr-outside                 0.20   0.0
+    #     should-decline  outside-moby-dick             0.26   0.86 (passes)
+    #     should-decline  outside-study-in-scarlet      0.37   0.94 (passes)
+    #     mislabelled     ml-zh-xiyou-nezha             0.83   0.8  <- relabelled
+    #                                                                `answer` (ADR)
+    #     answer          broad-alice                   0.83   0.0
+    #     answer          broad-bovary                  0.62   0.0
+    #     answer          followup-adler                0.57   -
+    #     answer          plot-speckled-band            0.56   -
+    #     answer          broad-time-machine            0.89   -
+    #     answer          broad-sherlock                0.86   -
+    #     answer          broad-frankenstein            0.91   -
+    #     answer          fact-weena                    0.91   -
+    #     answer          broad-verwandlung             0.93   -
+    #     answer (miss)   outside-whitman               0.11   0.5   <- allowed
+    #
+    # (holmes-boston / de-bovary-animal / emma declined before generation and
+    # carry no isuse reading.) 0.47 is the gap's midpoint (0.465 between 0.37
+    # and 0.56) rounded up: 0.10 above the highest failing reading, 0.09 below
+    # the lowest answering one outside the accepted miss. The reviewer numbers
+    # are the evidence the reviewer must NOT arbitrate: it passes 3 of 5
+    # confident-wrong answers and 0.0s the two gist answerables — exactly the
+    # shapes IsUse gets right. The held-out set confirms the threshold next
+    # phase; an in-sample miss reopens the ADR.
+    "is_use": {"jev": 0.47, "fallback": 0.47},
 }
 
 
@@ -85,14 +161,17 @@ DISPLAY_THRESHOLDS: dict[str, str] = {
     "guard_jailbreak": "guard_jailbreak_block",
     "guard_pii": "guard_pii_warn",
     "off_topic": "off_topic_warn",
-    "sufficient": "sufficient_abstain",
-    "relevance": "rerank_abstain",
+    # The evidence floor is the rerank rubric's mean-of-top-3 (ADR-006), so
+    # this is the number the `evidence` decision row is shown against.
+    "evidence": "evidence_floor",
     "conflict": "conflict_disclose",
     "controller": "controller_sufficient",
     "output_toxicity": "output_toxicity_block",
     "output_secrets": "guard_pii_warn",
     "prose_decline": "prose_decline",
     "entity": "entity_match",
+    # ADR-006: the usefulness row shows the floor it was compared against.
+    "is_use": "is_use",
 }
 
 

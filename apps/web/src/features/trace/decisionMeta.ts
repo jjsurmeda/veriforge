@@ -23,8 +23,7 @@ const LABELS: Record<string, string> = {
   complexity: 'Complexity',
   risk: 'Risk',
   lexical_weight: 'Lexical weight',
-  sufficient: 'Sufficient',
-  relevance: 'Relevance',
+  evidence: 'Evidence gate',
   conflict: 'Conflict',
   controller: 'Controller',
   output_toxicity: 'Output toxicity',
@@ -34,7 +33,7 @@ const LABELS: Record<string, string> = {
 const STAGE_LABELS: Record<string, string> = {
   ingress: 'Ingress',
   sanitize: 'Sanitiser',
-  sufficient: 'Sufficiency',
+  gate: 'Evidence gate',
   conflict: 'Conflict',
   controller: 'Controller',
   claim_verdict: 'Review',
@@ -84,8 +83,8 @@ export function probabilityOf(decision: Decision): number | null {
     return decision.probability
   }
   if (!decision.probabilities) {
-    // A gate whose number is computed rather than asked for — the relevance
-    // gate takes the max rerank score and publishes it as `value`, with no
+    // A gate whose number is computed rather than asked for — the evidence
+    // gate publishes the mean top-3 rubric grade as `value`, with no
     // `probability` — used to read as 0.00 here, because the only two sources
     // consulted were `probability` and `probabilities`. For a Noul-shaped
     // decision `value` IS the yes-probability (schemas/decisions.py), so this
@@ -120,7 +119,7 @@ export function decisionOutcome(decision: Decision): DecisionOutcome {
   if (decision.name === 'output_secrets') {
     return above ? { label: 'redact', tone: 'warning' } : { label: 'pass', tone: 'success' }
   }
-  if (decision.name === 'sufficient') {
+  if (decision.name === 'evidence') {
     return above ? { label: 'answer', tone: 'success' } : { label: 'retry', tone: 'warning' }
   }
   if (decision.name === 'conflict') {

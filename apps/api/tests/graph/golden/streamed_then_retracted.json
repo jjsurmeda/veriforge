@@ -182,7 +182,7 @@
  },
  {
   "event": {
-   "label": "sufficient",
+   "label": "evidence",
    "node": "auto",
    "seq": 0,
    "type": "step.started"
@@ -190,50 +190,14 @@
   "kind": "event"
  },
  {
-  "kind": "sufficient",
+  "kind": "evidence",
   "questions": [
-   "entity_0_0",
-   "sufficient"
+   "entity_0_0"
   ]
  },
  {
   "event": {
-   "label": "sufficient",
-   "node": "auto",
-   "seq": 0,
-   "type": "step.completed"
-  },
-  "kind": "event"
- },
- {
-  "kind": "llm",
-  "role": "rewriter"
- },
- {
-  "event": {
-   "label": "retrieve",
-   "node": "auto",
-   "seq": 0,
-   "type": "step.started"
-  },
-  "kind": "event"
- },
- {
-  "event": {
-   "label": "query variants",
-   "node": "auto",
-   "seq": 0,
-   "type": "step.started"
-  },
-  "kind": "event"
- },
- {
-  "kind": "llm",
-  "role": "rewriter"
- },
- {
-  "event": {
-   "label": "query variants",
+   "label": "evidence",
    "node": "auto",
    "seq": 0,
    "type": "step.completed"
@@ -242,7 +206,7 @@
  },
  {
   "event": {
-   "label": "embed queries (1)",
+   "label": "conflict",
    "node": "auto",
    "seq": 0,
    "type": "step.started"
@@ -251,112 +215,7 @@
  },
  {
   "event": {
-   "label": "embed queries (1)",
-   "node": "auto",
-   "seq": 0,
-   "type": "step.completed"
-  },
-  "kind": "event"
- },
- {
-  "event": {
-   "label": "retrieve: AW-2000 warranty length",
-   "node": "auto",
-   "seq": 0,
-   "type": "step.started"
-  },
-  "kind": "event"
- },
- {
-  "kind": "search",
-  "n": 1,
-  "query": "AW-2000 warranty length"
- },
- {
-  "event": {
-   "label": "retrieve: AW-2000 warranty length",
-   "node": "auto",
-   "seq": 0,
-   "type": "step.completed"
-  },
-  "kind": "event"
- },
- {
-  "event": {
-   "label": "retrieve",
-   "node": "auto",
-   "seq": 0,
-   "type": "step.completed"
-  },
-  "kind": "event"
- },
- {
-  "event": {
-   "label": "rerank",
-   "node": "auto",
-   "seq": 0,
-   "type": "step.started"
-  },
-  "kind": "event"
- },
- {
-  "kind": "rerank",
-  "questions": [
-   "passage_0"
-  ]
- },
- {
-  "event": {
-   "label": "rerank",
-   "node": "auto",
-   "seq": 0,
-   "type": "step.completed"
-  },
-  "kind": "event"
- },
- {
-  "event": {
-   "label": "sanitize",
-   "node": "auto",
-   "seq": 0,
-   "type": "step.started"
-  },
-  "kind": "event"
- },
- {
-  "kind": "sanitize",
-  "questions": [
-   "chunk_injection_0"
-  ]
- },
- {
-  "event": {
-   "label": "sanitize",
-   "node": "auto",
-   "seq": 0,
-   "type": "step.completed"
-  },
-  "kind": "event"
- },
- {
-  "event": {
-   "label": "sufficient",
-   "node": "auto",
-   "seq": 0,
-   "type": "step.started"
-  },
-  "kind": "event"
- },
- {
-  "kind": "sufficient",
-  "questions": [
-   "entity_0_0",
-   "sufficient"
-  ]
- },
- {
-  "event": {
-   "label": "sufficient",
+   "label": "conflict",
    "node": "auto",
    "seq": 0,
    "type": "step.completed"
@@ -374,7 +233,7 @@
      "fused_score": 1.0,
      "heading_path": "Section 0",
      "page": null,
-     "rerank_score": 0.1,
+     "rerank_score": 1.0,
      "source_type": "document",
      "vector_score": 1.0
     }
@@ -383,74 +242,6 @@
    "query": "AW-2000 warranty length",
    "seq": 0,
    "type": "retrieval"
-  },
-  "kind": "event"
- },
- {
-  "event": {
-   "chunks": [
-    {
-     "bm25_score": null,
-     "document_name": "warranty.md",
-     "dropped": false,
-     "excerpt": "The AW-2000 warranty is 24 months from the date of purchase.",
-     "fused_score": 1.0,
-     "heading_path": "Section 0",
-     "page": null,
-     "rerank_score": 0.1,
-     "source_type": "document",
-     "vector_score": 1.0
-    }
-   ],
-   "hop": 0,
-   "query": "AW-2000 warranty length",
-   "seq": 0,
-   "type": "retrieval"
-  },
-  "kind": "event"
- },
- {
-  "event": {
-   "batch_size": null,
-   "engine": "jev",
-   "name": "relevance",
-   "probabilities": null,
-   "probability": null,
-   "reasoning": "max rerank score of the post-sanitize winners (1 scored passages)",
-   "seq": 0,
-   "stage": "rerank",
-   "threshold": 0.6,
-   "type": "decision",
-   "value": 0.1
-  },
-  "kind": "event"
- },
- {
-  "event": {
-   "batch_size": null,
-   "engine": "jev",
-   "name": "relevance",
-   "probabilities": null,
-   "probability": null,
-   "reasoning": "max rerank score of the post-sanitize winners (1 scored passages)",
-   "seq": 0,
-   "stage": "rerank",
-   "threshold": 0.6,
-   "type": "decision",
-   "value": 0.1
-  },
-  "kind": "event"
- },
- {
-  "event": {
-   "found_summary": "Your sources cover warranty.md.\n- warranty.md Section 0",
-   "missing_summary": "The retrieved sources do not contain enough evidence to answer this question.",
-   "offered_actions": [
-    "web",
-    "deep"
-   ],
-   "seq": 0,
-   "type": "abstain"
   },
   "kind": "event"
  },
@@ -464,6 +255,10 @@
   "kind": "event"
  },
  {
+  "kind": "llm",
+  "role": "generator"
+ },
+ {
   "event": {
    "label": "generate",
    "node": "auto",
@@ -475,8 +270,41 @@
  {
   "event": {
    "seq": 0,
-   "text": "I could not find enough evidence to answer that question.\n\nWhat I found:\nYour sources cover warranty.md.\n- warranty.md Section 0\n\nWhat is missing:\nThe retrieved sources do not contain enough evidence to answer this question.\n\nYou can try:\n- Turn on the Web search toggle\n- Turn on the Deep search toggle for multi-step reasoning across documents\n",
+   "text": "24 months.",
    "type": "answer.delta"
+  },
+  "kind": "event"
+ },
+ {
+  "event": {
+   "label": "isuse",
+   "node": "auto",
+   "seq": 0,
+   "type": "step.started"
+  },
+  "kind": "event"
+ },
+ {
+  "kind": "isuse",
+  "questions": [
+   "is_use"
+  ]
+ },
+ {
+  "event": {
+   "label": "isuse",
+   "node": "auto",
+   "seq": 0,
+   "type": "step.completed"
+  },
+  "kind": "event"
+ },
+ {
+  "event": {
+   "reason": "the usefulness check rejected the answer",
+   "seq": 0,
+   "text": "I could not find enough evidence to answer that question.\n\nWhat I found:\nYour sources cover warranty.md.\n- warranty.md Section 0\n\nWhat is missing:\nThe retrieved sources do not directly state what the question asks for, so the drafted answer was not delivered.\n\nYou can try:\n- Turn on the Web search toggle\n- Turn on the Deep search toggle for multi-step reasoning across documents\n",
+   "type": "answer.retract"
   },
   "kind": "event"
  },
@@ -486,7 +314,7 @@
  },
  {
   "event": {
-   "context_used": 0,
+   "context_used": 2,
    "context_window": 128000,
    "faithfulness": null,
    "min_support": null,

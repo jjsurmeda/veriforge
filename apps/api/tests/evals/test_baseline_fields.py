@@ -45,6 +45,15 @@ SYNTHETIC_BASELINE: dict[str, float | None] = {
     "failed": 0.0,
 }
 
+@pytest.fixture(autouse=True)
+def _latency_gated(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests pin the latency check as P3 runs it; until then it only
+    warns (`LATENCY_GATED`, owner decision 2026-10-18)."""
+    from evals import gate as _gate
+
+    monkeypatch.setattr(_gate, "LATENCY_GATED", True)
+
+
 
 def _item(*, should_abstain: bool = False) -> EvalItem:
     return EvalItem(

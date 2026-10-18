@@ -287,11 +287,11 @@ class TestDisplayThresholds:
     def test_display_threshold_honors_runtime_override(self) -> None:
         token = set_runtime_settings(
             RuntimeSettings.from_data(
-                1, {"thresholds": {"sufficient_abstain": {"fallback": 0.42}}}
+                1, {"thresholds": {"evidence_floor": {"fallback": 0.42}}}
             )
         )
         try:
-            assert display_threshold("sufficient", "fallback") == pytest.approx(0.42)
+            assert display_threshold("evidence", "fallback") == pytest.approx(0.42)
         finally:
             reset_runtime_settings(token)
 
@@ -325,18 +325,18 @@ class TestEventEmission:
         )
         await engine.decide(state={"kind": "ingress"}, questions=_questions())
         await engine.decide(
-            state={"kind": "sufficient"},
-            questions={"sufficient": Noul(prompt="Enough evidence?")},
+            state={"kind": "evidence"},
+            questions={"evidence": Noul(prompt="Enough evidence?")},
         )
 
         ingress = [entry for entry in emitted if entry[2].stage == "ingress"]
-        sufficient = [entry for entry in emitted if entry[2].stage == "sufficient"]
+        evidence = [entry for entry in emitted if entry[2].stage == "evidence"]
         assert len(ingress) == len(_questions())
-        assert len(sufficient) == 1
+        assert len(evidence) == 1
         assert len({entry[2].call_id for entry in ingress}) == 1
         assert ingress[0][2].batch_size == len(_questions())
-        assert sufficient[0][2].batch_size == 1
-        assert ingress[0][2].call_id != sufficient[0][2].call_id
+        assert evidence[0][2].batch_size == 1
+        assert ingress[0][2].call_id != evidence[0][2].call_id
 
     @pytest.mark.asyncio
     async def test_emitter_failure_does_not_block_decision(self) -> None:
@@ -445,7 +445,12 @@ class TestJevClientParsing:
 class TestFallbackEngineParsing:
     @pytest.mark.asyncio
     async def test_choice_probabilities_normalised(self) -> None:
-        async def fake_complete(*, litellm_model: str, messages: Any, metadata: Any) -> str:
+        # `**_` absorbs the cap and the response-format hint the fallback now
+        # sends (KI-57); a double of `providers.llm.complete` accepts what
+        # `complete` accepts.
+        async def fake_complete(
+            *, litellm_model: str, messages: Any, metadata: Any, **_: Any
+        ) -> str:
             return json.dumps({
                 "intent": {
                     "probabilities": {
@@ -476,7 +481,12 @@ class TestFallbackEngineParsing:
 
     @pytest.mark.asyncio
     async def test_noul_out_of_range_raises(self) -> None:
-        async def fake_complete(*, litellm_model: str, messages: Any, metadata: Any) -> str:
+        # `**_` absorbs the cap and the response-format hint the fallback now
+        # sends (KI-57); a double of `providers.llm.complete` accepts what
+        # `complete` accepts.
+        async def fake_complete(
+            *, litellm_model: str, messages: Any, metadata: Any, **_: Any
+        ) -> str:
             return json.dumps({"guard_injection": {"probability": 1.7}})
 
         engine = FallbackEngine(complete_fn=fake_complete)
@@ -487,7 +497,12 @@ class TestFallbackEngineParsing:
 
     @pytest.mark.asyncio
     async def test_fenced_json_accepted(self) -> None:
-        async def fake_complete(*, litellm_model: str, messages: Any, metadata: Any) -> str:
+        # `**_` absorbs the cap and the response-format hint the fallback now
+        # sends (KI-57); a double of `providers.llm.complete` accepts what
+        # `complete` accepts.
+        async def fake_complete(
+            *, litellm_model: str, messages: Any, metadata: Any, **_: Any
+        ) -> str:
             return '```json\n{"guard_injection": {"probability": 0.3}}\n```'
 
         engine = FallbackEngine(complete_fn=fake_complete)
