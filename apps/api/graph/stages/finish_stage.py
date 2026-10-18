@@ -154,6 +154,18 @@ def _cite(env: StageEnv, state: AutoRunState) -> None:
             if context.chunk.source_type != SUMMARY_SOURCE_TYPE
             else None,
             rerank_score=context.chunk.rerank_score,
+            # A summary has no chunk row, so the document, section and the text
+            # shown are kept on the citation itself and the evidence survives a
+            # reload. Chunk citations resolve through their chunk, as before.
+            document_id=context.chunk.document_id
+            if context.chunk.source_type == SUMMARY_SOURCE_TYPE
+            else None,
+            section_id=context.chunk.section_id
+            if context.chunk.source_type == SUMMARY_SOURCE_TYPE
+            else None,
+            excerpt=context.chunk.text[:240]
+            if context.chunk.source_type == SUMMARY_SOURCE_TYPE
+            else None,
         )
         for index, context in enumerate(state.contexts)
     )

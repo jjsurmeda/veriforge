@@ -601,6 +601,16 @@ class Citation(Base):
         ForeignKey("chunks.id", ondelete="SET NULL"), nullable=True
     )
     rerank_score: Mapped[float | None] = mapped_column(nullable=True)
+    # A citation with no chunk (a summary) resolves its evidence through these:
+    # the document and section it points at, and the text it was shown, kept as
+    # a snapshot. Null for chunk citations, which resolve through `chunk_id`.
+    document_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("documents.id", ondelete="SET NULL"), nullable=True
+    )
+    section_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("sections.id", ondelete="SET NULL"), nullable=True
+    )
+    excerpt: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Reviewer fields — null until slice 6 (TRD §10).
     verdict: Mapped[str | None] = mapped_column(String(16), nullable=True)
     p_supported: Mapped[float | None] = mapped_column(nullable=True)
