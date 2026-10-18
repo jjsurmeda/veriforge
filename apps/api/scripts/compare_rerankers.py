@@ -1,305 +1,326 @@
-"""Replay NVIDIA and Jev reranking on identical fused candidates (C2 item 4).
+"""Compare every registered reranker on identical candidate pools (R2c item 6).
 
-Offline by construction: candidates are captured once, then both rerankers
-are handed the same list and no generation happens. That isolates the
-reranker — the only thing that differs between the two arms.
+Pools come from replaying the retrieval queries an acceptance export recorded
+through `hybrid_search`, the way `scripts/measure_recall.py` does, so every
+reranker is handed the same fused top 40. No generation happens: the only
+provider calls are the query embeddings and the rerankers under test.
 
-    python scripts/compare_rerankers.py [--limit N] [--out PATH]
+    DATABASE_URL=...accept_db uv run python -m scripts.compare_rerankers \\
+        ../../.data/acceptance/<run>.json --ids jev,cohere,nvidia,fused
 
-Per item it records where the expected book first appears in the reranked
-order, whether a `mention` term survives into the top 8, and the rerank
-latency. For the Jev arm it also reads OpenRouter's generation stats for
-the per-call cost and notes whether the call fell back to the LLM, so the
-report can quote $/query rather than call counts.
+Per reranker it reports the labelled answer passage's after-rerank recall at 8
+(`evals/acceptance/answer_passages.json`; gist items count a hit on any passage
+of their document), nDCG@10 over the same labels, rerank latency p50 and p95,
+and cost per 1,000 queries (Jev from OpenRouter generation stats, the others
+from the registry price table), plus paired per-item wins and losses against
+Jev. A difference of fewer than 2 items is labelled a tie. A reranker without
+its key is skipped and named. Writes `docs/benchmarks/rerankers.md` and a JSON
+artefact; with no keys it runs Jev and fused order and says so.
 """
 
 import argparse
 import asyncio
 import json
+import math
 import statistics
+import subprocess
 import sys
 import time
-from contextlib import asynccontextmanager
-from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import httpx
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy import text
 
 from config import get_settings
-from db.models import Collection
+from db.session import get_session_factory
 from decisions.engine import DecisionEngine
 from decisions.jev import JevClient
 from evals.attribution import _stats
-from retrieval.filters import ClientFilters, Ownership
-from retrieval.hybrid import ScoredChunk, hybrid_search
-from retrieval.rerank import JevRerank, NvidiaRerank
-from runtime import (
-    RuntimeSettings,
-    reset_runtime_settings,
-    set_runtime_settings,
-)
+from providers.llm import embed_batch
+from retrieval.filters import Ownership
+from retrieval.rerank import RERANKERS, RerankProvider
+from runtime import RuntimeSettings, reset_runtime_settings, set_runtime_settings
+from scripts.measure_recall import LABELS, _gold, _search
 
-SET_FILE = Path(__file__).resolve().parents[3] / "evals/acceptance/books.json"
-OUT_DEFAULT = Path(".data/rerank-comparison.json")
-TOP_N = 8
+ROOT = Path(__file__).resolve().parents[3]
+BENCH_MD = ROOT / "docs" / "benchmarks" / "rerankers.md"
+BENCH_JSON = ROOT / "docs" / "benchmarks" / "rerankers.json"
 FUSED_LIMIT = 40
-LEXICAL_WEIGHT = 0.5
+RECALL_K = 8
+NDCG_K = 10
+TIE_ITEMS = 2  # paired differences under this many items are ties
 
-
-@dataclass
-class ItemResult:
-    item_id: str
-    reranker: str
-    candidates: int
-    first_rank_of_expected: int | None
-    mention_in_top8: bool | None
-    latency_ms: int
-    fell_back: bool
-    cost_usd: float | None
-
-
-def _expected_names(item: dict[str, Any]) -> list[str]:
-    return [str(c) for c in item.get("cite", [])]
-
-
-def _rank_of_expected(chunks: list[ScoredChunk], expected: list[str]) -> int | None:
-    for position, chunk in enumerate(chunks, start=1):
-        name = (chunk.document_name or "").lower()
-        if any(book.lower() in name for book in expected):
-            return position
-    return None
-
-
-def _mention_in_top8(chunks: list[ScoredChunk], mention: list[str]) -> bool | None:
-    if not mention:
-        return None
-    top = " ".join(c.text.lower() for c in chunks[:TOP_N])
-    return any(m.lower() in top for m in mention)
-
-
-async def _shared_scope(session: Any) -> tuple[Any, list[Any]]:
-    """Every shared collection, plus an owner id build_scope will accept.
-
-    A comparison needs no per-user isolation — the same candidate list goes to
-    both arms — but build_scope insists on a real owner, so use the account
-    that publishes the Shared library. All shared collections are in scope,
-    not just one: that is what resolve_scope gives a real run.
-    """
-    rows = (
-        await session.execute(
-            select(Collection.id, Collection.owner_id)
-            .where(Collection.visibility == "shared")
-            .order_by(Collection.created_at)
-        )
-    ).all()
-    if not rows:
-        raise SystemExit("no shared collection; run `make seed-books` first")
-    return rows[0].owner_id, [row.id for row in rows]
-
-
-async def _capture_candidates(
-    session: Any, question: str, owner_id: Any, collection_ids: list[Any]
-) -> list[ScoredChunk]:
-    """The fused top 40 exactly as retrieval produces them, minus rerank."""
-    from retrieval.cache import get_query_embedding
-
-    embedding = await get_query_embedding(session, question)
-    fused = await hybrid_search(
-        session,
-        query_text=question,
-        query_embedding=embedding,
-        ownership=Ownership(user_id=owner_id, collection_ids=collection_ids),
-        filters=ClientFilters(),
-        lexical_weight=LEXICAL_WEIGHT,
-    )
-    return fused[:FUSED_LIMIT]
-
-
-# Every Jev call in this run appends its generation id here; each item's cost
-# is whatever landed during its own call.
 GENERATION_IDS: list[str] = []
 
 
-async def _usd_for(ids: list[str]) -> float | None:
-    """Real USD from OpenRouter's generation record, not the credit estimate.
-
-    The store is written asynchronously, so a lookup straight after the call
-    404s for a while; `evals.attribution._stats` already retries that.
-    """
-    total = 0.0
-    seen = False
-    for generation_id in ids:
-        data, _status, _attempts = await _stats(generation_id)
-        if data is None:
-            continue
-        seen = True
-        total += float(data.get("total_cost") or 0.0)
-    return total if seen else None
+def ndcg_at_k(ranked_ids: list[str], gold: set[str], k: int = NDCG_K) -> float:
+    """Binary-relevance nDCG@k: a chunk is relevant if it is in `gold`."""
+    gains = [1.0 if cid in gold else 0.0 for cid in ranked_ids[:k]]
+    dcg = sum(g / math.log2(i + 2) for i, g in enumerate(gains))
+    ideal = sum(1.0 / math.log2(i + 2) for i in range(min(len(gold), k)))
+    return dcg / ideal if ideal else 0.0
 
 
-def _cost_recording_client(ids: list[str]) -> httpx.AsyncClient:
+def percentile(values: list[float], p: float) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    return ordered[min(len(ordered) - 1, math.ceil(p * len(ordered)) - 1)]
+
+
+def paired(hits: dict[str, dict[str, bool]], base: str, other: str) -> dict[str, Any]:
+    """Per-item wins and losses of `other` against `base` on the recall@8 hit."""
+    ids = sorted(set(hits[base]) & set(hits[other]))
+    wins = [i for i in ids if hits[other][i] and not hits[base][i]]
+    losses = [i for i in ids if hits[base][i] and not hits[other][i]]
+    verdict = (
+        "tie"
+        if abs(len(wins) - len(losses)) < TIE_ITEMS
+        else ("better" if len(wins) > len(losses) else "worse")
+    )
+    return {"wins": wins, "losses": losses, "verdict": verdict}
+
+
+def _head_sha() -> str:
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],  # noqa: S607
+            capture_output=True,
+            text=True,
+            timeout=10,
+            cwd=ROOT,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return "unknown"
+    return out.stdout.strip() or "unknown"
+
+
+def _cost_recording_client() -> httpx.AsyncClient:
     async def on_response(response: httpx.Response) -> None:
         generation_id = response.headers.get("x-generation-id")
         if generation_id:
-            ids.append(generation_id)
+            GENERATION_IDS.append(generation_id)
 
     return httpx.AsyncClient(event_hooks={"response": [on_response]})
 
 
-async def _run_one(
-    name: str,
-    reranker: Any,
-    candidates: list[ScoredChunk],
-    item: dict[str, Any],
-) -> ItemResult:
-    from decisions.breaker import BreakerState, get_breaker
-
-    documents = [c.text for c in candidates]
-    opened_before = get_breaker().state is BreakerState.OPEN
-    already = len(GENERATION_IDS)
-    started = time.perf_counter()
-    ranked = await reranker.rerank(query=item["turns"][-1], documents=documents, top_n=TOP_N)
-    latency_ms = int((time.perf_counter() - started) * 1000)
-    fresh = GENERATION_IDS[already:]
-    cost_usd = await _usd_for(fresh) if name == "jev" and fresh else 0.0
-    # A breaker that opens during the call means Jev was unreachable and the
-    # LLM fallback answered, so this row is not a Jev measurement.
-    fell_back = (
-        name == "jev" and not opened_before and get_breaker().state is BreakerState.OPEN
-    )
-    ordered = [candidates[i] for i, _ in ranked]
-    return ItemResult(
-        item_id=str(item["id"]),
-        reranker=name,
-        candidates=len(candidates),
-        first_rank_of_expected=_rank_of_expected(ordered, _expected_names(item)),
-        mention_in_top8=_mention_in_top8(ordered, [str(m) for m in item.get("mention", [])]),
-        latency_ms=latency_ms,
-        fell_back=fell_back,
-        cost_usd=cost_usd,
-    )
+async def _usd_for(ids: list[str]) -> float | None:
+    """Real USD from OpenRouter's generation record (written asynchronously;
+    `_stats` retries the 404 window)."""
+    total, seen = 0.0, False
+    for generation_id in ids:
+        data, _status, _attempts = await _stats(generation_id)
+        if data is not None:
+            seen = True
+            total += float(data.get("total_cost") or 0.0)
+    return total if seen else None
 
 
-def _report(rows: list[ItemResult]) -> dict[str, Any]:
-    out: dict[str, Any] = {}
-    for name in sorted({r.reranker for r in rows}):
-        arm = [r for r in rows if r.reranker == name]
-        ranks = [r.first_rank_of_expected for r in arm if r.first_rank_of_expected is not None]
-        mentions = [r.mention_in_top8 for r in arm if r.mention_in_top8 is not None]
-        costs = [r.cost_usd for r in arm if r.cost_usd is not None]
-        out[name] = {
-            "items": len(arm),
-            "recall_at_8": round(len(ranks) / len(arm), 3) if arm else 0.0,
-            "mean_rank_of_expected": round(statistics.mean(ranks), 2) if ranks else None,
-            "mention_recall_at_8": round(sum(1 for m in mentions if m) / len(mentions), 3)
-            if mentions
-            else None,
-            "p50_latency_ms": int(statistics.median([r.latency_ms for r in arm])) if arm else 0,
-            "usd_per_query": round(statistics.mean(costs), 6) if costs else None,
-            "fell_back": sum(1 for r in arm if r.fell_back),
-        }
-    return out
+def _build(rid: str, engine: DecisionEngine, run_id: str) -> RerankProvider | None:
+    info = RERANKERS[rid]
+    return info.build(get_settings(), engine, run_id)
 
 
-async def main(limit: int | None, out_path: Path) -> None:
+def _available(rid: str) -> tuple[bool, str]:
     settings = get_settings()
-    if not settings.nvidia_api_key:
-        raise SystemExit("NVIDIA_API_KEY is not set; cannot replay the nvidia arm")
-    dataset = json.loads(SET_FILE.read_text())
-    items = [i for i in dataset["items"] if i["expect"] == "answer"]
-    if limit is not None:
-        items = items[:limit]
+    if rid == "jev":
+        return (True, "") if settings.openrouter_api_key else (False, "no OPENROUTER_API_KEY")
+    if not RERANKERS[rid].key_present(settings):
+        return False, "no API key"
+    return True, ""
 
-    engine = DecisionEngine(
-        jev=JevClient(client=_cost_recording_client(GENERATION_IDS)), mode="auto"
-    )
-    nvidia = NvidiaRerank(settings.nvidia_api_key, settings.nvidia_rerank_model)
-    rows: list[ItemResult] = []
-    async with _uncached_session() as session:
-        owner_id, collection_ids = await _shared_scope(session)
-        for item in items:
-            candidates = await _capture_candidates(
-                session, str(item["turns"][-1]), owner_id, collection_ids
-            )
-            if not candidates:
-                print(f"  {item['id']}: no fused candidates, skipped", flush=True)
-                continue
-            rows.append(await _run_one("nvidia", nvidia, candidates, item))
-            token = set_runtime_settings(_jev_runtime())
-            try:
-                rows.append(
-                    await _run_one(
-                        "jev",
-                        JevRerank(engine, str(item["id"])),
-                        candidates,
-                        item,
-                    )
-                )
-            finally:
-                reset_runtime_settings(token)
-            last = rows[-2:]
-            print(
-                f"  {item['id']}: "
-                + "  ".join(
-                    f"{r.reranker} rank={r.first_rank_of_expected} "
-                    f"mention={r.mention_in_top8} {r.latency_ms}ms"
-                    for r in last
-                ),
-                flush=True,
-            )
 
-    report = _report(rows)
-    await asyncio.to_thread(
-        out_path.parent.mkdir, parents=True, exist_ok=True
-    )
-    await asyncio.to_thread(
-        out_path.write_text,
-        json.dumps({"rows": [asdict(r) for r in rows], "report": report}, indent=1),
-    )
-    print("\n| reranker | recall@8 | mean rank | mention@8 | p50 ms | $/query | fell back |")
-    print("|---|---|---|---|---|---|---|")
-    for name, stats in report.items():
-        print(
-            f"| {name} | {stats['recall_at_8']} | {stats['mean_rank_of_expected']} "
-            f"| {stats['mention_recall_at_8']} | {stats['p50_latency_ms']} "
-            f"| {stats['usd_per_query']} | {stats['fell_back']} |"
+async def _context(session: Any) -> tuple[Ownership, dict[str, float]]:
+    owner = (
+        await session.execute(
+            text("select owner_id from collections where visibility = 'private' limit 1")
         )
-    print(f"\nraw: {out_path}")
-
-
-@asynccontextmanager
-async def _uncached_session() -> Any:
-    """A session whose connection has no prepared-statement cache.
-
-    pg_search's custom bm25 scan node cannot be re-planned out of asyncpg's
-    statement cache ("unrecognized node type"). `statement_cache_size=0` is
-    the documented way out; `DEALLOCATE ALL` is not, because it also throws
-    away asyncpg's own cached statements. Scoped to this script — a one-off
-    comparison is not the place to change the app's pool settings.
-    """
-    engine = create_async_engine(
-        get_settings().database_url, connect_args={"statement_cache_size": 0}
+    ).scalar_one()
+    collections = [r[0] for r in await session.execute(text("select id from collections"))]
+    weights: dict[str, float] = {}
+    rows = await session.execute(
+        text(
+            "select r.payload->>'query', d.payload->>'value' from run_events r "
+            "join run_events d on d.run_id = r.run_id and d.type = 'decision' "
+            "and d.payload->>'name' = 'lexical_weight' where r.type = 'retrieval'"
+        )
     )
-    try:
-        async with async_sessionmaker(engine, expire_on_commit=False)() as session:
-            yield session
-    finally:
-        await engine.dispose()
+    for query, value in rows:
+        if query:
+            weights.setdefault(query, float(value))
+    return Ownership(user_id=UUID(str(owner)), collection_ids=collections), weights
 
 
-def _jev_runtime() -> RuntimeSettings:
-    return RuntimeSettings.from_data(1, {"retrieval": {"reranker": "jev"}})
+async def measure(export: Path, ids: list[str], limit: int | None) -> dict[str, Any]:
+    labels: dict[str, dict[str, Any]] = json.loads(LABELS.read_text())["items"]
+    items = {i["id"]: i for i in json.loads(await asyncio.to_thread(export.read_text))["items"]}
+    factory = get_session_factory()
+    async with factory() as session:
+        ownership, weights = await _context(session)
+        gold = {iid: await _gold(session, label) for iid, label in labels.items()}
+
+    engine = DecisionEngine(jev=JevClient(client=_cost_recording_client()), mode="auto")
+    hits: dict[str, dict[str, bool]] = {rid: {} for rid in ids}
+    ndcgs: dict[str, dict[str, float]] = {rid: {} for rid in ids}
+    latencies: dict[str, list[float]] = {rid: [] for rid in ids}
+    jev_usd: list[float] = []
+    queries_run: dict[str, int] = {rid: 0 for rid in ids}
+    degraded: dict[str, int] = {rid: 0 for rid in ids}
+
+    scored = [iid for iid in labels if items.get(iid, {}).get("retrievals")]
+    if limit:
+        scored = scored[:limit]
+    for iid in scored:
+        queries = list(dict.fromkeys(r["query"] for r in items[iid]["retrievals"]))
+        embeddings = await embed_batch(texts=queries)
+        item_hit = {rid: False for rid in ids}
+        item_ndcg: dict[str, list[float]] = {rid: [] for rid in ids}
+        for query, embedding in zip(queries, embeddings, strict=True):
+            pool = (
+                await _search(
+                    factory,
+                    query_text=query,
+                    query_embedding=embedding,
+                    ownership=ownership,
+                    lexical_weight=weights.get(query, 0.5),
+                )
+            )[:FUSED_LIMIT]
+            if not pool:
+                continue
+            documents = [c.text for c in pool]
+            for rid in ids:  # the identical pool goes to every reranker
+                provider = _build(rid, engine, iid)
+                assert provider is not None
+                token = set_runtime_settings(RuntimeSettings.from_data(1, {}))
+                before = len(GENERATION_IDS)
+                started = time.perf_counter()
+                try:
+                    ranked = await provider.rerank(query=query, documents=documents, top_n=NDCG_K)
+                except Exception as exc:
+                    print(f"    {rid} failed on {iid}: {exc!r}", flush=True)
+                    degraded[rid] += 1
+                    continue
+                finally:
+                    reset_runtime_settings(token)
+                latencies[rid].append((time.perf_counter() - started) * 1000)
+                queries_run[rid] += 1
+                if rid == "jev" and (usd := await _usd_for(GENERATION_IDS[before:])) is not None:
+                    jev_usd.append(usd)
+                order = [str(pool[i].chunk_id) for i, _ in ranked]
+                item_hit[rid] = item_hit[rid] or bool(set(order[:RECALL_K]) & gold[iid])
+                item_ndcg[rid].append(ndcg_at_k(order, gold[iid]))
+        for rid in ids:
+            hits[rid][iid] = item_hit[rid]
+            ndcgs[rid][iid] = statistics.fmean(item_ndcg[rid]) if item_ndcg[rid] else 0.0
+        print(f"  {iid}: " + " ".join(f"{r}={int(item_hit[r])}" for r in ids), flush=True)
+
+    summary: dict[str, Any] = {}
+    for rid in ids:
+        n = len(hits[rid])
+        info = RERANKERS[rid]
+        if rid == "jev":
+            per_1k = round(statistics.fmean(jev_usd) * 1000, 4) if jev_usd else None
+            cost_src = "OpenRouter generation stats" if jev_usd else "not measured"
+        else:
+            per_1k = info.cost_per_1k_queries_usd
+            cost_src = "price table"
+        summary[rid] = {
+            "items": n,
+            "recall_at_8": round(sum(hits[rid].values()) / n, 3) if n else 0.0,
+            "hits": sum(hits[rid].values()),
+            "ndcg_at_10": round(statistics.fmean(ndcgs[rid].values()), 4) if n else 0.0,
+            "latency_p50_ms": round(percentile(latencies[rid], 0.5)),
+            "latency_p95_ms": round(percentile(latencies[rid], 0.95)),
+            "cost_per_1k_queries_usd": per_1k,
+            "cost_source": cost_src,
+            "queries": queries_run[rid],
+            "failed_calls": degraded[rid],
+        }
+    vs_jev = {rid: paired(hits, "jev", rid) for rid in ids if rid != "jev" and "jev" in ids}
+    return {"summary": summary, "vs_jev": vs_jev, "hits": hits, "ndcg": ndcgs}
+
+
+def render_md(result: dict[str, Any], *, skipped: dict[str, str], export: Path) -> str:
+    lines = [
+        "# Reranker comparison",
+        "",
+        f"Generated {datetime.now(UTC):%Y-%m-%d %H:%M} UTC at commit `{_head_sha()}` by "
+        "`scripts/compare_rerankers.py`.",
+        f"Pools: the recorded retrieval queries of `{export.name}` replayed through "
+        f"`hybrid_search` (fused top {FUSED_LIMIT}); every reranker saw the identical pool.",
+        "Labels: `evals/acceptance/answer_passages.json` (gist items: any passage of the "
+        "document). Differences under "
+        f"{TIE_ITEMS} items are ties.",
+        "",
+    ]
+    if skipped:
+        lines += ["Skipped: " + "; ".join(f"`{k}` ({v})" for k, v in skipped.items()), ""]
+    ran = [k for k in result["summary"]]
+    if ran == ["jev", "fused"] or set(ran) <= {"jev", "fused"}:
+        lines += ["Only Jev and fused order ran: no Cohere or NVIDIA key was present.", ""]
+    lines += [
+        "| reranker | recall@8 | nDCG@10 | p50 ms | p95 ms | $ / 1k queries | cost source |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    for rid, s in result["summary"].items():
+        cost = "n/a" if s["cost_per_1k_queries_usd"] is None else f"{s['cost_per_1k_queries_usd']}"
+        lines.append(
+            f"| {rid} | {s['hits']}/{s['items']} ({s['recall_at_8']}) | {s['ndcg_at_10']} "
+            f"| {s['latency_p50_ms']} | {s['latency_p95_ms']} | {cost} | {s['cost_source']} |"
+        )
+    if result["vs_jev"]:
+        lines += [
+            "",
+            "## Paired against Jev (recall@8 per item)",
+            "",
+            "| reranker | wins | losses | verdict | losses (items) |",
+            "|---|---|---|---|---|",
+        ]
+        for rid, p in result["vs_jev"].items():
+            lines.append(
+                f"| {rid} | {len(p['wins'])} | {len(p['losses'])} | {p['verdict']} "
+                f"| {', '.join(p['losses']) or '-'} |"
+            )
+    return "\n".join(lines) + "\n"
+
+
+async def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("export", type=Path, help="an acceptance raw results file")
+    parser.add_argument("--ids", default=",".join(RERANKERS), help="comma-separated registry ids")
+    parser.add_argument("--limit", type=int, default=None, help="first N labelled items")
+    parser.add_argument("--out-md", type=Path, default=BENCH_MD)
+    parser.add_argument("--out-json", type=Path, default=BENCH_JSON)
+    args = parser.parse_args()
+
+    wanted = [i.strip() for i in args.ids.split(",") if i.strip()]
+    unknown = [i for i in wanted if i not in RERANKERS]
+    if unknown:
+        raise SystemExit(f"unknown reranker id(s) {unknown}; known: {list(RERANKERS)}")
+    skipped: dict[str, str] = {}
+    ids: list[str] = []
+    for rid in wanted:
+        ok, why = _available(rid)
+        (ids.append(rid) if ok else skipped.__setitem__(rid, why))
+    for rid, why in skipped.items():
+        print(f"skipping {rid}: {why}")
+    if not ids:
+        raise SystemExit("no reranker is available to run")
+
+    result = await measure(args.export, ids, args.limit)
+    md = render_md(result, skipped=skipped, export=args.export)
+    args.out_md.parent.mkdir(parents=True, exist_ok=True)
+    args.out_md.write_text(md)
+    args.out_json.write_text(json.dumps({**result, "skipped": skipped}, indent=1))
+    print(md)
+    print(f"wrote {args.out_md} and {args.out_json}")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--limit", type=int, default=None)
-    parser.add_argument("--out", type=Path, default=OUT_DEFAULT)
-    args = parser.parse_args()
-    asyncio.run(main(args.limit, args.out))
+    asyncio.run(main())
