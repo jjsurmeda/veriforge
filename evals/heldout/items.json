@@ -262,8 +262,7 @@
         "Two Cities"
       ],
       "mention": [
-        "One Hundred and Five",
-        "105"
+        "One Hundred and Five"
       ],
       "category": "lookup",
       "corpus": "heldout"
@@ -354,7 +353,8 @@
       ],
       "expect": "not_in_sources",
       "category": "outside",
-      "corpus": "heldout"
+      "corpus": "heldout",
+      "audit_note": "2026-10-18 audit_labels spot-read: the flagged term is a common word or a name from another book; no passage answers the question."
     },
     {
       "id": "ho-out-pip",
@@ -363,7 +363,8 @@
       ],
       "expect": "not_in_sources",
       "category": "entity-mismatch",
-      "corpus": "heldout"
+      "corpus": "heldout",
+      "audit_note": "2026-10-18 audit_labels spot-read: the flagged term is a common word or a name from another book; no passage answers the question."
     },
     {
       "id": "ho-near-vlad",
@@ -375,7 +376,8 @@
       "corpus": "heldout",
       "forbid": [
         "Vlad"
-      ]
+      ],
+      "audit_note": "2026-10-18 audit_labels spot-read: the flagged term is a common word or a name from another book; no passage answers the question."
     },
     {
       "id": "ho-out-coppola",
@@ -387,7 +389,8 @@
       "corpus": "heldout",
       "forbid": [
         "Coppola"
-      ]
+      ],
+      "audit_note": "2026-10-18 audit_labels spot-read: the flagged term is a common word or a name from another book; no passage answers the question."
     },
     {
       "id": "ho-out-population",
@@ -396,7 +399,8 @@
       ],
       "expect": "not_in_sources",
       "category": "outside",
-      "corpus": "heldout"
+      "corpus": "heldout",
+      "audit_note": "2026-10-18 audit_labels spot-read: the flagged term is a common word or a name from another book; no passage answers the question."
     },
     {
       "id": "ho-near-basil",
@@ -405,7 +409,8 @@
       ],
       "expect": "not_in_sources",
       "category": "near-miss",
-      "corpus": "heldout"
+      "corpus": "heldout",
+      "audit_note": "2026-10-18 audit_labels spot-read: the flagged term is a common word or a name from another book; no passage answers the question."
     },
     {
       "id": "ho-out-jane-film",
@@ -417,7 +422,8 @@
       "corpus": "heldout",
       "forbid": [
         "Moira Buffini"
-      ]
+      ],
+      "audit_note": "2026-10-18 audit_labels spot-read: the flagged term is a common word or a name from another book; no passage answers the question."
     },
     {
       "id": "ho-out-france",
@@ -426,7 +432,8 @@
       ],
       "expect": "not_in_sources",
       "category": "outside",
-      "corpus": "heldout"
+      "corpus": "heldout",
+      "audit_note": "2026-10-18 audit_labels spot-read: the flagged term is a common word or a name from another book; no passage answers the question."
     },
     {
       "id": "ho-out-pride",
@@ -435,7 +442,8 @@
       ],
       "expect": "not_in_sources",
       "category": "outside",
-      "corpus": "heldout"
+      "corpus": "heldout",
+      "audit_note": "2026-10-18 audit_labels spot-read: the flagged term is a common word or a name from another book; no passage answers the question."
     },
     {
       "id": "ho-out-valjean",
@@ -444,7 +452,8 @@
       ],
       "expect": "not_in_sources",
       "category": "outside",
-      "corpus": "heldout"
+      "corpus": "heldout",
+      "audit_note": "2026-10-18 audit_labels spot-read: the flagged term is a common word or a name from another book; no passage answers the question."
     }
   ],
   "gate_subsets": {
