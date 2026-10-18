@@ -145,23 +145,35 @@ async def measure(export: Path, reserves: list[int]) -> list[dict[str, Any]]:
 
 
 def summarise(rows: list[dict[str, Any]], names: list[str]) -> str:
+    # Items with no recorded retrieval count in the denominator as not reached,
+    # listed apart so a skipped retrieval cannot inflate the rate.
     lines = []
     for gist in (False, True):
-        scored = [r for r in rows if r["gist"] is gist and "recorded" in r]
-        kind = "gist (document reached)" if gist else "answer passage"
+        kind = "gist (document reached)" if gist else "answer-passage hit rate"
+        group = [r for r in rows if r["gist"] is gist]
+        no_retrieval = [r["id"] for r in group if "note" in r]
+        scored = [r for r in group if "recorded" in r]
         for stage in ("pool", "after_rerank"):
             reached = sum(1 for r in scored if r["recorded"][stage])
             lost = [r["id"] for r in scored if not r["recorded"][stage]]
-            lines.append(f"recorded run, {stage}: {kind} {reached}/{len(scored)}, missed {lost}")
+            total = len(scored) + len(no_retrieval)
+            lines.append(
+                f"recorded run, {stage}: {kind} {reached}/{total}, missed {lost}, "
+                f"no_retrieval={no_retrieval}"
+            )
     for name in names:
         for gist in (False, True):
-            scored = [r for r in rows if r["gist"] is gist and name in r]
+            group = [r for r in rows if r["gist"] is gist]
+            no_retrieval = [r["id"] for r in group if "note" in r]
+            scored = [r for r in group if name in r]
             hits = [r["id"] for r in scored if r[name]["hit"]]
             missed = [r["id"] for r in scored if not r[name]["hit"]]
             pool = sum(r[name]["pool"] for r in scored) / len(scored) if scored else 0
-            kind = "gist (document reached)" if gist else "answer passage reached"
+            kind = "gist (document reached)" if gist else "answer-passage hit rate"
+            total = len(scored) + len(no_retrieval)
             lines.append(
-                f"{name}: {kind} {len(hits)}/{len(scored)}, mean pool {pool:.1f}, missed {missed}"
+                f"{name}: {kind} {len(hits)}/{total}, mean pool {pool:.1f}, missed {missed}, "
+                f"no_retrieval={no_retrieval}"
             )
     return "\n".join(lines)
 
