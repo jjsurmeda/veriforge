@@ -15,7 +15,7 @@ Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 | --- | --- | --- |
 | R3 (generator) | KI-78 | a false-premise question ("first name" of a man with none) is answered, not declined; IsUse passes it |
 | R3 (generator) | KI-79 | the generator flakes on multi-passage facts (plot-speckled-band: right answer 1 of 4 draws on gpt-4o-mini) |
-| R2b (chunking) | KI-80 | outside-whitman: the quoted sentence spans a chunk boundary, so no single chunk grades as answering |
+| R3 (label/rubric) | KI-80 | outside-whitman: the quoted sentence is in one chunk (preface) yet the books run abstains; the question may ask for content the preface does not state |
 | R3 (floor) | KI-81 | the evidence floor flips on borderline items: the grade varies 0.444-0.468 around 0.455 between runs |
 | check-work (CI) | KI-82 | Playwright specs are not run in CI; paid evals are manual |
 | R3 (reviewer) | KI-83 | citation precision is claim-level support; per-citation verification is not done |
@@ -584,13 +584,15 @@ Logged 2026-10-12 (phase 1, `make check-work` on `beta/phase1-check-work`).
 - **Phase:** R3 (generator ladder): escalate to a stronger generator when IsUse fails.
 - **Done when:** books acceptance holds its false-abstention bar on the shipping model.
 
-## KI-80: outside-whitman, the quoted sentence spans a chunk boundary
+## KI-80: outside-whitman abstains although the quote is in one chunk
 
-- **What:** the sentence "loving by allowance ... loving with personal love"
-  straddles two chunks, so no single passage grades as answering. The budgeted miss
-  in the books bar.
-- **Phase:** R2b (or the chunker): do not cut mid-sentence mid-quote, or grade the
-  expanded parent.
+- **What:** the sentence "loving by allowance ... loving with personal love" sits in
+  one chunk (P&P preface, ord 0), yet the run abstains (rubric 0.22-0.37, IsUse
+  0.11). The earlier "spans a chunk boundary" diagnosis was wrong (corrected
+  2026-10-19 after the R2b measurement below). Likely the preface only says a
+  distinction exists while the question asks what it is: check the label first.
+- **Phase:** R3: owner reviews whether the corpus answers the question; the set is
+  frozen, so a bad label is reported, not edited. No chunker change.
 - **2026-10-19 (R2b-deep item 3, measurement only):** a dry run of the current
   chunker over the 16 cached Gutenberg books (detached helpers, no DB) counts
   11,998 chunk boundaries; 891 fall at a mid-sentence position on the end side
