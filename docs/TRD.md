@@ -448,8 +448,14 @@ decision from ingress.
    - Faithfulness = (supported + 0.5 × partial) / factual claims.
    - Minimum claim support = the lowest P(supported) across factual
      claims.
-   - Citation precision = share of citations whose chunk supports the
-     claim they are attached to.
+   - Claim-level citation support (field `citation_precision`) = share of
+     (claim, citation) pairs whose claim is `supported`. The claim is verified
+     against its cited passages together and that one verdict is credited to
+     every citation it carries, so a claim supported by [1] also credits an
+     irrelevant [2]. It is an upper bound on citation precision, not the
+     measure; per-citation verification (one check per claim–citation pair,
+     more provider calls) is scheduled after the R2 replay shows its cost.
+     Reported as "claim-level citation support" wherever it is shown.
 5. **Revision.** If minimum claim support < 0.5 or any claim is
    contradicted, one revision pass: the generator rewrites only the
    flagged claims using the same context, or removes them. Verification
