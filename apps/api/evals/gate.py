@@ -83,6 +83,12 @@ OVERHEAD_RISE_FACTOR = 1.35
 # neither run attributed a call at all, so it is a floor that stops the check
 # being silently disabled rather than a measured tolerance.
 LATENCY_RISE_FACTOR = 1.20
+# Owner decision, 2026-10-18: until P3 (latency) starts, a latency rise is a
+# warning, not a failure. In R2a-4 the overhead check alone made fast20 and the
+# counterfactual subset run twice each with identical correctness, which made
+# every proof cost up to 3x for a number this phase does not work on. P3 sets
+# this back to True together with its OVERHEAD_RISE_FACTOR reset.
+LATENCY_GATED = False
 # Owner decision A7 (2026-10-02, KI-6/A7): abstention accuracy and answer
 # rate are compared as item counts, not percentage points. Evidence: fast20
 # holds 8 should-abstain items and 12 answerable items, so ONE item flipping
@@ -392,7 +398,7 @@ def check(
         gate_key, factor = "p50_latency_ms", LATENCY_RISE_FACTOR
     base_p50, curr_p50 = baseline.get(gate_key), current.get(gate_key)
     if base_p50 and curr_p50 and curr_p50 > base_p50 * factor:
-        failures.append(
+        (failures if LATENCY_GATED else warnings).append(
             f"{gate_key} {base_p50:.0f} → {curr_p50:.0f} ms "
             f"(rise > {factor:.2f}x = {factor - 1:.0%})"
         )
