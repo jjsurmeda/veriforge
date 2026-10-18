@@ -20,7 +20,6 @@ Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 | check-work (CI) | KI-82 | Playwright specs are not run in CI; paid evals are manual |
 | R3 (reviewer) | KI-83 | citation precision is claim-level support; per-citation verification is not done |
 | phase 3 (latency) | KI-84 | `our_overhead_ms` subtracts overlapping provider calls (ingress and rewrite run together); it can go negative |
-| check-work (acceptance) | KI-70 | the relevance gate abstains on broad/summary answerables; no threshold separates |
 | check-work (1d) | KI-15 | order-dependent hang in test_chats_runs.py; a flaky suite fails "repeatable" |
 | check-stable | KI-76 | credits stay reserved if the process dies between completion and settlement |
 | check-stable | KI-32 | record of faithfulness variance; gate tolerances already set |
@@ -36,9 +35,6 @@ Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 | post-beta | KI-8 | six Playwright specs make live LLM runs instead of replaying fixtures |
 | post-beta | KI-39 | web-chunk sweep undercounts deletions (return value only) |
 | post-beta | KI-69 | reasoning-mandatory retry in providers/llm.py only serves free endpoints; dead on supported config |
-| check-work (acceptance) | KI-71 | ingress routes content questions to `chitchat`: ungrounded answer, no citations |
-| check-work (acceptance) | KI-73 | the rewriter's prose becomes the retrieval query, so a message with no question can answer |
-| check-work (acceptance) | KI-75 | an answer that cites the right book and states the wrong content is a failure no count caught |
 
 ---
 
@@ -53,39 +49,6 @@ an active transaction/session, racing `TRUNCATE`. Fix in `graph/runner.py`:
 `_shadow_tasks`) as well as the settle/judge tails. Commit f821d09.
 Guards added: per-test `faulthandler_timeout = 60` in pyproject,
 `SET lock_timeout = '5s'` before TRUNCATE.
-
-## CLOSED KI-75: an answer that cites the right book and states the wrong content is a failure no count caught
-
-Logged 2026-10-14 (phase R2a item 1, the bar line for the R2 row of the
-plan), closed in the same commit.
-
-- **What:** the gate measured decline accuracy, false abstention and
-  citations. It never measured whether the answer was **right**.
-  `scripts/acceptance.py` computed `mention_hit` per item and `passes()`
-  required it, so a content miss was visible only as a name in `failed_ids` —
-  which nothing counted and no clause read. A run could hold every number,
-  cite the right document on every answerable item, and be wrong about all of
-  them. `rag-reference.md`'s Evaluation row said the same thing in one line:
-  "not only safety".
-- **Fix:** `content_misses` / `content_miss_ids` in `summarise()`, counted
-  for an answer-class item that **answered, cited, and did not state the
-  required content**. `MAX_CONTENT_MISSES = 1` in `evals/acceptance_gate.py`,
-  which is the plan's bar line ("≤ 1 content miss of 32 answerables") and the
-  same arithmetic as the false-abstention rate at this mix.
-- **Not a rate, deliberately:** `content_miss` is disjoint from
-  `false_abstention` (which did not answer), `uncited_answers` (cited
-  nothing) and `confident_wrong` (a should-decline item that answered). One
-  item is counted once, in the class that describes what the run did.
-- **`mention_hit` moved onto the row.** The item's `mention` / `mention_all` /
-  `alt_mention` lists stay in `books.json`; the runner scores them once at
-  play time against the answer and records the boolean, so the number the gate
-  reads cannot disagree with `passes()`.
-- **Tests:** `tests/scripts/test_acceptance_summary.py` — a cited answer that
-  misses its content is a content miss and no other class; a declined answer
-  item is a false abstention and *not* also a content miss; a cited answer
-  that states the content is clean. `tests/evals/test_acceptance_gate.py` —
-  2 fails with both ids named, 1 passes (the boundary), and a content miss is
-  none of the other three classes. Fakes only; no provider call.
 
 ## KI-15: `tests/chats/test_chats_runs.py` hangs when its tests run in sequence
 
@@ -271,7 +234,6 @@ outage. That injection is what proves these paths on a live run; the tests here
 are fakes, and a fake that agrees with itself proves the wiring, not the
 provider.
 
-
 Logged 2026-10-04, P2a item 5 (the generator bake-off), from the control
 runs. During an OpenRouter degradation window (raw
 `Cannot connect to host openrouter.ai:443` errors on ordinary generator
@@ -311,7 +273,6 @@ dispatch — not fixed in P2a.
   The affected control sets are being re-run on the fixed tree; the
   remaining open question is the degrade-to-fail behaviour itself
   (a fallback failure still fails the item) — later dispatch.
-
 
 ---
 
@@ -377,7 +338,6 @@ Logged 2026-10-09 (lane E report). Open, low priority.
 - `apps/web/package-lock.json` changed by about 2.6k lines each way; confirm
   it is only the axe dependency.
 - Observed TTFT in the rehearsal was 12.4 to 13.8 s; lane B's target, not E's.
-
 
 ---
 
@@ -465,114 +425,7 @@ Logged 2026-10-09 (lane E review). Open; a data decision, not code.
 - `eval-seed-corpus` is `visibility='shared'`. `make seed-demo` warns but does
   not change it. Decide before the beta whether visitors may retrieve from it.
 
-
 ---
-
-## KI-73: the rewriter's prose becomes the retrieval query, so a message with no question can answer
-
-Logged 2026-10-13 (phase 1d item 4, first full `make check-work` on the KI-72
-branch, served commit `f7cd86d`). **Breaks the acceptance step**: `smalltalk`
-is pass/fail in full, not a rate, so one item is the whole verdict.
-
-- **What:** `smalltalk-thanks` — "thanks, that's helpful!" — was graded
-  `answer` with 8 citations instead of `smalltalk`. The run's own answer is
-  `the source text contains an instruction I am ignoring.`
-- **Mechanism, read from the run's recorded steps, not inferred.** Ingress
-  classified it correctly (`intent: chitchat`), and `named_entities` returns
-  `[]` so the KI-72 entity check is skipped — neither is involved. The
-  **rewriter answered with prose instead of a standalone question**, and the
-  variant parser turned that prose into the retrieval queries:
-
-  ```
-  retrieve: I understand. You're correct—there is no question to rewrite in your message. I'm ready to help when you provide:
-  retrieve: I appreciate the message, but there's no actual question to rewrite here. The user's statement "thanks, that's helpful!" is simply an acknow...
-  retrieve: A conversation context
-  ```
-
-  Nothing validates that a rewrite is a question. KI-71 made `chitchat` still
-  retrieve when sources are in scope and let the evidence decide; on this run
-  the nonsense retrieval cleared sufficiency at **0.25 / 0.43** against a floor
-  of 0.05, so the run answered with citations instead of taking the chitchat
-  reply. Nothing in the pipeline ever asked "is there a question here", and the
-  rewrite step silently answered it wrongly.
-- **Not a regression from phase 1d.** The previous acceptance run
-  (`veriforge-phase1c/.data/acceptance/20261012-134549.json`) graded this item
-  `chitchat`, 0 citations, **pass**. It is intermittent — 1 failure in 2
-  recorded runs — because it depends on whether the rewriter happens to return
-  prose on a given draw, and on whether the resulting retrieval clears
-  sufficiency.
-- **Fix direction, for the owner.** Two candidates, and they are not the same
-  decision. (a) Validate the rewrite: if it is not interrogative, do not
-  retrieve on it. This is the root fix and it also covers any future
-  non-question phrasing. (b) Extend `GREETING_ALLOWLIST` to cover an
-  acknowledgement with trailing gratitude. This is *not* free: CLAUDE.md fixes
-  that allowlist as "one approved exception" with "a fixed allowlist of raw
-  messages", so widening it is an owner change, and it fixes this one phrasing
-  while leaving the general defect in place.
-- **Done when:** a message containing no question never produces an
-  `answer`-class reply with citations, and `smalltalk-thanks` passes.
-
-- **FIXED (2026-10-14, phase R2a item 2).** Both layers, root first. The
-  greeting allowlist is untouched (CLAUDE.md's one exception).
-
-  **Layer 1 — the rewriter's output contract.** `graph/rewrite.py` gains
-  `is_query_shape`: a reply that asks a question is a query however long it is
-  ("What is Rocinante? And who rides him?" is a two-sentence multi-part query,
-  and the follow-up path depends on long rewrites being kept); a reply that
-  never asks is a query only while it stays inside one sentence. Two sentence
-  terminators with no `?` means the model opened a *reply*, so it is dropped
-  and the run uses the user's own message. This is a test of the reply's
-  shape, not a list of phrasings.
-
-  **The variants parser needed it too, and that is the part this entry did
-  not guess.** KI-73's recorded run put **two** prose replies into the
-  retrieval set, both from `_generate_query_variants`
-  (`graph/stages/retrieve_stage.py`), not one from `rewrite_query`. Checking
-  only the rewrite would have left the recorded failure half-open. Every
-  parsed variant line now goes through the same check.
-
-  **Layer 2 — a `chitchat` routing that names nothing does not retrieve.**
-  `graph/stages/ingress_stage.py` gains `names_a_subject`. The brief specifies
-  `named_entities(message)` non-empty, and on its own that is **wrong**, with
-  the recorded item as the counter-example: `broad-sherlock` is *"tell me
-  something about the adventures of sherlock holmes"*, lowercased throughout,
-  so a capitalisation heuristic returns `[]`, the run skips retrieval, and
-  KI-71's cited answer becomes the uncited reply this product does not ship.
-  `names_a_subject` is therefore `named_entities(message)` **or** a trailing
-  non-stop word — a trailing lowercase noun phrase, which is what a lowercase
-  proper name looks like.
-
-  The bar is one word and not two, because the two failure directions are not
-  symmetric: saying "no" to a content question is an uncited answer and an
-  acceptance-gate failure (KI-75 now counts it), while saying "yes" to a social
-  turn costs one wasted fan-out and sufficiency still sends the run to the
-  same small-talk reply. The stop list is a list of function, question and
-  social **words** — it delimits the trailing noun phrase, and it is not the
-  greeting allowlist. It does contain every `GREETING_ALLOWLIST` phrase, and a
-  test asserts the two agree: they are reached by different code paths and a
-  disagreement would be a trap for the next reader.
-
-  **The honest edge, stated because it is a judgement and not a proof.** One
-  declarative sentence with no `?` passes: "I appreciate the message" is prose
-  and "Rocinante Don Quixote horse" is a keyword query, and no shape test
-  separates them without becoming the phrase list the contract exists to
-  avoid. Reading it as a query is the safe direction (a nonsense query
-  retrieves nothing; prose read as a query is this bug). The recorded failure
-  had three sentences and is caught.
-
-  **Tests** (`tests/graph/test_chitchat.py`, fakes throughout, no provider
-  call): the recorded strings read the right way round by
-  `names_a_subject`; the stop list and `GREETING_ALLOWLIST` agree; the
-  `is_query_shape` contract on both recorded prose replies and on both query
-  shapes; the one-sentence edge pinned as deliberate; `"thanks, that's
-  helpful!"` **with sources in scope** retrieves nothing, cites nothing and
-  streams the plain reply with the raw message; `broad-sherlock` and
-  `ml-es-rocinante` still retrieve and answer from evidence; a prose rewrite
-  is discarded for the original message, both as a unit and through a whole
-  run whose recorded queries carry no prose. 47 in the file, 1341 in the
-  suite.
-
-# post-beta
 
 ## KI-8: Six Playwright specs drive live LLM runs
 
@@ -598,231 +451,6 @@ is pass/fail in full, not a rate, so one item is the whole verdict.
   Do not hide them with `grepInvert`: add the test-only replay route, record
   one raw SSE fixture per UI scenario, then assert an unchanged
   `usage_ledger` around the default suite.
-
-## KI-70: The KI-26 relevance gate abstains on broad/summary answerable items, and no threshold separates them
-
-Logged 2026-10-12 (phase 1b, first full run of the books acceptance set as
-`make check-work` step 9, on `28c808c`). **Breaks the step**: 3 of 33 answerable
-items declined; PRD §5 allows <= 1.
-
-- **What:** `broad-alice` ("can you give me the gist of alice's adventures in
-  wonderland?"), `broad-bovary` ("Peux-tu resumer Madame Bovary ?") and
-  `amb-bovary-homais` all declined. **Not a sufficiency failure.** The
-  sufficiency judge scored them 0.61/0.61 and 0.48/0.50 against a floor of
-  0.05, and the KI-54 entity check scored `broad-alice` 0.95-0.97 and
-  `broad-bovary` 0.96-0.97 against a floor of 0.50. What abstained them is the
-  **relevance gate** (KI-26: abstain when the max post-sanitize rerank score is
-  under `rerank_abstain` 0.60) at 0.35/0.36, 0.23/0.26 and 0.26/0.40.
-- **Why the gate misfires here:** a broad or summary question matches no single
-  passage lexically, so JevRerank scores the *correct* passages low --
-  `broad-alice`'s best passage scored 0.36 while the entity check scored 0.97
-  on those same passages. The gate measures question-passage lexical overlap and
-  is asked to stand in for "is this evidence relevant", which for a gist
-  question it cannot be. PRD §5 requires false abstention <= 5% of answerable
-  items "including broad/summary questions", so this class is one the bar names
-  directly.
-- **Why no threshold move:** this run's `relevance` distributions **overlap**.
-  Answerable items sit at 0.23 / 0.26 / 0.36 / 0.40; should-abstain items reach
-  0.59, with 0.48, 0.51 and 0.33 nearby. Any cut-off that admits 0.26 also
-  admits abstentions and manufactures *confident wrong answers* -- strictly
-  worse than the false abstentions it removes. This is KI-28's finding restated
-  for the relevance signal: no cut-off separates the groups.
-- **What the data does support** (one run, 20 abstains -- a hypothesis, not a
-  decision): the **sufficiency** score has no overlap at the top. No
-  should-abstain item exceeded `sufficient` 0.50, and the two broad items sit at
-  0.61. A compound rule -- the relevance gate does not veto a sufficiency score
-  at or above ~0.60 -- would fix 2 of the 3 and leave 1, exactly at PRD §5's bar.
-  `amb-bovary-homais` is not in that set (0.13/0.15): its evidence is about
-  *other* characters, so any such rule leaves it declining. **Not done:** a
-  threshold change must keep fast20, counterfactual and entity-mismatch passing
-  with before/after on all three (agents.md), and this lane's credit floor was
-  reached before that evidence could be gathered.
-- **Rerun of the three ids (2026-10-12, `7c7a0c1`), and it changes the shape of
-  the problem:** `broad-bovary` **answered** this time (sufficient 0.42, one
-  attempt, no relevance veto) and `broad-alice` declined again (0.51/0.56). So
-  of the three, **one is stable (`amb-bovary-homais`, sufficient 0.13-0.16 both
-  runs — a real evidence failure, not a gate artefact) and two are intermittent,
-  tracking the rerank score's run-to-run movement** (broad-bovary's relevance was
-  0.23/0.26 in run 1, above the gate in run 2). An intermittent false
-  abstention means the step's verdict moves between runs on the same commit, so
-  it cannot be called a stable pass without the fix; treat any green acceptance
-  step on this branch as one sample, not as the number.
-- **Done when:** the two broad items answer, `amb-bovary-homais` either answers
-  or is relabelled against the corpus, and the whole step passes **twice**.
-- **The signals table, and the rule chosen from it (2026-10-12, phase 1c item
-  2).** Every recorded item of both runs, with its expected class, intent,
-  sufficiency and max post-sanitize rerank score per attempt, is replayed from
-  the recorded acceptance exports.
-
-  **No threshold moves**, which the table confirms on this data: run-1
-  `not_in_sources` items reach relevance 0.71, 0.63 and 0.50 while the answer
-  items the gate loses sit at 0.35–0.57. The distributions overlap at every
-  cut-off. `rerank_abstain` stays 0.60.
-
-  **The rule: a `summarize` question is not subject to the relevance veto;
-  sufficiency and the entity check decide it alone.** The gate measures
-  question-to-passage *lexical overlap*, and "give me the gist of X" matches no
-  single passage — which is why `broad-alice` scored 0.35 on the right passages
-  while KI-54's entity check scored 0.97 on those same passages. For a gist
-  question the overlap signal is not evidence of irrelevance. Keyed on what
-  the question **is**, so no new number is introduced.
-
-  **The proof the brief asks for** (§3 of the doc, replayed in
-  `apps/api/tests/graph/test_ki70_relevance_veto.py`): on every recorded item
-  of both runs — **0 of 20** should-decline items become answers; the rule
-  removes the false abstentions on `broad-alice` and `broad-bovary` and changes
-  nothing else. The replay carries the entity check, because
-  `outside-holmes-boston` clears both other floors (0.39 / 0.63) and is held
-  only by the entity check — a replay without it would report a confident
-  wrong answer the run never gave.
-
-  **`amb-bovary-homais` is an evidence failure and its label is wrong.**
-  `scripts/audit_labels.py` reports the item clean, but that checks the query
-  *terms* hit passages, not that the passages contain the answer. Reading the
-  corpus says the item's premise is false for this edition: **`Rouard` is 0
-  hits corpus-wide**, `médecin de la campagne` 0, and no sentence anywhere
-  pairs the pharmacist with Emma's eyes (`pharmacien[^.]{0,300}yeux` matches 0
-  times; `baume`, `collyre`, `drops` are all 0). Relabelled `answer` →
-  `not_in_sources`, labels only, with the measurement in the item. The run's
-  behaviour was right all along. Class counts move 33/20 → 32/21 and
-  `EXPECTED_COUNTS` moves with them.
-
-  **Still open until the gate agrees:** the change is proven against recorded
-  values and fakes; what proves it on the real corpus is `make check-work`
-  running green twice (phase 1c item 3).
-
-  **Still open, and not fixed by any of this:** the relevance gate still
-  measures the wrong thing for a broad question the intent classifier did not
-  call `summarize`. The table shows the shape — no signal in the recorded set
-  separates `broad-*` at 0.35–0.57 from `outside-*` at 0.63–0.71.
-
-  **Measured on the live corpus (2026-10-12, phase 1c item 3, commit
-  `72263cb`):** both broad items now answer. `broad-alice` at sufficiency
-  0.59 / relevance 0.32, `broad-bovary` at 0.42 / 0.56 — both would have been
-  vetoed at relevance 0.60 and neither is. The rule does what the replay said
-  it would.
-
-- **The relevance veto itself is GONE (2026-10-14, phase R2a item 4, ADR-006),
-  and removing it does not hold. This is now the open question in this entry,
-  and it is the owner's.**
-  `_apply_relevance_gate`, `Attempt.relevance_ok` / `relevance_max` /
-  `relevance_measured`, `relevance_decision_event`, the `relevance` Decision and
-  its hand-published trace row in `run_auto._publish_trace`, the
-  `rerank_abstain` threshold, `RETRY_SKIP_RELEVANCE_MAX` and the
-  `retrieval.retry_skip_relevance_max` setting are all deleted. `sufficient` is
-  the one evidence check; the entity guard stays as ADR-006 keeps it; the
-  corrective retrieval is one pass.
-
-  **The replay that says why, in `apps/api/tests/graph/test_one_evidence_check.py`**
-  (replaces `test_summarize_relevance_veto.py`, same recorded table):
-  **ADR-006's stated consequence does not hold.** With the veto gone, the run
-  is decided by `sufficient >= sufficient_abstain` (0.05) and the entity guard,
-  and replaying all 57 recorded rows of the two phase-1b runs turns **12
-  `not_in_sources` rows into confident wrong answers**: `outside-study-in-
-  scarlet`, `outside-emma`, `outside-looking-glass`, `ml-fr-outside`,
-  `ml-ja-outside`, `outside-holmes-mycroft`, `ml-de-bovary-animal`,
-  `ml-fr-noli-baiser`, `ml-zh-xiyou-nezha`, `ml-ja-rashomon-rokuro`, and
-  `amb-bovary-homais` twice. Not a tolerance question: the worst is 0.29,
-  nearly six times the floor.
-
-  **No threshold on this signal satisfies both PRD §5 clauses.** 0 confident
-  wrong needs ~0.30, and 0.30 already costs two recorded answers
-  (`compare-inventors` 0.13, `outside-whitman` 0.14). There is no value that
-  reaches (0 confident wrong, ≤ 1 false abstention). This is KI-28's finding
-  for the sufficiency signal and the reason this entry says **no threshold
-  moves** — a threshold move needs before/after on fast20, counterfactual and
-  entity-mismatch, which is provider credit this lane did not have.
-
-  **Why 0.05 was never decision-grade.** It was calibrated as one of three
-  signals in series: the comment above it records answer items at 0.06-0.49 and
-  not-in-sources at 0.01-0.04, which separates cleanly **as a third veto with
-  the other two beside it**. Alone it has no margin. The relevance veto was
-  doing real work on ten of the twelve — every one of them sat under 0.60 on
-  relevance, and most sat near the 0.30-0.40 band where `outside-*` and `broad-*`
-  overlap (the table in the note above is that overlap).
-
-  **What the recorded data cannot say.** For each of the twelve the veto was
-  the deciding signal, so the entity check never ran as the decider on any of
-  them and the recorded evidence says nothing about what it would have said.
-  Several are entity questions about other characters, which is exactly what
-  the guard exists for — but "the guard might hold them" is a hypothesis, and
-  the replay file says so rather than assuming it. Resolving it needs one live
-  run of the 21 `not_in_sources` ids and the 12 entity-mismatch items.
-
-  **A second-order change that was not in the brief.** `_evidence_clearly_absent`
-  previously required a corroborating relevance reading before it would skip
-  the corrective retrieval, and required a run with no relevance reading to
-  never skip. With that reading gone the sufficiency bound became the last word,
-  so `RETRY_SKIP_SUFFICIENT_MAX` moved **0.02 → 0.005**: the KI-70 replay
-  above records that among the 7 of 238 runs the correction rescued, the lowest
-  sufficiency was **0.01**, so a bound at or above 0.01 would skip exactly the
-  runs it exists to save. The skip is now nearly inert, which is the honest
-  price of one signal. Removing it entirely is the ADR-006-pure option and
-  costs one extra 13-15 s pass per decline; that is a phase-3 latency call.
-
-## KI-71: ingress routes content questions to `chitchat`, which skipped retrieval and answered ungrounded
-
-Logged 2026-10-12 (phase 1b, same run). Owner decision 2026-10-12: **not
-post-beta** — this is the one failure shape the product says it does not have,
-so it breaks `make check-work` step 9.
-
-- **What:** `broad-sherlock` ("tell me something about the sherlock
-  holmes") and `ml-es-rocinante` ("\u00bfComo se llama el caballo de Don
-  Quijote?") were classified `intent=chitchat`, took the `Small talk: skipped
-  retrieval` path, and answered from model memory with **no citations** and no
-  `sufficient` or `relevance` decision at all. Rocinante is the right answer;
-  it is ungrounded, which is the thing the product claims not to do.
-- **Intermittent, which is the worse property:** on the same commit,
-  `broad-sherlock` took the chitchat path in both runs, but `ml-es-rocinante`
-  routed `lookup` on the rerun (sufficient 0.97, cited, passed). So this is the
-  intent classifier's coin-flip on questions that plainly name a document, not a
-  deterministic rule.
-- **Worth the owner's attention despite the tag:** this is the one failure shape
-  where the product is confidently right by luck. Any question phrased as a
-  greeting plus a topic can land here, and nothing in `make check-work` would
-  notice a rise in it.
-- **Done when:** the intent gate's `chitchat` option stops catching questions
-  that name a document or a character, asserted in a test rather than measured
-  in a run.
-- **FIXED (2026-10-12, phase 1c item 1).** Two changes, and the bar line came
-  first so the step could have caught it.
-
-  **The bar line.** `scripts/acceptance.summarise` now writes
-  `uncited_answers` / `uncited_answer_ids`: an `answer`-class item that did not
-  decline and cited nothing. `evals/acceptance_gate.py` fails on any of them
-  (`MAX_UNCITED_ANSWERS = 0`). It is a separate count from `false_abstentions`
-  on purpose — the run did not decline, so calling it that would describe the
-  wrong behaviour as well as hide this one — and from `confident_wrong`, which
-  is the should-decline class. `broad-sherlock`'s run held every other clause
-  (20/20 clean declines, 0 confident wrong, 2 false abstentions of 33) and
-  still failed here.
-
-  **The fix, structural.** `chitchat` no longer decides whether to retrieve.
-  In `graph/auto.py`, when ingress returns `chitchat` **and the user has
-  sources in scope**, the run retrieves anyway and the evidence decides:
-  enough of it and it is the ordinary grounded answer with citations; not
-  enough and it returns the chitchat reply, which `prompts/chitchat.md` (v3)
-  now explicitly bars from asserting anything about the sources. Whichever
-  way the classifier flips, a content question cannot be answered from memory.
-  With no sources in scope there is nothing to retrieve and the fast reply is
-  unchanged. The greeting fast path (CLAUDE.md's one carve-out) is untouched
-  and still skips everything, which is what keeps `"thanks!"` free.
-
-  Tests: `tests/graph/test_chitchat.py` — a chitchat-routed message naming a
-  book retrieves and answers with contexts (recorded values: sufficiency 0.61,
-  relevance 0.97); a chitchat-routed run whose evidence does not clear the
-  floors falls back to the sourceless reply with no contexts and no abstain
-  event; `"thanks!"` retrieves nothing and makes zero ingress calls; a
-  greeting-adjacent greeting with no sources still skips. Plus the gate and
-  summary cases in `tests/evals/test_acceptance_gate.py` and
-  `tests/scripts/test_acceptance_summary.py`. Fakes throughout; no live call.
-
-  The prompt bump is v2 → v3 and is gated by `make check-work` step 4 per
-  CLAUDE.md.
-
-  **Still open until the gate agrees.** The change is proven by fakes; what
-  proves it on the real corpus is `make check-work` running green twice
-  (phase 1c item 3).
 
 ## KI-32: Faithfulness moves between runs because the generator rewrites the answer, not because the judge disagrees
 
