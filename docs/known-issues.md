@@ -7,7 +7,7 @@ The Phase column is authoritative; section placement below is from the first tri
 Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 - When you fix one, move it to the archive in the same commit, with the fixing commit hash.
 - A new finding that breaks no check is added under **post-beta** and opens no lane.
-- New IDs continue from KI-84.
+- New IDs continue from KI-85.
 
 ## Index
 
@@ -32,6 +32,7 @@ Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 | before deploy | KI-63 | demo credit-outstanding cap still open; only matters if DEMO_ENABLED=true |
 | before deploy | KI-64 | owner data decision: conflict pair in Shared, eval corpus visibility |
 | post-beta | KI-8 | six Playwright specs make live LLM runs instead of replaying fixtures |
+| post-beta | KI-85 | decision-engine thresholds (`entity_match`, guards, IsUse) are keyed `"jev"` / `"fallback"` in code; decision-model pluggability (Laya, Microsoft-Decision-1) must make them per provider |
 | post-beta | KI-39 | web-chunk sweep undercounts deletions (return value only) |
 | post-beta | KI-69 | reasoning-mandatory retry in providers/llm.py only serves free endpoints; dead on supported config |
 
@@ -632,3 +633,15 @@ Logged 2026-10-12 (phase 1, `make check-work` on `beta/phase1-check-work`).
   and the result can be negative. The latency check is warn-only until phase 3.
   Third-party review #11.
 - **Phase:** phase 3 (latency).
+
+## KI-85: decision-engine thresholds are keyed by "jev" and "fallback" only
+
+- **What:** R2c made the reranker gates (`evidence_floor`, `stream_line`) per
+  reranker. The decision engines still read `threshold(..., "jev")` literals:
+  `entity_match` (`graph/stages/evidence_stage.py`, `deep_evidence_stage.py`),
+  `is_use`, the guard thresholds and the library/prose/controller floors in
+  `decisions/thresholds.py`. A second decision model (Laya,
+  Microsoft-Decision-1) would be graded against Jev's scale with no error.
+- **Phase:** post-deploy decision pluggability (ADR-005). Fix: key every
+  decision threshold by provider id and refuse an uncalibrated one, as
+  `reranker_threshold` does.
