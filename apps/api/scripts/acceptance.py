@@ -126,6 +126,8 @@ def failed_result(reason: str) -> dict[str, Any]:
         "message_status": None,
         "steps": [],
         "ttft_ms": None,
+        "total_ms": None,
+        "deep_evidence": None,
         "evidence": [],
         "intent": None,
         "retrievals": [],
@@ -335,6 +337,12 @@ def summarise(
     summary: dict[str, Any] = {"counts": counts}
     if served_commit is not None:
         summary["served_commit"] = served_commit
+    # Per-item wall clock from the POST to `run.completed` (R2b item 2):
+    # Deep's p50 is the latency bar the gate reads, not an afterthought — a
+    # multi-hop run that meets every accuracy clause but takes three minutes
+    # is not shippable as Deep.
+    totals = [int(r["total_ms"]) for r in rows if r.get("total_ms") is not None]
+    summary["p50_total_ms"] = int(statistics.median(totals)) if totals else -1
     return {**summary, "detail": detail, "items": rows}
 
 
@@ -397,6 +405,7 @@ async def run(
     set_file: Path | None = None,
     summary_out: Path | None = None,
     concurrency: int = 4,
+    mode: str = "auto",
 ) -> None:
     path = set_file or SET_FILE
     dataset = json.loads(path.read_text())
@@ -465,7 +474,9 @@ async def run(
                 for turn in item["turns"]:
                     fresh = await fresh_token()
                     try:
-                        result = await smoke_chat.run_turn(client, fresh, chat_id, turn)
+                        result = await smoke_chat.run_turn(
+                            client, fresh, chat_id, turn, mode=mode
+                        )
                     except SystemExit as e:
                         result = {
                             "status": "failed",
@@ -531,6 +542,8 @@ async def run(
                     "citations": result.get("citations"),
                     "steps": result.get("steps"),
                     "retrievals": result.get("retrievals"),
+                    "total_ms": result.get("total_ms"),
+                    "deep_evidence": result.get("deep_evidence"),
                     "turns": item["turns"],
                 }
             )
@@ -652,6 +665,13 @@ if __name__ == "__main__":
         "from this path rather than scraping stdout.",
     )
     parser.add_argument(
+        "--mode",
+        choices=("auto", "fast", "deep"),
+        default="auto",
+        help="the run mode to replay the set in (default auto; deep replays "
+        "the mode's planner+hop path, R2b item 2)",
+    )
+    parser.add_argument(
         "--concurrency",
         type=int,
         default=4,
@@ -666,5 +686,6 @@ if __name__ == "__main__":
             set_file=args.set,
             summary_out=args.summary_out,
             concurrency=args.concurrency,
+            mode=args.mode,
         )
     )

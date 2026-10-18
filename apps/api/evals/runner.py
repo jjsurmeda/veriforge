@@ -291,6 +291,28 @@ async def _run_item(
             abstained = deep_run.abstain_event is not None
             contexts = deep_run.contexts
             decisions = deep_run.decision_events
+            # ADR-006 / R2b item 1: the same post-generation usefulness check
+            # the product's Deep path runs, so a Deep number is measured
+            # against what ships. Only a grounded answer carries sources to
+            # check against.
+            if abstained:
+                deep_usefulness = None
+            else:
+                deep_usefulness = await run_usefulness(
+                    engine,
+                    run_id=str(pipeline_run_id),
+                    question=item.question,
+                    answer=answer,
+                    contexts=deep_run.contexts,
+                    decisions=deep_run.decision_events,
+                )
+                if deep_usefulness.state != "pass":
+                    # As on the product path: the drafted answer is replaced
+                    # by the TR-4 decline, and the item records as an
+                    # abstention.
+                    abstained = True
+                    answer = usefulness_decline(str(pipeline_run_id), deep_run.contexts)
+                    tokens_out = count_tokens(answer)
         else:
             run = await prepare_auto_run(
                 factory,

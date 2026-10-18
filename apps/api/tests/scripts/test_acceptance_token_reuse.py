@@ -92,7 +92,9 @@ def wired(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> dict[str, Any]:
     set_file.write_text(json.dumps({"items": items}))
     client = CountingClient()
 
-    async def run_turn(_c: Any, token: str, _chat: str, _turn: str) -> dict[str, Any]:
+    async def run_turn(
+        _c: Any, token: str, _chat: str, _turn: str, *, mode: str = "auto"
+    ) -> dict[str, Any]:
         client.authorized.append(f"Bearer {token}")
         return {
             "answer": "Rocinante is Don Quijote's horse [1].",
@@ -151,7 +153,9 @@ async def test_a_short_lived_token_is_refreshed_before_it_expires(
     set_file.write_text(json.dumps({"items": items}))
     client = CountingClient(lifetime=30.0)
 
-    async def run_turn(_c: Any, token: str, _chat: str, _turn: str) -> dict[str, Any]:
+    async def run_turn(
+        _c: Any, token: str, _chat: str, _turn: str, *, mode: str = "auto"
+    ) -> dict[str, Any]:
         client.authorized.append(f"Bearer {token}")
         return {
             "answer": "Rocinante [1].",

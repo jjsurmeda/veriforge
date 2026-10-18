@@ -119,7 +119,9 @@ def paced_run(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> PacedRun:
     async def sign_in(_client: Any, _email: str, _password: str) -> str:
         return "token"
 
-    async def run_turn(_client: Any, _token: str, _chat_id: str, turn: str) -> dict[str, Any]:
+    async def run_turn(
+        _client: Any, _token: str, _chat_id: str, turn: str, *, mode: str = "auto"
+    ) -> dict[str, Any]:
         # One result per (single-turn) item, looked up by the question text.
         item = next(i for i in items if i["turns"] == [turn])
         return _result_for(item)
@@ -183,7 +185,9 @@ async def test_items_run_concurrently_and_keep_the_set_order(
     (tmp_path / "books.json").write_text(json.dumps({"items": items}))
     in_flight = {"now": 0, "max": 0}
 
-    async def run_turn(_client: Any, _token: str, _chat_id: str, turn: str) -> dict[str, Any]:
+    async def run_turn(
+        _client: Any, _token: str, _chat_id: str, turn: str, *, mode: str = "auto"
+    ) -> dict[str, Any]:
         in_flight["now"] += 1
         in_flight["max"] = max(in_flight["max"], in_flight["now"])
         # Later items finish first, so a result order that follows completion
@@ -207,7 +211,9 @@ async def test_a_completed_wrong_answer_is_scored_as_it_came_not_re_rolled(
     A completed answer that fails the scorer is the product's behaviour."""
     calls: list[str] = []
 
-    async def run_turn(_client: Any, _token: str, _chat_id: str, turn: str) -> dict[str, Any]:
+    async def run_turn(
+        _client: Any, _token: str, _chat_id: str, turn: str, *, mode: str = "auto"
+    ) -> dict[str, Any]:
         calls.append(turn)
         return {
             "answer": "A confident wrong reply.",
@@ -230,7 +236,9 @@ async def test_an_infrastructure_failure_is_retried_once_and_both_attempts_are_k
 ) -> None:
     calls: list[str] = []
 
-    async def run_turn(_client: Any, _token: str, _chat_id: str, turn: str) -> dict[str, Any]:
+    async def run_turn(
+        _client: Any, _token: str, _chat_id: str, turn: str, *, mode: str = "auto"
+    ) -> dict[str, Any]:
         calls.append(turn)
         if len(calls) == 1:
             return {

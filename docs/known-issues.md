@@ -591,6 +591,17 @@ Logged 2026-10-12 (phase 1, `make check-work` on `beta/phase1-check-work`).
   in the books bar.
 - **Phase:** R2b (or the chunker): do not cut mid-sentence mid-quote, or grade the
   expanded parent.
+- **2026-10-19 (R2b-deep item 3, measurement only):** a dry run of the current
+  chunker over the 16 cached Gutenberg books (detached helpers, no DB) counts
+  11,998 chunk boundaries; 891 fall at a mid-sentence position on the end side
+  (7.4%), of which 832 would snap cleanly to the containing sentence's end and 59
+  could not (sentence itself over the 300-token child limit). Start-side
+  mid-sentence starts (8,318) are overlap tails and move with their window's end.
+  Against the stated mechanism: the Whitman sentence does **not** straddle — both
+  quote halves land in one chunk in the dry run and in the live acceptance ingest
+  (P&P preface, chunk ord 0, 282 tokens; sentence itself 32 tokens). If the books
+  bar still misses `outside-whitman`, the cause is elsewhere (retrieval or rubric,
+  not chunking); re-check before spending a chunker change.
 
 ## KI-81: the evidence floor is noisy on borderline items
 

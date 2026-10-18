@@ -309,6 +309,7 @@ def script(
     sanitize: Any = _DEFAULT_SANITIZE,
     controller: Any = _DEFAULT_CONTROLLER,
     rerank_raise: bool = False,
+    isuse_raise: bool = False,
     prose_decline: Any = _DEFAULT_PROSE_DECLINE,
     isuse: Any = None,
 ) -> Script:
@@ -317,6 +318,7 @@ def script(
     (a retry asks again). The gate is the rubric mean-of-top-3, so a passing
     scenario sets a high `rerank` and a declining one sets a low `rerank`."""
     entity_answer = entity if entity is not None else jev(0.9)
+    default_isuse = isuse if isuse is not None else jev(0.9)
     built = Script(
         by_question=ingress_script(intent, source=source),
         by_kind={
@@ -329,9 +331,11 @@ def script(
             # Auto path; the default is a pass so scenarios that only test
             # earlier stages keep their original answer. A scenario whose
             # IsUse should fail passes `isuse=jev(...)` explicitly.
-            "isuse": isuse if isuse is not None else jev(0.9),
+            "isuse": default_isuse,
         },
     )
+    if isuse_raise:
+        built.raise_kinds.add("isuse")
     if isinstance(rerank, list):
         built.sequences[("rerank", "passage_0")] = [rubric(value) for value in rerank]
     if passage_grades is not None:
@@ -456,6 +460,43 @@ SCENARIOS: list[Scenario] = [
         mode="deep",
         question="How does the AW-2000 warranty work and what does it cover?",
         script=script(controller=jev("sufficient")),
+        llm_responses={
+            "planner": (
+                '[{"id": "q1", "question": "AW-2000 warranty length?", '
+                '"depends_on": []}, '
+                '{"id": "q2", "question": "AW-2000 warranty coverage?", '
+                '"depends_on": ["q1"]}]'
+            )
+        },
+    ),
+    Scenario(
+        name="deep_isuse_decline",
+        mode="deep",
+        question="How does the AW-2000 warranty work and what does it cover?",
+        # The gate and the entity guard pass, the answer is generated and
+        # held, and IsUse then reads the drafted answer as not answering
+        # (ADR-006). Deep never streamed, so there is no retraction: the
+        # decline replaces the text when the held plan releases it, and the
+        # run ends through the tail as an abstention.
+        script=script(controller=jev("sufficient"), isuse=jev(0.01)),
+        llm_responses={
+            "planner": (
+                '[{"id": "q1", "question": "AW-2000 warranty length?", '
+                '"depends_on": []}, '
+                '{"id": "q2", "question": "AW-2000 warranty coverage?", '
+                '"depends_on": ["q1"]}]'
+            )
+        },
+    ),
+    Scenario(
+        name="deep_isuse_unavailable_decline",
+        mode="deep",
+        question="How does the AW-2000 warranty work and what does it cover?",
+        # KI-57, fail-closed: the decision layer is unreachable when IsUse is
+        # asked, so the drafted answer cannot be verified and declines. The
+        # outage row on the bus says the check was never answered, and the
+        # held plan delivers the TR-4 decline instead of the drafted answer.
+        script=script(controller=jev("sufficient"), isuse_raise=True),
         llm_responses={
             "planner": (
                 '[{"id": "q1", "question": "AW-2000 warranty length?", '

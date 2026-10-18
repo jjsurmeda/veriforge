@@ -1,0 +1,138 @@
+{
+  "about": "Phase R2b item 2: the Deep acceptance set. The books corpus only (the same 11 Gutenberg books the books acceptance set is scored against), but replayed in Deep mode: planner, parallel hop retrieval, the controller and — since R2b item 1 — Deep's own evidence floor, entity guard and IsUse check. ≥10 multi-hop answerable items (questions whose answer needs evidence from two or more passages, and in several cases from two books) and 4 should-decline items that look in-corpus but whose facts are absent from these books' texts.",
+  "corpus": "books",
+  "items": [
+    {
+      "id": "deep-frankenstein-creature-books",
+      "turns": [
+        "Which three writers' works does the creature in Frankenstein find in the satchel, and what does reading them make him reflect about his own place among men?"
+      ],
+      "expect": "answer",
+      "cite": ["Frankenstein"],
+      "mention": ["Plutarch", "Paradise Lost", "Sorrows"],
+      "proof": "Label written before the corpus was reopened (R2b rule): the creature's reading list is Plutarch's Lives, Milton's Paradise Lost and Goethe's Sorrows of Werter; his Gutenberg edition spells the second only as the work title (_Paradise Lost_), never the author name, so the mention is the title (spot-read at pg84 line 3979). Audit by scripts/audit_labels.py over the books corpus must attest every mention."
+    },
+    {
+      "id": "deep-sherlock-norton-adler",
+      "turns": [
+        "Who does Irene Adler marry under Sherlock Holmes's own eyes in the church, and what was her name the King still calls her by?"
+      ],
+      "expect": "answer",
+      "cite": ["Sherlock"],
+      "mention": ["Norton", "Irene"],
+      "proof": "Label written before the corpus was reopened: Godfrey Norton marries her mid-chase (Holmes watches from the pew), and the King calls her 'the well-known adventuress, Irene Adler'. Both name strings appear in A Scandal in Bohemia."
+    },
+    {
+      "id": "deep-pride-wickham-elopement",
+      "turns": [
+        "Who does Lydia Bennet elope with, and who pays for the marriage in the end?"
+      ],
+      "expect": "answer",
+      "cite": ["Pride"],
+      "mention": ["Wickham", "Darcy"],
+      "proof": "Label written before the corpus was reopened: Lydia elopes with Wickham and settles in Newcastle; Darcy pays Wickham's debts and buys his commission at the wedding. Both names are threads the answer must join from separate passages."
+    },
+    {
+      "id": "deep-quixote-sancho-office",
+      "turns": [
+        "What do the Duke and Duchess promise Sancho Panza as a reward for his services, and what does Sancho say when he leaves it behind?"
+      ],
+      "expect": "answer",
+      "cite": ["Quijote"],
+      "mention": ["Sancho", "gobernador"],
+      "proof": "Label written before the corpus was reopened: Sancho is made governor of an island town as a prank (gobernador de la insula in the Spanish Gutenberg 2000 edition, the edition in the corpus), and resigns it relieved in the second part. Answer will use the Spanish words; 'Sancho' and 'gobernador' are attested throughout."
+    },
+    {
+      "id": "deep-verwandlung-apple",
+      "turns": [
+        "What does Gregor Samsa's father throw at him that lodges in his body, and what does it do to him?"
+      ],
+      "expect": "answer",
+      "cite": ["Verwandlung"],
+      "mention": ["Apfel"],
+      "proof": "Label written before the corpus was reopened: the father bombards Gregor with apples from the fruit bowl, one lodges in his back and rots, steadily weakening him. The German edition (Gutenberg 22367) is in the corpus, so the answer is German and 'Apfel' is the attested word."
+    },
+    {
+      "id": "deep-timemachine-two-species",
+      "turns": [
+        "Which two kinds of descendants of man does the Time Traveller find, and which of them lives underground and preys on the other?"
+      ],
+      "expect": "answer",
+      "cite": ["Time Machine"],
+      "mention": ["Eloi", "Morlock"],
+      "proof": "Label written before the corpus was reopened: the Eloi live above ground and the Morlocks below, breeding the Eloi like cattle. Both names recur; the answer must join species statements from several chapters."
+    },
+    {
+      "id": "deep-alice-first-changes",
+      "turns": [
+        "What is the first thing that makes Alice change size in Wonderland, and what is the second thing she finds that changes her again?"
+      ],
+      "expect": "answer",
+      "cite": ["Alice"],
+      "mention": ["bottle", "cake"],
+      "proof": "Label written before the corpus was reopened: the 'DRINK ME' bottle shrinks her, the 'EAT ME' cake stretches her. Both words recur; the answer needs the two episodes rather than the later mushroom."
+    },
+    {
+      "id": "deep-noli-ibarra-project",
+      "turns": [
+        "What does Ibarra build for the children of San Diego, and what happened to his father's grave while he was away studying abroad?"
+      ],
+      "expect": "answer",
+      "cite": ["Noli"],
+      "mention": ["Ibarra", "escuela"],
+      "proof": "Label written before the corpus was reopened: Crisostomo Ibarra funds the town school in San Diego while his father's grave is desecrated — two separate plot threads. The Spanish edition (Gutenberg 20228) is the corpus, so 'escuela' is the attested word."
+    },
+    {
+      "id": "deep-bovary-emma-poison",
+      "turns": [
+        "What does Emma Bovary take from the kitchen to kill herself with, and who had she taken it from without him realising?"
+      ],
+      "expect": "answer",
+      "cite": ["Bovary"],
+      "mention": ["arsenic", "Justin"],
+      "proof": "Label written before the corpus was reopened: Emma brings blue arsenic from Homais's pharmacy; Justin is the boy who had kept the key and is ruined by grief in later chapters. 'arsenic' is already attested by the books set's xl-en-bovary-death passage; 'Justin' is certain."
+    },
+    {
+      "id": "deep-rashomon-servant-theft",
+      "turns": [
+        "When the servant goes into the gate's upper chamber, what is the old woman doing there, and what does he take from her at the end?"
+      ],
+      "expect": "answer",
+      "cite": ["羅生門"],
+      "mention": ["老婆"],
+      "proof": "Label written before the corpus was reopened: the old woman plucks hair from the dead woman's head to sell as a wig; the servant no longer hesitates and strips her clothes. The Japanese Gutenberg text (1982) is in the corpus, so the answer is Japanese; 老婆 is the old woman's recurring word."
+    },
+    {
+      "id": "deep-sherlock-eurus",
+      "turns": [
+        "What is the name of Sherlock Holmes's sister, and the name of the place she is kept in?"
+      ],
+      "expect": "not_in_sources",
+      "proof": "Label written before the corpus was reopened: the canon names no sister of Sherlock (Eurus is a 2017 television invention). Spot-read 2026-10-19 over the 10,592-chunk scope the audit reports: 'Eurus' 0 hits in every book text (pg84, pg1661, pg1342, pg35, pg11); 'Mycroft' 0 hits in the Sherlock volume (pg1661.txt, grep), so the brother who might name a sister is not even in the edition. The audit's near-terms ('kept' 53, 'sister' hits across titles) are profile words (kept wards, countless sisters of other characters — Julia Stoner's, Elizabeth Bennet's) and are about other people's families, not Holmes's sister; none can answer the question."
+    },
+    {
+      "id": "deep-verwandlung-conservatory-name",
+      "turns": [
+        "Which conservatory did Gregor Samsa want to send his sister to, and how much does one year of study there cost?"
+      ],
+      "expect": "not_in_sources",
+      "proof": "Label written before the corpus was reopened: Gregor repeatedly plans to announce that Grete should study at a conservatory, but no institution is named and no fee quoted. Spot-read 2026-10-19 on the German text (pg22367.txt): 'Konservatorium' 3 hits (lines 871, 873, 1605) — all three are the same unnamed 'Konservatorium' with farming costs 'aber immer nur als schöner Traum' (plans and dreams only): the audit's near-terms ('cost' 8 hits — Alice, Pride, Sherlock) are other books' expenses, none Grete's tuition. The question asks for the name and the fee; the corpus gives the dream only."
+    },
+    {
+      "id": "deep-timemachine-traveller-name",
+      "turns": [
+        "What is the full name of the Time Traveller, and the name of the woman he marries after his journey?"
+      ],
+      "expect": "not_in_sources",
+      "proof": "Label written before the corpus was reopened: Wells never names the Time Traveller — he is only 'the Time Traveller' to his dinner guests (Filby et al. are named guests, spot-read pg35.txt line 52), the frame narrator 'I' is unnamed too, and Weena dies in the story, so no post-journey marriage exists. The audit's near-term 'marries' 1 hit is Pride and Prejudice's Elizabeth marrying (spot-read), not the Traveller marrying."
+    },
+    {
+      "id": "deep-quixote-rosinante-birth",
+      "turns": [
+        "In which village was Quixote's horse Rocinante foaled, and who was his dam?"
+      ],
+      "expect": "not_in_sources",
+      "proof": "Label written before the corpus was reopened: the Spanish Quijote (Gutenberg 2000) describes Rocinante's build, his diet and his famous name-tale, but never where he was born or who bore him. Spot-read 2026-10-19: 'Rocinante' is a narrative-name pageant of preliminaries (lines 933-1018 dedicate the sonnet that invents his name; Babieca is another horse in a different poem; pp. corpus hits are those and the body passages about his appearance), 'dam' terms 0 hits, and no passage speaks of his foaling or mother. The audit's near-tax 'horse' 17 hits are Alice's games, Holmes and Pride parades — other horses entirely."
+    }
+  ]
+}

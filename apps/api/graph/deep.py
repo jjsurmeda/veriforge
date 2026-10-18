@@ -23,6 +23,11 @@ from graph.history import history_messages
 from graph.hop_retrieve import HopNote, ready_sub_questions, run_hop_batch
 from graph.ingress import IngressOutcome, run_ingress
 from graph.planner import generate_followup, plan_question
+from graph.stages.deep_evidence_stage import (
+    GateVerdict,
+    deep_entity_guard,
+    deep_gate_decision,
+)
 from graph.timing import EventPublisher, make_step_timer
 from providers.llm import complete
 from quota.usage import get_usage_context
@@ -65,6 +70,17 @@ class DeepRun:
     retrieval_events: list[Retrieval]
     decision_events: list[Decision]
     abstain_event: Abstain | None
+    # The computed evidence-gate row (R2b item 1): Auto's engine emitter can
+    # publish every decision its gate reads because Auto's gate asks the batch
+    # through the engine, but Deep's gate is arithmetic over rerank scores, so
+    # without this there is no trace of what graded the evidence at all. None
+    # when the Controller abstained before the gate ran.
+    gate_event: Decision | None
+    # The guard's outage rows (KI-57): an answered guard call's rows go to
+    # `decision_events` and, on the product path, the engine emitter publishes
+    # them; a call that never got an answer produced no emitter row, and the
+    # trace still has to say why the run declined.
+    entity_unavailable_rows: list[Decision]
     latency_ms: dict[str, int]
     context_used: int
     ingress: IngressOutcome
@@ -220,6 +236,8 @@ async def prepare_deep_run(
                 retrieval_events=[],
                 decision_events=decision_events,
                 abstain_event=abstain,
+                gate_event=None,
+                entity_unavailable_rows=[],
                 latency_ms=latency_ms,
                 context_used=0,
                 ingress=ingress,
@@ -330,6 +348,8 @@ async def prepare_deep_run(
                 break
 
         abstain_event: Abstain | None = None
+        gate: GateVerdict | None = None
+        entity_rows: list[Decision] = []
         contexts: list[ExpandedContext] = []
         winners = dedupe_adjacent(sorted(all_kept, key=_rerank_score_key, reverse=True))
 
@@ -338,7 +358,31 @@ async def prepare_deep_run(
                 str(params.run_id), winners, offered_actions=["web"]
             )
         else:
-            contexts = await expand_context(session, winners)
+            # The evidence floor and the entity guard from Auto (R2b item 1),
+            # over what the hop loop gathered. The gate sees the merged
+            # winners; the guard sees what a generated answer would cite.
+            gate = deep_gate_decision(params.run_id, winners)
+            decision_events.append(gate.decision)
+            if gate.passes:
+                contexts = await expand_context(session, winners)
+                guard = await deep_entity_guard(
+                    engine,
+                    run_id=str(params.run_id),
+                    question=rewritten,
+                    contexts=contexts,
+                    decisions=decision_events,
+                )
+                entity_rows.extend(guard.events)
+                if not guard.ok:
+                    contexts = []
+                    abstain_event = build_abstain_event(
+                        str(params.run_id), winners, offered_actions=["web"]
+                    )
+            else:
+                contexts = []
+                abstain_event = build_abstain_event(
+                    str(params.run_id), winners, offered_actions=["web"]
+                )
 
         history_tokens = sum(count_tokens(text) for _, text in history[-6:])
         contexts, context_used = trim_context(
@@ -366,6 +410,8 @@ async def prepare_deep_run(
         retrieval_events=retrieval_events,
         decision_events=decision_events,
         abstain_event=abstain_event,
+        gate_event=gate.decision if gate is not None else None,
+        entity_unavailable_rows=entity_rows,
         latency_ms=latency_ms,
         context_used=context_used,
         ingress=ingress,

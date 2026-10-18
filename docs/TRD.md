@@ -144,21 +144,27 @@ carry no citations.
 **Deep is agentic.** An agent loop over the same stages: decide the next
 sub-question, retrieve, extract notes, then decide to search again or
 answer (DecisionEngine `Choice`), up to 4 hops or the credit budget.
+After the last hop the pooled kept passages go through the same evidence
+floor and entity guard as Auto (below the floor, abstain without
+generating — the controller's next hop is Deep's only corrective
+mechanism, R2b); after generation, IsUse runs as in Auto: a fail
+declines with the TR-4 found/missing template, an outage fails closed
+(KI-57), and nothing has streamed, so no retraction is needed.
 
 | Node | Engine | Behaviour |
 | --- | --- | --- |
 | Ingress | Jev, one call | Questions: `guard_injection`, `guard_jailbreak`, `guard_pii`, `off_topic` (noul); `intent` (choice: chitchat, lookup, compare, summarize, multi-part, follow-up, library); `source` (choice, if source = Auto); `complexity` (choice, if mode = Auto); `lexical_weight` (score 0–1); `risk` (choice: low, high). `intent = chitchat` (and not `off_topic`) routes to a direct small-talk reply: no retrieval, no citations, no reviewer, no abstention. *(Amended 2026-09-28, batch A — greeting fast path: a raw message of ≤ 40 chars whose normalised form (NFKC, lowercase, letters/spaces only, ≤ 4 words) exactly matches the greeting allowlist skips ingress and retrieval; the generator receives the canonical phrase only.)* *(Amended 2026-09-30, C2 — `intent = library` answers "what books do we have" / "how many documents are in my sources" from the document list of the chat's own scope (its container plus Shared, the same ids retrieval is given), not from retrieval: no retrieval, no citations, no reviewer. Only documents in a searchable state are listed. Language per book is not reported — no document language is stored.)* |
 | Rewrite + summary | Small LLM | Condenses the question with history; refreshes the rolling chat summary every 10 turns. |
 | Multi-query retrieve | Small LLM + SQL | 3 query variants (Auto only), each through hybrid search; results fused. Fast uses the rewritten query only. |
-| Evidence floor | Computed from the reranker's rubric | The floor is the mean answer-containment grade of the best three post-sanitize passages (`evidence_floor`, ADR-006). Default 0.455: below it the evidence is "clearly absent" — one corrective retrieval, then check again; still below → abstain without generating. Everything above the floor generates, and IsUse (the usefulness check) decides delivery afterwards. The `summarize` intent adds section summaries to the evidence. |
-| Entity guard | Decision provider | When the question names an entity, each passage is asked whether it concerns any one of the named entities; every named entity must be covered by a passing passage. |
+| Evidence floor | Computed from the reranker's rubric | The floor is the mean answer-containment grade of the best three post-sanitize passages (`evidence_floor`, ADR-006). Default 0.455: below it the evidence is "clearly absent" — one corrective retrieval, then check again; still below → abstain without generating. Everything above the floor generates, and IsUse (the usefulness check) decides delivery afterwards. The `summarize` intent adds section summaries to the evidence. *(R2b: Deep grades its pooled hop passages with the same floor after the last hop and abstains directly — no second check, since the controller's hops already are the corrective loop.)* |
+| Entity guard | Decision provider | When the question names an entity, each passage is asked whether it concerns any one of the named entities; every named entity must be covered by a passing passage. Applies to Auto's single-hop evidence and to Deep's pooled hop passages (fail-closed on a decision outage, R2b). |
 | Agent: plan next step | Planner LLM + decision provider | Picks the next sub-question from the notes so far; streams it to the trace. |
 | Hop retrieve | SQL + small LLM | Independent sub-questions run in parallel; notes extracted per hop with chunk ids kept. |
 | Agent: search again or answer | Decision provider | `Choice`: `search_again` / `answer` (+ `follow_link` with OKF, v1.1). Stops at 4 hops or the credit budget. |
 | Abstain | Generator LLM | Fixed template: what was found (**plain text, no citations**, KI-25), what is missing, offers Web or Deep as buttons. English questions get the template with no model call; other languages get it translated, with the target language named (KI-29). |
 | Conflict check | Jev | `conflict` noul across top chunks from different documents or source types. If yes, the priority rule and both citations go into the prompt. *(2026-10-02: today's side assignment is a midpoint split of document ids and the call is untimed: KI-34.)* |
 | Generate | Generator LLM | Streams the answer with `[n]` markers. Base prompt (sources-are-data, citation and grounding rules) plus one block per intent (lookup, summarize, compare, multi-part). Best-ranked passages at the start and end of the sources block. No tools. |
-| IsUse | Decision provider | Post-generation usefulness check, grounded Auto answers only (ADR-006, PRD TR-4): *does this answer directly answer the question asked, from these sources?* — the question as asked, the full generated answer, the sources (each truncated at 1200 chars, exactly as the calibration probe did). Fails closed on a decision outage (KI-57). A fail replaces the answer with the fixed-abstention template, drops its citations, and records the run as an abstention that still completes; on a streamed plan a retraction (`answer.retract`) is published before the text is replaced. |
+| IsUse | Decision provider | Post-generation usefulness check, grounded Auto and Deep answers (ADR-006, PRD TR-4): *does this answer directly answer the question asked, from these sources?* — the question as asked, the full generated answer, the sources (each truncated at 1200 chars, exactly as the calibration probe did). Fails closed on a decision outage (KI-57). A fail replaces the answer with the fixed-abstention template, drops its citations, and records the run as an abstention that still completes; on a streamed plan a retraction (`answer.retract`) is published before the text is replaced. A Deep run is always held, so its fail declines without retraction (R2b). |
 | Review + deliver | Section 10 | Risk-based delivery (`plan_delivery`: the stream line decides); claim verdicts; optional single revision; output guardrail; suggestions in parallel. |
 
 **Mode behaviour**
@@ -167,7 +173,7 @@ answer (DecisionEngine `Choice`), up to 4 hops or the credit budget.
 | --- | --- | --- | --- | --- | --- |
 | Auto | No | Yes | 1 (rewrite + retry) | No (single-hop) | Inline, risk-based |
 | Fast | No | No | No | No | Async after delivery |
-| Deep | Yes | Per hop | Via controller | Up to 4 | Inline, always verified before delivery |
+| Deep | Yes | Per hop | Via controller; the shared evidence floor + entity guard after the last hop and IsUse after generation (R2b) | Up to 4 | Inline, always verified before delivery |
 
 **Run bus and cancellation.** Runs are decoupled from the process that
 serves the browser through a `RunBus` interface (ADR-001), so any API
@@ -468,7 +474,7 @@ decision from ingress.
 | Low | `mean_top3` ≥ stream line (0.60) | Stream answer; chips recolour as verdicts arrive; if revised, a "Reviewer revised this answer" banner with diff; a failed IsUse retracts (`answer.retract`) |
 | Low | in band (evidence floor 0.455 … stream line) | Show "Verifying…" with the trace live; IsUse passes before the answer is delivered |
 | High | any grade | Show "Verifying…"; deliver the reviewed answer |
-| Any | — | Deep always verified before delivery |
+| Any | — | Deep always verified before delivery; a failed IsUse there declines the held answer — no retraction, nothing has streamed (R2b) |
 | Any | — | Fast streams; review runs asynchronously; chips update when done |
 
 The stream line sits above every should-decline rubric reading recorded

@@ -57,6 +57,8 @@ def _deep_run() -> DeepRun:
         retrieval_events=[],
         decision_events=[],
         abstain_event=None,
+        gate_event=None,
+        entity_unavailable_rows=[],
         latency_ms={},
         context_used=0,
         ingress=IngressOutcome(

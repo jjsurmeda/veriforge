@@ -18,12 +18,38 @@ from tests.retrieval.conftest import add_chunk, make_collection, make_document, 
 
 
 class _ScriptedJev:
-    """Answers guard/intent Nouls+Choices as pass-through 'no problem',
-    sanitizer chunks as 'keep', and the controller per a scripted sequence
-    of sufficient/need_more values (one per controller call)."""
+    """Answers replaying the real decision kinds' shapes: rerank passages as
+    rubric-shaped one-hot distributions (the evidence gate is the mean of the
+    top three expected levels, TRD §9.6), guard/intent Nouls+Choices as
+    pass-through 'no problem', sanitizer chunks as 'keep', entity readings
+    per the configured guard answer, and the controller per a scripted
+    sequence of sufficient/need_more values (one per controller call)."""
 
-    def __init__(self, controller_script: list[str]) -> None:
+    def __init__(
+        self,
+        controller_script: list[str],
+        *,
+        rerank_grade: float = 0.9,
+        entity_reading: float = 0.9,
+    ) -> None:
+        from retrieval.rerank import ANSWER_LEVEL_VALUE, ANSWER_LEVELS
+
         self._controller_script = list(controller_script)
+        self._rerank = self._rubric(ANSWER_LEVEL_VALUE, ANSWER_LEVELS, rerank_grade)
+        self._entity_reading = entity_reading
+
+    @staticmethod
+    def _rubric(level_values: dict[str, float], levels: tuple[str, ...], score: float) -> Answer:
+        """A rerank answer shaped the way the rubric's `Choice` is graded: the
+        chosen level plus a one-hot distribution over all four, which is what
+        `answer_containment_score` reads."""
+        level = min(levels, key=lambda name: abs(level_values[name] - score))
+        probabilities = {name: 0.0 for name in levels}
+        probabilities[level] = 1.0
+        return Answer(
+            engine="jev", latency_ms=1, value=level, probability=1.0,
+            probabilities=probabilities,
+        )
 
     async def decide(
         self, *, state: dict[str, Any] | str, questions: dict[str, Question]
@@ -36,6 +62,13 @@ class _ScriptedJev:
                 answers[name] = Answer(
                     engine="jev", latency_ms=1, value=value, probability=0.9,
                     probabilities={value: 0.9},
+                )
+            elif name.startswith("passage_"):
+                answers[name] = self._rerank
+            elif kind == "entity":
+                answers[name] = Answer(
+                    engine="jev", latency_ms=1, value=self._entity_reading,
+                    probability=self._entity_reading,
                 )
             elif name.startswith("chunk_injection"):
                 answers[name] = Answer(engine="jev", latency_ms=1, value=0.01, probability=0.01)
@@ -191,3 +224,71 @@ async def test_deep_run_generates_followup_when_plan_exhausted_but_insufficient(
     assert hops_run == {1, 2}
     followup_queries = [r.query for r in run.retrieval_events if r.hop == 2]
     assert followup_queries == ["a follow-up sub question"]
+
+
+async def test_deep_run_below_evidence_floor_abstains(db: AsyncSession, user_a: User) -> None:
+    """The evidence floor (ADP-R2b: Deep under the same floor as Auto): the
+    Controller said sufficient, but the hop winners' rubric grades are below
+    the evidence floor, so the run declines instead of generating. Nothing
+    survives for the generator — no contexts, no citations — and the gate's
+    own row is in the trace."""
+    chat, message, collection = await _seed(db, user_a)
+    engine = DecisionEngine(
+        jev=_ScriptedJev(["sufficient"], rerank_grade=0.0), mode="jev_only"
+    )
+
+    run = await prepare_deep_run(
+        get_session_factory(), _params(user_a, chat, message, collection.id), engine
+    )
+
+    assert run.abstain_event is not None
+    assert run.contexts == []
+    gate = [d for d in run.decision_events if d.name == "evidence" and d.stage == "gate"]
+    assert len(gate) == 1
+    assert float(gate[0].value) < 0.455
+
+
+async def test_deep_run_entity_mismatch_abstains(db: AsyncSession, user_a: User) -> None:
+    """The sibling guard: the rubric grades clear the floor, but no passage
+    the gathered evidence covers the entity the question names, so the run
+    abstains rather than answering from the wrong source."""
+    chat, message, collection = await _seed(db, user_a)
+    engine = DecisionEngine(
+        jev=_ScriptedJev(["sufficient"], entity_reading=0.01), mode="jev_only"
+    )
+
+    run = await prepare_deep_run(
+        get_session_factory(), _params(user_a, chat, message, collection.id), engine
+    )
+
+    assert run.abstain_event is not None
+    assert run.contexts == []
+    gate = [d for d in run.decision_events if d.name == "evidence" and d.stage == "gate"]
+    assert gate and float(gate[0].value) >= 0.455  # the gate passed
+    entity_rows = [d for d in run.decision_events if d.stage == "entity"]
+    assert entity_rows  # the guard was asked
+
+
+async def test_deep_run_gate_outage_declines(db: AsyncSession, user_a: User) -> None:
+    """KI-57, fail-closed: an unreachable decision layer at the entity guard
+    cannot be read as coverage, so the run declines. No entity questions were
+    answered, so the outage row explains the decline in the trace."""
+    from decisions.engine import DecisionUnavailable
+
+    class _UnreachableJev(_ScriptedJev):
+        async def decide(self, *, state: Any, questions: dict[str, Question]) -> dict[str, Answer]:
+            if isinstance(state, dict) and state.get("kind") == "entity":
+                raise DecisionUnavailable("engine down", "engine down for test")
+            return await super().decide(state=state, questions=questions)
+
+    chat, message, collection = await _seed(db, user_a)
+    engine = DecisionEngine(jev=_UnreachableJev(["sufficient"]), mode="jev_only")
+
+    run = await prepare_deep_run(
+        get_session_factory(), _params(user_a, chat, message, collection.id), engine
+    )
+
+    assert run.abstain_event is not None
+    assert run.contexts == []
+    outage = [d for d in run.decision_events if d.engine == "unavailable" and d.stage == "entity"]
+    assert outage
