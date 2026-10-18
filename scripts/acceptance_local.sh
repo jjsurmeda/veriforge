@@ -60,6 +60,8 @@ ITEMS="${1:-}"
 SET_ARGS=()
 GATE_SET=books
 if [ -n "${ACCEPTANCE_SET:-}" ]; then
+  # The runner starts in apps/api, so a repo-relative path would not resolve.
+  case "$ACCEPTANCE_SET" in /*) ;; *) ACCEPTANCE_SET="$root/$ACCEPTANCE_SET" ;; esac
   SET_ARGS=(--set "$ACCEPTANCE_SET")
   case "$ACCEPTANCE_SET" in
     *heldout*) GATE_SET=heldout ;;
