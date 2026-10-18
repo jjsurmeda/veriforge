@@ -105,6 +105,22 @@ async def measure(export: Path, reserves: list[int]) -> list[dict[str, Any]]:
             row["note"] = "no retrieval recorded"
             out.append(row)
             continue
+        # What the recorded run itself did: the pool it graded, and the
+        # passages that came out of the rerank (the ones carrying a grade).
+        recorded_pool: set[str] = set()
+        recorded_top: set[str] = set()
+        for retrieval in items[iid].get("retrievals") or []:
+            ids = retrieval.get("chunk_ids") or []
+            recorded_pool |= set(ids)
+            recorded_top |= {
+                cid
+                for cid, grade in zip(ids, retrieval.get("rerank_scores") or [], strict=False)
+                if grade is not None
+            }
+        row["recorded"] = {
+            "pool": bool(recorded_pool & gold[iid]),
+            "after_rerank": bool(recorded_top & gold[iid]),
+        }
         embeddings = await embed_batch(texts=queries)
         for n in reserves:
             name = f"reserve{n}"
@@ -130,6 +146,13 @@ async def measure(export: Path, reserves: list[int]) -> list[dict[str, Any]]:
 
 def summarise(rows: list[dict[str, Any]], names: list[str]) -> str:
     lines = []
+    for gist in (False, True):
+        scored = [r for r in rows if r["gist"] is gist and "recorded" in r]
+        kind = "gist (document reached)" if gist else "answer passage"
+        for stage in ("pool", "after_rerank"):
+            reached = sum(1 for r in scored if r["recorded"][stage])
+            lost = [r["id"] for r in scored if not r["recorded"][stage]]
+            lines.append(f"recorded run, {stage}: {kind} {reached}/{len(scored)}, missed {lost}")
     for name in names:
         for gist in (False, True):
             scored = [r for r in rows if r["gist"] is gist and name in r]
