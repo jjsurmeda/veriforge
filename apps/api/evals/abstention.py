@@ -28,6 +28,12 @@ NOT_IN_SOURCES = tuple(
     re.compile(pattern, re.IGNORECASE)
     for pattern in (
         r"not (?:in|among|covered|found|mentioned|included) (?:the|my|your|these|your) ",
+        # First-person or about-the-sources only: a quoted line such as "You could
+        # not have made me the offer of your hand" in a correct answer is not a
+        # decline (quote-darcy, R2a final check-work).
+        r"(?:\bI\b|\b(?:the |these |your |my )?"
+        r"(?:sources?|documents?|passages?|texts?|context|excerpts?)\b)"
+        r"[^.\n]{0,30}?"
         r"(?:don'?t|do not|cannot|can ?not|can'?t|could not|couldn'?t|doesn'?t|does not) "
         r"(?:find|have|contain|cover|see|show)\b",
         r"(?:isn'?t|is not|aren'?t|are not|wasn'?t) (?:in|among|covered|included)\b",

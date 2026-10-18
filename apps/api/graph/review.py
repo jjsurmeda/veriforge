@@ -22,6 +22,7 @@ from providers.llm import complete
 from retrieval.context import count_tokens
 from retrieval.expand import ExpandedContext
 from schemas.decisions import Answer, Choice, Question
+from textkit import detect_language
 
 logger = logging.getLogger(__name__)
 
@@ -460,6 +461,14 @@ async def revise_answer(
     )
     revised_text = str(revised).strip()
     if not revised_text or revised_text == answer.strip():
+        return None
+    # A revision is the answer the user is shown, so it must still be an answer
+    # in the user's language. The R2a final check-work delivered a Portuguese
+    # "this text cannot be revised" for a French summary question (broad-bovary);
+    # a revision in another language than the draft is the rewriter refusing, not
+    # revising, and the draft stands.
+    draft_language, revised_language = detect_language(answer), detect_language(revised_text)
+    if draft_language and revised_language and draft_language != revised_language:
         return None
     return revised_text
 

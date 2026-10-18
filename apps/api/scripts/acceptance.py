@@ -265,6 +265,10 @@ def summarise(
         abstained = row.get("message_status") == "abstained"
         cited = bool(row.get("citations"))
         declined = abstained or says_not_in_sources(str(row.get("answer") or ""))
+        if expect == "answer" and cited and not abstained:
+            # A cited answer is an answer: a negative phrase inside it (a quoted
+            # line) must not file a correct reply as a false abstention.
+            declined = False
         if expect == "not_in_sources":
             counts["abstain_items"] += 1
             # The order here is PRD §5's, not convenience's. Whether the reply

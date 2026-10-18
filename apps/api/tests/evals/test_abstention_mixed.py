@@ -49,3 +49,28 @@ def test_an_answer_that_never_declines_is_not_rescued_by_a_figure() -> None:
 def test_a_graph_abstention_is_authoritative() -> None:
     mixed = "I cannot find it, but 5."
     assert not is_confident_wrong(abstained=True, answer=mixed, citation_count=0)
+
+
+def test_a_quoted_negative_inside_a_correct_answer_is_not_a_decline() -> None:
+    """quote-darcy (R2a final check-work): the correct answer quotes Elizabeth,
+    'You could not have made me the offer of your hand', and was filed as a
+    false abstention."""
+    answer = (
+        'In his proposal Darcy says "You must allow me to tell you how ardently I admire '
+        'and love you" [3]. She replies, "You could not have made me the offer of your '
+        'hand in any possible way that would have tempted me to accept it." [3]'
+    )
+    assert not says_not_in_sources(answer)
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "I could not find enough evidence to answer that question.",
+        "The sources do not contain the price.",
+        "The provided text doesn't cover that.",
+        "I can't find that in your documents.",
+    ],
+)
+def test_first_person_and_about_the_sources_declines_still_count(answer: str) -> None:
+    assert says_not_in_sources(answer)

@@ -41,3 +41,12 @@ def test_a_decline_or_an_uncited_answer_is_still_counted_in_its_own_class() -> N
     counts = summarise([declined, uncited])["counts"]
     assert counts["false_abstentions"] == 1 and counts["uncited_answers"] == 1
     assert counts["content_misses"] == 0
+
+
+def test_a_cited_answer_quoting_a_negative_is_not_a_false_abstention() -> None:
+    quoted = row(
+        id="darcy",
+        answer='She replies, "You could not have made me the offer of your hand." [1]',
+    )
+    counts = summarise([quoted])["counts"]
+    assert counts["false_abstentions"] == 0 and counts["content_misses"] == 0
