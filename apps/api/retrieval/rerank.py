@@ -74,7 +74,10 @@ class CohereRerank:
                     response = await call(client)
         response.raise_for_status()
         results = response.json()["results"]
-        return [(int(r["index"]), float(r["relevance_score"])) for r in results]
+        pairs = [(int(r["index"]), float(r["relevance_score"])) for r in results]
+        # Ties break by input (fused) order, whatever order the API returned.
+        pairs.sort(key=lambda pair: (-pair[1], pair[0]))
+        return pairs
 
 
 class NvidiaRerank:
@@ -122,8 +125,7 @@ class NvidiaRerank:
         rankings = response.json()["rankings"]
         pairs = sorted(
             ((int(r["index"]), float(r["logit"])) for r in rankings),
-            key=lambda pair: pair[1],
-            reverse=True,
+            key=lambda pair: (-pair[1], pair[0]),
         )
         return pairs[:top_n]
 
