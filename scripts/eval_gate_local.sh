@@ -172,6 +172,6 @@ fi
 # when the gate failed, because a failing run is exactly when the stage
 # breakdown matters most.
 echo "==> per-stage latency and per-item detail"
-DATABASE_URL="$DB_URL" .venv/bin/python scripts/eval_dump_stages.py || true
+DATABASE_URL="$DB_URL" .venv/bin/python scripts/eval_dump_stages.py --all || true
 
 exit "$gate_status"
