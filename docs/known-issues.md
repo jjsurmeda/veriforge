@@ -7,12 +7,19 @@ The Phase column is authoritative; section placement below is from the first tri
 Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 - When you fix one, move it to the archive in the same commit, with the fixing commit hash.
 - A new finding that breaks no check is added under **post-beta** and opens no lane.
-- New IDs continue from KI-78.
+- New IDs continue from KI-84.
 
 ## Index
 
 | Phase | KI | Summary |
 | --- | --- | --- |
+| R3 (generator) | KI-78 | a false-premise question ("first name" of a man with none) is answered, not declined; IsUse passes it |
+| R3 (generator) | KI-79 | the generator flakes on multi-passage facts (plot-speckled-band: right answer 1 of 4 draws on gpt-4o-mini) |
+| R2b (chunking) | KI-80 | outside-whitman: the quoted sentence spans a chunk boundary, so no single chunk grades as answering |
+| R3 (floor) | KI-81 | the evidence floor flips on borderline items: the grade varies 0.444-0.468 around 0.455 between runs |
+| check-work (CI) | KI-82 | Playwright specs are not run in CI; paid evals are manual |
+| R3 (reviewer) | KI-83 | citation precision is claim-level support; per-citation verification is not done |
+| phase 3 (latency) | KI-84 | `our_overhead_ms` subtracts overlapping provider calls (ingress and rewrite run together); it can go negative |
 | check-work (acceptance) | KI-70 | the relevance gate abstains on broad/summary answerables; no threshold separates |
 | check-work (1d) | KI-15 | order-dependent hang in test_chats_runs.py; a flaky suite fails "repeatable" |
 | check-stable | KI-76 | credits stay reserved if the process dies between completion and settlement |
@@ -1058,3 +1065,62 @@ Logged 2026-10-12 (phase 1, `make check-work` on `beta/phase1-check-work`).
 - **Done when:** a sweep settles `reserved` ledger rows whose run is terminal
   and older than the scoring timeout, with a test that kills between
   `_finalize` and settlement and proves the row settles.
+
+## KI-78: a false-premise question is answered, not declined
+
+- **What:** "What is Count Dracula's first name?" (held-out `ho-near-vlad`). The
+  books give none. The generator answered "Dracula", quoting "I am Dracula", and
+  IsUse passed it (0.68-0.72) because the quote supports the sentence. Counted as a
+  confident wrong answer; held-out bar is 0.
+- **Found:** the held-out run, 2026-10-19 (R2a close). Reproduced twice on
+  `gpt-4o-mini`; `gpt-4o` said "the sources do not provide Count Dracula's first
+  name" where it generated.
+- **Phase:** R3 (generator ladder), re-measured on the production generator.
+- **Done when:** the held-out set passes with 0 confident wrong on the model that
+  ships; do not tune for this one item.
+
+## KI-79: the generator flakes on a fact spread over several passages
+
+- **What:** `plot-speckled-band` ("what killed Julia Stoner?"). Retrieval is fine
+  (evidence grade 0.64-0.67 in every draw); `gpt-4o-mini` wrote "fear and nervous
+  shock" in 3 of 4 draws and "swamp adder" in 1; IsUse rejected the poor ones (0.29,
+  0.32, 0.47). `gpt-4o` was right 2 of 2. The earlier "passed on retry" was luck,
+  hidden by the retry that re-rolled completed answers (removed 2026-10-18).
+- **Phase:** R3 (generator ladder): escalate to a stronger generator when IsUse fails.
+- **Done when:** books acceptance holds its false-abstention bar on the shipping model.
+
+## KI-80: outside-whitman, the quoted sentence spans a chunk boundary
+
+- **What:** the sentence "loving by allowance ... loving with personal love"
+  straddles two chunks, so no single passage grades as answering. The budgeted miss
+  in the books bar.
+- **Phase:** R2b (or the chunker): do not cut mid-sentence mid-quote, or grade the
+  expanded parent.
+
+## KI-81: the evidence floor is noisy on borderline items
+
+- **What:** `ho-near-vlad` graded 0.444-0.468 across draws against the 0.455 floor,
+  so the same item abstains or generates depending on the draw.
+- **Phase:** R3: average the grade over the query variants, or add a margin band that
+  generates and lets IsUse decide.
+
+## KI-82: Playwright specs are not run in CI
+
+- **What:** CI runs the api tests and, on the branch, vitest; the 11 Playwright specs
+  and the paid evals run only by hand. Third-party review #7.
+- **Phase:** check-work (CI).
+
+## KI-83: citation precision is claim-level, not per citation
+
+- **What:** the reviewer credits one claim verdict to every citation on the claim
+  (documented as "claim-level citation support", TRD §10). A true per-citation check
+  costs one check per claim-citation pair. Third-party review #6.
+- **Phase:** R3, once the replay shows the cost.
+
+## KI-84: the overhead metric subtracts overlapping provider calls
+
+- **What:** `evals/attribution.py` subtracts the sum of provider durations from wall
+  time, while ingress and rewrite run concurrently; the sum can exceed the wall time
+  and the result can be negative. The latency check is warn-only until phase 3.
+  Third-party review #11.
+- **Phase:** phase 3 (latency).
