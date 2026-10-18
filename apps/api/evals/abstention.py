@@ -35,7 +35,7 @@ NOT_IN_SOURCES = tuple(
         r"(?:sources?|documents?|passages?|texts?|context|excerpts?)\b)"
         r"[^.\n]{0,30}?"
         r"(?:don'?t|do not|cannot|can ?not|can'?t|could not|couldn'?t|doesn'?t|does not) "
-        r"(?:find|have|contain|cover|see|show)\b",
+        r"(?:find|have|contain|cover|see|show|answer|determine|tell|say)\b",
         r"(?:isn'?t|is not|aren'?t|are not|wasn'?t) (?:in|among|covered|included)\b",
         r"no (?:matching|relevant|such) ",
         r"not part of ",

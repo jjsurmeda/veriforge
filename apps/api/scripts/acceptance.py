@@ -111,6 +111,27 @@ def _cited_documents(result: dict[str, Any]) -> list[str]:
     return [c.split("] ", 1)[-1].split(" p.", 1)[0].split(" §", 1)[0] for c in result["citations"]]
 
 
+def failed_result(reason: str) -> dict[str, Any]:
+    """A turn that never ran, in the full shape the scorer reads.
+
+    A chat-creation failure (a 429, a 5xx) used to return only status and reason,
+    so recording it raised KeyError before the retry or the export (third-party
+    review, 2026-10-19). Status is not `completed`, so it is retried once.
+    """
+    return {
+        "status": f"failed ({reason})",
+        "reason": reason,
+        "answer": "",
+        "citations": [],
+        "message_status": None,
+        "steps": [],
+        "ttft_ms": None,
+        "evidence": [],
+        "intent": None,
+        "retrievals": [],
+    }
+
+
 def observed_class(item: dict[str, Any], result: dict[str, Any]) -> str:
     """What the run actually looked like, as one of the four classes."""
     answer = result["answer"]
@@ -265,10 +286,6 @@ def summarise(
         abstained = row.get("message_status") == "abstained"
         cited = bool(row.get("citations"))
         declined = abstained or says_not_in_sources(str(row.get("answer") or ""))
-        if expect == "answer" and cited and not abstained:
-            # A cited answer is an answer: a negative phrase inside it (a quoted
-            # line) must not file a correct reply as a false abstention.
-            declined = False
         if expect == "not_in_sources":
             counts["abstain_items"] += 1
             # The order here is PRD §5's, not convenience's. Whether the reply
@@ -440,10 +457,9 @@ async def run(
                 chat = await client.post("/chats", headers=headers, json={"title": None})
                 body = chat.json()
                 if "id" not in body:
-                    return {
-                        "status": "failed",
-                        "reason": f"chat creation error: {chat.status_code} {str(body)[:200]}",
-                    }
+                    return failed_result(
+                        f"chat creation error: {chat.status_code} {str(body)[:200]}"
+                    )
                 chat_id = str(body["id"])
                 result: dict[str, Any] = {}
                 for turn in item["turns"]:

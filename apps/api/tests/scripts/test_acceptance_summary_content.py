@@ -50,3 +50,23 @@ def test_a_cited_answer_quoting_a_negative_is_not_a_false_abstention() -> None:
     )
     counts = summarise([quoted])["counts"]
     assert counts["false_abstentions"] == 0 and counts["content_misses"] == 0
+
+
+def test_a_cited_prose_decline_is_a_false_abstention_not_a_content_miss() -> None:
+    """Third-party review, 2026-10-19: 'I cannot answer from these sources [1]'
+    cites a source but is still a decline of an answerable item."""
+    decline = row(id="prose", answer="I cannot answer this from the sources provided [1].")
+    counts = summarise([decline])["counts"]
+    assert counts["false_abstentions"] == 1
+    assert counts["content_misses"] == 0
+
+
+def test_a_chat_creation_failure_has_the_full_shape_the_scorer_reads() -> None:
+    from scripts.acceptance import failed_result, observed_class, passes
+
+    item = {"id": "x", "expect": "answer", "turns": ["q"], "cite": ["Book"], "mention": ["a"]}
+    failure = failed_result("chat creation error: 429 {}")
+
+    assert failure["status"] != "completed", "so the runner retries it"
+    assert observed_class(item, failure) == "not_in_sources"
+    assert passes(item, failure) is False

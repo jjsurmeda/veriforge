@@ -67,6 +67,20 @@ async def sign_in(client: httpx.AsyncClient, email: str) -> str:
     return str(response.json()["access_token"])
 
 
+def final_answer(streamed: str, assistant: list[dict[str, Any]]) -> str:
+    """The text the user is left with: the persisted message, not the stream.
+
+    The stream carries the draft. A revision replaces the delivered text and an
+    IsUse retraction replaces it with the decline, and neither is a delta, so
+    scoring the streamed text grades a draft the user no longer sees (third-party
+    review, 2026-10-19). The persisted content is the final text; the stream is
+    only the fallback when the message could not be read.
+    """
+    if assistant and assistant[-1].get("content"):
+        return str(assistant[-1]["content"])
+    return streamed
+
+
 async def run_turn(
     client: httpx.AsyncClient, token: str, chat_id: str, message: str
 ) -> dict[str, Any]:
@@ -165,8 +179,7 @@ async def run_turn(
                 f" p.{where}" if where is not None else (f" §{section[:8]}" if section else "")
             )
             citations.append(f"[{citation.get('n')}] {document}{locator}")
-    if answer and assistant and not assistant[-1].get("content"):
-        answer = str(assistant[-1]["content"])
+    answer = final_answer(answer, assistant)
     return {
         "intent": intent,
         "status": status,
