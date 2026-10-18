@@ -133,6 +133,12 @@
   "kind": "event"
  },
  {
+  "kind": "entity",
+  "questions": [
+   "entity_0_0"
+  ]
+ },
+ {
   "event": {
    "seq": 0,
    "sub_questions": [
@@ -176,6 +182,22 @@
  },
  {
   "event": {
+   "batch_size": null,
+   "engine": "jev",
+   "name": "evidence",
+   "probabilities": null,
+   "probability": 1.0,
+   "reasoning": "mean answer-containment grade of the best three passages across all hops; below the floor Deep declines instead of generating",
+   "seq": 0,
+   "stage": "gate",
+   "threshold": 0.455,
+   "type": "decision",
+   "value": 1.0
+  },
+  "kind": "event"
+ },
+ {
+  "event": {
    "reason": "verifying",
    "seq": 0,
    "type": "answer.hold"
@@ -185,6 +207,30 @@
  {
   "kind": "llm",
   "role": "generator"
+ },
+ {
+  "event": {
+   "label": "isuse",
+   "node": "deep",
+   "seq": 0,
+   "type": "step.started"
+  },
+  "kind": "event"
+ },
+ {
+  "kind": "isuse",
+  "questions": [
+   "is_use"
+  ]
+ },
+ {
+  "event": {
+   "label": "isuse",
+   "node": "deep",
+   "seq": 0,
+   "type": "step.completed"
+  },
+  "kind": "event"
  },
  {
   "kind": "llm",

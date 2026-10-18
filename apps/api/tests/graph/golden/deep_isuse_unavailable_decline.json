@@ -1,0 +1,284 @@
+[
+ {
+  "event": {
+   "mode": "deep",
+   "model": "openai/gpt-4o-mini",
+   "seq": 0,
+   "settings_version": null,
+   "source": "upload",
+   "type": "run.started"
+  },
+  "kind": "event"
+ },
+ {
+  "event": {
+   "label": "ingress+rewrite",
+   "node": "deep",
+   "seq": 0,
+   "type": "step.started"
+  },
+  "kind": "event"
+ },
+ {
+  "kind": "ingress",
+  "questions": [
+   "complexity",
+   "guard_injection",
+   "guard_jailbreak",
+   "guard_pii",
+   "intent",
+   "lexical_weight",
+   "off_topic",
+   "risk",
+   "source"
+  ]
+ },
+ {
+  "kind": "llm",
+  "role": "rewriter"
+ },
+ {
+  "event": {
+   "label": "ingress+rewrite",
+   "node": "deep",
+   "seq": 0,
+   "type": "step.completed"
+  },
+  "kind": "event"
+ },
+ {
+  "event": {
+   "label": "plan",
+   "node": "deep",
+   "seq": 0,
+   "type": "step.started"
+  },
+  "kind": "event"
+ },
+ {
+  "kind": "llm",
+  "role": "planner"
+ },
+ {
+  "event": {
+   "label": "plan",
+   "node": "deep",
+   "seq": 0,
+   "type": "step.completed"
+  },
+  "kind": "event"
+ },
+ {
+  "event": {
+   "label": "hop_1",
+   "node": "deep",
+   "seq": 0,
+   "type": "step.started"
+  },
+  "kind": "event"
+ },
+ {
+  "kind": "llm",
+  "n": 1,
+  "role": "embed"
+ },
+ {
+  "kind": "search",
+  "n": 1,
+  "query": "AW-2000 warranty length?"
+ },
+ {
+  "kind": "rerank",
+  "questions": [
+   "passage_0"
+  ]
+ },
+ {
+  "kind": "sanitize",
+  "questions": [
+   "chunk_injection_0"
+  ]
+ },
+ {
+  "event": {
+   "label": "hop_1",
+   "node": "deep",
+   "seq": 0,
+   "type": "step.completed"
+  },
+  "kind": "event"
+ },
+ {
+  "event": {
+   "label": "controller_1",
+   "node": "deep",
+   "seq": 0,
+   "type": "step.started"
+  },
+  "kind": "event"
+ },
+ {
+  "kind": "controller",
+  "questions": [
+   "controller"
+  ]
+ },
+ {
+  "event": {
+   "label": "controller_1",
+   "node": "deep",
+   "seq": 0,
+   "type": "step.completed"
+  },
+  "kind": "event"
+ },
+ {
+  "kind": "entity",
+  "questions": [
+   "entity_0_0"
+  ]
+ },
+ {
+  "event": {
+   "seq": 0,
+   "sub_questions": [
+    {
+     "depends_on": [],
+     "question": "AW-2000 warranty length?"
+    },
+    {
+     "depends_on": [
+      "q1"
+     ],
+     "question": "AW-2000 warranty coverage?"
+    }
+   ],
+   "type": "plan"
+  },
+  "kind": "event"
+ },
+ {
+  "event": {
+   "chunks": [
+    {
+     "bm25_score": null,
+     "document_name": "warranty.md",
+     "dropped": false,
+     "excerpt": "The AW-2000 warranty is 24 months from the date of purchase.",
+     "fused_score": 1.0,
+     "heading_path": "Section 0",
+     "page": null,
+     "rerank_score": null,
+     "source_type": "document",
+     "vector_score": 1.0
+    }
+   ],
+   "hop": 1,
+   "query": "AW-2000 warranty length?",
+   "seq": 0,
+   "type": "retrieval"
+  },
+  "kind": "event"
+ },
+ {
+  "event": {
+   "batch_size": null,
+   "engine": "jev",
+   "name": "evidence",
+   "probabilities": null,
+   "probability": 1.0,
+   "reasoning": "mean answer-containment grade of the best three passages across all hops; below the floor Deep declines instead of generating",
+   "seq": 0,
+   "stage": "gate",
+   "threshold": 0.455,
+   "type": "decision",
+   "value": 1.0
+  },
+  "kind": "event"
+ },
+ {
+  "event": {
+   "reason": "verifying",
+   "seq": 0,
+   "type": "answer.hold"
+  },
+  "kind": "event"
+ },
+ {
+  "kind": "llm",
+  "role": "generator"
+ },
+ {
+  "event": {
+   "label": "isuse",
+   "node": "deep",
+   "seq": 0,
+   "type": "step.started"
+  },
+  "kind": "event"
+ },
+ {
+  "kind": "isuse",
+  "questions": [
+   "is_use"
+  ]
+ },
+ {
+  "event": {
+   "batch_size": null,
+   "engine": "unavailable",
+   "name": "is_use",
+   "probabilities": null,
+   "probability": 0.0,
+   "reasoning": "the decision layer was unreachable for the IsUse check; the answer was treated as failing and declined with the TR-4 template",
+   "seq": 0,
+   "stage": "isuse",
+   "threshold": null,
+   "type": "decision",
+   "value": 0.0
+  },
+  "kind": "event"
+ },
+ {
+  "event": {
+   "label": "isuse",
+   "node": "deep",
+   "seq": 0,
+   "type": "step.completed"
+  },
+  "kind": "event"
+ },
+ {
+  "event": {
+   "seq": 0,
+   "text": "I could not find enough evidence to answer that question.\n\nWhat I found:\nYour sources cover warranty.md.\n- warranty.md Section 0\n\nWhat is missing:\nThe retrieved sources do not directly state what the question asks for, so the drafted answer was not delivered.\n\nYou can try:\n- Turn on the Web search toggle\n- Turn on the Deep search toggle for multi-step reasoning across documents\n",
+   "type": "answer.delta"
+  },
+  "kind": "event"
+ },
+ {
+  "kind": "llm",
+  "role": "titler"
+ },
+ {
+  "event": {
+   "context_used": 2,
+   "context_window": 128000,
+   "faithfulness": null,
+   "min_support": null,
+   "seq": 0,
+   "tokens_in": 0,
+   "tokens_out": 0,
+   "type": "metrics"
+  },
+  "kind": "event"
+ },
+ {
+  "event": {
+   "seq": 0,
+   "status": "abstained",
+   "type": "run.completed"
+  },
+  "kind": "event"
+ }
+]

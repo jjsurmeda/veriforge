@@ -239,7 +239,7 @@ def _read_answers(
     attempt.gate_mean_top3 = rubric_mean_top3(grades)
     attempt.gate_floor = threshold("evidence_floor", "jev")
     state.decision_events.append(
-        _gate_event(
+        gate_event(
             env.params.run_id, attempt.gate_mean_top3, attempt.gate_floor, attempt.gate_engine
         )
     )
@@ -276,13 +276,20 @@ def _gate_engine(reranker: RerankProvider) -> str:
     return "jev"
 
 
-def _gate_event(
-    run_id: UUID, mean_top3: float | None, floor: float, engine: str = "jev"
+def gate_event(
+    run_id: UUID,
+    mean_top3: float | None,
+    floor: float,
+    engine: str = "jev",
+    reasoning: str | None = None,
 ) -> Decision:
     """The trace row for the gate itself — the one number that decided.
 
     Named `evidence` because it is the evidence gate, and its `stage` is `gate`.
-    Its `value` is the mean answer-containment grade.
+    Its `value` is the mean answer-containment grade. Shared with Deep's gate
+    (`graph/stages/deep_evidence_stage.py`), which passes its own `reasoning`
+    because Deep's corrective mechanism is the next controller hop, not the
+    Auto retry loop.
     """
     return Decision(
         run_id=str(run_id),
@@ -295,8 +302,12 @@ def _gate_event(
         stage="gate",
         threshold=floor,
         reasoning=(
-            "mean answer-containment grade of the best three passages; "
-            "below the floor the run corrects once and then abstains"
+            reasoning
+            if reasoning is not None
+            else (
+                "mean answer-containment grade of the best three passages; "
+                "below the floor the run corrects once and then abstains"
+            )
         ),
     )
 
