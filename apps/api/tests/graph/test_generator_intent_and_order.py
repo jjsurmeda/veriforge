@@ -34,6 +34,7 @@ def flat(text: str) -> str:
     has to see the text the model sees rather than its line breaks."""
     return " ".join(text.split())
 
+
 # --- per-intent blocks -------------------------------------------------------
 
 
@@ -126,9 +127,12 @@ def test_the_intent_reaches_the_generator_from_the_run_it_already_has() -> None:
 
     source = inspect.getsource(stream_answer)
     assert "intent=run.ingress.intent" in source
-    assert "intent" in inspect.signature(
-        __import__("graph.generate", fromlist=["stream_grounded_answer"]).stream_grounded_answer
-    ).parameters
+    assert (
+        "intent"
+        in inspect.signature(
+            __import__("graph.generate", fromlist=["stream_grounded_answer"]).stream_grounded_answer
+        ).parameters
+    )
 
 
 # --- context order -----------------------------------------------------------
@@ -184,22 +188,43 @@ def test_fewer_than_four_passages_keep_their_order() -> None:
         assert order_for_lost_in_the_middle(contexts) == contexts
 
 
-def test_source_ids_follow_the_new_order() -> None:
-    """`[n]` must name the block the generator actually read. The caller numbers
-    after permuting, so the strongest passage is `[1]` and the id is a position
-    in the message, not in the run's `contexts` list."""
+def test_the_prompt_numbers_blocks_in_the_order_it_is_given() -> None:
+    """The prompt builder does not reorder: block n is `contexts[n-1]`, so a list
+    that is already in generation order is numbered as it stands."""
     contexts = [_context(f"rank {i}") for i in range(1, 9)]
 
     message = build_grounded_messages("q", contexts, [])[1]["content"]
 
-    assert message.index(contexts[0].chunk.text) < message.index(contexts[7].chunk.text), (
-        "the weakest passage must not still be last"
-    )
-    assert 'id="1"' in message
-    # The first block is the best passage, whatever order `contexts` held.
-    first_block = message.split("\n\n")[0]
-    assert contexts[0].chunk.text in first_block
-    assert contexts[0].context_text in first_block
+    blocks = message.split("</source>")[:-1]
+    for n, context in enumerate(contexts, start=1):
+        assert f'<source id="{n}"' in blocks[n - 1]
+        assert context.chunk.text in blocks[n - 1]
+
+
+def test_prompt_citation_and_reviewer_name_the_same_passage() -> None:
+    """Third-party review: the prompt reordered, but the stored citations and the
+    reviewer kept rank order, so `[2]` in the answer meant one passage and
+    citation 2 another. The order is now fixed once, where the context is
+    trimmed, and everything downstream reads that list."""
+    import types
+
+    from graph.stages.finish_stage import _trim
+
+    ranked = [_context(f"rank {i}") for i in range(1, 9)]
+    env = types.SimpleNamespace(params=types.SimpleNamespace(context_window=100_000))
+    state = types.SimpleNamespace(history=[], contexts=list(ranked), context_used=0)
+    _trim(env, state)  # type: ignore[arg-type]
+
+    assert state.contexts != ranked, "eight passages are reordered"
+    assert {id(c) for c in state.contexts} == {id(c) for c in ranked}
+
+    message = build_grounded_messages("q", state.contexts, [])[1]["content"]
+    blocks = message.split("</source>")[:-1]
+    for n, context in enumerate(state.contexts, start=1):
+        # The generator's [n], the stored Citation(n=index + 1) and the reviewer's
+        # contexts[n - 1] all index state.contexts, so they agree by construction.
+        assert context.chunk.text in blocks[n - 1], f"[{n}] is not the passage citation {n} names"
+    assert ranked[0].chunk.text in blocks[0], "the best passage still leads"
 
 
 def test_every_block_is_still_a_source_and_the_question_is_still_last() -> None:

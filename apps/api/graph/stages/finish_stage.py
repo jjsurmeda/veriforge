@@ -13,6 +13,7 @@ from itertools import combinations
 from db.models import Citation
 from decisions import threshold
 from graph.abstain import build_abstain_event
+from graph.generate import order_for_lost_in_the_middle
 from graph.stages.checks import _conflict_pair_questions
 from graph.stages.common import no_call
 from graph.stages.evidence_stage import Attempt
@@ -133,11 +134,12 @@ def _best_conflict(
 
 def _trim(env: StageEnv, state: AutoRunState) -> None:
     history_tokens = sum(count_tokens(text) for _, text in state.history[-6:])
-    state.contexts, state.context_used = trim_context(
+    trimmed, state.context_used = trim_context(
         state.contexts,
         window_tokens=env.params.context_window,
         history_tokens=history_tokens,
     )
+    state.contexts = order_for_lost_in_the_middle(trimmed)
 
 
 def _cite(env: StageEnv, state: AutoRunState) -> None:

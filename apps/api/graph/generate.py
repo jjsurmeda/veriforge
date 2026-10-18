@@ -58,8 +58,10 @@ def build_grounded_messages(
     for role, content in history[-6:]:
         messages.append({"role": role, "content": content})
     if contexts:
-        ordered = order_for_lost_in_the_middle(contexts)
-        sources = "\n\n".join(_source_block(i + 1, c) for i, c in enumerate(ordered))
+        # `contexts` is already in generation order (`order_for_lost_in_the_middle`,
+        # applied once where the context is trimmed), so block n is the passage
+        # citation n, the reviewer and IsUse name.
+        sources = "\n\n".join(_source_block(i + 1, c) for i, c in enumerate(contexts))
         messages.append(
             {
                 "role": "user",
@@ -110,8 +112,11 @@ def order_for_lost_in_the_middle(contexts: list[ExpandedContext]) -> list[Expand
     `contexts` arrives in rerank order, best first. The permutation takes the
     best quarter to the front and the second-best quarter to the back, so both
     edges are strong and the middle holds the weakest material. Source ids are
-    assigned after the permutation by the caller, so `[n]` still names the block
-    the generator actually read.
+    assigned after the permutation, and the permutation is applied ONCE, where
+    the context is trimmed (`graph/stages/finish_stage.py`, `deep.py`, `fast.py`),
+    so the prompt's `[n]`, the stored citation n, the reviewer's passage n and
+    IsUse's source n are the same passage. Reordering inside the prompt builder
+    alone would leave every one of those on the rank order.
 
     With fewer than four passages there is no "middle" to lose: everything is
     an edge, and any permutation would only move citations around, so the order

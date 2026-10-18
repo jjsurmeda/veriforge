@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from db.models import Chat, Citation, Message
 from graph import rewrite as rewrite_node
-from graph.generate import stream_grounded_answer
+from graph.generate import order_for_lost_in_the_middle, stream_grounded_answer
 from providers.llm import complete
 from quota.usage import get_usage_context
 from retrieval.cache import get_query_embedding
@@ -149,6 +149,7 @@ async def prepare_fast_run(
             window_tokens=params.context_window,
             history_tokens=history_tokens,
         )
+        contexts = order_for_lost_in_the_middle(contexts)
         t2 = time.monotonic()
 
         session.add_all(
