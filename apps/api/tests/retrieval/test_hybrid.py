@@ -9,7 +9,6 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import Document, Section, User
-from retrieval import hybrid
 from retrieval.filters import ClientFilters, Ownership
 from retrieval.hybrid import ScoredChunk, hybrid_search
 from tests.retrieval.conftest import (
@@ -176,7 +175,6 @@ async def test_lexical_weight_selects_dominant_leg(
     db: AsyncSession,
     user_a: User,
     seed_document: Callable[..., Awaitable[tuple[Document, Section]]],
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     coll = await make_collection(db, user_a, "a")
     doc, section = await seed_document(db, coll)
@@ -192,23 +190,35 @@ async def test_lexical_weight_selects_dominant_leg(
 
     lex_first = await _search(db, ownership, lexical_weight=1.0)
     assert lex_first[0].chunk_id == bm25_hit.id
-    monkeypatch.setattr(hybrid, "LEXICAL_WEIGHT_FLOOR", 0.0)
     vec_first = await _search(db, ownership, lexical_weight=0.0)
     assert vec_first[0].chunk_id == vec_hit.id
 
 
-async def test_a_low_lexical_weight_cannot_turn_bm25_off(
+async def test_lexical_only_facts_survive_a_vec_dominant_weight(
     db: AsyncSession,
     user_a: User,
     seed_document: Callable[..., Awaitable[tuple[Document, Section]]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """R2a-4's `ml-zh-xiyou-nezha`, scaled down: a lexically exact chunk that
-    embeds far from the query, against vector-near filler that fills the
-    fused cap. At an ingress weight of 0.02 the floor still carries it in."""
+    """The R2a-4 live proof's failure (`ml-zh-xiyou-nezha`): the answer
+    passage sits at BM25 rank 20 for its own question, but a low ingress
+    lexical weight lets every vector-top candidate out-carry it, and the
+    fused cap of 40 was filled by the vector top-40 at any weight.
+
+    The last slots are therefore RESERVED FOR the BM25 leg's own top
+    candidates, ADDED to the fused order rather than displacing it: a
+    pure-lexical chunk must reach the pool at a vec-dominant weight, so the
+    rerank can grade the passage instead of grading its absence. Scaled
+    down: lex_reserve 2 ADDED to fused_limit 3, six vec-near chunks flooding
+    the fused order, the answer chunk embedding-far and lexically exact.
+    """
+    from retrieval import hybrid
+
     monkeypatch.setattr(hybrid, "VEC_LIMIT", 3)
     monkeypatch.setattr(hybrid, "LEX_LIMIT", 5)
     monkeypatch.setattr(hybrid, "FUSED_LIMIT", 3)
+    monkeypatch.setattr(hybrid, "LEX_RESERVE", 2)
+
     coll = await make_collection(db, user_a, "a")
     doc, section = await seed_document(db, coll)
     for i in range(6):
@@ -216,15 +226,24 @@ async def test_a_low_lexical_weight_cannot_turn_bm25_off(
             db, document=doc, section=section, ord=i, text_=f"unrelated prose {i}",
             embedding=vec(1, bump=0.01 * i), page=i,
         )
+    # The answer: lexically exact, embedding far from the query — the shape
+    # of a fact named in the question but far from its retrieval
+    # neighbourhood (a residence sentence inside a battle-heavy epic).
     answer = await add_chunk(
         db, document=doc, section=section, ord=9, text_=QUERY_TEXT,
         embedding=vec(99), page=9,
     )
     ownership = Ownership(user_id=user_a.id, collection_ids=[coll.id])
 
-    assert answer.id in [r.chunk_id for r in await _search(db, ownership, lexical_weight=0.02)]
-    monkeypatch.setattr(hybrid, "LEXICAL_WEIGHT_FLOOR", 0.0)
-    assert answer.id not in [r.chunk_id for r in await _search(db, ownership, lexical_weight=0.02)]
+    results = await _search(db, ownership, lexical_weight=0.05)
+
+    pooled = [r.chunk_id for r in results]
+    assert answer.id in pooled
+    # It rides the reserve, not the fused order: its fused score loses to
+    # every vec-near candidate at this weight, so it lands after them.
+    # The fused order itself is UNCHANGED by the reserve — nothing was
+    # displaced, only widened.
+    assert answer.id not in pooled[:3]
 
 
 async def test_client_filters_only_narrow(

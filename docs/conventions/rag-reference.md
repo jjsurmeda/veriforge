@@ -12,7 +12,7 @@ rounds were built on it.)
 | Stage | Proven practice | Veriforge (2026-10-13) |
 | --- | --- | --- |
 | Chunking | Small chunks for search, larger parent for context (small-to-big), overlap | ✅ 300-token children, 45 overlap, 2000-token sections |
-| Retrieval | Hybrid BM25 + vector, fused (RRF), wide candidate pool | ⚠️ 50 + 50, fused 40; ingress `lexical_weight` read 0.00–0.04 on all 32 answerable books items (R2a-4 proof, 2026-10-18), so BM25 was effectively off. Floored at 0.5 (`9f23a28`); recall@40 not yet measured |
+| Retrieval | Hybrid BM25 + vector, fused (RRF), wide candidate pool | ✅ 50 + 50, fused 40 + 8 BM25-only reserve: answer passage in the pool for 23/23 answerable books items, every gist item's document 10/10 (`scripts/measure_recall.py`, R2a-4 proof's queries, 2026-10-18). The ingress `lexical_weight` reads 0.00–0.04, so the reserve is what keeps BM25 in |
 | Query | Rewrite and variants; validate the rewrite is a query | ✅ `is_query_shape` gates the rewrite and every variant line; a `chitchat` turn that names nothing does not retrieve (KI-73) |
 | Rerank | Ask whether the passage **answers** the question, graded (off-topic / related / partly / fully), batched | ✅ the answer-containment rubric, ranked by expected level (`retrieval/rerank.py`); the mean of the top 3 grades is the evidence gate |
 | Context order | Best passages at the start **and** end (lost in the middle) | ✅ `order_for_lost_in_the_middle`; ids follow the new order |
