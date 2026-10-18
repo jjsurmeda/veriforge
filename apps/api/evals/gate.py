@@ -27,7 +27,8 @@ from pathlib import Path
 
 from evals.baseline import AGGREGATE_METRICS
 from evals.baseline import record as record_summary
-from evals.loader import STATE_FILE
+from evals.content import counterfactual_counts, load_spec
+from evals.loader import COUNTERFACTUAL_DIR, STATE_FILE
 from evals.runner import (
     BASELINE_CF_GATE_FILE,
     BASELINE_FAST20_FILE,
@@ -122,6 +123,12 @@ ITEM_FLIP_LIMIT = 2
 # A first-run pass costs nothing extra — the loop returns after one run.
 GATE_ATTEMPTS = 3
 
+# Content counts the counterfactual subset adds to a run (`evals.content`).
+# Their bar is zero: the subset exists to catch an answer that states the
+# real-world value its own document contradicts, or that misses the altered
+# fact, and one such item is the failure, not noise.
+CONTENT_KEYS = ("forbidden_hits", "content_misses", "wrong_document")
+
 
 def _mean_of(runs: list[dict[str, float | None]]) -> dict[str, float | None]:
     """The per-metric mean of several runs' `aggregate` output.
@@ -147,6 +154,12 @@ def _mean_of(runs: list[dict[str, float | None]]) -> dict[str, float | None]:
             if value is not None:
                 values.append(float(value))
         means[key] = statistics.mean(values) if values else None
+    for key in CONTENT_KEYS:
+        recorded = [float(v) for run in runs if (v := run.get(key)) is not None]
+        if recorded:
+            # The worst draw, not the mean: a forbidden value stated in one of
+            # three draws is still a wrong answer the product gave.
+            means[key] = max(recorded)
     return means
 
 
@@ -402,6 +415,13 @@ def check(
             f"{gate_key} {base_p50:.0f} → {curr_p50:.0f} ms "
             f"(rise > {factor:.2f}x = {factor - 1:.0%})"
         )
+    for key in CONTENT_KEYS:
+        count = current.get(key)
+        if count:
+            failures.append(
+                f"{key} = {count:.0f} on the counterfactual subset (bar: 0): an answer "
+                "stated a forbidden value, missed the altered fact, or cited another document"
+            )
     return failures, warnings
 
 
@@ -446,6 +466,7 @@ async def _run_subset_gate(
     dataset_name: str,
     baseline_path: Path,
     baseline_hint: str,
+    content_spec: Path | None = None,
 ) -> bool:
     """The D8 gate loop, once per subset: one run, retry to a mean of three on
     failure, the same tolerances either way. `main` calls it for fast20 and
@@ -458,11 +479,28 @@ async def _run_subset_gate(
         return True
     baseline = json.loads(await asyncio.to_thread(baseline_path.read_text))
 
+    spec = load_spec(content_spec) if content_spec is not None else {}
     runs: list[dict[str, float | None]] = []
     verdicts: list[tuple[list[str], list[str]]] = []
     for attempt in range(1, GATE_ATTEMPTS + 1):
         eval_run, results = await run_eval(subset=subset, baseline=False, dataset_name=dataset_name)
         current = aggregate(results)
+        if content_spec is not None:
+            current.update(
+                counterfactual_counts(
+                    spec,
+                    [
+                        (
+                            item.question,
+                            result.answer,
+                            bool(result.abstained),
+                            (result.review_detail or {}).get("cited_documents") or [],
+                        )
+                        for item, result in results
+                        if not result.error
+                    ],
+                )
+            )
         summary_path = record_summary(
             {"eval_run": str(eval_run.id), "models": models_on_record(), **current}
         )
@@ -541,6 +579,7 @@ async def main() -> None:
         dataset_name="counterfactual",
         baseline_path=BASELINE_CF_GATE_FILE,
         baseline_hint="run evals.runner --subset counterfactual_gate --baseline first",
+        content_spec=COUNTERFACTUAL_DIR / "items.json",
     )
     if not (ok_fast20 and ok_cf):
         sys.exit(1)

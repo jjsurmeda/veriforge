@@ -17,7 +17,8 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from scripts.acceptance import forbids_hit, passes
+from evals.content import forbids_hit
+from scripts.acceptance import passes
 from scripts.audit_labels import audit_items, corpus_from_files
 
 ROOT = Path(__file__).resolve().parents[4]

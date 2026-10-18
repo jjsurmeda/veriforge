@@ -48,6 +48,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import httpx
 
+from evals.content import forbids_hit, mentions_hit
 from scripts import smoke_chat as smoke_chat
 from textkit import detect_language
 
@@ -142,51 +143,6 @@ def observed_class(item: dict[str, Any], result: dict[str, Any]) -> str:
     if any(m.lower() in lowered for m in item.get("mention", [])):
         return "library"
     return "smalltalk"
-
-
-def mentions_hit(item: dict[str, Any], answer: str) -> bool:
-    """True when the answer states every string the item requires.
-
-    `mention_all` is the ambiguity-item channel: the corpus answers the question
-    two ways, so the item names **both** referents and an answer that names only
-    one has not answered the question the corpus poses. These items are expected
-    to fail today — P2's prompt change is what surfaces the ambiguity — and are
-    marked `pending_p2` so they are reported separately and do not drag down the
-    pass rate.
-    """
-    lowered = answer.lower()
-    required = [str(m).lower() for m in item.get("mention_all", [])]
-    optional = [str(m).lower() for m in item.get("mention", [])]
-    optional += [str(m).lower() for m in item.get("alt_mention", [])]
-    if required:
-        return all(m in lowered for m in required) and (
-            not optional or any(m in lowered for m in optional)
-        )
-    if not optional:
-        return True
-    return any(m in lowered for m in optional)
-
-
-def forbids_hit(item: dict[str, Any], answer: str) -> str | None:
-    """The first `forbid` string the answer contains, if any.
-
-    For a counterfactual item (evals/counterfactual) the corpus states a
-    deliberately altered fact, so the real-world value is the one a model
-    produces from memory. `forbid` names it: an answer that states the
-    document's value **and** the real one fails, because the product would have
-    handed the user a figure its own sources contradict.
-
-    Matched on word boundaries for the same reason `mention` should be: `IP68`
-    must not fire on `IP69K`, and `330` must not fire on `3300`.
-    """
-    for raw in item.get("forbid", []):
-        needle = str(raw).lower()
-        if not needle:
-            continue
-        pattern = r"(?<!\w)" + re.escape(needle) + r"(?!\w)"
-        if re.search(pattern, answer.lower()):
-            return str(raw)
-    return None
 
 
 def language_ok(item: dict[str, Any], result: dict[str, Any]) -> bool:

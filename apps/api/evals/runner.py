@@ -53,6 +53,7 @@ from db.models import Chat, EvalDataset, EvalItem, EvalResult, EvalRun, Message,
 from decisions import DecisionEngine
 from evals.abstention import is_confident_wrong
 from evals.attribution import GenerationRef, attribute, record_generation_ids
+from evals.content import cited_documents
 from evals.judge import judge_answer
 from evals.loader import EVAL_USER_EMAIL, STATE_FILE
 from graph.auto import AutoRunInput, finalize_auto_run, prepare_auto_run
@@ -461,6 +462,9 @@ async def _run_item(
             "claims": claim_detail,
             "contexts": context_detail,
             "decisions": [[d.name, d.value, d.engine] for d in decisions],
+            "cited_documents": cited_documents(
+                answer, [context.chunk.document_name for context in contexts]
+            ),
         },
     )
     async with factory() as session, session.begin():
