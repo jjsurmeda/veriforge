@@ -69,6 +69,19 @@ EXPECTED_COUNTS = {
     "library_items": 2,
 }
 
+# The held-out set (evals/heldout/items.json, plan bar 2026-10-17): 31 items over
+# books the pipeline was never tuned on. Its bar is the plan's: 0 confident wrong
+# and at most 5% false abstention overall, reported per category. It has no
+# smalltalk or library class, so it cannot be judged against the books mix.
+HELDOUT_COUNTS = {
+    "items": 31,
+    "answer_items": 21,
+    "abstain_items": 10,
+    "smalltalk_items": 0,
+    "library_items": 0,
+}
+EXPECTED_BY_SET = {"books": EXPECTED_COUNTS, "heldout": HELDOUT_COUNTS}
+
 # PRD §5, as the brief takes it for one run. Named with the arithmetic rather
 # than as bare numbers so a reader can see which clause each is. The arithmetic
 # is integer ceiling division (-(-21 * 90 // 100) = 19), never `math.ceil` over
@@ -92,6 +105,9 @@ MAX_UNCITED_ANSWERS = 0
 # bar, and it is the same arithmetic as `MAX_FALSE_ABSTENTION_PERCENT` at this
 # mix (33 * 5% = 1).
 MAX_CONTENT_MISSES = 1
+
+
+HELDOUT_ITEMS = Path(__file__).resolve().parents[3] / "evals" / "heldout" / "items.json"
 
 
 def min_clean_declines(abstain_items: int) -> int:
@@ -126,7 +142,7 @@ def _ids(summary: Mapping[str, Any], key: str) -> list[str]:
     return [str(item) for item in value] if isinstance(value, list) else []
 
 
-def acceptance_failures(summary: Mapping[str, Any]) -> list[str]:
+def acceptance_failures(summary: Mapping[str, Any], set_name: str = "books") -> list[str]:
     """Why this run does not meet PRD §5 on the books set. Empty means it does.
 
     Each failure carries the number that decided it, so the check reports a
@@ -147,7 +163,7 @@ def acceptance_failures(summary: Mapping[str, Any]) -> list[str]:
 
     # The whole set, by class. A summary from a filtered run, or a set that
     # changed, is not a verdict on this gate.
-    for key, expected in EXPECTED_COUNTS.items():
+    for key, expected in EXPECTED_BY_SET[set_name].items():
         got = _count(summary, key)
         if got != expected:
             failures.append(
@@ -169,7 +185,9 @@ def acceptance_failures(summary: Mapping[str, Any]) -> list[str]:
     abstain_items = _count(summary, "abstain_items")
     clean = _count(summary, "clean_declines")
     min_clean = min_clean_declines(abstain_items)
-    if clean < min_clean:
+    # The plan's held-out bar names confident wrong and false abstention only;
+    # clean declines are reported for it, not gated (no clause added mid-phase).
+    if set_name == "books" and clean < min_clean:
         failures.append(
             f"{clean} of {abstain_items} clean declines ({_count(summary, 'unclean_declines')} "
             f"unclean, {confident_wrong} answered instead of declining); PRD §5 wants "
@@ -219,6 +237,8 @@ def acceptance_failures(summary: Mapping[str, Any]) -> list[str]:
     for key, label in (("smalltalk_items", "smalltalk"), ("library_items", "library")):
         total = _count(summary, key)
         failed = [id_ for id_ in _ids(summary, "failed_ids") if _is_class(summary, id_, label)]
+        if not total:
+            continue  # a set with no items of this class (the held-out set)
         if len(failed) == total:
             failures.append(f"all {total} {label} items failed: {failed}")
         elif failed:
@@ -238,11 +258,31 @@ def _is_class(summary: Mapping[str, Any], item_id: str, expect: str) -> bool:
     )
 
 
+def category_report(summary: Mapping[str, Any], categories: Mapping[str, str]) -> list[str]:
+    """Per-category pass counts from the summary's own rows ('reported per
+    category', plan bar). `categories` maps item id to category."""
+    items = summary.get("items")
+    if not isinstance(items, list):
+        return []
+    tally: dict[str, list[int]] = {}
+    for row in items:
+        if isinstance(row, Mapping):
+            cell = tally.setdefault(categories.get(str(row.get("id")), "uncategorised"), [0, 0])
+            cell[1] += 1
+            cell[0] += int(bool(row.get("pass")))
+    return [f"  {name}: {ok}/{n}" for name, (ok, n) in sorted(tally.items())]
+
+
 def main(argv: list[str]) -> int:
-    if len(argv) != 2:
-        print("usage: python -m evals.acceptance_gate <summary.json>", file=sys.stderr)
+    args = [a for a in argv[1:] if not a.startswith("--set=")]
+    set_name = next((a.split("=", 1)[1] for a in argv[1:] if a.startswith("--set=")), "books")
+    if len(args) != 1 or set_name not in EXPECTED_BY_SET:
+        print(
+            "usage: python -m evals.acceptance_gate <summary.json> [--set=books|heldout]",
+            file=sys.stderr,
+        )
         return 2
-    path = Path(argv[1])
+    path = Path(args[0])
     if not path.exists():
         # No file is not a pass: the run either never happened or never wrote
         # its summary, and either way nothing was measured.
@@ -250,7 +290,12 @@ def main(argv: list[str]) -> int:
         return 1
     summary = json.loads(path.read_text())
     served = summary.get("served_commit", "unknown")
-    failures = acceptance_failures(summary)
+    failures = acceptance_failures(summary, set_name)
+    if set_name == "heldout":
+        heldout = json.loads(HELDOUT_ITEMS.read_text())["items"]
+        print("per category (pass/items):")
+        for line in category_report(summary, {i["id"]: i["category"] for i in heldout}):
+            print(line)
     if failures:
         print("ACCEPTANCE FAIL")
         for failure in failures:

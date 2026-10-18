@@ -304,3 +304,51 @@ def test_every_item_id_in_the_set_is_unique() -> None:
     ids = [str(item["id"]) for item in json.loads(path.read_text())["items"]]
 
     assert len(ids) == len(set(ids))
+
+
+# --- the held-out set has its own verdict (third-party review #4) -----------
+
+
+def _heldout_summary(**overrides: Any) -> dict[str, Any]:
+    summary = _summary()
+    counts = acceptance_gate.HELDOUT_COUNTS
+    summary["counts"].update(
+        {
+            "items": counts["items"],
+            "answer_items": counts["answer_items"],
+            "abstain_items": counts["abstain_items"],
+            "smalltalk_items": 0,
+            "library_items": 0,
+            "clean_declines": counts["abstain_items"],
+        }
+    )
+    summary["counts"].update(overrides)
+    return summary
+
+
+def test_a_clean_heldout_run_passes_its_own_gate_and_fails_the_books_gate() -> None:
+    assert acceptance_failures(_heldout_summary(), "heldout") == []
+    assert acceptance_failures(_heldout_summary(), "books"), "wrong mix for the books set"
+
+
+def test_the_heldout_bar_is_zero_confident_wrong_and_at_most_one_false_abstention() -> None:
+    wrong = acceptance_failures(_heldout_summary(confident_wrong=1), "heldout")
+    assert any("confident wrong" in f for f in wrong)
+    assert acceptance_failures(_heldout_summary(false_abstentions=1), "heldout") == []
+    two = acceptance_failures(_heldout_summary(false_abstentions=2), "heldout")
+    assert any("answerable items declined" in f for f in two)
+
+
+def test_a_filtered_heldout_run_is_not_a_whole_set_verdict() -> None:
+    failures = acceptance_failures(_heldout_summary(items=5), "heldout")
+    assert any("not a whole-set measurement" in f for f in failures)
+
+
+def test_clean_declines_are_reported_not_gated_for_the_heldout_set() -> None:
+    assert acceptance_failures(_heldout_summary(clean_declines=5), "heldout") == []
+
+
+def test_the_category_report_counts_passes_per_category() -> None:
+    summary = {"items": [{"id": "a", "pass": True}, {"id": "b", "pass": False}, {"id": "c"}]}
+    lines = acceptance_gate.category_report(summary, {"a": "lookup", "b": "lookup", "c": "gist"})
+    assert lines == ["  gist: 0/1", "  lookup: 1/2"]

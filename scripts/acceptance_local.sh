@@ -58,8 +58,13 @@ ITEMS="${1:-}"
 # must have been built with the matching GUTENBERG_SET so its library holds the
 # books that set asks about.
 SET_ARGS=()
+GATE_SET=books
 if [ -n "${ACCEPTANCE_SET:-}" ]; then
   SET_ARGS=(--set "$ACCEPTANCE_SET")
+  case "$ACCEPTANCE_SET" in
+    *heldout*) GATE_SET=heldout ;;
+    *) echo "ACCEPTANCE_SET=$ACCEPTANCE_SET has no gate; only the held-out set does" >&2; exit 2 ;;
+  esac
 fi
 # OpenRouter's free tier caps free-model requests at 20/min account-wide.
 # A full 57-item acceptance run needs ~114 calls; without pacing the cap is hit
@@ -149,7 +154,7 @@ fi
 # the script before the status is ever captured, which would report a gate
 # failure as a bare non-zero with no verdict printed.
 gate_status=0
-.venv/bin/python -m evals.acceptance_gate "$SUMMARY_OUT" || gate_status=$?
+.venv/bin/python -m evals.acceptance_gate "$SUMMARY_OUT" "--set=$GATE_SET" || gate_status=$?
 
 if [ "$runner_status" -ne 0 ]; then
   exit "$runner_status"
