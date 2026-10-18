@@ -20,8 +20,10 @@ DEFAULT_DATA: dict[str, Any] = {
         "vec_limit": 50,
         "lex_limit": 50,
         # Reserved BM25-leg slots, ON TOP of the fused order; see
-        # retrieval/hybrid.py.
-        "lex_reserve": 24,
+        # retrieval/hybrid.py. Must equal `hybrid.LEX_RESERVE`: the runtime
+        # default wins over the module constant whenever settings are loaded,
+        # which is every product run (a test pins the two together).
+        "lex_reserve": 8,
         "rrf_k": 60,
         "rerank": True,
         # Owner decision 2026-09-30: Jev reranks. "nvidia" is the
