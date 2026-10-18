@@ -1,0 +1,485 @@
+{
+  "dataset": "heldout",
+  "about": "Held-out set (plan, 2026-10-17): questions over documents the pipeline was never tuned on. Five Gutenberg books ingested into their own database (ACCEPTANCE_DB=veriforge_accept_heldout, GUTENBERG_SET=heldout): Dracula, The Picture of Dorian Gray, Jane Eyre, A Tale of Two Cities, Candide. Same scorer and fields as evals/acceptance/books.json. Frozen: no threshold, prompt or label is changed because of how this set scores; a miss is reported per category and a failure reopens ADR-006. Bar: 0 confident wrong and at most 5% false abstention overall, reported per category. Should-decline items include questions about books deliberately absent from this corpus (Wuthering Heights, Pride and Prejudice, Les Miserables) and a Great Expectations character asked about in A Tale of Two Cities.",
+  "corpus": "heldout",
+  "items": [
+    {
+      "id": "ho-dracula-renfield",
+      "turns": [
+        "What does Renfield eat in Dr. Seward's asylum?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Dracula"
+      ],
+      "mention": [
+        "fly",
+        "flies",
+        "spider",
+        "sparrow"
+      ],
+      "category": "lookup",
+      "corpus": "heldout"
+    },
+    {
+      "id": "ho-dracula-harker",
+      "turns": [
+        "Why does Jonathan Harker travel to Transylvania?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Dracula"
+      ],
+      "mention": [
+        "Carfax",
+        "estate",
+        "property",
+        "purchase"
+      ],
+      "category": "lookup",
+      "corpus": "heldout"
+    },
+    {
+      "id": "ho-dracula-lucy",
+      "turns": [
+        "Who is Lucy Westenra?",
+        "Which men propose to her?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Dracula"
+      ],
+      "mention": [
+        "Holmwood",
+        "Seward",
+        "Quincey",
+        "Morris"
+      ],
+      "category": "follow-up",
+      "corpus": "heldout"
+    },
+    {
+      "id": "ho-dracula-gist",
+      "turns": [
+        "Give me a short summary of Dracula."
+      ],
+      "expect": "answer",
+      "cite": [
+        "Dracula"
+      ],
+      "mention": [
+        "Harker",
+        "Van Helsing",
+        "Mina",
+        "Count"
+      ],
+      "category": "gist",
+      "corpus": "heldout"
+    },
+    {
+      "id": "ho-dorian-painter",
+      "turns": [
+        "Who paints the portrait of Dorian Gray?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Dorian Gray"
+      ],
+      "mention": [
+        "Basil Hallward",
+        "Hallward"
+      ],
+      "category": "lookup",
+      "corpus": "heldout"
+    },
+    {
+      "id": "ho-dorian-wish",
+      "turns": [
+        "What does Dorian Gray wish when he sees his finished portrait?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Dorian Gray"
+      ],
+      "mention": [
+        "remain young",
+        "young"
+      ],
+      "category": "lookup",
+      "corpus": "heldout"
+    },
+    {
+      "id": "ho-dorian-sibyl",
+      "turns": [
+        "Who is Sibyl Vane, and what happens to her?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Dorian Gray"
+      ],
+      "mention": [
+        "actress",
+        "Sibyl"
+      ],
+      "category": "lookup",
+      "corpus": "heldout"
+    },
+    {
+      "id": "ho-dorian-gist",
+      "turns": [
+        "What is The Picture of Dorian Gray about?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Dorian Gray"
+      ],
+      "mention": [
+        "Dorian",
+        "Basil",
+        "Lord Henry",
+        "portrait"
+      ],
+      "category": "gist",
+      "corpus": "heldout"
+    },
+    {
+      "id": "ho-jane-bertha",
+      "turns": [
+        "Who is the madwoman hidden at Thornfield Hall?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Jane Eyre"
+      ],
+      "mention": [
+        "Bertha"
+      ],
+      "category": "lookup",
+      "corpus": "heldout"
+    },
+    {
+      "id": "ho-jane-childhood",
+      "turns": [
+        "Where does Jane Eyre live as a child, and with whom?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Jane Eyre"
+      ],
+      "mention": [
+        "Gateshead",
+        "Reed"
+      ],
+      "category": "lookup",
+      "corpus": "heldout"
+    },
+    {
+      "id": "ho-jane-lowood",
+      "turns": [
+        "What is Lowood, and who runs it?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Jane Eyre"
+      ],
+      "mention": [
+        "Brocklehurst"
+      ],
+      "category": "lookup",
+      "corpus": "heldout"
+    },
+    {
+      "id": "ho-jane-ending",
+      "turns": [
+        "What happens to Mr. Rochester by the end of Jane Eyre?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Jane Eyre"
+      ],
+      "mention": [
+        "blind",
+        "lost",
+        "hand"
+      ],
+      "category": "plot",
+      "corpus": "heldout"
+    },
+    {
+      "id": "ho-jane-gist",
+      "turns": [
+        "Can you give me the gist of Jane Eyre?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Jane Eyre"
+      ],
+      "mention": [
+        "Jane",
+        "Rochester",
+        "Thornfield"
+      ],
+      "category": "gist",
+      "corpus": "heldout"
+    },
+    {
+      "id": "ho-cities-opening",
+      "turns": [
+        "How does A Tale of Two Cities begin?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Two Cities"
+      ],
+      "mention": [
+        "best of times"
+      ],
+      "category": "quote",
+      "corpus": "heldout"
+    },
+    {
+      "id": "ho-cities-carton",
+      "turns": [
+        "Who goes to the guillotine in Charles Darnay's place?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Two Cities"
+      ],
+      "mention": [
+        "Carton"
+      ],
+      "category": "plot",
+      "corpus": "heldout"
+    },
+    {
+      "id": "ho-cities-cell",
+      "turns": [
+        "What number is Dr. Manette's cell in the Bastille?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Two Cities"
+      ],
+      "mention": [
+        "One Hundred and Five",
+        "105"
+      ],
+      "category": "lookup",
+      "corpus": "heldout"
+    },
+    {
+      "id": "ho-cities-defarge",
+      "turns": [
+        "What does Madame Defarge knit?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Two Cities"
+      ],
+      "mention": [
+        "register",
+        "names"
+      ],
+      "category": "lookup",
+      "corpus": "heldout"
+    },
+    {
+      "id": "ho-candide-pangloss",
+      "turns": [
+        "Comment s'appelle le précepteur de Candide ?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Candide"
+      ],
+      "mention": [
+        "Pangloss"
+      ],
+      "category": "multilingual",
+      "corpus": "heldout"
+    },
+    {
+      "id": "ho-candide-jardin",
+      "turns": [
+        "Quelle est la leçon finale de Candide ?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Candide"
+      ],
+      "mention": [
+        "jardin"
+      ],
+      "category": "multilingual",
+      "corpus": "heldout"
+    },
+    {
+      "id": "ho-candide-gist",
+      "turns": [
+        "Peux-tu résumer Candide ?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Candide"
+      ],
+      "mention": [
+        "Pangloss",
+        "Cunégonde",
+        "Eldorado"
+      ],
+      "category": "multilingual",
+      "corpus": "heldout"
+    },
+    {
+      "id": "ho-xl-cunegonde",
+      "turns": [
+        "Who is Cunégonde in Candide?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Candide"
+      ],
+      "mention": [
+        "Cunégonde",
+        "Cunegonde"
+      ],
+      "category": "cross-language",
+      "corpus": "heldout"
+    },
+    {
+      "id": "ho-out-heathcliff",
+      "turns": [
+        "Why does Heathcliff return to Wuthering Heights?"
+      ],
+      "expect": "not_in_sources",
+      "category": "outside",
+      "corpus": "heldout"
+    },
+    {
+      "id": "ho-out-pip",
+      "turns": [
+        "What does Pip inherit in A Tale of Two Cities?"
+      ],
+      "expect": "not_in_sources",
+      "category": "entity-mismatch",
+      "corpus": "heldout"
+    },
+    {
+      "id": "ho-near-vlad",
+      "turns": [
+        "What is Count Dracula's first name?"
+      ],
+      "expect": "not_in_sources",
+      "category": "near-miss",
+      "corpus": "heldout",
+      "forbid": [
+        "Vlad"
+      ]
+    },
+    {
+      "id": "ho-out-coppola",
+      "turns": [
+        "Who directed the 1992 film adaptation of Dracula?"
+      ],
+      "expect": "not_in_sources",
+      "category": "outside",
+      "corpus": "heldout",
+      "forbid": [
+        "Coppola"
+      ]
+    },
+    {
+      "id": "ho-out-population",
+      "turns": [
+        "What is the population of Transylvania today?"
+      ],
+      "expect": "not_in_sources",
+      "category": "outside",
+      "corpus": "heldout"
+    },
+    {
+      "id": "ho-near-basil",
+      "turns": [
+        "How many paintings did Basil Hallward sell in his lifetime?"
+      ],
+      "expect": "not_in_sources",
+      "category": "near-miss",
+      "corpus": "heldout"
+    },
+    {
+      "id": "ho-out-jane-film",
+      "turns": [
+        "Who wrote the screenplay of the 2011 film of Jane Eyre?"
+      ],
+      "expect": "not_in_sources",
+      "category": "outside",
+      "corpus": "heldout",
+      "forbid": [
+        "Moira Buffini"
+      ]
+    },
+    {
+      "id": "ho-out-france",
+      "turns": [
+        "Qui est le président de la France aujourd'hui ?"
+      ],
+      "expect": "not_in_sources",
+      "category": "outside",
+      "corpus": "heldout"
+    },
+    {
+      "id": "ho-out-pride",
+      "turns": [
+        "Why does Elizabeth Bennet refuse Mr. Collins's proposal?"
+      ],
+      "expect": "not_in_sources",
+      "category": "outside",
+      "corpus": "heldout"
+    },
+    {
+      "id": "ho-out-valjean",
+      "turns": [
+        "What does Jean Valjean steal in Les Misérables?"
+      ],
+      "expect": "not_in_sources",
+      "category": "outside",
+      "corpus": "heldout"
+    }
+  ],
+  "gate_subsets": {
+    "heldout": [
+      "ho-dracula-renfield",
+      "ho-dracula-harker",
+      "ho-dracula-lucy",
+      "ho-dracula-gist",
+      "ho-dorian-painter",
+      "ho-dorian-wish",
+      "ho-dorian-sibyl",
+      "ho-dorian-gist",
+      "ho-jane-bertha",
+      "ho-jane-childhood",
+      "ho-jane-lowood",
+      "ho-jane-ending",
+      "ho-jane-gist",
+      "ho-cities-opening",
+      "ho-cities-carton",
+      "ho-cities-cell",
+      "ho-cities-defarge",
+      "ho-candide-pangloss",
+      "ho-candide-jardin",
+      "ho-candide-gist",
+      "ho-xl-cunegonde",
+      "ho-out-heathcliff",
+      "ho-out-pip",
+      "ho-near-vlad",
+      "ho-out-coppola",
+      "ho-out-population",
+      "ho-near-basil",
+      "ho-out-jane-film",
+      "ho-out-france",
+      "ho-out-pride",
+      "ho-out-valjean"
+    ]
+  }
+}
