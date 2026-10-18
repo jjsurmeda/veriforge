@@ -1,38 +1,196 @@
 {
   "about": "Answer passages for the books acceptance set's answerable items, for retrieval recall (rag-reference Evaluation row). A passage is gold when its text, whitespace collapsed, contains one of the item's quotes and it belongs to the item's document. Quotes, not chunk ids, so a re-ingest keeps the labels. Gist items have no single answer passage: they are scored on whether any passage of the document reaches the pool. Labelled 2026-10-18 by the planner from the corpus; owner spot-checks 10.",
   "items": {
-    "quote-darcy": {"doc": "Pride and Prejudice", "quotes": ["how ardently I admire and love you"]},
-    "character-collins": {"doc": "Pride and Prejudice", "quotes": ["being next in the entail of Longbourn estate", "apologizing for being next in the entail"]},
-    "fact-bennet-sisters": {"doc": "Pride and Prejudice", "quotes": ["five daughters"]},
-    "fact-irene-adler": {"doc": "Sherlock", "quotes": ["eclipses and predominates the whole of her sex"]},
-    "plot-red-headed-league": {"doc": "Sherlock", "quotes": ["they had completed their tunnel", "running a tunnel to some other building"]},
-    "plot-speckled-band": {"doc": "Sherlock", "quotes": ["It is a swamp adder"]},
-    "fact-morlocks": {"doc": "Time Machine", "quotes": ["These Eloi were mere fatted cattle"]},
-    "fact-weena": {"doc": "Time Machine", "quotes": ["her name was Weena"]},
-    "scene-tea-party": {"doc": "Alice", "quotes": ["the March Hare and the Hatter were having tea at it"]},
-    "frame-walton": {"doc": "Frankenstein", "quotes": ["St. Petersburgh, Dec. 11th", "My dear Sister"]},
-    "amb-frankenstein-addressee": {"doc": "Frankenstein", "quotes": ["St. Petersburgh, Dec. 11th", "My dear Sister"]},
-    "followup-adler": {"doc": "Sherlock", "quotes": ["Male costume is nothing new to me"]},
-    "outside-whitman": {"doc": "Pride and Prejudice", "quotes": ["loving by allowance"]},
-    "ml-es-rocinante": {"doc": "Quijote", "quotes": ["al fin le vino a llamar Rocinante"]},
-    "ml-fr-bovary-death": {"doc": "Bovary", "quotes": ["saisit le bocal bleu", "Charles montra la lettre"]},
-    "xl-en-bovary-death": {"doc": "Bovary", "quotes": ["saisit le bocal bleu", "Charles montra la lettre"]},
-    "ml-de-samsa": {"doc": "Verwandlung", "quotes": ["zu einem ungeheueren Ungeziefer verwandelt"]},
-    "xl-en-samsa": {"doc": "Verwandlung", "quotes": ["zu einem ungeheueren Ungeziefer verwandelt"]},
-    "ml-tl-maria-clara": {"doc": "Noli", "quotes": ["canyáng anác na si María Clara", "may pagca mukháng europeo si María Clara"]},
-    "ml-zh-wukong-weapon": {"doc": "西遊記", "quotes": ["如意金箍棒，一萬三千五百斤", "如意金箍棒，重一萬三千五百斤", "又喚做如意金箍棒"]},
-    "ml-ja-rashomon-oldwoman": {"doc": "羅生門", "quotes": ["この女の髪を抜いてな", "死人の髪の毛を抜く"]},
-    "ml-zh-xiyou-nezha": {"doc": "西遊記", "quotes": ["原來是天王住宅，號雲樓宮"]},
-    "amb-alice-sister": {"doc": "Alice", "quotes": ["peeped into the book her sister was reading"]},
-    "broad-sherlock": {"doc": "Sherlock", "gist": true},
-    "broad-frankenstein": {"doc": "Frankenstein", "gist": true},
-    "broad-alice": {"doc": "Alice", "gist": true},
-    "broad-time-machine": {"doc": "Time Machine", "gist": true},
-    "broad-quijote": {"doc": "Quijote", "gist": true},
-    "broad-verwandlung": {"doc": "Verwandlung", "gist": true},
-    "broad-wukong": {"doc": "西遊記", "gist": true},
-    "broad-bovary": {"doc": "Bovary", "gist": true},
-    "compare-inventors": {"doc": "Frankenstein", "gist": true},
-    "xl-en-wukong-master": {"doc": "西遊記", "gist": true}
+    "quote-darcy": {
+      "doc": "Pride and Prejudice",
+      "quotes": [
+        "how ardently I admire and love you"
+      ]
+    },
+    "character-collins": {
+      "doc": "Pride and Prejudice",
+      "quotes": [
+        "being next in the entail of Longbourn estate",
+        "apologizing for being next in the entail"
+      ]
+    },
+    "fact-bennet-sisters": {
+      "doc": "Pride and Prejudice",
+      "quotes": [
+        "five daughters"
+      ]
+    },
+    "fact-irene-adler": {
+      "doc": "Sherlock",
+      "quotes": [
+        "eclipses and predominates the whole of her sex",
+        "the well-known adventuress, Irene Adler",
+        "Contralto—hum! La Scala"
+      ]
+    },
+    "plot-red-headed-league": {
+      "doc": "Sherlock",
+      "quotes": [
+        "they had completed their tunnel",
+        "running a tunnel to some other building"
+      ]
+    },
+    "plot-speckled-band": {
+      "doc": "Sherlock",
+      "quotes": [
+        "It is a swamp adder"
+      ]
+    },
+    "fact-morlocks": {
+      "doc": "Time Machine",
+      "quotes": [
+        "These Eloi were mere fatted cattle",
+        "that, by the bye, was the name by which these creatures were called"
+      ]
+    },
+    "fact-weena": {
+      "doc": "Time Machine",
+      "quotes": [
+        "her name was Weena"
+      ]
+    },
+    "scene-tea-party": {
+      "doc": "Alice",
+      "quotes": [
+        "the March Hare and the Hatter were having tea at it"
+      ]
+    },
+    "frame-walton": {
+      "doc": "Frankenstein",
+      "quotes": [
+        "St. Petersburgh, Dec. 11th",
+        "My dear Sister"
+      ]
+    },
+    "amb-frankenstein-addressee": {
+      "doc": "Frankenstein",
+      "quotes": [
+        "St. Petersburgh, Dec. 11th",
+        "My dear Sister"
+      ]
+    },
+    "followup-adler": {
+      "doc": "Sherlock",
+      "quotes": [
+        "Male costume is nothing new to me"
+      ]
+    },
+    "outside-whitman": {
+      "doc": "Pride and Prejudice",
+      "quotes": [
+        "loving by allowance"
+      ]
+    },
+    "ml-es-rocinante": {
+      "doc": "Quijote",
+      "quotes": [
+        "al fin le vino a llamar Rocinante"
+      ]
+    },
+    "ml-fr-bovary-death": {
+      "doc": "Bovary",
+      "quotes": [
+        "saisit le bocal bleu",
+        "Charles montra la lettre"
+      ]
+    },
+    "xl-en-bovary-death": {
+      "doc": "Bovary",
+      "quotes": [
+        "saisit le bocal bleu",
+        "Charles montra la lettre"
+      ]
+    },
+    "ml-de-samsa": {
+      "doc": "Verwandlung",
+      "quotes": [
+        "zu einem ungeheueren Ungeziefer verwandelt"
+      ]
+    },
+    "xl-en-samsa": {
+      "doc": "Verwandlung",
+      "quotes": [
+        "zu einem ungeheueren Ungeziefer verwandelt"
+      ]
+    },
+    "ml-tl-maria-clara": {
+      "doc": "Noli",
+      "quotes": [
+        "canyáng anác na si María Clara"
+      ]
+    },
+    "ml-zh-wukong-weapon": {
+      "doc": "西遊記",
+      "quotes": [
+        "如意金箍棒，一萬三千五百斤",
+        "如意金箍棒，重一萬三千五百斤",
+        "又喚做如意金箍棒"
+      ]
+    },
+    "ml-ja-rashomon-oldwoman": {
+      "doc": "羅生門",
+      "quotes": [
+        "この女の髪を抜いてな",
+        "死人の髪の毛を抜く"
+      ]
+    },
+    "ml-zh-xiyou-nezha": {
+      "doc": "西遊記",
+      "quotes": [
+        "原來是天王住宅，號雲樓宮",
+        "到雲樓宮殿，見父王下拜"
+      ]
+    },
+    "amb-alice-sister": {
+      "doc": "Alice",
+      "quotes": [
+        "peeped into the book her sister was reading"
+      ]
+    },
+    "broad-sherlock": {
+      "doc": "Sherlock",
+      "gist": true
+    },
+    "broad-frankenstein": {
+      "doc": "Frankenstein",
+      "gist": true
+    },
+    "broad-alice": {
+      "doc": "Alice",
+      "gist": true
+    },
+    "broad-time-machine": {
+      "doc": "Time Machine",
+      "gist": true
+    },
+    "broad-quijote": {
+      "doc": "Quijote",
+      "gist": true
+    },
+    "broad-verwandlung": {
+      "doc": "Verwandlung",
+      "gist": true
+    },
+    "broad-wukong": {
+      "doc": "西遊記",
+      "gist": true
+    },
+    "broad-bovary": {
+      "doc": "Bovary",
+      "gist": true
+    },
+    "compare-inventors": {
+      "doc": "Frankenstein",
+      "gist": true
+    },
+    "xl-en-wukong-master": {
+      "doc": "西遊記",
+      "gist": true
+    }
   }
 }
