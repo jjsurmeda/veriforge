@@ -89,12 +89,17 @@ retrieved evidence is clearly absent. It is the mean answer-containment grade
 of the best three post-sanitize passages (`evidence_floor`); the default is
 0.455 (ADR-006: it only removes clear misses, it is not a decline classifier).
 Below the floor triggers one corrective retrieval, then abstains if still
-below. Above it the run generates, and IsUse decides. The named-entity guard
+below (Auto). Deep computes the same floor over its pooled hop passages
+after the last hop and abstains directly — its corrective loop is the
+controller's own hops, so there is no second check (R2b). Above the floor
+the run generates, and IsUse decides. The named-entity guard
 sits beside it.
 
 **IsUse** — The post-generation usefulness check (Self-RAG's third
 critique, realized; ADR-006). One `Noul` asked of every grounded Auto
-answer after it generates: *does this answer directly answer the question
+answer after it generates, and of every Deep answer since R2b (R2b:
+Deep runs are always held, so a fail declines without retraction):
+*does this answer directly answer the question
 asked, from these sources?* Below the `is_use` threshold (0.47) the
 answer is replaced by the decline template and the run records an
 abstention; a streamed answer is retracted first (`answer.retract`).
