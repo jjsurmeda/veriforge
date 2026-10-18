@@ -119,6 +119,7 @@ unsupported, or contradicted.
 
 - **Decision provider** — a model behind the `DecisionProvider` interface that answers `Noul`, `Choice` and `Score` questions (Jev, an LLM judge, other decision models). Chosen per run.
 - **Reranker** — reorders retrieved passages by whether they answer the question (Cohere, NVIDIA, Jev, LLM judge, or fused order for none).
+- **Reranker registry** — the one list of selectable rerankers (`jev`, `cohere`, `nvidia`, `fused`) in `retrieval/rerank.py`; a run may choose one, and each needs its own calibrated evidence floor and stream line before it can be chosen.
 - **Answer-containment rubric** — the rerank question "Does the passage contain the information needed to answer or verify the question?", graded off-topic / related / partly / fully.
 - **Evidence check (corrective)** — Auto's single check that the reranked evidence answers the question; on failure it corrects the retrieval once before abstaining.
 - **Entity guard** — rejects passages about a different named entity than the one asked about.

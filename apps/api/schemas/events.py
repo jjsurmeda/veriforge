@@ -114,7 +114,11 @@ class Decision(RunEvent):
     # stage's own default rather than a reading (KI-57). It has to be
     # distinguishable in the trace, because a row reading 0.0 from `jev` says
     # "the evidence was judged thin" and this says "nobody could judge it".
-    engine: Literal["jev", "fallback", "unavailable"]
+    #
+    # R2c: the gate row (`stage="gate"`) carries the id of the RERANKER whose
+    # scale produced the number, so it can also be `cohere`, `nvidia` or `fused`
+    # once one of them is calibrated. Every other row is still a decision engine.
+    engine: Literal["jev", "fallback", "unavailable", "cohere", "nvidia", "fused"]
     latency_ms: int
     reasoning: str | None = None
     stage: str | None = None

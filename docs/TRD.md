@@ -398,6 +398,15 @@ order** (no rerank). Chosen per run like decision providers (PRD AD-10). A
 rerank outage degrades to fused order and never fails the run — and, with
 KI-57, an outage of the decision layer underneath it degrades the same way.
 
+**Registry and thresholds (R2c, ADR-005).** The implementations are one registry
+(`GET /rerankers`); a run picks one with `reranker` on the run request, else the
+admin default. The evidence floor and stream line are numbers on the scale of the
+reranker that produced the grade, so they are stored per reranker: Jev 0.455 and
+0.60, every other reranker none until calibrated
+(`scripts/calibrate_gate.py --reranker <id>`, human-reviewed). A reranker with no
+key (`reranker_unavailable`) or no calibrated gate (`reranker_uncalibrated`) is
+refused, never replaced by Jev. Ties break by input (fused) order.
+
 ### 9.5 OKF bundles *(v1.1, PRD §4.7, ADR-004)*
 
 - **Storage:** each concept is a `documents` row with `format = 'okf'` and

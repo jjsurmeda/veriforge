@@ -35,6 +35,7 @@ from functools import partial
 from uuid import UUID
 
 from decisions import threshold
+from decisions.thresholds import reranker_threshold
 from graph import rewrite as rewrite_node
 from graph.stages.checks import (
     RETRY_SKIP_RUBRIC_MAX,
@@ -237,7 +238,7 @@ def _read_answers(
     attempt.gate_engine = _gate_engine(reranker)
     grades = rubric_grades(attempt.winners)
     attempt.gate_mean_top3 = rubric_mean_top3(grades)
-    attempt.gate_floor = threshold("evidence_floor", "jev")
+    attempt.gate_floor = reranker_threshold("evidence_floor", attempt.gate_engine)
     state.decision_events.append(
         gate_event(
             env.params.run_id, attempt.gate_mean_top3, attempt.gate_floor, attempt.gate_engine
@@ -261,19 +262,20 @@ def _read_answers(
 
 
 def _gate_engine(reranker: RerankProvider) -> str:
-    """Which engine's rubric produced the gate number.
+    """Which reranker's scale produced the gate number: its registry id.
 
-    The gate is computed from `rerank_score`, so its engine is the reranker's.
-    `JevRerank` records what actually answered each passage; the other providers
-    (Cohere, NVIDIA, fused order) have no decision engine and are reported as
-    `jev` — the display scale the trace is calibrated for. A rerank outage
-    degrades to fused order, and then the sanitizer drops the ungraded chunks so
-    a fabricated fused score cannot become a passing gate.
+    `JevRerank` records what actually answered each passage, so a Jev rerank
+    answered wholly by the LLM fallback reads `fallback` (its own calibrated
+    cell). Any other provider reports its own id (`cohere`, `nvidia`, `fused`),
+    and `reranker_threshold` refuses it until it is calibrated. A reranker
+    object with no id (a test double) keeps reading `jev`. A rerank outage
+    degrades to fused order, and then the sanitizer drops the ungraded chunks
+    so a fabricated fused score cannot become a passing gate.
     """
     answered: set[str] = getattr(reranker, "answered_by", set())
     if "fallback" in answered and "jev" not in answered:
         return "fallback"
-    return "jev"
+    return str(getattr(reranker, "reranker_id", "jev"))
 
 
 def gate_event(
@@ -310,7 +312,6 @@ def gate_event(
             )
         ),
     )
-
 
 
 def _retry_skipped_event(env: StageEnv, attempt: Attempt) -> Decision:

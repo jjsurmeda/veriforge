@@ -73,6 +73,24 @@ class RunCreateRequest(BaseModel):
     mode: str = Field(default="fast", pattern="^(fast|auto|deep)$")
     source: str = Field(default="auto", pattern="^(auto|upload|web|both)$")
     filters: RunFilters | None = None
+    # R2c: registry id (`GET /rerankers`). Absent = the admin default. Unknown,
+    # keyless and uncalibrated ids are refused (reranker_unavailable /
+    # reranker_uncalibrated), never replaced by Jev.
+    reranker: str | None = Field(default=None, max_length=32)
+
+
+class RerankerOut(BaseModel):
+    """One entry of `GET /rerankers` (R2c, ADR-005)."""
+
+    id: str
+    label: str
+    kind: str = Field(pattern="^(decision-model|traditional)$")
+    key_present: bool
+    calibrated: bool
+    cost_per_1k_queries_usd: float | None
+    cost_note: str
+    # Admin default (`retrieval.reranker`); a run may override per request.
+    is_default: bool
 
 
 class RunCreateResponse(BaseModel):

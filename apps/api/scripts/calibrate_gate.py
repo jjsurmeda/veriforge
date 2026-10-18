@@ -49,6 +49,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import math
 import os
 import statistics
 import sys
@@ -63,6 +64,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from sqlalchemy import select
 
 from chats.scope import resolve_scope
+from config import get_settings
 from db.models import Chat, Message, User
 from db.session import get_session_factory
 from decisions.engine import DecisionEngine
@@ -439,25 +441,121 @@ def print_table(dataset: str, rows: list[dict[str, Any]]) -> None:
         )
 
 
+def propose_gate(rows: list[dict[str, Any]], allowed_misses: int = 1) -> dict[str, Any]:
+    """Proposed `evidence_floor` and `stream_line` for one reranker, by the rule
+    `decisions/thresholds.py` documents for Jev's values (R2c item 4).
+
+    * **floor** sits below the lowest answerable reading, except the budgeted
+      miss(es) (`allowed_misses`, the brief's one known miss), and above the
+      highest should-decline reading it must block. "Must block" = every
+      should-decline reading below that lowest answerable. Placed at the
+      midpoint, margins reported both sides.
+    * **stream line** sits above the highest should-decline reading overall, at
+      the lowest tenth above it.
+
+    If no should-decline reading falls below the lowest answerable, there is no
+    separation and nothing is proposed: that is a finding about the reranker,
+    not an error. Never edits `thresholds.py`; a human pastes reviewed values.
+    """
+    gated = [r for r in rows if r["gated"] and r["mean_top3"] is not None]
+    answers = sorted(r["mean_top3"] for r in gated if r["expect"] == "answer")
+    declines = sorted(r["mean_top3"] for r in gated if r["expect"] == "not_in_sources")
+    if len(answers) <= allowed_misses or not declines:
+        return {"separation": False, "why": "need answerable and should-decline readings"}
+    lowest = answers[allowed_misses]
+    blocked = [d for d in declines if d < lowest]
+    if not blocked:
+        return {
+            "separation": False,
+            "why": f"every should-decline reading is >= the lowest answerable ({lowest:.4f})",
+            "lowest_answerable": lowest,
+            "highest_decline": declines[-1],
+        }
+    highest_blocked = blocked[-1]
+    floor = round((lowest + highest_blocked) / 2, 3)
+    stream = round((math.floor(declines[-1] * 10) + 1) / 10, 2)
+    return {
+        "separation": True,
+        "evidence_floor": floor,
+        "floor_margin_below_answerable": round(lowest - floor, 4),
+        "floor_margin_above_blocked": round(floor - highest_blocked, 4),
+        "lowest_answerable": lowest,
+        "budgeted_misses": answers[:allowed_misses],
+        "highest_blocked_decline": highest_blocked,
+        "stream_line": stream,
+        "stream_margin_above_highest_decline": round(stream - declines[-1], 4),
+        "highest_decline": declines[-1],
+        "declines_blocked": len(blocked),
+        "declines_total": len(declines),
+    }
+
+
+def print_proposal(reranker: str, proposal: dict[str, Any]) -> None:
+    print(f"\n== proposed gate for reranker {reranker!r} (NOT written anywhere) ==")
+    if not proposal["separation"]:
+        print(f"no separation: {proposal['why']}. Nothing proposed.")
+        return
+    for key, value in proposal.items():
+        if key != "separation":
+            print(f"  {key:<38}{value}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--dataset",
-        default="books",
+        default=None,
         choices=["books", "entity_mismatch"],
         help="which set to calibrate on (they are calibrated separately: different corpora)",
     )
     parser.add_argument("--items", default=None, help="comma-separated item ids, to re-run some")
+    parser.add_argument(
+        "--reranker",
+        default=None,
+        help="registry id (cohere, nvidia, fused, jev): run BOTH sets through that reranker, "
+        "print the separation table and a proposed floor / stream line; edits nothing",
+    )
     args = parser.parse_args()
 
     if not os.environ.get("DATABASE_URL"):
         raise SystemExit("DATABASE_URL is not set; the probe reads a real corpus")
 
-    print(f"==> calibrating the evidence gate on the {args.dataset} set")
-    rows = asyncio.run(probe(args.dataset, args.items))
-    print_table(args.dataset, rows)
-    path = write_report(args.dataset, rows)
+    if args.reranker:
+        return _calibrate_reranker(args.reranker, args.dataset, args.items)
+
+    dataset = args.dataset or "books"
+    print(f"==> calibrating the evidence gate on the {dataset} set")
+    rows = asyncio.run(probe(dataset, args.items))
+    print_table(dataset, rows)
+    path = write_report(dataset, rows)
     print(f"\nwrote {path}")
+    return 0
+
+
+def _calibrate_reranker(reranker: str, dataset: str | None, items: str | None) -> int:
+    from retrieval.rerank import RERANKERS
+    from runtime import RuntimeSettings, set_runtime_settings
+
+    if reranker not in RERANKERS:
+        raise SystemExit(f"unknown reranker {reranker!r}; known: {sorted(RERANKERS)}")
+    if not RERANKERS[reranker].key_present(get_settings()):
+        raise SystemExit(f"reranker {reranker!r} has no API key configured; nothing to measure")
+    set_runtime_settings(RuntimeSettings.from_data(0, {"retrieval": {"reranker": reranker}}))
+    # Measurement mode: an uncalibrated reranker has no floor, which is exactly
+    # why it is being measured. The gate lookup would refuse it, so read the
+    # raw grade instead; nothing is decided from this run.
+    import graph.stages.evidence_stage as evidence_stage
+
+    evidence_stage.reranker_threshold = lambda name, rid: 0.0  # type: ignore[assignment,attr-defined]
+    all_rows: list[dict[str, Any]] = []
+    for name in [dataset] if dataset else ["books", "entity_mismatch"]:
+        print(f"==> {reranker}: {name} set")
+        rows = asyncio.run(probe(name, items))
+        print_table(f"{name} / {reranker}", rows)
+        all_rows.extend(rows)
+    path = write_report(f"{reranker}-all", all_rows)
+    print(f"\nwrote {path}")
+    print_proposal(reranker, propose_gate(all_rows))
     return 0
 
 
