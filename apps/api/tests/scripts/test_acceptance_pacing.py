@@ -198,3 +198,58 @@ async def test_items_run_concurrently_and_keep_the_set_order(
     assert in_flight["max"] == 3
     (raw,) = (tmp_path / "out").glob("*.json")
     assert [r["id"] for r in json.loads(raw.read_text())["items"]] == [i["id"] for i in items]
+
+
+async def test_a_completed_wrong_answer_is_scored_as_it_came_not_re_rolled(
+    paced_run: PacedRun, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Third-party review #3: only an infrastructure failure is measured again.
+    A completed answer that fails the scorer is the product's behaviour."""
+    calls: list[str] = []
+
+    async def run_turn(_client: Any, _token: str, _chat_id: str, turn: str) -> dict[str, Any]:
+        calls.append(turn)
+        return {
+            "answer": "A confident wrong reply.",
+            "status": "completed",
+            "message_status": "complete",
+            "citations": ["[1] Book p.3"],
+        }
+
+    monkeypatch.setattr(acceptance.smoke_chat, "run_turn", run_turn)
+    await paced_run(only=["a1"])
+
+    assert len(calls) == 1, "a completed answer is never re-rolled"
+    (raw,) = (tmp_path / "out").glob("*.json")
+    row = json.loads(raw.read_text())["items"][0]
+    assert row["pass"] is False and len(row["attempts"]) == 1
+
+
+async def test_an_infrastructure_failure_is_retried_once_and_both_attempts_are_kept(
+    paced_run: PacedRun, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    calls: list[str] = []
+
+    async def run_turn(_client: Any, _token: str, _chat_id: str, turn: str) -> dict[str, Any]:
+        calls.append(turn)
+        if len(calls) == 1:
+            return {
+                "answer": "",
+                "status": "timeout",
+                "message_status": None,
+                "citations": [],
+            }
+        return _result_for(_answer_item("a1"))
+
+    async def no_wait(_seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr(acceptance.smoke_chat, "run_turn", run_turn)
+    monkeypatch.setattr("asyncio.sleep", no_wait)
+    await paced_run(only=["a1"])
+
+    assert len(calls) == 2
+    (raw,) = (tmp_path / "out").glob("*.json")
+    row = json.loads(raw.read_text())["items"][0]
+    assert [a["status"] for a in row["attempts"]] == ["timeout", "completed"]
+    assert row["pass"] is True

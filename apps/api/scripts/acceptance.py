@@ -213,8 +213,9 @@ def summarise(
       a content question routed to `chitchat` skips retrieval and answers from
       model memory, and that is the one behaviour this product does not ship.
     - `content_miss` — an answer-class item that **answered** (did not decline)
-      and cited, but whose answer does not state the strings the item
-      requires. Every other class here would pass it: it is not a decline, not
+      and cited, but that the scorer fails: its answer does not state the
+      strings the item requires, cites another book, is in the wrong language,
+      or states a forbidden value. Every other class here would pass it: it is not a decline, not
       an abstention, not an error, not uncited, and it cited a plausible book.
       The content check the plan's bar names ("≤ 1 content miss of 33
       answerables", KI-75) has to be its own count, because a run that holds
@@ -294,10 +295,15 @@ def summarise(
                 # evidence behind it is a different product from this one.
                 counts["uncited_answers"] += 1
                 detail["uncited_answer_ids"].append(str(row["id"]))
-            elif not bool(row.get("mention_hit")):
-                # Answered, cited, and did not state the thing the item asked
-                # for. The other answer-class counts all pass this item, which
-                # is why correctness needs a count of its own (KI-75).
+            elif not row.get("pass"):
+                # Answered, cited, and the scorer failed it: it did not state
+                # the thing the item asked for, or cited another book, or
+                # replied in another language, or stated a forbidden value. The
+                # other answer-class counts all pass this item, which is why
+                # correctness needs a count of its own (KI-75). Keyed on the
+                # scorer's own verdict, not on `mention_hit` alone, so the
+                # failed list and the verdict cannot disagree (third-party
+                # review #6).
                 counts["content_misses"] += 1
                 detail["content_miss_ids"].append(str(row["id"]))
         elif expect == "smalltalk":
@@ -450,27 +456,33 @@ async def run(
                         }
                 return result
 
+            # Only an infrastructure failure is measured again: a run that did
+            # not complete (provider error, rate limit, stream drop, timeout).
+            # A completed answer that the scorer fails is the product's
+            # behaviour and is scored as it came; re-rolling it would let a
+            # wrong answer or a false abstention pass on a second draw (third-
+            # party review #3). Every attempt is kept on the row.
+            attempts: list[dict[str, Any]] = []
+
+            def record(result: dict[str, Any]) -> None:
+                attempts.append(
+                    {
+                        "status": result.get("status"),
+                        "class": observed_class(item, result),
+                        "pass": passes(item, result),
+                        "answer": result.get("answer"),
+                    }
+                )
+
             result = await play()
-            # OpenRouter's free tier caps free-model requests at 20/min
-            # account-wide; a failed run usually means this item hit the cap,
-            # so wait out the window and measure the item once more.
-            if str(result.get("status", "")).startswith("failed"):
+            record(result)
+            if result.get("status") != "completed":
                 print(f"  {item['id']}: {result['status']}; retrying in 70s", flush=True)
                 await asyncio.sleep(70)
                 result = await play()
+                record(result)
             got = observed_class(item, result)
             ok = passes(item, result)
-            # A non-failed, non-completed result (timeout, stream drop, decline)
-            # may be transient — retry once for items that need a scored answer.
-            if not ok and not str(result.get("status", "")).startswith("failed"):
-                print(
-                    f"  {item['id']}: {got} FAIL ({failure_reason(item, result)}); retrying in 70s",
-                    flush=True,
-                )
-                await asyncio.sleep(70)
-                result = await play()
-                got = observed_class(item, result)
-                ok = passes(item, result)
             mention_hit = mentions_hit(item, result.get("answer") or "")
             row: dict[str, Any] = (
                 {
@@ -485,6 +497,7 @@ async def run(
                     # pure function of the item and the answer, so scoring it
                     # once at play time and reading it here cannot disagree.
                     "mention_hit": mention_hit,
+                    "attempts": attempts,
                     "pending_p2": bool(item.get("pending_p2")),
                     "reason": failure_reason(item, result),
                     "q_language": detect_language(item["turns"][-1]),
