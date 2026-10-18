@@ -434,3 +434,28 @@ def test_the_written_report_says_which_commit_and_how_many_were_gated(tmp_path: 
     assert payload["summary"]["gated"] == 2
     assert payload["summary"]["skipped_ungated"] == 1
     assert len(payload["rows"]) == 3, "the ungated rows are kept, just not counted"
+
+
+def _row(expect: str, mean: float) -> dict[str, object]:
+    return {"gated": True, "expect": expect, "mean_top3": mean}
+
+
+def test_propose_gate_follows_jevs_rule_and_budgets_one_miss() -> None:
+    from scripts.calibrate_gate import propose_gate
+
+    rows = [_row("answer", m) for m in (0.11, 0.4721, 0.4867, 0.6)]
+    rows += [_row("not_in_sources", m) for m in (0.4233, 0.4411, 0.5589)]
+    p = propose_gate(rows)
+    assert p["separation"] is True
+    assert p["evidence_floor"] == 0.457  # midpoint of 0.4411 and 0.4721
+    assert p["stream_line"] == 0.6  # lowest tenth above 0.5589
+    assert p["declines_blocked"] == 2
+
+
+def test_propose_gate_says_so_when_nothing_separates() -> None:
+    from scripts.calibrate_gate import propose_gate
+
+    rows = [_row("answer", m) for m in (0.3, 0.5, 0.6)]
+    rows += [_row("not_in_sources", m) for m in (0.55, 0.7)]
+    p = propose_gate(rows)
+    assert p["separation"] is False and "evidence_floor" not in p
