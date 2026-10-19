@@ -157,7 +157,9 @@ async def _context(session: Any) -> tuple[Ownership, dict[str, float]]:
     return Ownership(user_id=UUID(str(owner)), collection_ids=collections), weights
 
 
-async def measure(export: Path, ids: list[str], limit: int | None) -> dict[str, Any]:
+async def measure(
+    export: Path, ids: list[str], limit: int | None, pace: float = 0.0
+) -> dict[str, Any]:
     labels: dict[str, dict[str, Any]] = json.loads(LABELS.read_text())["items"]
     items = {i["id"]: i for i in json.loads(await asyncio.to_thread(export.read_text))["items"]}
     factory = get_session_factory()
@@ -180,6 +182,7 @@ async def measure(export: Path, ids: list[str], limit: int | None) -> dict[str, 
         queries = list(dict.fromkeys(r["query"] for r in items[iid]["retrievals"]))
         embeddings = await embed_batch(texts=queries)
         item_hit = {rid: False for rid in ids}
+        item_failed: set[str] = set()
         item_ndcg: dict[str, list[float]] = {rid: [] for rid in ids}
         for query, embedding in zip(queries, embeddings, strict=True):
             pool = (
@@ -205,9 +208,12 @@ async def measure(export: Path, ids: list[str], limit: int | None) -> dict[str, 
                 except Exception as exc:
                     print(f"    {rid} failed on {iid}: {exc!r}", flush=True)
                     degraded[rid] += 1
+                    item_failed.add(rid)
                     continue
                 finally:
                     reset_runtime_settings(token)
+                    if pace and rid != "jev":
+                        await asyncio.sleep(pace)
                 latencies[rid].append((time.perf_counter() - started) * 1000)
                 queries_run[rid] += 1
                 if rid == "jev" and (usd := await _usd_for(GENERATION_IDS[before:])) is not None:
@@ -215,10 +221,19 @@ async def measure(export: Path, ids: list[str], limit: int | None) -> dict[str, 
                 order = [str(pool[i].chunk_id) for i, _ in ranked]
                 item_hit[rid] = item_hit[rid] or bool(set(order[:RECALL_K]) & gold[iid])
                 item_ndcg[rid].append(ndcg_at_k(order, gold[iid]))
+        # An item where a call failed is not scored for that reranker: a rate
+        # limit or outage is not a retrieval miss.
         for rid in ids:
+            if rid in item_failed:
+                continue
             hits[rid][iid] = item_hit[rid]
             ndcgs[rid][iid] = statistics.fmean(item_ndcg[rid]) if item_ndcg[rid] else 0.0
-        print(f"  {iid}: " + " ".join(f"{r}={int(item_hit[r])}" for r in ids), flush=True)
+        print(
+            f"  {iid}: "
+            + " ".join("FAILED" if r in item_failed else f"{r}={int(item_hit[r])}" for r in ids)
+            + "",
+            flush=True,
+        )
 
     summary: dict[str, Any] = {}
     for rid in ids:
@@ -274,6 +289,13 @@ def render_md(result: dict[str, Any], *, skipped: dict[str, str], export: Path) 
             f"| {rid} | {s['hits']}/{s['items']} ({s['recall_at_8']}) | {s['ndcg_at_10']} "
             f"| {s['latency_p50_ms']} | {s['latency_p95_ms']} | {cost} | {s['cost_source']} |"
         )
+    for rid, s in result["summary"].items():
+        if s["failed_calls"]:
+            lines += [
+                "",
+                f"`{rid}`: {s['failed_calls']} rerank calls failed; the items they hit are "
+                f"not scored for it (scored {s['items']} items).",
+            ]
     if result["vs_jev"]:
         lines += [
             "",
@@ -295,6 +317,9 @@ async def main() -> None:
     parser.add_argument("export", type=Path, help="an acceptance raw results file")
     parser.add_argument("--ids", default=",".join(RERANKERS), help="comma-separated registry ids")
     parser.add_argument("--limit", type=int, default=None, help="first N labelled items")
+    parser.add_argument(
+        "--pace", type=float, default=0.0, help="seconds to wait after each non-Jev rerank call"
+    )
     parser.add_argument("--out-md", type=Path, default=BENCH_MD)
     parser.add_argument("--out-json", type=Path, default=BENCH_JSON)
     args = parser.parse_args()
@@ -313,7 +338,7 @@ async def main() -> None:
     if not ids:
         raise SystemExit("no reranker is available to run")
 
-    result = await measure(args.export, ids, args.limit)
+    result = await measure(args.export, ids, args.limit, args.pace)
     md = render_md(result, skipped=skipped, export=args.export)
     args.out_md.parent.mkdir(parents=True, exist_ok=True)
     args.out_md.write_text(md)

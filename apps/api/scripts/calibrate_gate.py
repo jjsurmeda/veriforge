@@ -548,11 +548,17 @@ def _calibrate_reranker(reranker: str, dataset: str | None, items: str | None) -
 
     evidence_stage.reranker_threshold = lambda name, rid: 0.0  # type: ignore[assignment,attr-defined]
     all_rows: list[dict[str, Any]] = []
-    for name in [dataset] if dataset else ["books", "entity_mismatch"]:
-        print(f"==> {reranker}: {name} set")
-        rows = asyncio.run(probe(name, items))
-        print_table(f"{name} / {reranker}", rows)
-        all_rows.extend(rows)
+
+    # One event loop for every set: the session factory is cached and bound to
+    # the loop that first used it, so a second asyncio.run() would fail on it.
+    async def run_sets() -> None:
+        for name in [dataset] if dataset else ["books", "entity_mismatch"]:
+            print(f"==> {reranker}: {name} set")
+            rows = await probe(name, items)
+            print_table(f"{name} / {reranker}", rows)
+            all_rows.extend(rows)
+
+    asyncio.run(run_sets())
     path = write_report(f"{reranker}-all", all_rows)
     print(f"\nwrote {path}")
     print_proposal(reranker, propose_gate(all_rows))
