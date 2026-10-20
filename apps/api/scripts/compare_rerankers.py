@@ -211,6 +211,7 @@ async def measure(
                 started = time.perf_counter()
                 try:
                     ranked = await provider.rerank(query=query, documents=documents, top_n=NDCG_K)
+                    elapsed_ms = (time.perf_counter() - started) * 1000  # before the pace sleep
                 except Exception as exc:
                     print(f"    {rid} failed on {iid}: {exc!r}", flush=True)
                     degraded[rid] += 1
@@ -220,7 +221,7 @@ async def measure(
                     reset_runtime_settings(token)
                     if pace and rid != "jev":
                         await asyncio.sleep(pace)
-                latencies[rid].append((time.perf_counter() - started) * 1000)
+                latencies[rid].append(elapsed_ms)
                 queries_run[rid] += 1
                 if rid == "jev" and (usd := await _usd_for(GENERATION_IDS[before:])) is not None:
                     jev_usd.append(usd)
