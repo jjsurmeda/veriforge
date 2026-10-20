@@ -44,8 +44,10 @@ from decisions.jev import JevClient
 from evals.attribution import _stats
 from providers.llm import embed_batch
 from retrieval.filters import Ownership
-from retrieval.rerank import RERANKERS, RerankProvider
+from retrieval.rerank import RERANKERS as PRODUCT_RERANKERS
+from retrieval.rerank import RerankProvider
 from runtime import RuntimeSettings, reset_runtime_settings, set_runtime_settings
+from scripts.local_rerankers import BGE_INFO
 from scripts.measure_recall import LABELS, _gold, _search
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -72,6 +74,10 @@ def percentile(values: list[float], p: float) -> float:
         return 0.0
     ordered = sorted(values)
     return ordered[min(len(ordered) - 1, math.ceil(p * len(ordered)) - 1)]
+
+
+# Product rerankers plus comparison-only local ones (scripts/local_rerankers.py).
+RERANKERS = {**PRODUCT_RERANKERS, BGE_INFO.id: BGE_INFO}
 
 
 def paired(hits: dict[str, dict[str, bool]], base: str, other: str) -> dict[str, Any]:
@@ -290,7 +296,7 @@ def render_md(result: dict[str, Any], *, skipped: dict[str, str], export: Path) 
             f"| {s['latency_p50_ms']} | {s['latency_p95_ms']} | {cost} | {s['cost_source']} |"
         )
     for rid, s in result["summary"].items():
-        if s["failed_calls"]:
+        if s.get("failed_calls"):
             lines += [
                 "",
                 f"`{rid}`: {s['failed_calls']} rerank calls failed; the items they hit are "
