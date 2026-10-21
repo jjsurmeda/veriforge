@@ -307,23 +307,6 @@
       "corpus": "books"
     },
     {
-      "id": "outside-whitman",
-      "turns": [
-        "What does Walt Whitman find distinct between loving by allowance and loving with personal love?"
-      ],
-      "expect": "answer",
-      "proof": "2026-10-02, read-only psql over the 10,733 chunks the acceptance run user can retrieve (every chunk of every visibility='shared' collection — `Shared` 10,704 + `eval-seed-corpus` 29): the only '%whitman%' chunk is Pride and Prejudice.txt ord 0, and it contains the answer verbatim: \"Walt Whitman has somewhere a fine and just distinction between 'loving by allowance' and 'loving with personal love.' This distinction applies to books as well as to men and women; and in the case of the not very numerous authors who are the objects of the personal affection, it brings a curious consequence with it.\" Relabelled not_in_sources -> answer (KI-36): the passage is in the corpus, so abstaining was the wrong behaviour. It only 'passed' before because retrieval missed this passage, not because the answer was absent.",
-      "cite": [
-        "Pride and Prejudice"
-      ],
-      "mention": [
-        "allowance"
-      ],
-      "why_both_checks": "Both checks are load-bearing. The cite check alone is too weak: in both D4 runs (20261001-170931, 20261001-172911) this answer carried 8 citations, only [1] of which is Pride and Prejudice — [2]-[8] are Noli Me Tangere and Don Quijote — so an answer that cited anything but the right book could still pass. The mention check alone is too weak the other way: 'loving with personal love' is in the question, so an abstaining or hallucinating echo of the question's own words would satisfy it. cite pins the source, mention pins the answer's substance.",
-      "note": "Relabelled 2026-10-02 (KI-36). Prerequisite: 'Pride and Prejudice' is this item's only corpus answer, and the passage above is the only Whitman material in scope — the new sibling item 'outside-whitman-lilacs' carries the zero-hit proof for genuinely off-corpus Whitman.",
-      "corpus": "books"
-    },
-    {
       "id": "outside-whitman-lilacs",
       "turns": [
         "What does Walt Whitman say in 'When Lilacs Last in the Dooryard Bloom' about the death of Abraham Lincoln?"

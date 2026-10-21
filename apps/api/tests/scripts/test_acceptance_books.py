@@ -31,7 +31,7 @@ VALID_EXPECTS = {"answer", "library", "not_in_sources", "smalltalk"}
 # `mention_all`. Those three carried `pending_p2` until P2 shipped and are
 # scored normally now (2026-10-12).
 EXPECTED_CLASS_COUNTS = {
-    "answer": 33,
+    "answer": 32,
     "not_in_sources": 20,
     "smalltalk": 2,
     "library": 2,
@@ -82,7 +82,8 @@ BROAD_ANSWER_ITEMS = [
 
 
 def test_the_set_loads_and_every_item_has_the_required_fields() -> None:
-    assert len(ITEMS) == 57  # 48 + P1b item 3's six near-misses and three ambiguities
+    # 48 + P1b item 3's six near-misses and three ambiguities, minus outside-whitman (KI-80)
+    assert len(ITEMS) == 56
     ids = [item["id"] for item in ITEMS]
     assert len(set(ids)) == len(ids), "duplicate ids"
     for item in ITEMS:
@@ -113,7 +114,8 @@ def test_the_answer_side_has_broad_items_in_at_least_two_languages() -> None:
 
 def test_the_expect_class_totals_match_the_relabelled_set() -> None:
     """33/20 became 32/21 on 2026-10-12 (phase 1c item 2): `amb-bovary-homais`
-    moved to `not_in_sources`. See `RELABELLED_TO_ABSTAIN`."""
+    moved to `not_in_sources`. See `RELABELLED_TO_ABSTAIN`. 32/20 from 2026-10-22:
+    `outside-whitman` removed (KI-80)."""
     counts = Counter(item["expect"] for item in ITEMS)
     assert dict(counts) == EXPECTED_CLASS_COUNTS
 

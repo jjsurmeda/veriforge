@@ -100,19 +100,19 @@ def test_an_unclean_decline_fails_on_the_count_not_as_confident_wrong() -> None:
     assert not any("confident wrong" in failure for failure in failures)
 
 
-def test_two_of_thirty_three_false_abstentions_fails() -> None:
+def test_two_of_thirty_two_false_abstentions_fails() -> None:
     """KI-56's shape: two real answers the run declined on."""
     summary = _summary(false_abstentions=2)
     summary["detail"]["false_abstention_ids"] = ["rp77-torque", "other"]
 
     failures = acceptance_failures(summary)
 
-    assert any("2 of 33 answerable items declined" in failure for failure in failures)
+    assert any("2 of 32 answerable items declined" in failure for failure in failures)
     assert any("rp77-torque" in failure for failure in failures)
 
 
 def test_one_of_thirty_three_false_abstentions_passes() -> None:
-    """The boundary: 1/33 = 3%, under PRD §5's 5%."""
+    """The boundary: 1/32 = 3%, under PRD §5's 5%."""
     assert acceptance_failures(_summary(false_abstentions=1)) == []
 
 
@@ -129,7 +129,7 @@ def test_one_errored_item_fails_as_an_error_not_a_decline() -> None:
 
 def test_an_uncited_answer_fails_even_when_the_text_is_right() -> None:
     """KI-71's bar line. `broad-sherlock`'s run cleared every other clause —
-    20/20 clean declines, 0 confident wrong, 2 false abstentions of 33 — and
+    20/20 clean declines, 0 confident wrong, 2 false abstentions of 32 — and
     still answered a content question from model memory with nothing behind
     it. The gate has to fail that, because the text being right is exactly
     what makes the shape hard to notice."""
@@ -164,14 +164,14 @@ def test_two_content_misses_fail() -> None:
 
     failures = acceptance_failures(summary)
 
-    assert any("2 of 33 answerable items answered but did not state" in f for f in failures)
+    assert any("2 of 32 answerable items answered but did not state" in f for f in failures)
     assert any("plot-speckled-band" in f for f in failures)
     assert any("broad-time-machine" in f for f in failures)
     assert any("≤ 1 content miss" in f for f in failures)
 
 
 def test_one_content_miss_passes() -> None:
-    """The bar line: ≤ 1 of 33 answerables, the same arithmetic as the false
+    """The bar line: ≤ 1 of 32 answerables, the same arithmetic as the false
     abstention rate at this mix."""
     summary = _summary(content_misses=1)
     summary["detail"]["content_miss_ids"] = ["plot-speckled-band"]
@@ -221,7 +221,7 @@ def test_a_filtered_run_is_not_a_whole_set_verdict(tmp_path: Path) -> None:
 
     failures = acceptance_failures(summary)
 
-    assert any("graded 4 items, not 57" in failure for failure in failures)
+    assert any("graded 4 items, not 56" in failure for failure in failures)
 
 
 def test_a_missing_count_does_not_read_as_zero_of_everything() -> None:
@@ -229,7 +229,7 @@ def test_a_missing_count_does_not_read_as_zero_of_everything() -> None:
     failures = acceptance_failures({"served_commit": "a" * 40})
 
     assert failures
-    assert any("graded 0 items, not 57" in failure for failure in failures)
+    assert any("graded 0 items, not 56" in failure for failure in failures)
 
 
 def test_the_bar_arithmetic_does_not_drift_on_float_error() -> None:
@@ -269,10 +269,12 @@ def test_the_expected_counts_are_the_relabelled_set() -> None:
     2026-10-12 (phase 1c item 2) because its premise is not in this corpus.
     Back to 33/20 on 2026-10-17 (ADR-006): `ml-zh-xiyou-nezha` moved the
     other way — the corpus states the Heavenly King lives in the Cloud
-    Tower Palace and calls Nezha there."""
+    Tower Palace and calls Nezha there. 32/20 (56 items) from 2026-10-22
+    (KI-80): `outside-whitman` was removed, its only passage says a
+    distinction exists but not what it is."""
     assert EXPECTED_COUNTS == {
-        "items": 57,
-        "answer_items": 33,
+        "items": 56,
+        "answer_items": 32,
         "abstain_items": 20,
         "smalltalk_items": 2,
         "library_items": 2,

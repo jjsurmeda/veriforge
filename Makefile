@@ -46,8 +46,8 @@ eval-gate-local:
 # model, the TRD §15 eval gate against both stored baselines (fast20 AND the
 # counterfactual subset, each on a fresh ephemeral database), the
 # entity-mismatch set at 12/12 clean declines with 0 confident wrong, and the
-# 57-item books acceptance set at PRD §5's bar for one run (0 confident wrong,
-# ≥18/20 clean declines, ≤1/33 false abstentions, smalltalk and library pass).
+# 56-item books acceptance set at PRD §5's bar for one run (0 confident wrong,
+# ≥18/20 clean declines, ≤1/32 false abstentions, smalltalk and library pass).
 # It SPENDS PROVIDER CREDIT in its last three steps — check the OpenRouter
 # balance first (docs/conventions/agents.md) — and is therefore not the
 # three-minute command the unit gate alone is. Every step is classified from the

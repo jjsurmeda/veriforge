@@ -12,7 +12,7 @@ numbers PRD §5 states for one run:
 - **Clean declines ≥ 90%** of should-decline items — 18 of 20. A prose "not in
   the sources" reply with citations is an unclean decline and counts against
   this, not against confident wrong.
-- **False abstention ≤ 5%** of answerable items — 1 of 33.
+- **False abstention ≤ 5%** of answerable items — 1 of 32.
 - **An `answer`-class item that completed with zero citations fails**, whether
   its text was right or wrong. This is KI-71: ingress can classify a content
   question as `chitchat`, the run skips retrieval and answers from model
@@ -69,11 +69,16 @@ from typing import Any
 # 33/20 on 2026-10-17 (ADR-006): `ml-zh-xiyou-nezha` was relabelled
 # `not_in_sources` → `answer` — the corpus does state that the Heavenly
 # King lives in the Cloud Tower Palace (雲樓宮) and calls Nezha there.
+# It moved to 32/20 (57 → 56 items) on 2026-10-22 (KI-80): `outside-whitman`
+# was removed. The only passage says Whitman draws "a fine and just
+# distinction" but never says what it is, so the question is not answerable
+# from the corpus and every generator abstained on it. Removed after the
+# R3 generator runs had seen it: reported with both the 57- and 56-item results.
 # Labels only; the
 # reasoning and the measurement are in `evals/acceptance/books.json` and
 EXPECTED_COUNTS = {
-    "items": 57,
-    "answer_items": 33,
+    "items": 56,
+    "answer_items": 32,
     "abstain_items": 20,
     "smalltalk_items": 2,
     "library_items": 2,
@@ -114,9 +119,9 @@ EXPECTED_BY_SET = {"books": EXPECTED_COUNTS, "heldout": HELDOUT_COUNTS, "deep": 
 # is integer ceiling division (-(-21 * 90 // 100) = 19), never `math.ceil` over
 # binary floats: 0.9 is inexact and the gate must not quietly tighten itself by
 # one item. The counts in the comments are the ones these rates produce at the
-# CURRENT mix: 18 of 20, and 1 of 33.
+# CURRENT mix: 18 of 20, and 1 of 32.
 MIN_CLEAN_DECLINE_PERCENT = 90  # ≥ 90% of should-decline items → 18 of 20
-MAX_FALSE_ABSTENTION_PERCENT = 5  # ≤ 5% of answerable items → 1 of 33
+MAX_FALSE_ABSTENTION_PERCENT = 5  # ≤ 5% of answerable items → 1 of 32
 MAX_CONFIDENT_WRONG = 0  # PRD §5 allows ≤1 per 100; on 20 items, 0
 # KI-71 (owner decision 2026-10-12): answering a content question from model
 # memory is the one thing this product says it does not do, so an `answer`
@@ -130,7 +135,7 @@ MAX_UNCITED_ANSWERS = 0
 # it cited is the right one — so without this clause a run that is confidently
 # wrong about the thing it was asked passes the whole gate. PRD §5's 1 is the
 # bar, and it is the same arithmetic as `MAX_FALSE_ABSTENTION_PERCENT` at this
-# mix (33 * 5% = 1).
+# mix (32 * 5% = 1.6, floored to 1).
 MAX_CONTENT_MISSES = 1
 
 

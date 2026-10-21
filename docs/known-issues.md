@@ -15,7 +15,7 @@ Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 | --- | --- | --- |
 | R3 (generator) | KI-78 | a false-premise question ("first name" of a man with none) is answered, not declined; IsUse passes it |
 | R3 (generator) | KI-79 | the generator flakes on multi-passage facts (plot-speckled-band: right answer 1 of 4 draws on gpt-4o-mini) |
-| R3 (label/rubric) | KI-80 | outside-whitman: the quoted sentence is in one chunk (preface) yet the books run abstains; the question may ask for content the preface does not state |
+| closed 2026-10-22 | KI-80 | outside-whitman removed from the books set: the only passage says a distinction exists but not what it is |
 | R3 (floor) | KI-81 | the evidence floor flips on borderline items: the grade varies 0.444-0.468 around 0.455 between runs |
 | check-work (CI) | KI-82 | Playwright specs are not run in CI; paid evals are manual |
 | R3 (reviewer) | KI-83 | citation precision is claim-level support; per-citation verification is not done |
@@ -586,6 +586,22 @@ Logged 2026-10-12 (phase 1, `make check-work` on `beta/phase1-check-work`).
 - **Done when:** books acceptance holds its false-abstention bar on the shipping model.
 
 ## KI-80: outside-whitman abstains although the quote is in one chunk
+
+- **Closed 2026-10-22 (owner decision): the item was removed from the books set.**
+  The only Whitman passage (P&P preface, ord 0) says Whitman draws "a fine and
+  just distinction between 'loving by allowance' and 'loving with personal love'"
+  but never says what the distinction is, so the question is not answerable from
+  the corpus and abstaining was the honest behaviour. The KI-36 relabel to `answer`
+  matched on keywords, not on whether the passage answers the question. Removed
+  after the R3 generator runs had seen it, so both results are reported: with the
+  item, `gpt-4o-mini` scored 53/57 and DeepSeek V4 Pro 54/57 and 55/57; without it
+  (56 items, 32 answerable), the same recorded runs rescore as control FAIL (2 false
+  abstentions: `plot-speckled-band`, `followup-adler`), DeepSeek draw 1 FAIL (2 content
+  misses: `ml-tl-maria-clara`, `ml-zh-xiyou-nezha`) and DeepSeek draw 2 PASS. The books
+  set is now 56 items (32 answer, 20 decline, 2 smalltalk, 2 library); the gate counts,
+  `answer_passages.json` and the pin tests moved with it. The reranker benchmark of
+  2026-10-20 was computed with this item's passage label in the 33-item pool; a rerun
+  uses 32. The item's old text is in git history before this commit.
 
 - **What:** the sentence "loving by allowance ... loving with personal love" sits in
   one chunk (P&P preface, ord 0), yet the run abstains (rubric 0.22-0.37, IsUse

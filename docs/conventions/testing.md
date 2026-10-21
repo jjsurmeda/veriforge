@@ -142,5 +142,6 @@ the reason recorded in the item. Re-run the audit whenever the corpus changes.
 A label that contradicts the corpus is a test bug: fix the item, never the
 pipeline.
 
-Why: KI-36. `outside-whitman`'s answer was in the corpus all along, and
-`fact-weena`'s check rejected a correct answer.
+Why: KI-36 and KI-80. `outside-whitman` matched a passage by keyword but the
+passage never answers the question (removed 2026-10-22), and `fact-weena`'s
+check rejected a correct answer.

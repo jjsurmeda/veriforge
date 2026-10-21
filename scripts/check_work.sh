@@ -11,7 +11,7 @@
 #                      stored baselines, each on a fresh ephemeral database
 #   5. entity-mismatch 12/12 clean declines, 0 confident wrong, 0 errored,
 #                      on a fresh ephemeral database
-#   6. books acceptance  the 57-item usability set against an api pinned to
+#   6. books acceptance  the 56-item usability set against an api pinned to
 #                      this checkout, at PRD §5's bar for one run
 #
 # Steps 4-6 SPEND PROVIDER CREDIT. They are the reason this is not a
@@ -209,7 +209,7 @@ step "web: codegen + vitest" web_vitest
 step "models: no :free default" no_free_defaults
 step "eval gate: fast20 + counterfactual" eval_gate_both_subsets
 step "eval: entity-mismatch 12/12" entity_mismatch_clean
-step "acceptance: books 57 items, PRD §5 bar" acceptance_books
+step "acceptance: books 56 items, PRD §5 bar" acceptance_books
 step "acceptance: deep 14 items, R2b bar" acceptance_deep
 
 report
