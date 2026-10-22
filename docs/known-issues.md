@@ -7,14 +7,16 @@ The Phase column is authoritative; section placement below is from the first tri
 Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 - When you fix one, move it to the archive in the same commit, with the fixing commit hash.
 - A new finding that breaks no check is added under **post-beta** and opens no lane.
-- New IDs continue from KI-85.
+- New IDs continue from KI-87.
 
 ## Index
 
 | Phase | KI | Summary |
 | --- | --- | --- |
-| R3 (generator) | KI-78 | a false-premise question ("first name" of a man with none) is answered, not declined; IsUse passes it |
-| R3 (generator) | KI-79 | the generator flakes on multi-passage facts (plot-speckled-band: right answer 1 of 4 draws on gpt-4o-mini) |
+| closed 2026-10-23 | KI-78 | `ho-near-vlad` declines cleanly on DeepSeek V4 Pro v6 (held-out, 2 runs); closed by the ADR-007 generator change |
+| closed 2026-10-23 | KI-79 | `plot-speckled-band` passes in all 5 DeepSeek V4 Pro draws; closed by the ADR-007 generator change |
+| R3 (generator) | KI-86 | the reply language is not enforced: a Tagalog question answered in English (DeepSeek), an English one in German (Sonnet) |
+| R3 (scorer) | KI-87 | decline detection is a regex over wordings; new phrasings slip past it (3 found in 3 days) |
 | closed 2026-10-22 | KI-80 | outside-whitman removed from the books set: the only passage says a distinction exists but not what it is |
 | R3 (floor) | KI-81 | the evidence floor flips on borderline items: the grade varies 0.444-0.468 around 0.455 between runs |
 | check-work (CI) | KI-82 | Playwright specs are not run in CI; paid evals are manual |
@@ -571,6 +573,9 @@ Logged 2026-10-12 (phase 1, `make check-work` on `beta/phase1-check-work`).
 - **Found:** the held-out run, 2026-10-19 (R2a close). Reproduced twice on
   `gpt-4o-mini`; `gpt-4o` said "the sources do not provide Count Dracula's first
   name" where it generated.
+- **Closed 2026-10-23:** on DeepSeek V4 Pro with prompt v6 the held-out set passed
+  twice with 0 confident wrong and `ho-near-vlad` a clean decline (ADR-007). Not
+  tuned for this item. Fixed by the generator change, not by a gate change.
 - **Phase:** R3 (generator ladder), re-measured on the production generator.
 - **Done when:** the held-out set passes with 0 confident wrong on the model that
   ships; do not tune for this one item.
@@ -582,8 +587,36 @@ Logged 2026-10-12 (phase 1, `make check-work` on `beta/phase1-check-work`).
   shock" in 3 of 4 draws and "swamp adder" in 1; IsUse rejected the poor ones (0.29,
   0.32, 0.47). `gpt-4o` was right 2 of 2. The earlier "passed on retry" was luck,
   hidden by the retry that re-rolled completed answers (removed 2026-10-18).
+- **Closed 2026-10-23:** `plot-speckled-band` passed in all five DeepSeek V4 Pro
+  books draws (v5 ×3, v6 ×2); the false-abstention bar is held on the shipping
+  model (ADR-007).
 - **Phase:** R3 (generator ladder): escalate to a stronger generator when IsUse fails.
 - **Done when:** books acceptance holds its false-abstention bar on the shipping model.
+
+## KI-86: the reply language is not enforced
+
+- **What:** the grounded prompt says to answer in the question's language, and
+  both candidates ignore it on some draws. DeepSeek V4 Pro answered the Tagalog
+  `ml-tl-maria-clara` in English (v5 draw 1, v6 draw 2); Sonnet 5.5 answered the
+  English `xl-en-samsa` in German (v6). Each is a books content miss
+  (`language_mismatch`), and they are the recurring cause of DeepSeek's misses.
+- **Phase:** R3: a deterministic check on the detected question language (retry once
+  with the language named, or fail the run's language step), as its own tested change.
+- **Done when:** a books draw has no `language_mismatch` on two draws in a row.
+
+## KI-87: decline detection is a regex over wordings
+
+- **What:** `says_not_in_sources` (`evals/abstention.py`) recognises a decline by
+  phrase. Three wordings slipped past it in three days: a clause before "do not
+  say" (`outside-holmes-boston`, fixed 7e73ffe), a closing scope caveat on a
+  cited answer (`broad-sherlock`, fixed 7e73ffe), and a caveat inside a bullet
+  list or "do not identify" (`compare-inventors`, `outside-holmes-boston` on
+  Sonnet v6, not fixed). The scorer decides confident wrong, the product's most
+  important number, so every miss either hides or invents one.
+- **Phase:** R3: classify a reply by the abstention signal and IsUse, with the
+  regex only for the answer-class caveat, instead of widening the regex again.
+- **Done when:** the scorer classifies the recorded R3 runs the same way a reader
+  does, with a test per recorded reply.
 
 ## KI-80: outside-whitman abstains although the quote is in one chunk
 

@@ -158,7 +158,7 @@ PY
       failures=1
       ;;
   esac
-  [ "$failures" -eq 0 ] && echo "config fallbacks and the seed default are openai/gpt-4o-mini"
+  [ "$failures" -eq 0 ] && echo "config fallbacks and the seed default are openai/gpt-4o-mini (generator: deepseek/deepseek-v4-pro)"
   return "$failures"
 }
 

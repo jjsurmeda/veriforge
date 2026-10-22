@@ -14,7 +14,13 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from config import DEFAULT_MODEL_ID, Settings, free_model_violations, is_free_model
+from config import (
+    DEFAULT_MODEL_ID,
+    GENERATOR_MODEL_ID,
+    Settings,
+    free_model_violations,
+    is_free_model,
+)
 from db.models import LlmProvider, Model, ModelRole
 from db.session import get_session_factory
 from main import assert_no_free_models
@@ -77,8 +83,32 @@ async def test_seed_default_leaves_no_role_on_a_free_model(
 
     assert free_rows == []
     for role, _tier, _candidates, _floor in ROLES:
-        assert roles[role] == DEFAULT_MODEL_ID, role
+        expected = GENERATOR_MODEL_ID if role == "generator" else DEFAULT_MODEL_ID
+        assert roles[role] == expected, role
     assert roles["decision_engine"] == "typesafe/jev-1.13"
+
+
+async def test_seed_binds_the_generator_to_deepseek_with_its_price(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ADR-007: the generator row exists, is enabled and carries the pinned price;
+    a rerun is idempotent."""
+    monkeypatch.setattr("scripts.seed_models.fetch_catalogue", _refusing_fetch)
+
+    await seed()
+    await seed()
+
+    async with get_session_factory()() as session:
+        row = (
+            await session.execute(
+                select(Model.price_in, Model.price_out, Model.enabled).where(
+                    Model.model_id == GENERATOR_MODEL_ID
+                )
+            )
+        ).one()
+    assert float(row.price_in) == pytest.approx(0.4427)
+    assert float(row.price_out) == pytest.approx(0.8853)
+    assert row.enabled is True
 
 
 async def _bind_generator_to_a_free_model() -> None:

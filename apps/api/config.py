@@ -184,6 +184,13 @@ def get_settings() -> Settings:
 # package (`openrouter/` prefix). Seeded by `scripts/seed_models.py`.
 DEFAULT_MODEL_ID = "openai/gpt-4o-mini"
 
+# The generator role runs on its own model (ADR-007): DeepSeek V4 Pro, pinned by
+# slug, priced per 1M tokens as OpenRouter listed it on 2026-10-22.
+GENERATOR_MODEL_ID = "deepseek/deepseek-v4-pro"
+GENERATOR_PRICE_IN = 0.4427
+GENERATOR_PRICE_OUT = 0.8853
+GENERATOR_CONTEXT_WINDOW = 1_048_576
+
 
 def is_free_model(model_id: str) -> bool:
     """Whether a model id is an OpenRouter free-tier id.

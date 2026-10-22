@@ -1,5 +1,6 @@
-"""Seed the model catalogue and the role bindings with the one paid model the
-product runs on, `openai/gpt-4o-mini`.
+"""Seed the model catalogue and the role bindings with the paid models the
+product runs on: `openai/gpt-4o-mini` for every non-Jev role except the
+generator, and `deepseek/deepseek-v4-pro` for the generator (ADR-007).
 
 Every non-Jev LLM call runs on `DEFAULT_MODEL_ID`. That is not only a cost
 decision: the eval baselines were measured on it, and `evals.gate` refuses to
@@ -36,7 +37,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from config import DEFAULT_MODEL_ID
+from config import (
+    DEFAULT_MODEL_ID,
+    GENERATOR_CONTEXT_WINDOW,
+    GENERATOR_MODEL_ID,
+    GENERATOR_PRICE_IN,
+    GENERATOR_PRICE_OUT,
+)
 from db.models import LlmProvider, Model, ModelRole
 from db.session import get_session_factory
 
@@ -133,6 +140,45 @@ def resolve_model_id(override: str | None = None, *, free: bool = False) -> str 
     return override or DEFAULT_MODEL_ID
 
 
+async def bind_generator() -> None:
+    """Upsert the generator model's catalogue row and bind the `generator` role
+    to it. Only the generator: every other role stays on `DEFAULT_MODEL_ID`."""
+    factory = get_session_factory()
+    async with factory() as session, session.begin():
+        provider_id = (
+            await session.execute(select(LlmProvider.id).where(LlmProvider.name == PROVIDER_NAME))
+        ).scalar_one()
+        await session.execute(
+            pg_insert(Model)
+            .values(
+                provider_id=provider_id,
+                model_id=GENERATOR_MODEL_ID,
+                price_in=GENERATOR_PRICE_IN,
+                price_out=GENERATOR_PRICE_OUT,
+                context_window=GENERATOR_CONTEXT_WINDOW,
+                capabilities={"streaming": True, "reasoning": False},
+                enabled=True,
+            )
+            .on_conflict_do_update(
+                index_elements=[Model.provider_id, Model.model_id],
+                set_={
+                    "price_in": GENERATOR_PRICE_IN,
+                    "price_out": GENERATOR_PRICE_OUT,
+                    "context_window": GENERATOR_CONTEXT_WINDOW,
+                    "enabled": True,
+                },
+            )
+        )
+        await session.execute(
+            pg_insert(ModelRole)
+            .values(role="generator", model_id=GENERATOR_MODEL_ID)
+            .on_conflict_do_update(
+                index_elements=[ModelRole.role], set_={"model_id": GENERATOR_MODEL_ID}
+            )
+        )
+    print(f"generator -> {GENERATOR_MODEL_ID}")
+
+
 async def seed(
     catalogue: dict[str, FreeModel] | None = None,
     override: str | None = None,
@@ -170,6 +216,8 @@ async def seed(
                         index_elements=[ModelRole.role], set_={"model_id": model_id}
                     )
                 )
+        if override is None:
+            await bind_generator()
         print(f"rebound {len(ROLES)} roles; decision_engine untouched")
         return
 
