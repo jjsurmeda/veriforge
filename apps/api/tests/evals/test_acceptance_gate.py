@@ -464,3 +464,55 @@ def test_the_category_report_counts_passes_per_category() -> None:
     summary = {"items": [{"id": "a", "pass": True}, {"id": "b", "pass": False}, {"id": "c"}]}
     lines = acceptance_gate.category_report(summary, {"a": "lookup", "b": "lookup", "c": "gist"})
     assert lines == ["  gist: 0/1", "  lookup: 1/2"]
+
+
+# --------------------------------------------------------------------------
+# The frozen Deep splits (deep_test 16/10/6, deep_heldout 8/4/4): same Deep
+# bar as "deep", their own pinned counts.
+# --------------------------------------------------------------------------
+
+_SPLITS = [
+    ("deep_test", acceptance_gate.DEEP_TEST_COUNTS),
+    ("deep_heldout", acceptance_gate.DEEP_HELDOUT_COUNTS),
+]
+
+
+def _split_summary(counts: dict[str, int], **overrides: Any) -> dict[str, Any]:
+    summary = _deep_summary(**overrides)
+    summary["counts"]["items"] = overrides.get("items", counts["items"])
+    summary["counts"]["answer_items"] = counts["answer_items"]
+    summary["counts"]["abstain_items"] = counts["abstain_items"]
+    summary["counts"]["clean_declines"] = counts["abstain_items"]
+    return summary
+
+
+def test_the_deep_split_sizes_are_pinned() -> None:
+    assert acceptance_gate.DEEP_TEST_COUNTS["items"] == 16
+    assert acceptance_gate.DEEP_TEST_COUNTS["answer_items"] == 10
+    assert acceptance_gate.DEEP_TEST_COUNTS["abstain_items"] == 6
+    assert acceptance_gate.DEEP_HELDOUT_COUNTS["items"] == 8
+    assert acceptance_gate.DEEP_HELDOUT_COUNTS["answer_items"] == 4
+    assert acceptance_gate.DEEP_HELDOUT_COUNTS["abstain_items"] == 4
+
+
+@pytest.mark.parametrize(("set_name", "counts"), _SPLITS)
+def test_a_clean_run_of_each_deep_split_passes(set_name: str, counts: dict[str, int]) -> None:
+    assert acceptance_failures(_split_summary(counts), set_name) == []
+
+
+@pytest.mark.parametrize(("set_name", "counts"), _SPLITS)
+def test_each_deep_split_is_judged_by_the_deep_bar(set_name: str, counts: dict[str, int]) -> None:
+    # False abstentions are reported, not gated; a confident wrong, a slow p50
+    # and a filtered run still fail.
+    assert acceptance_failures(_split_summary(counts, false_abstentions=1), set_name) == []
+    wrong = acceptance_failures(_split_summary(counts, confident_wrong=1), set_name)
+    assert any("confident wrong" in f for f in wrong)
+    slow = acceptance_failures(_split_summary(counts, p50_total_ms=30_001), set_name)
+    assert any("wall clock" in f for f in slow)
+    filtered = acceptance_failures(_split_summary(counts, items=counts["items"] - 1), set_name)
+    assert any("whole-set measurement" in f for f in filtered)
+
+
+def test_one_deep_split_summary_is_not_the_other_splits_verdict() -> None:
+    failures = acceptance_failures(_split_summary(acceptance_gate.DEEP_HELDOUT_COUNTS), "deep_test")
+    assert any("whole-set measurement" in f for f in failures)
