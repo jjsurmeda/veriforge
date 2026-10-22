@@ -1,0 +1,223 @@
+{
+  "about": "FROZEN Deep test split (2026-10-23). Written blind to how the system behaves: no acceptance run, export or report was read. Labels were written from my own knowledge of the five English books in the books corpus (Pride and Prejudice, Adventures of Sherlock Holmes, Frankenstein, Alice, The Time Machine) BEFORE the corpus text was reopened; the lexical audit is evals/deep/test_audit.json. 10 answerable items that each need two or more separate passages (two stories or two books for deep-test-sherlock-two-stepfathers and deep-test-cross-two-elizabeths) and 6 should-decline lookalikes. Mention fields: mention_all = strings the answer must all contain; mention = any-of alternatives. Not edited after the third commit: no label, threshold or prompt changes because of how this set scores.",
+  "corpus": "books",
+  "items": [
+    {
+      "id": "deep-test-pride-collins-charlotte",
+      "turns": [
+        "Which Bennet sister turns down Mr. Collins's proposal, and which of her friends accepts him within three days?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Pride"
+      ],
+      "mention_all": [
+        "Elizabeth"
+      ],
+      "mention": [
+        "Charlotte",
+        "Lucas"
+      ],
+      "proof": "Label written from my own knowledge of the book BEFORE the corpus text was reopened (audit afterwards). Elizabeth refuses Collins at Longbourn (vol. 1, ch. 19) and Charlotte Lucas accepts him days later (ch. 22). Two chapters apart."
+    },
+    {
+      "id": "deep-test-pride-pemberley-netherfield",
+      "turns": [
+        "What is the name of Mr. Darcy's estate in Derbyshire, and of the Hertfordshire house that Mr. Bingley rents?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Pride"
+      ],
+      "mention_all": [
+        "Pemberley",
+        "Netherfield"
+      ],
+      "proof": "Label written from my own knowledge of the book BEFORE the corpus text was reopened (audit afterwards). Pemberley (Darcy, Derbyshire; the Elizabeth/Gardiners visit) and Netherfield Park (Bingley's rented house near Meryton). Different places, far apart in the book."
+    },
+    {
+      "id": "deep-test-sherlock-two-stepfathers",
+      "turns": [
+        "Two Sherlock Holmes clients are victims of a villainous stepfather: in one story the stepfather poses as his stepdaughter's suitor, in the other he keeps a cheetah and a baboon. Name both stepfathers."
+      ],
+      "expect": "answer",
+      "cite": [
+        "Sherlock"
+      ],
+      "mention_all": [
+        "Windibank",
+        "Roylott"
+      ],
+      "proof": "Label written from my own knowledge of the book BEFORE the corpus text was reopened (audit afterwards). A Case of Identity: James Windibank poses as Hosmer Angel. The Speckled Band: Dr. Grimesby Roylott keeps a cheetah and a baboon. Two stories."
+    },
+    {
+      "id": "deep-test-sherlock-carbuncle-thief",
+      "turns": [
+        "Who stole the blue carbuncle from the Countess of Morcar, and who is the owner of the hat and goose that the commissionaire Peterson found on Christmas morning?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Sherlock"
+      ],
+      "mention_all": [
+        "Ryder",
+        "Baker"
+      ],
+      "proof": "Label written from my own knowledge of the book BEFORE the corpus text was reopened (audit afterwards). The Blue Carbuncle: James Ryder (the hotel attendant) stole the stone; the lost hat and goose are Henry Baker's. Opening and closing of one story."
+    },
+    {
+      "id": "deep-test-sherlock-redheaded-purpose",
+      "turns": [
+        "What work does the Red-Headed League pay Jabez Wilson to do each day, and what was the League really a cover for?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Sherlock"
+      ],
+      "mention_all": [
+        "Britannica"
+      ],
+      "mention": [
+        "tunnel",
+        "bank",
+        "vault"
+      ],
+      "proof": "Label written from my own knowledge of the book BEFORE the corpus text was reopened (audit afterwards). The Red-Headed League: copying out the Encyclopaedia Britannica; the scheme was to keep Wilson away from his pawnbroker's shop while a tunnel was dug to the City and Suburban Bank's vault. Opening vs. Holmes's explanation."
+    },
+    {
+      "id": "deep-test-frankenstein-justine-proof",
+      "turns": [
+        "Which servant of the Frankenstein family is hanged for William's murder, and what item found in her pocket is taken as proof against her?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Frankenstein"
+      ],
+      "mention_all": [
+        "Justine"
+      ],
+      "mention": [
+        "miniature",
+        "picture",
+        "portrait",
+        "locket"
+      ],
+      "proof": "Label written from my own knowledge of the book BEFORE the corpus text was reopened (audit afterwards). Justine Moritz; the miniature picture William wore (the creature plants it). The murder scene and the trial are far apart."
+    },
+    {
+      "id": "deep-test-frankenstein-first-and-clerval",
+      "turns": [
+        "Whom does the creature kill first, and which of Victor's friends does he strangle while Victor is in Ireland?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Frankenstein"
+      ],
+      "mention_all": [
+        "William",
+        "Clerval"
+      ],
+      "proof": "Label written from my own knowledge of the book BEFORE the corpus text was reopened (audit afterwards). William Frankenstein (Geneva, vol. 1) and Henry Clerval (Ireland, vol. 3). Two distant episodes."
+    },
+    {
+      "id": "deep-test-alice-knave-pig",
+      "turns": [
+        "Whom does the Queen of Hearts accuse of stealing her tarts, and what does the Duchess's baby turn into in Alice's arms?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Alice"
+      ],
+      "mention_all": [
+        "Knave"
+      ],
+      "mention": [
+        "pig"
+      ],
+      "proof": "Label written from my own knowledge of the book BEFORE the corpus text was reopened (audit afterwards). The Knave of Hearts (trial, ch. 11) and a pig (ch. 6). Two chapters far apart."
+    },
+    {
+      "id": "deep-test-timemachine-sphinx-fire",
+      "turns": [
+        "What monument marks the spot where the Time Traveller's machine is hidden in the future, and what does he light in the woods to keep the Morlocks away?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Time Machine"
+      ],
+      "mention_all": [
+        "Sphinx"
+      ],
+      "mention": [
+        "fire",
+        "match",
+        "camphor"
+      ],
+      "proof": "Label written from my own knowledge of the book BEFORE the corpus text was reopened (audit afterwards). The White Sphinx (pedestal where the machine is hidden) and fire (matches/camphor in the forest). Distant chapters."
+    },
+    {
+      "id": "deep-test-cross-two-elizabeths",
+      "turns": [
+        "Whom does Elizabeth Bennet marry in Pride and Prejudice, and whom does Elizabeth Lavenza marry in Frankenstein?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Pride",
+        "Frankenstein"
+      ],
+      "mention_all": [
+        "Darcy",
+        "Victor"
+      ],
+      "proof": "Label written from my own knowledge of the book BEFORE the corpus text was reopened (audit afterwards). Two books: Elizabeth Bennet marries Mr. Darcy; Elizabeth Lavenza marries Victor Frankenstein (the wedding night, vol. 3)."
+    },
+    {
+      "id": "deep-test-pride-lambton-inn",
+      "turns": [
+        "What is the name of the inn at Lambton where Elizabeth and the Gardiners stay, and what is the landlord called?"
+      ],
+      "expect": "not_in_sources",
+      "proof": "Decoy written from my own knowledge of the book BEFORE the corpus text was reopened (audit afterwards). Looks in-corpus (right book, right character, plausible detail) but I believe the text never states it: the inn at Lambton is unnamed and the landlord never appears by name."
+    },
+    {
+      "id": "deep-test-pride-collins-bishop",
+      "turns": [
+        "Which bishop ordained Mr. Collins, and in which year did Lady Catherine give him the living at Hunsford?"
+      ],
+      "expect": "not_in_sources",
+      "proof": "Decoy written from my own knowledge of the book BEFORE the corpus text was reopened (audit afterwards). Looks in-corpus (right book, right character, plausible detail) but I believe the text never states it: Collins's ordination, bishop and year are never given."
+    },
+    {
+      "id": "deep-test-sherlock-julia-doctor",
+      "turns": [
+        "What is the name of the village doctor who was sent for when Julia Stoner collapsed, and in which street is his surgery?"
+      ],
+      "expect": "not_in_sources",
+      "proof": "Decoy written from my own knowledge of the book BEFORE the corpus text was reopened (audit afterwards). Looks in-corpus (right book, right character, plausible detail) but I believe the text never states it: Helen Stoner's account of Julia's death names no doctor."
+    },
+    {
+      "id": "deep-test-frankenstein-advocate",
+      "turns": [
+        "What is the name of the advocate who defends Justine Moritz at her trial, and how many witnesses does he call?"
+      ],
+      "expect": "not_in_sources",
+      "proof": "Decoy written from my own knowledge of the book BEFORE the corpus text was reopened (audit afterwards). Looks in-corpus (right book, right character, plausible detail) but I believe the text never states it: Justine has no named advocate in the trial scene; Elizabeth speaks for her."
+    },
+    {
+      "id": "deep-test-alice-hatter-name",
+      "turns": [
+        "What is the Mad Hatter's real name, and in which town does his hat shop stand?"
+      ],
+      "expect": "not_in_sources",
+      "proof": "Decoy written from my own knowledge of the book BEFORE the corpus text was reopened (audit afterwards). Looks in-corpus (right book, right character, plausible detail) but I believe the text never states it: the Hatter is only ever 'the Hatter'; no real name, no shop location."
+    },
+    {
+      "id": "deep-test-timemachine-housekeeper",
+      "turns": [
+        "What is the name of the housekeeper who serves the Time Traveller's dinner guests, and on which street in Richmond is his house?"
+      ],
+      "expect": "not_in_sources",
+      "proof": "Decoy written from my own knowledge of the book BEFORE the corpus text was reopened (audit afterwards). Looks in-corpus (right book, right character, plausible detail) but I believe the text never states it: no servant is named and no street address is given."
+    }
+  ]
+}
