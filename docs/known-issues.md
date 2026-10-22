@@ -7,7 +7,7 @@ The Phase column is authoritative; section placement below is from the first tri
 Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 - When you fix one, move it to the archive in the same commit, with the fixing commit hash.
 - A new finding that breaks no check is added under **post-beta** and opens no lane.
-- New IDs continue from KI-87.
+- New IDs continue from KI-89.
 
 ## Index
 
@@ -16,6 +16,8 @@ Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 | closed 2026-10-23 | KI-78 | `ho-near-vlad` declines cleanly on DeepSeek V4 Pro v6 (held-out, 2 runs); closed by the ADR-007 generator change |
 | closed 2026-10-23 | KI-79 | `plot-speckled-band` passes in all 5 DeepSeek V4 Pro draws; closed by the ADR-007 generator change |
 | R3 (generator) | KI-86 | the reply language is not enforced: a Tagalog question answered in English (DeepSeek), an English one in German (Sonnet) |
+| before deploy | KI-88 | the decision fallback's LLM call can stall for minutes: it has no effective timeout |
+| before deploy | KI-89 | `retrieval_statement_timeout_ms` (`SET LOCAL`) leaks onto the shared hop session and cancels an embedding cache write |
 | R3 (scorer) | KI-87 | decline detection is a regex over wordings; new phrasings slip past it (3 found in 3 days) |
 | closed 2026-10-22 | KI-80 | outside-whitman removed from the books set: the only passage says a distinction exists but not what it is |
 | R3 (floor) | KI-81 | the evidence floor flips on borderline items: the grade varies 0.444-0.468 around 0.455 between runs |
@@ -617,6 +619,32 @@ Logged 2026-10-12 (phase 1, `make check-work` on `beta/phase1-check-work`).
   regex only for the answer-class caveat, instead of widening the regex again.
 - **Done when:** the scorer classifies the recorded R3 runs the same way a reader
   does, with a test per recorded reply.
+
+## KI-88: the decision fallback's LLM call has no effective timeout
+
+- **What:** `deep-quixote-rosinante-birth` (Deep set, 2026-10-22): in hop 4 Jev
+  threw an http error, the log read "jev failed, retrying on fallback: jev http
+  error", and the `gpt-4o-mini` fallback call through OpenRouter then stalled about
+  156 s with nothing cutting it off, until the harness gave up and the run ended
+  `cancelled`. Any mode that falls back is exposed, not only Deep.
+- **Phase:** before deploy (a stalled provider holds the run, its credit reservation
+  and a worker).
+- **Done when:** the fallback call has a bounded timeout shorter than the run
+  timeout, a stall ends in the fail-closed path (KI-57), and a test with a hung
+  provider proves it.
+
+## KI-89: the retrieval statement timeout leaks onto the shared hop session
+
+- **What:** the retry of the same item failed in 3 s with a Postgres "canceling
+  statement due to statement timeout": our own `retrieval_statement_timeout_ms`
+  (1.5 s), applied with `SET LOCAL`, stays in force on the session the hops share
+  and tripped on the `query_cache` embedding write in `get_query_embedding`. The
+  likely trigger is contention with the still-running first attempt (inferred; no
+  `pg_locks` captured).
+- **Phase:** before deploy.
+- **Done when:** the timeout applies only to the retrieval statement it was set for,
+  the embedding cache write is not under it, and a test runs two parallel hops on one
+  session.
 
 ## KI-80: outside-whitman abstains although the quote is in one chunk
 

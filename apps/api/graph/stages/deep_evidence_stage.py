@@ -14,12 +14,15 @@ evidence floor's own threshold (`evidence_floor`, `jev`) and the entity
 guard's (`entity_match`, `jev`), computed by the same pure functions in
 `checks.py` that Auto's gate uses.
 
-The gate runs after the Controller's last hop has said `sufficient`: the hop
+The gate runs after the hop loop ends, whether the Controller said
+`sufficient` or the loop ran out of hops or credits (R3 Deep review): the hop
 loop's corrective mechanism when evidence is thin is *another controlled
 hop*, not Auto's single re-query retry, so a below-floor reading here
-declines rather than looping — the Controller has already spent the hop and
-credit budget deciding the evidence was enough, and letting the gate open
-the hop loop again would spend it twice.
+declines rather than looping — the loop has already spent the hop and credit
+budget, and letting the gate open it again would spend it twice. The
+Controller decides how many hops to spend; it no longer decides whether to
+answer. A pool that clears the floor but does not answer the question is
+declined by IsUse after generation, exactly as in Auto.
 
 The guard runs after expansion, over the top passages the run would actually
 answer from, in one `entity`-kind DecisionEngine call. An unreachable

@@ -119,15 +119,18 @@ def fake_llm(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("retrieval.cache.embed_batch", fake_embed)
 
 
-async def _seed(db: AsyncSession, user: User) -> tuple[Chat, Message, Any]:
+async def _seed(
+    db: AsyncSession, user: User, *, with_chunk: bool = True
+) -> tuple[Chat, Message, Any]:
     collection = await make_collection(db, user, "docs")
     document = await make_document(db, collection)
     section = await make_section(db, document)
-    await add_chunk(
-        db, document=document, section=section, ord=0,
-        text_="the AW-2000-XE ships with a 12 month blade warranty",
-        embedding=vec(1, bump=1),
-    )
+    if with_chunk:
+        await add_chunk(
+            db, document=document, section=section, ord=0,
+            text_="the AW-2000-XE ships with a 12 month blade warranty",
+            embedding=vec(1, bump=1),
+        )
     chat = Chat(user_id=user.id, title="t")
     db.add(chat)
     await db.commit()
@@ -170,9 +173,13 @@ async def test_deep_run_stops_at_first_sufficient_hop(db: AsyncSession, user_a: 
     assert any(d.name == "controller" for d in run.decision_events)
 
 
-async def test_deep_run_abstains_when_budget_exhausted(
+async def test_deep_cap_out_with_evidence_above_the_floor_still_answers(
     db: AsyncSession, user_a: User, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """R3 Deep review: the controller decides how many hops to spend, not
+    whether to answer. A loop that ran out of hops while saying `need_more`
+    goes through the same floor and guard as a `sufficient` one; a pool that
+    clears them reaches generation, where IsUse is the judge."""
     from config import get_settings
 
     monkeypatch.setattr(get_settings(), "deep_max_hops", 1)
@@ -183,8 +190,47 @@ async def test_deep_run_abstains_when_budget_exhausted(
         get_session_factory(), _params(user_a, chat, message, collection.id), engine
     )
 
+    assert run.abstain_event is None
+    assert run.contexts
+    assert [d for d in run.decision_events if d.name == "evidence" and d.stage == "gate"]
+
+
+async def test_deep_cap_out_below_the_floor_abstains(
+    db: AsyncSession, user_a: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from config import get_settings
+
+    monkeypatch.setattr(get_settings(), "deep_max_hops", 1)
+    chat, message, collection = await _seed(db, user_a)
+    engine = DecisionEngine(
+        jev=_ScriptedJev(["need_more", "need_more"], rerank_grade=0.0), mode="jev_only"
+    )
+
+    run = await prepare_deep_run(
+        get_session_factory(), _params(user_a, chat, message, collection.id), engine
+    )
+
     assert run.abstain_event is not None
     assert run.abstain_event.offered_actions == ["web"]
+    assert run.contexts == []
+
+
+async def test_deep_cap_out_with_nothing_gathered_abstains(
+    db: AsyncSession, user_a: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No passage at all reads as a failing gate, never as a pass."""
+    from config import get_settings
+
+    monkeypatch.setattr(get_settings(), "deep_max_hops", 1)
+    chat, message, collection = await _seed(db, user_a, with_chunk=False)
+    engine = DecisionEngine(jev=_ScriptedJev(["need_more", "need_more"]), mode="jev_only")
+
+    run = await prepare_deep_run(
+        get_session_factory(), _params(user_a, chat, message, collection.id), engine
+    )
+
+    assert run.abstain_event is not None
+    assert run.contexts == []
 
 
 async def test_deep_run_generates_followup_when_plan_exhausted_but_insufficient(

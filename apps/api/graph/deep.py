@@ -74,7 +74,7 @@ class DeepRun:
     # publish every decision its gate reads because Auto's gate asks the batch
     # through the engine, but Deep's gate is arithmetic over rerank scores, so
     # without this there is no trace of what graded the evidence at all. None
-    # when the Controller abstained before the gate ran.
+    # only when ingress blocked the message before any hop ran.
     gate_event: Decision | None
     # The guard's outage rows (KI-57): an answered guard call's rows go to
     # `decision_events` and, on the product path, the engine emitter publishes
@@ -353,36 +353,37 @@ async def prepare_deep_run(
         contexts: list[ExpandedContext] = []
         winners = dedupe_adjacent(sorted(all_kept, key=_rerank_score_key, reverse=True))
 
-        if not sufficient:
-            abstain_event = build_abstain_event(
-                str(params.run_id), winners, offered_actions=["web"]
+        # The evidence floor and the entity guard from Auto (R2b item 1), over
+        # what the hop loop gathered, whether the controller said `sufficient`
+        # or the loop ran out of hops or credits (R3 Deep review, ADR-006): the
+        # controller decides how many hops to spend, not whether to answer. A
+        # cap-out used to abstain outright, though the fact was in the pool at
+        # rank 1-3 for 3 of the 4 false abstentions; in-corpus lookalikes that
+        # clear the floor are declined by IsUse after generation, as in Auto.
+        # The gate sees the merged winners; the guard sees what a generated
+        # answer would cite. Nothing gathered reads as a failing gate.
+        gate = deep_gate_decision(params.run_id, winners)
+        decision_events.append(gate.decision)
+        if gate.passes:
+            contexts = await expand_context(session, winners)
+            guard = await deep_entity_guard(
+                engine,
+                run_id=str(params.run_id),
+                question=rewritten,
+                contexts=contexts,
+                decisions=decision_events,
             )
-        else:
-            # The evidence floor and the entity guard from Auto (R2b item 1),
-            # over what the hop loop gathered. The gate sees the merged
-            # winners; the guard sees what a generated answer would cite.
-            gate = deep_gate_decision(params.run_id, winners)
-            decision_events.append(gate.decision)
-            if gate.passes:
-                contexts = await expand_context(session, winners)
-                guard = await deep_entity_guard(
-                    engine,
-                    run_id=str(params.run_id),
-                    question=rewritten,
-                    contexts=contexts,
-                    decisions=decision_events,
-                )
-                entity_rows.extend(guard.events)
-                if not guard.ok:
-                    contexts = []
-                    abstain_event = build_abstain_event(
-                        str(params.run_id), winners, offered_actions=["web"]
-                    )
-            else:
+            entity_rows.extend(guard.events)
+            if not guard.ok:
                 contexts = []
                 abstain_event = build_abstain_event(
                     str(params.run_id), winners, offered_actions=["web"]
                 )
+        else:
+            contexts = []
+            abstain_event = build_abstain_event(
+                str(params.run_id), winners, offered_actions=["web"]
+            )
 
         history_tokens = sum(count_tokens(text) for _, text in history[-6:])
         contexts, context_used = trim_context(
