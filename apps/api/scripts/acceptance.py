@@ -48,6 +48,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import httpx
 
 from evals.abstention import NOT_IN_SOURCES as NOT_IN_SOURCES
+from evals.abstention import declines_answerable as declines_answerable
 from evals.abstention import says_not_in_sources as says_not_in_sources
 from evals.content import forbids_hit, mentions_hit
 from scripts import smoke_chat as smoke_chat
@@ -287,7 +288,10 @@ def summarise(
         expect = str(row.get("expect"))
         abstained = row.get("message_status") == "abstained"
         cited = bool(row.get("citations"))
-        declined = abstained or says_not_in_sources(str(row.get("answer") or ""))
+        said = str(row.get("answer") or "")
+        declined = abstained or (
+            declines_answerable(said) if expect == "answer" else says_not_in_sources(said)
+        )
         if expect == "not_in_sources":
             counts["abstain_items"] += 1
             # The order here is PRD §5's, not convenience's. Whether the reply

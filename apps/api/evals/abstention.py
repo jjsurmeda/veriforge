@@ -28,12 +28,16 @@ NOT_IN_SOURCES = tuple(
     re.compile(pattern, re.IGNORECASE)
     for pattern in (
         r"not (?:in|among|covered|found|mentioned|included) (?:the|my|your|these|your) ",
+        # The gap allows a short clause between the subject and the verb ("The
+        # sources contain no character named X, so they do not say ...",
+        # outside-holmes-boston). Wider than a sentence it would start matching
+        # across unrelated clauses, which the `[^.\n]` stops.
         # First-person or about-the-sources only: a quoted line such as "You could
         # not have made me the offer of your hand" in a correct answer is not a
         # decline (quote-darcy, R2a final check-work).
         r"(?:\bI\b|\b(?:the |these |your |my )?"
         r"(?:sources?|documents?|passages?|texts?|context|excerpts?)\b)"
-        r"[^.\n]{0,30}?"
+        r"[^.\n]{0,80}?"
         r"(?:don'?t|do not|cannot|can ?not|can'?t|could not|couldn'?t|doesn'?t|does not) "
         r"(?:find|have|contain|cover|see|show|answer|determine|tell|say)\b",
         r"(?:isn'?t|is not|aren'?t|are not|wasn'?t) (?:in|among|covered|included)\b",
@@ -67,15 +71,24 @@ _CONTRAST = re.compile(
 _ASSERTS = re.compile(r"\d|[$€£¥]|\[\d{1,2}\]")
 
 
+# A contrast that goes straight on to deny ("though neither matches your
+# question") is still the decline, not an answer: outside-holmes-boston.
+_NEGATED = re.compile(
+    r"\s*(?:\w+\s+){0,2}?(?:neither|none|nor|nothing|never|no|not|\w+n't)\b", re.IGNORECASE
+)
+
+
 def asserts_after_decline(answer: str) -> bool:
     """A decline phrase followed by a contrast and then a figure or citation."""
     for pattern in NOT_IN_SOURCES:
         match = pattern.search(answer)
         if match is None:
             continue
-        contrast = _CONTRAST.search(answer, match.start())
-        if contrast is not None and _ASSERTS.search(answer, contrast.end()):
-            return True
+        for contrast in _CONTRAST.finditer(answer, match.start()):
+            if _NEGATED.match(answer, contrast.end()):
+                continue
+            if _ASSERTS.search(answer, contrast.end()):
+                return True
     return False
 
 
@@ -101,3 +114,34 @@ def is_confident_wrong(*, abstained: bool, answer: str, citation_count: int) -> 
     if abstained:
         return False
     return not says_not_in_sources(answer)
+
+
+_SENTENCE_END = re.compile(r"(?<=[.!?。])\s+")
+_CITED = re.compile(r"\[\d{1,2}\]")
+_SUBSTANCE_CHARS = 120
+
+
+def closes_with_caveat(answer: str) -> bool:
+    """A cited, substantive answer whose only "the sources lack it" wording is
+    its last sentence: a scope caveat on a real answer, not a decline.
+
+    The grounded prompt asks for exactly this sentence when part of a question
+    has no answer in the sources, so reading it as the whole reply declining
+    scored a good answer as a false abstention (compare-inventors,
+    broad-sherlock). Only answerable items use this: a should-abstain reply is
+    still judged by `says_not_in_sources`, so no confident wrong is forgiven.
+    """
+    sentences = [s for s in _SENTENCE_END.split(answer.strip()) if s]
+    if len(sentences) < 2:
+        return False
+    head, last = " ".join(sentences[:-1]), sentences[-1]
+    if not any(p.search(last) for p in NOT_IN_SOURCES):
+        return False
+    if any(p.search(head) for p in NOT_IN_SOURCES):
+        return False
+    return len(head) >= _SUBSTANCE_CHARS and _CITED.search(head) is not None
+
+
+def declines_answerable(answer: str) -> bool:
+    """Does a reply to an answerable item decline the question as a whole?"""
+    return says_not_in_sources(answer) and not closes_with_caveat(answer)
