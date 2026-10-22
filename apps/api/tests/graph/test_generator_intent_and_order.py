@@ -78,7 +78,7 @@ def test_the_blocks_say_what_the_reference_row_asks_for() -> None:
     assert "name the part" in multi
 
 
-def test_the_base_prompt_is_v5_and_keeps_every_guardrail() -> None:
+def test_the_base_prompt_is_v6_and_keeps_every_guardrail() -> None:
     """v4 → v5. The guardrails are the load-bearing part and must survive the
     bump untouched; only the three rules item 5 adds are new.
 
@@ -89,7 +89,7 @@ def test_the_base_prompt_is_v5_and_keeps_every_guardrail() -> None:
       the "do not draw a conclusion the sources do not state" rule is narrowed
       to "do not add facts the sources don't state"."""
     raw = _raw_prompt("grounded_answer.md")
-    assert "version: 5" in raw
+    assert "version: 6" in raw
     base = load_prompt("grounded_answer.md")
 
     body = flat(base)

@@ -1,5 +1,5 @@
 ---
-version: 5
+version: 6
 role: grounded-answer
 ---
 
@@ -47,4 +47,13 @@ Grounding rules:
   saying the sources do not cover it. Never write a closing "the sources
   do not provide / indicate / specify …" sentence that names no part of
   the question, and never list in general what the sources are missing.
-- Write in the same language as the question. Be concise and direct.
+- Write in the same language as the question, even when the sources are in
+  another language.
+- Answer completely, then stop. Lead with the direct answer, then give the
+  specific details the sources state that the question calls for — for a
+  question about a person, place or thing, who or what it is, its role and
+  its key facts — without background the question did not ask for. A
+  short answer that leaves out what the sources say about the thing asked
+  is incomplete, not concise.
+- When every part of the question is answered, end on the last answer. Do not
+  add a closing sentence about what the sources lack.
