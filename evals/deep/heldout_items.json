@@ -1,0 +1,102 @@
+{
+  "about": "FROZEN Deep held-out split (2026-10-23): 4 answerable multi-passage items and 4 lookalike decoys over the held-out corpus (Dracula, The Picture of Dorian Gray, Jane Eyre, A Tale of Two Cities, Candide; ACCEPTANCE_DB=veriforge_accept_heldout, GUTENBERG_SET=heldout). Written blind to system behaviour from my own knowledge before the corpus text was reopened; audit in evals/deep/heldout_audit.json. Same fields as test_items.json. Audited against the veriforge_accept_heldout database (it exists in the local db container). That database holds Candide as the FRENCH original (pg4650), so deep-ho-cross-pangloss-henry (mention 'Pangloss' is a name, valid in either language) and deep-ho-candide-baron-name are English questions over a French text. The audit found no wrong label. Not edited after the third commit (this note is that commit).",
+  "corpus": "heldout",
+  "items": [
+    {
+      "id": "deep-ho-dracula-demeter-whitby",
+      "turns": [
+        "Which ship carries Count Dracula to England, and at which seaside town does it run aground?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Dracula"
+      ],
+      "mention_all": [
+        "Demeter",
+        "Whitby"
+      ],
+      "proof": "Label written from my own knowledge of the book BEFORE the corpus text was reopened (audit afterwards). Demeter (Varna to England, log) and Whitby (it runs ashore in the storm)."
+    },
+    {
+      "id": "deep-ho-janeeyre-helen-thornfield",
+      "turns": [
+        "Who is the girl Jane befriends at school who dies of consumption, and at which estate does Jane afterwards become a governess?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Jane Eyre"
+      ],
+      "mention_all": [
+        "Helen",
+        "Thornfield"
+      ],
+      "proof": "Label written from my own knowledge of the book BEFORE the corpus text was reopened (audit afterwards). Helen Burns at Lowood; Thornfield Hall (Rochester's estate, Adele's governess). Distant parts of the book."
+    },
+    {
+      "id": "deep-ho-twocities-carton-lucie",
+      "turns": [
+        "Who takes Charles Darnay's place at the guillotine, and whom had Darnay married in London?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Two Cities"
+      ],
+      "mention_all": [
+        "Carton",
+        "Lucie"
+      ],
+      "proof": "Label written from my own knowledge of the book BEFORE the corpus text was reopened (audit afterwards). Sydney Carton (book 3 end); Darnay married Lucie Manette (book 2)."
+    },
+    {
+      "id": "deep-ho-cross-pangloss-henry",
+      "turns": [
+        "Who is Candide's philosophy tutor, and who is the cynical lord who influences Dorian Gray?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Candide",
+        "Dorian Gray"
+      ],
+      "mention_all": [
+        "Pangloss"
+      ],
+      "mention": [
+        "Wotton",
+        "Henry"
+      ],
+      "proof": "Label written from my own knowledge of the book BEFORE the corpus text was reopened (audit afterwards). Two books: Dr. Pangloss; Lord Henry Wotton."
+    },
+    {
+      "id": "deep-ho-dracula-renfield-first-name",
+      "turns": [
+        "What is Renfield's first name, and from which county was he committed to Dr. Seward's asylum?"
+      ],
+      "expect": "not_in_sources",
+      "proof": "Decoy written from my own knowledge of the book BEFORE the corpus text was reopened (audit afterwards). Looks in-corpus (right book, right character, plausible detail) but I believe the text never states it: Renfield appears only as 'R. M. Renfield' and no first name or county of origin is given."
+    },
+    {
+      "id": "deep-ho-janeeyre-coachman",
+      "turns": [
+        "Who drove the coach that carried Jane from Gateshead to Lowood, and what was her fare?"
+      ],
+      "expect": "not_in_sources",
+      "proof": "Decoy written from my own knowledge of the book BEFORE the corpus text was reopened (audit afterwards). Looks in-corpus (right book, right character, plausible detail) but I believe the text never states it: the coachman is unnamed and no fare is stated."
+    },
+    {
+      "id": "deep-ho-twocities-stryver-first-name",
+      "turns": [
+        "What is Mr. Stryver's first name, and in which year was he called to the bar?"
+      ],
+      "expect": "not_in_sources",
+      "proof": "Decoy written from my own knowledge of the book BEFORE the corpus text was reopened (audit afterwards). Looks in-corpus (right book, right character, plausible detail) but I believe the text never states it: Stryver is never given a first name and no call date appears."
+    },
+    {
+      "id": "deep-ho-candide-baron-name",
+      "turns": [
+        "What is the Baron of Thunder-ten-tronckh's given name, and what was his wife's family name?"
+      ],
+      "expect": "not_in_sources",
+      "proof": "Decoy written from my own knowledge of the book BEFORE the corpus text was reopened (audit afterwards). Looks in-corpus (right book, right character, plausible detail) but I believe the text never states it: the Baron and Baroness are never named beyond their titles."
+    }
+  ]
+}

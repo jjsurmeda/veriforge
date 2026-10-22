@@ -112,7 +112,19 @@ DEEP_COUNTS = {
 # minutes is not shippable as Deep. p50 of the per-item wall clock
 # (`p50_total_ms`, measured POST → run.completed) at most 30 s.
 MAX_P50_TOTAL_MS = 30_000
-EXPECTED_BY_SET = {"books": EXPECTED_COUNTS, "heldout": HELDOUT_COUNTS, "deep": DEEP_COUNTS}
+# The two frozen Deep splits (evals/deep/test_items.json over the books corpus,
+# evals/deep/heldout_items.json over the held-out corpus): same Deep bar as
+# "deep", their own pinned sizes. Registration only; no clause changed.
+DEEP_TEST_COUNTS = {**DEEP_COUNTS, "items": 16, "answer_items": 10, "abstain_items": 6}
+DEEP_HELDOUT_COUNTS = {**DEEP_COUNTS, "items": 8, "answer_items": 4, "abstain_items": 4}
+DEEP_SETS = ("deep", "deep_test", "deep_heldout")
+EXPECTED_BY_SET = {
+    "books": EXPECTED_COUNTS,
+    "heldout": HELDOUT_COUNTS,
+    "deep": DEEP_COUNTS,
+    "deep_test": DEEP_TEST_COUNTS,
+    "deep_heldout": DEEP_HELDOUT_COUNTS,
+}
 
 # PRD §5, as the brief takes it for one run. Named with the arithmetic rather
 # than as bare numbers so a reader can see which clause each is. The arithmetic
@@ -232,7 +244,7 @@ def acceptance_failures(summary: Mapping[str, Any], set_name: str = "books") -> 
     answer_items = _count(summary, "answer_items")
     false_abstentions = _count(summary, "false_abstentions")
     max_false = max_false_abstentions(answer_items)
-    if set_name != "deep" and false_abstentions > max_false:
+    if set_name not in DEEP_SETS and false_abstentions > max_false:
         failures.append(
             f"{false_abstentions} of {answer_items} answerable items declined "
             f"({_ids(summary, 'false_abstention_ids')}); PRD §5 allows ≤ "
@@ -244,7 +256,7 @@ def acceptance_failures(summary: Mapping[str, Any], set_name: str = "books") -> 
     # decline accuracy and false abstention and was still an answer from model
     # memory with nothing behind it.
     uncited = _count(summary, "uncited_answers")
-    if set_name != "deep" and uncited > MAX_UNCITED_ANSWERS:
+    if set_name not in DEEP_SETS and uncited > MAX_UNCITED_ANSWERS:
         failures.append(
             f"{uncited} answer-class item(s) completed with zero citations: "
             f"{_ids(summary, 'uncited_answer_ids')} — an answer with no evidence "
@@ -269,7 +281,7 @@ def acceptance_failures(summary: Mapping[str, Any], set_name: str = "books") -> 
     # R2b item 2: Deep's own latency clause. `p50_total_ms` is the median of the
     # per-item wall clock (POST → run.completed) the runner records; absent
     # (-1) or late both fail, because "slow but correct" is not Deep shipping.
-    if set_name == "deep":
+    if set_name in DEEP_SETS:
         p50 = summary.get("p50_total_ms")
         if not isinstance(p50, int | float) or p50 < 0:
             failures.append(
@@ -281,7 +293,7 @@ def acceptance_failures(summary: Mapping[str, Any], set_name: str = "books") -> 
                 f"p50 item wall clock {int(p50)} ms > {MAX_P50_TOTAL_MS} ms; a "
                 "multi-hop answer arriving three minutes late is not shippable "
                 "as Deep"
-            )    # The two small classes are pass/fail in full: they exist to catch a
+            )  # The two small classes are pass/fail in full: they exist to catch a
     # regression in chitchat handling and in the library answer, where a rate
     # over two items means nothing.
     for key, label in (("smalltalk_items", "smalltalk"), ("library_items", "library")):
@@ -328,7 +340,8 @@ def main(argv: list[str]) -> int:
     set_name = next((a.split("=", 1)[1] for a in argv[1:] if a.startswith("--set=")), "books")
     if len(args) != 1 or set_name not in EXPECTED_BY_SET:
         print(
-            "usage: python -m evals.acceptance_gate <summary.json> [--set=books|heldout|deep]",
+            "usage: python -m evals.acceptance_gate <summary.json> "
+            "[--set=books|heldout|deep|deep_test|deep_heldout]",
             file=sys.stderr,
         )
         return 2
