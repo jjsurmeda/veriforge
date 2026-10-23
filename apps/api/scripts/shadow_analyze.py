@@ -217,8 +217,8 @@ def agreement(calls: list[dict[str, Any]]) -> tuple[list[str], dict[str, Any]]:
             if b is not None:
                 per[area_of(k)].append((a, b, jv["call"]))
     lines = [
-        "| area | kind, rule | n pairs | agree | agree % | Jev hi / judge lo | Jev lo / judge hi | mean abs diff | Spearman |",
-        "|---|---|---|---|---|---|---|---|---|",
+        "| area | kind, rule | n pairs | agree | agree % | Jev hi / judge lo | Jev lo / judge hi | Jev fires / judge fires | mean abs diff | Spearman |",
+        "|---|---|---|---|---|---|---|---|---|---|",
     ]
     out: dict[str, Any] = {}
     for area in sorted(per):
@@ -247,6 +247,9 @@ def agreement(calls: list[dict[str, Any]]) -> tuple[list[str], dict[str, Any]]:
             diffs = [abs(x - y) for x, y in zip(xs, ys, strict=True)]
             rho = spearman(xs, ys)
         n = len(rows)
+        fires = "n/a"
+        if kind in ("noul", "rerank") and thr is not None:
+            fires = f"{sum(x >= thr for x in xs)} / {sum(y >= thr for y in ys)}"
         out[area] = {
             "n": n,
             "agree": agree,
@@ -257,9 +260,76 @@ def agreement(calls: list[dict[str, Any]]) -> tuple[list[str], dict[str, Any]]:
         }
         lines.append(
             f"| {area} | {kind}, {label} | {n} | {agree} | {agree / n * 100:.0f}% | {fmt(hi)} | {fmt(lo)} "
+            f"| {fires} "
             f"| {statistics.fmean(diffs):.3f} | {fmt(rho, 2)} |"
         )
     return lines, out
+
+
+def crosstabs(calls: list[dict[str, Any]]) -> list[str]:
+    jev = {r["call"]: r for r in calls if r["type"] == "call" and r["engine"] == "jev"}
+    tab: dict[str, dict[tuple[str, str], int]] = defaultdict(lambda: defaultdict(int))
+    for r in calls:
+        if r["type"] == "call" and r["engine"] == "judge" and r["shadow"] and "error" not in r and r["pair"] in jev:
+            for k, b in r["answers"].items():
+                a = jev[r["pair"]].get("answers", {}).get(k)
+                if a is not None and area_of(k) in ("c", "intent", "source"):
+                    tab[area_of(k)][(str(a["value"]), str(b["value"]))] += 1
+    out = []
+    for area, t in tab.items():
+        out.append(f"- {area} (Jev -> judge): " + "; ".join(f"{a} -> {b}: {n}" for (a, b), n in sorted(t.items(), key=lambda x: -x[1])))
+    return out
+
+
+def item_map(d: Path, books: dict[str, Any]) -> dict[str, str]:
+    messages = json.loads((d / "dump/messages.json").read_text())
+    turn_to_item = {
+        i["turns"][-1] if isinstance(i["turns"][-1], str) else i["turns"][-1].get("text", ""): i["id"]
+        for i in books["items"]
+    }
+    out: dict[str, str] = {}
+    for m in messages:
+        for u in messages:
+            if u["chat_id"] == m["chat_id"] and u["role"] == "user" and u["content"] in turn_to_item:
+                out[m["run_id"]] = turn_to_item[u["content"]]
+    return out
+
+
+def fired(calls: list[dict[str, Any]], d: Path, books: dict[str, Any]) -> list[str]:
+    """Items where the entity guard or the claim verdict actually fired or disagreed."""
+    items = item_map(d, books)
+    jev = {r["call"]: r for r in calls if r["type"] == "call" and r["engine"] == "jev"}
+    ent: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    clm: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    for r in calls:
+        if not (r["type"] == "call" and r["engine"] == "judge" and r["shadow"] and "error" not in r and r["pair"] in jev):
+            continue
+        jv = jev[r["pair"]]
+        item = items.get(jv["run_id"], "?")
+        ek = [k for k in jv["answers"] if area_of(k) == "entity"]
+        if ek:  # guard = no passage matches the entity
+            fj = all(float(jv["answers"][k]["value"]) < 0.5 for k in ek)
+            fd = all(float(r["answers"][k]["value"]) < 0.5 for k in ek)
+            ent[item]["calls"] += 1
+            ent[item]["jev_fires"] += fj
+            ent[item]["judge_fires"] += fd
+            ent[item]["flips"] += sum((float(jv["answers"][k]["value"]) >= 0.5) != (float(r["answers"][k]["value"]) >= 0.5) for k in ek)
+        for k, a in jv["answers"].items():
+            if area_of(k) == "c":
+                b = r["answers"][k]
+                clm[item]["claims"] += 1
+                clm[item]["differ"] += str(a["value"]) != str(b["value"])
+                clm[item]["jev_not_supported"] += str(a["value"]) != "supported"
+                clm[item]["judge_not_supported"] += str(b["value"]) != "supported"
+    out = ["- entity guard (a call 'fires' when no passage in it matches the entity at 0.5), items with a fire or any per-passage flip:"]
+    for item, v in sorted(ent.items()):
+        if v["jev_fires"] or v["judge_fires"] or v["flips"]:
+            out.append(f"  - {item}: {v['calls']} calls, Jev fires {v['jev_fires']}, judge fires {v['judge_fires']}, passage flips {v['flips']}")
+    out.append("- claim verdict, items with a differing label (claims / differ / Jev not-supported / judge not-supported):")
+    for item, v in sorted(clm.items(), key=lambda x: -x[1]["differ"]):
+        if v["differ"]:
+            out.append(f"  - {item}: {v['claims']} / {v['differ']} / {v['jev_not_supported']} / {v['judge_not_supported']}")
+    return out
 
 
 def rerank_section(
@@ -460,8 +530,12 @@ def main() -> None:
     print("\n".join(t2))
     if (args.dir / "dump/gold.json").exists() and (args.dir / "dump/messages.json").exists():
         t3, _ = rerank_section(data["calls"], args.dir, books)
+        print("\n## Where entity and claim verdict fired or disagreed\n")
+        print("\n".join(fired(data["calls"], args.dir, books)))
         print("\n## Rerank\n")
         print("\n".join(t3))
+    print("\n## Label pairs (Choice kinds)\n")
+    print("\n".join(crosstabs(data["calls"])))
     print("\n## Judge latency with and without our own queueing\n")
     print("\n".join(inflight(data["calls"])))
     print("\n## Failed calls\n")
