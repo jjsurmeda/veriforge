@@ -14,7 +14,7 @@ the decision-model and reranker comparison, the measured scorecard, and the bugs
 | Modes | Auto: adaptive + hybrid RAG with a corrective evidence check. Deep: agentic RAG (search, read, search again or answer) |
 | Retrieval | Hybrid BM25 + vector (weighted RRF), pluggable rerank, small-to-big, multi-query, section summaries for gist questions |
 | Decision layer | Pluggable decision models (Jev and others) and rerankers (Cohere, NVIDIA, Jev, LLM judge), compared side by side |
-| Benchmarks | Reranker and decision-model tables in [`docs/benchmarks/`](docs/benchmarks/) *(published at the end of phase R3)* |
+| Benchmarks | Reranker, decision-layer and generator tables in [`docs/benchmarks/`](docs/benchmarks/); summary in [Measured results](#measured-results) |
 | Trust | Claim verification, faithfulness and minimum support, abstention with no fabricated citations, conflict disclosure |
 | Quality | Faithfulness **0.976** (mean of 5 runs, fast20, 2026-10-02); 7 languages |
 | Engineering | Multi-user, quotas, admin and audit, resumable SSE, PRD/TRD/ADRs, known-issues log |
@@ -23,6 +23,66 @@ Adaptive agentic RAG chatbot showcase. See [`CLAUDE.md`](CLAUDE.md) for
 working instructions and [`docs/PRD.md`](docs/PRD.md) / [`docs/TRD.md`](docs/TRD.md)
 for the numbered requirements (`CH-`, `TR-`, `SR-`, `TX-`, `AC-`, `AD-`)
 referenced in commits.
+
+## Measured results
+
+Local Compose stack, 2026-10-20 to 2026-10-23. Each figure is from a named run; "one draw"
+means one run, so it can move between runs (the same DeepSeek configuration scored 56/56 and
+53/56 on two books draws). Details, method and caveats:
+[`decision-layer.md`](docs/benchmarks/decision-layer.md),
+[`results.md`](docs/benchmarks/results.md), [`rerankers.md`](docs/benchmarks/rerankers.md).
+
+| Area | Result | Run |
+| --- | --- | --- |
+| Generator, books (56 items) | DeepSeek V4 Pro, prompt v6: 56/56 and 53/56 (2 draws); 0 confident wrong, 0 false abstentions in both; content-miss bar met in 1 of 2 | books, 2 draws |
+| Generator, held-out (31 items) | DeepSeek V4 Pro: 31/31 on v5 and on v6; 0 confident wrong; the known false-premise trap declined | one draw each |
+| Generator alternatives | gpt-4o-mini failed the books gate (53/57); Sonnet 5.5 v6 had 1 confident wrong (54/56) | one draw each |
+| Decision layer, books | Jev 56/56 (53/56 on a second draw); LLM judge gpt-4o-mini as the only engine 40/56: 11 false abstentions, 3 content misses, 0 confident wrong | one draw each |
+| Decision latency (28 items, paired) | Jev p50 about 0.5 s per call batch; judge 1.6 to 11.8 s in flight per area, rerank 95 s | shadow run |
+| Decision cost (exact, OpenRouter records) | Jev $0.026 per 1k decisions, judge $0.180 (6.9x); per run $0.0039 against $0.0272 | shadow run |
+| Rerankers (33 items, recall@8) | Jev 31, NVIDIA 27, Cohere 26, fused order 26, BGE 25; judge 10/12 against Jev 11/12 on a 12-item subset | pool replay |
+| Deep mode, draw 1 | Did not meet its bar on any of three frozen splits (below) | b885ac2, one draw per split |
+
+### What the numbers do not say
+
+- **The thresholds were calibrated on Jev.** The LLM judge ran on the same values, uncalibrated
+  (the "fallback" thresholds are a copy of Jev's). The comparison is Jev as calibrated against the
+  judge as not calibrated.
+- **The judge is gpt-4o-mini.** `deepseek-v4.1-flash-1017` was also tried on 16 items only: 12/16
+  against 13/16 for gpt-4o-mini, not distinguishable.
+- **Judge latency is in-flight time.** Wall time in the shadow run was inflated by our own
+  queueing (rerank wall p50 150 s, in flight 95 s).
+- **Generator cost is not quoted.** The generator price in the config is unchecked against the billed
+  rate (KI-90). Decision-layer costs are exact from OpenRouter generation records.
+- **Three changes were made after results, each approved by the owner:** `outside-whitman` was removed
+  from the books set (57 to 56 items; DeepSeek v5 had scored 54, 55 and 52 of 57); prompt v6 replaced
+  v5; the scorer's decline detection was widened (`7e73ffe`; Sonnet 5.5 v5's reply to
+  `outside-holmes-boston` went from confident wrong to a decline). Old and new numbers are in
+  [`results.md`](docs/benchmarks/results.md).
+
+### Deep mode
+
+Draw 1 on the frozen dev (14), test (16) and held-out (8) splits passed 6/14, 10/16 and 5/8 and did
+not meet the bar declared beforehand on any of them.
+
+- **Scorer artifacts (KI-87).** The gate counted 1, 3 and 2 confident wrong. Each of the 6 read is a
+  cited prose decline ("the sources do not give the Time Traveller's full name") that the decline
+  regex does not recognise. n = 1 per item and only the start of most replies was read.
+- **Real.** False abstentions on compound questions (4 of 10 on test), and p50 item wall clock of 33.6 s
+  on dev and 30.8 s on held-out against a 30 s target.
+
+Deep is being improved. Before the last change dev scored 4 false abstentions of 10; it now scores 2.
+
+### What is not measured yet
+
+- Entity-guard mismatch cases (a question naming something the passages do not): only incidental
+  firings on 28 items, no designed set.
+- Injection and jailbreak firing: every guard pair so far was benign input, so 100% agreement
+  there shows no detection.
+- Held-out on the LLM judge: not run.
+- A second unseen set: the held-out set has been run several times and is one set.
+- OCR and multimodal inputs.
+- Laya and Microsoft-Decision-1 as decision models (not pluggable yet; KI-85).
 
 ## Layout
 
