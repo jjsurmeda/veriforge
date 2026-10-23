@@ -72,7 +72,7 @@ def _answers(answers: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _wrap_decide(cls: type, engine: str) -> None:
+def _wrap_decide(cls: Any, engine: str) -> None:
     original = cls.decide
 
     async def decide(self: Any, *, state: Any, questions: dict[str, Any]) -> Any:
@@ -96,7 +96,9 @@ def _wrap_decide(cls: type, engine: str) -> None:
         prompts = {k: getattr(q, "prompt", "") for k, q in questions.items()}
         if stage == "rerank" and prompts:
             rec["pdig"] = {
-                k: hashlib.sha1(p.split("[Passage]\n", 1)[-1].encode()).hexdigest()[:12]
+                k: hashlib.sha1(
+                    p.split("[Passage]\n", 1)[-1].encode(), usedforsecurity=False
+                ).hexdigest()[:12]
                 for k, p in prompts.items()
             }
             first = next(iter(prompts.values()))
@@ -121,7 +123,7 @@ def _wrap_decide(cls: type, engine: str) -> None:
                 # the Jev call it double-checks.
                 PAIR.set(rec["call"])
 
-    cls.decide = decide  # type: ignore[method-assign]
+    cls.decide = decide
 
 
 def _wrap_shadow() -> None:
@@ -178,14 +180,14 @@ def _wrap_litellm() -> None:
                 "call": (call or {}).get("call"),
                 "stream": bool(kwargs.get("stream")),
                 "open_ms": round((time.monotonic() - started) * 1000),
-                "usage": usage.model_dump() if hasattr(usage, "model_dump") else None,
+                "usage": usage.model_dump() if usage is not None else None,
                 "response_cost": hidden.get("response_cost"),
                 "ts": time.time(),
             }
         )
         return response
 
-    litellm.acompletion = acompletion  # type: ignore[assignment]
+    litellm.acompletion = acompletion
 
 
 def _jev_sink(generation_id: str) -> None:

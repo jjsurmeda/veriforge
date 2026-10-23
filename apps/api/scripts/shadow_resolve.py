@@ -13,6 +13,7 @@ import asyncio
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -50,7 +51,7 @@ async def main() -> None:
         }
     )
     out_path = args.log.with_suffix(".gens.json")
-    known: dict[str, dict] = json.loads(out_path.read_text()) if out_path.exists() else {}
+    known: dict[str, dict[str, Any]] = json.loads(out_path.read_text()) if out_path.exists() else {}
     known = {k: v for k, v in known.items() if "unresolved" not in v}  # retry the misses
     todo = [i for i in ids if i not in known]
     sem = asyncio.Semaphore(8)

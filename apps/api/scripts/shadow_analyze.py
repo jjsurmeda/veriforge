@@ -1,4 +1,6 @@
-# ruff: noqa: E501, E731, B023, S324, ASYNC240, F841
+# ruff: noqa: E501, E731, B023, F841
+# mypy: ignore-errors
+# (one-off $0 replay over a JSON dump; the dump's shape is not worth typing)
 """Paired Jev vs LLM-judge latency, cost and agreement per decision area ($0 replay).
 
 Reads what `shadow_api.py` (call log), `shadow_resolve.py` (generation records),
@@ -270,27 +272,42 @@ def crosstabs(calls: list[dict[str, Any]]) -> list[str]:
     jev = {r["call"]: r for r in calls if r["type"] == "call" and r["engine"] == "jev"}
     tab: dict[str, dict[tuple[str, str], int]] = defaultdict(lambda: defaultdict(int))
     for r in calls:
-        if r["type"] == "call" and r["engine"] == "judge" and r["shadow"] and "error" not in r and r["pair"] in jev:
+        if (
+            r["type"] == "call"
+            and r["engine"] == "judge"
+            and r["shadow"]
+            and "error" not in r
+            and r["pair"] in jev
+        ):
             for k, b in r["answers"].items():
                 a = jev[r["pair"]].get("answers", {}).get(k)
                 if a is not None and area_of(k) in ("c", "intent", "source"):
                     tab[area_of(k)][(str(a["value"]), str(b["value"]))] += 1
     out = []
     for area, t in tab.items():
-        out.append(f"- {area} (Jev -> judge): " + "; ".join(f"{a} -> {b}: {n}" for (a, b), n in sorted(t.items(), key=lambda x: -x[1])))
+        out.append(
+            f"- {area} (Jev -> judge): "
+            + "; ".join(f"{a} -> {b}: {n}" for (a, b), n in sorted(t.items(), key=lambda x: -x[1]))
+        )
     return out
 
 
 def item_map(d: Path, books: dict[str, Any]) -> dict[str, str]:
     messages = json.loads((d / "dump/messages.json").read_text())
     turn_to_item = {
-        i["turns"][-1] if isinstance(i["turns"][-1], str) else i["turns"][-1].get("text", ""): i["id"]
+        i["turns"][-1] if isinstance(i["turns"][-1], str) else i["turns"][-1].get("text", ""): i[
+            "id"
+        ]
         for i in books["items"]
     }
     out: dict[str, str] = {}
     for m in messages:
         for u in messages:
-            if u["chat_id"] == m["chat_id"] and u["role"] == "user" and u["content"] in turn_to_item:
+            if (
+                u["chat_id"] == m["chat_id"]
+                and u["role"] == "user"
+                and u["content"] in turn_to_item
+            ):
                 out[m["run_id"]] = turn_to_item[u["content"]]
     return out
 
@@ -302,7 +319,13 @@ def fired(calls: list[dict[str, Any]], d: Path, books: dict[str, Any]) -> list[s
     ent: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     clm: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     for r in calls:
-        if not (r["type"] == "call" and r["engine"] == "judge" and r["shadow"] and "error" not in r and r["pair"] in jev):
+        if not (
+            r["type"] == "call"
+            and r["engine"] == "judge"
+            and r["shadow"]
+            and "error" not in r
+            and r["pair"] in jev
+        ):
             continue
         jv = jev[r["pair"]]
         item = items.get(jv["run_id"], "?")
@@ -313,7 +336,11 @@ def fired(calls: list[dict[str, Any]], d: Path, books: dict[str, Any]) -> list[s
             ent[item]["calls"] += 1
             ent[item]["jev_fires"] += fj
             ent[item]["judge_fires"] += fd
-            ent[item]["flips"] += sum((float(jv["answers"][k]["value"]) >= 0.5) != (float(r["answers"][k]["value"]) >= 0.5) for k in ek)
+            ent[item]["flips"] += sum(
+                (float(jv["answers"][k]["value"]) >= 0.5)
+                != (float(r["answers"][k]["value"]) >= 0.5)
+                for k in ek
+            )
         for k, a in jv["answers"].items():
             if area_of(k) == "c":
                 b = r["answers"][k]
@@ -321,14 +348,22 @@ def fired(calls: list[dict[str, Any]], d: Path, books: dict[str, Any]) -> list[s
                 clm[item]["differ"] += str(a["value"]) != str(b["value"])
                 clm[item]["jev_not_supported"] += str(a["value"]) != "supported"
                 clm[item]["judge_not_supported"] += str(b["value"]) != "supported"
-    out = ["- entity guard (a call 'fires' when no passage in it matches the entity at 0.5), items with a fire or any per-passage flip:"]
+    out = [
+        "- entity guard (a call 'fires' when no passage in it matches the entity at 0.5), items with a fire or any per-passage flip:"
+    ]
     for item, v in sorted(ent.items()):
         if v["jev_fires"] or v["judge_fires"] or v["flips"]:
-            out.append(f"  - {item}: {v['calls']} calls, Jev fires {v['jev_fires']}, judge fires {v['judge_fires']}, passage flips {v['flips']}")
-    out.append("- claim verdict, items with a differing label (claims / differ / Jev not-supported / judge not-supported):")
+            out.append(
+                f"  - {item}: {v['calls']} calls, Jev fires {v['jev_fires']}, judge fires {v['judge_fires']}, passage flips {v['flips']}"
+            )
+    out.append(
+        "- claim verdict, items with a differing label (claims / differ / Jev not-supported / judge not-supported):"
+    )
     for item, v in sorted(clm.items(), key=lambda x: -x[1]["differ"]):
         if v["differ"]:
-            out.append(f"  - {item}: {v['claims']} / {v['differ']} / {v['jev_not_supported']} / {v['judge_not_supported']}")
+            out.append(
+                f"  - {item}: {v['claims']} / {v['differ']} / {v['jev_not_supported']} / {v['judge_not_supported']}"
+            )
     return out
 
 
@@ -454,7 +489,9 @@ def totals(calls: list[dict[str, Any]], gens: dict[str, Any]) -> list[str]:
     runs.discard("")
     n = len(runs)
     rows = [f"| {k} | {v:.4f} | {v / n:.5f} |" for k, v in sorted(bucket.items())]
-    base = sum(v for k, v in bucket.items() if k not in ("jev_decisions", "judge_decisions", "async_judge"))
+    base = sum(
+        v for k, v in bucket.items() if k not in ("jev_decisions", "judge_decisions", "async_judge")
+    )
     jev, judge = bucket["jev_decisions"], bucket["judge_decisions"]
     return [
         f"{n} runs with decision calls; total attributed to roles ${sum(bucket.values()):.4f}",
@@ -480,21 +517,35 @@ def inflight(calls: list[dict[str, Any]]) -> list[str]:
     for r in calls:
         if r["type"] == "gen" and r["source"] == "litellm" and r.get("call"):
             gen_ms[r["call"]] += r.get("open_ms") or 0
-    js = [r for r in calls if r["type"] == "call" and r["engine"] == "judge" and r["shadow"] and "error" not in r]
+    js = [
+        r
+        for r in calls
+        if r["type"] == "call" and r["engine"] == "judge" and r["shadow"] and "error" not in r
+    ]
     lines = [
         "| stage | n | judge wall p50 / p95 ms | judge in-flight p50 / p95 ms (no slot wait) | queued share of wall (median) | Jev p50 ms | in-flight x Jev (p50) |",
         "|---|---|---|---|---|---|---|",
     ]
     for st in sorted({r["stage"] for r in js}):
         rs = [r for r in js if r["stage"] == st]
-        jev_p50 = pct([r["wall_ms"] for r in calls if r["type"] == "call" and r["engine"] == "jev" and r["stage"] == st and "error" not in r], .5)
+        jev_p50 = pct(
+            [
+                r["wall_ms"]
+                for r in calls
+                if r["type"] == "call"
+                and r["engine"] == "jev"
+                and r["stage"] == st
+                and "error" not in r
+            ],
+            0.5,
+        )
         wall = [r["wall_ms"] for r in rs]
         fly = [gen_ms[r["call"]] for r in rs]
         share = [1 - gen_ms[r["call"]] / r["wall_ms"] for r in rs if r["wall_ms"]]
         lines.append(
-            f"| {st} | {len(rs)} | {fmt(pct(wall, .5))} / {fmt(pct(wall, .95))} | "
-            f"{fmt(pct(fly, .5))} / {fmt(pct(fly, .95))} | {statistics.median(share) * 100:.0f}% | "
-            f"{fmt(jev_p50)} | {fmt(pct(fly, .5) / jev_p50, 1)} |"
+            f"| {st} | {len(rs)} | {fmt(pct(wall, 0.5))} / {fmt(pct(wall, 0.95))} | "
+            f"{fmt(pct(fly, 0.5))} / {fmt(pct(fly, 0.95))} | {statistics.median(share) * 100:.0f}% | "
+            f"{fmt(jev_p50)} | {fmt(pct(fly, 0.5) / jev_p50, 1)} |"
         )
     return lines
 
@@ -506,7 +557,9 @@ def errors(calls: list[dict[str, Any]]) -> list[str]:
             tally[(r["engine"], r["stage"], r["error"][:110])] += 1
     out = [f"- {n} x {e} / {st}: {msg}" for (e, st, msg), n in sorted(tally.items())]
     ue = [r["err"] for r in calls if r["type"] == "usage_error"]
-    out.append(f"- shadow `record_call` errors swallowed by the launcher: {len(ue)} ({', '.join(sorted(set(ue)))})")
+    out.append(
+        f"- shadow `record_call` errors swallowed by the launcher: {len(ue)} ({', '.join(sorted(set(ue)))})"
+    )
     return out
 
 

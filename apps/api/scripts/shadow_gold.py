@@ -21,7 +21,7 @@ from scripts.measure_recall import LABELS, _gold
 
 async def main(out: Path) -> None:
     labels = json.loads(LABELS.read_text())["items"]
-    out.mkdir(parents=True, exist_ok=True)
+    out.mkdir(parents=True, exist_ok=True)  # noqa: ASYNC240
     async with get_session_factory()() as session:
         gold = {iid: sorted(await _gold(session, label)) for iid, label in labels.items()}
         rows = await session.execute(
@@ -32,9 +32,10 @@ async def main(out: Path) -> None:
         digest: dict[str, list[str]] = {}
         docs: dict[str, str] = {}
         for cid, body, name in rows:
-            digest.setdefault(
-                hashlib.sha1(body[:_PASSAGE_CHARS].encode()).hexdigest()[:12], []
-            ).append(str(cid))
+            key = hashlib.sha1(body[:_PASSAGE_CHARS].encode(), usedforsecurity=False).hexdigest()[
+                :12
+            ]
+            digest.setdefault(key, []).append(str(cid))
             docs[str(cid)] = name
     (out / "gold.json").write_text(json.dumps(gold))
     (out / "chunkmap.json").write_text(json.dumps({"digest": digest, "doc": docs}))

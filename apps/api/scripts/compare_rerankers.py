@@ -245,9 +245,10 @@ async def measure(
                 queries_run[rid] += 1
                 if rid == "jev" and (usd := await _usd_for(GENERATION_IDS[before:])) is not None:
                     jev_usd.append(usd)
-                if rid == "judge" and (
-                    usd := await _usd_for([r.generation_id for r in refs])
-                ) is not None:
+                if (
+                    rid == "judge"
+                    and (usd := await _usd_for([r.generation_id for r in refs])) is not None
+                ):
                     judge_usd["judge"].append(usd)
                 order = [str(pool[i].chunk_id) for i, _ in ranked]
                 item_hit[rid] = item_hit[rid] or bool(set(order[:RECALL_K]) & gold[iid])
@@ -271,9 +272,9 @@ async def measure(
         n = len(hits[rid])
         info = ALL[rid]
         if rid in judge_usd or rid == "jev":
-            usd = jev_usd if rid == "jev" else judge_usd[rid]
-            per_1k = round(statistics.fmean(usd) * 1000, 4) if usd else None
-            cost_src = "OpenRouter generation stats" if usd else "not measured"
+            samples = jev_usd if rid == "jev" else judge_usd[rid]
+            per_1k = round(statistics.fmean(samples) * 1000, 4) if samples else None
+            cost_src = "OpenRouter generation stats" if samples else "not measured"
         else:
             per_1k = info.cost_per_1k_queries_usd
             cost_src = "price table"
