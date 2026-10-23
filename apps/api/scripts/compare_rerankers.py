@@ -41,11 +41,11 @@ from config import get_settings
 from db.session import get_session_factory
 from decisions.engine import DecisionEngine
 from decisions.jev import JevClient
-from evals.attribution import _stats
+from evals.attribution import _stats, record_generation_ids
 from providers.llm import embed_batch
 from retrieval.filters import Ownership
 from retrieval.rerank import RERANKERS as PRODUCT_RERANKERS
-from retrieval.rerank import RerankProvider
+from retrieval.rerank import JevRerank, RerankerInfo, RerankProvider
 from runtime import RuntimeSettings, reset_runtime_settings, set_runtime_settings
 from scripts.local_rerankers import BGE_INFO
 from scripts.measure_recall import LABELS, _gold, _search
@@ -78,6 +78,21 @@ def percentile(values: list[float], p: float) -> float:
 
 # Product rerankers plus comparison-only local ones (scripts/local_rerankers.py).
 RERANKERS = {**PRODUCT_RERANKERS, BGE_INFO.id: BGE_INFO}
+
+# Comparison-only (R3 shadow, item 3), deliberately NOT in the registry and not
+# in the default --ids: the Jev rerank path (JevRerank, batches as shipped) with
+# the decision engine forced to the LLM judge (fallback_only, FALLBACK_MODEL).
+# Costs real money per query, so it runs only when named: --ids jev,judge.
+JUDGE_INFO = RerankerInfo(
+    "judge",
+    "Jev rubric via the LLM judge (fallback_only)",
+    "decision-model",
+    None,
+    "token-metered through the fallback model",
+    lambda s: True,
+    lambda s, engine, run_id: JevRerank(engine, run_id) if engine is not None else None,
+)
+ALL = {**RERANKERS, JUDGE_INFO.id: JUDGE_INFO}
 
 
 def paired(hits: dict[str, dict[str, bool]], base: str, other: str) -> dict[str, Any]:
@@ -129,7 +144,7 @@ async def _usd_for(ids: list[str]) -> float | None:
 
 
 def _build(rid: str, engine: DecisionEngine, run_id: str) -> RerankProvider | None:
-    info = RERANKERS[rid]
+    info = ALL[rid]
     return info.build(get_settings(), engine, run_id)
 
 
@@ -137,7 +152,7 @@ def _available(rid: str) -> tuple[bool, str]:
     settings = get_settings()
     if rid == "jev":
         return (True, "") if settings.openrouter_api_key else (False, "no OPENROUTER_API_KEY")
-    if not RERANKERS[rid].key_present(settings):
+    if not ALL[rid].key_present(settings):
         return False, "no API key"
     return True, ""
 
@@ -174,10 +189,12 @@ async def measure(
         gold = {iid: await _gold(session, label) for iid, label in labels.items()}
 
     engine = DecisionEngine(jev=JevClient(client=_cost_recording_client()), mode="auto")
+    judge_engine = DecisionEngine(mode="fallback_only")
     hits: dict[str, dict[str, bool]] = {rid: {} for rid in ids}
     ndcgs: dict[str, dict[str, float]] = {rid: {} for rid in ids}
     latencies: dict[str, list[float]] = {rid: [] for rid in ids}
     jev_usd: list[float] = []
+    judge_usd: dict[str, list[float]] = {"judge": []} if "judge" in ids else {}
     queries_run: dict[str, int] = {rid: 0 for rid in ids}
     degraded: dict[str, int] = {rid: 0 for rid in ids}
 
@@ -204,13 +221,16 @@ async def measure(
                 continue
             documents = [c.text for c in pool]
             for rid in ids:  # the identical pool goes to every reranker
-                provider = _build(rid, engine, iid)
+                provider = _build(rid, judge_engine if rid == "judge" else engine, iid)
                 assert provider is not None
                 token = set_runtime_settings(RuntimeSettings.from_data(1, {}))
                 before = len(GENERATION_IDS)
                 started = time.perf_counter()
                 try:
-                    ranked = await provider.rerank(query=query, documents=documents, top_n=NDCG_K)
+                    async with record_generation_ids() as refs:
+                        ranked = await provider.rerank(
+                            query=query, documents=documents, top_n=NDCG_K
+                        )
                     elapsed_ms = (time.perf_counter() - started) * 1000  # before the pace sleep
                 except Exception as exc:
                     print(f"    {rid} failed on {iid}: {exc!r}", flush=True)
@@ -225,6 +245,11 @@ async def measure(
                 queries_run[rid] += 1
                 if rid == "jev" and (usd := await _usd_for(GENERATION_IDS[before:])) is not None:
                     jev_usd.append(usd)
+                if (
+                    rid == "judge"
+                    and (usd := await _usd_for([r.generation_id for r in refs])) is not None
+                ):
+                    judge_usd["judge"].append(usd)
                 order = [str(pool[i].chunk_id) for i, _ in ranked]
                 item_hit[rid] = item_hit[rid] or bool(set(order[:RECALL_K]) & gold[iid])
                 item_ndcg[rid].append(ndcg_at_k(order, gold[iid]))
@@ -245,10 +270,11 @@ async def measure(
     summary: dict[str, Any] = {}
     for rid in ids:
         n = len(hits[rid])
-        info = RERANKERS[rid]
-        if rid == "jev":
-            per_1k = round(statistics.fmean(jev_usd) * 1000, 4) if jev_usd else None
-            cost_src = "OpenRouter generation stats" if jev_usd else "not measured"
+        info = ALL[rid]
+        if rid in judge_usd or rid == "jev":
+            samples = jev_usd if rid == "jev" else judge_usd[rid]
+            per_1k = round(statistics.fmean(samples) * 1000, 4) if samples else None
+            cost_src = "OpenRouter generation stats" if samples else "not measured"
         else:
             per_1k = info.cost_per_1k_queries_usd
             cost_src = "price table"
@@ -332,9 +358,9 @@ async def main() -> None:
     args = parser.parse_args()
 
     wanted = [i.strip() for i in args.ids.split(",") if i.strip()]
-    unknown = [i for i in wanted if i not in RERANKERS]
+    unknown = [i for i in wanted if i not in ALL]
     if unknown:
-        raise SystemExit(f"unknown reranker id(s) {unknown}; known: {list(RERANKERS)}")
+        raise SystemExit(f"unknown reranker id(s) {unknown}; known: {list(ALL)}")
     skipped: dict[str, str] = {}
     ids: list[str] = []
     for rid in wanted:
