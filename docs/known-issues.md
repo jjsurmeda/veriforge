@@ -7,7 +7,7 @@ The Phase column is authoritative; section placement below is from the first tri
 Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 - When you fix one, move it to the archive in the same commit, with the fixing commit hash.
 - A new finding that breaks no check is added under **post-beta** and opens no lane.
-- New IDs continue from KI-90.
+- New IDs continue from KI-91.
 
 ## Index
 
@@ -17,6 +17,7 @@ Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 | closed 2026-10-23 | KI-79 | `plot-speckled-band` passes in all 5 DeepSeek V4 Pro draws; closed by the ADR-007 generator change |
 | R3 (generator) | KI-86 | the reply language is not enforced: a Tagalog question answered in English (DeepSeek), an English one in German (Sonnet) |
 | before deploy | KI-88 | the decision fallback's LLM call can stall for minutes: it has no effective timeout |
+| before deploy | KI-91 | `UsageContext.record_call` raises `MultipleResultsFound` once a run has an `async_judge` ledger row: its aggregate-row query is not filtered by role |
 | before deploy | KI-90 | generator price constants (`config.py`) may be stale: the public list shows DeepSeek V4 Pro at about 2x the recorded $0.4427 / $0.8853 per 1M |
 | before deploy | KI-89 | `retrieval_statement_timeout_ms` (`SET LOCAL`) leaks onto the shared hop session and cancels an embedding cache write |
 | R3 (scorer) | KI-87 | decline detection is a regex over wordings; new phrasings slip past it (3 found in 3 days) |
@@ -646,6 +647,23 @@ Logged 2026-10-12 (phase 1, `make check-work` on `beta/phase1-check-work`).
 - **Done when:** the timeout applies only to the retrieval statement it was set for,
   the embedding cache write is not under it, and a test runs two parallel hops on one
   session.
+
+## KI-91: usage recording fails after a run's first async_judge ledger row
+
+- **What:** `UsageContext.record_call` (`quota/usage.py:67-73`) selects every
+  `UsageLedger` row of the run and reads it with `scalar_one_or_none()`. An
+  `async_judge` call adds its own row (line 76), so from then on the run has two rows
+  and the next call for that run, of any role, raises `MultipleResultsFound` after the
+  provider has answered and billed. Found by the R3 shadow run: a shadow judge call that
+  finished after its run settled hit it 34 times in 28 runs, and the measurement
+  launcher swallowed the error. With the default `shadow_sample_rate` (0.02) and the
+  normal `async_judge` claim review the same path can occur in production; how often is
+  not measured. The user's answer is not affected; the ledger row of the late call is
+  lost and the call is logged as a failure.
+- **Phase:** before deploy (quota accounting, TRD §14).
+- **Done when:** the aggregate-row query is restricted to the run's aggregate row (not
+  `async_judge` rows), and a test records two `async_judge` calls and a late shadow call
+  on one run without an error and with every call in the ledger.
 
 ## KI-90: generator price constants may be stale
 
