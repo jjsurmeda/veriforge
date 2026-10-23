@@ -7,7 +7,7 @@ The Phase column is authoritative; section placement below is from the first tri
 Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 - When you fix one, move it to the archive in the same commit, with the fixing commit hash.
 - A new finding that breaks no check is added under **post-beta** and opens no lane.
-- New IDs continue from KI-89.
+- New IDs continue from KI-90.
 
 ## Index
 
@@ -17,6 +17,7 @@ Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 | closed 2026-10-23 | KI-79 | `plot-speckled-band` passes in all 5 DeepSeek V4 Pro draws; closed by the ADR-007 generator change |
 | R3 (generator) | KI-86 | the reply language is not enforced: a Tagalog question answered in English (DeepSeek), an English one in German (Sonnet) |
 | before deploy | KI-88 | the decision fallback's LLM call can stall for minutes: it has no effective timeout |
+| before deploy | KI-90 | generator price constants (`config.py`) may be stale: the public list shows DeepSeek V4 Pro at about 2x the recorded $0.4427 / $0.8853 per 1M |
 | before deploy | KI-89 | `retrieval_statement_timeout_ms` (`SET LOCAL`) leaks onto the shared hop session and cancels an embedding cache write |
 | R3 (scorer) | KI-87 | decline detection is a regex over wordings; new phrasings slip past it (3 found in 3 days) |
 | closed 2026-10-22 | KI-80 | outside-whitman removed from the books set: the only passage says a distinction exists but not what it is |
@@ -645,6 +646,16 @@ Logged 2026-10-12 (phase 1, `make check-work` on `beta/phase1-check-work`).
 - **Done when:** the timeout applies only to the retrieval statement it was set for,
   the embedding cache write is not under it, and a test runs two parallel hops on one
   session.
+
+## KI-90: generator price constants may be stale
+
+- **What:** `GENERATOR_PRICE_IN/OUT` in `config.py` ($0.4427 / $0.8853 per 1M) feed the
+  cost accounting for the generator role. The public OpenRouter model list on
+  2026-10-23 shows `deepseek/deepseek-v4-pro` at $0.955 / $1.911. Whether the key is
+  billed at that rate is not checked (the key and credit endpoints were not used).
+- **Phase:** before deploy (quota settlement and the README cost claims use these).
+- **Done when:** the billed rate is read from a generation record of a real run, the
+  constants and `seed_models.py` row match it, and ADR-007's cost line is corrected.
 
 ## KI-80: outside-whitman abstains although the quote is in one chunk
 
