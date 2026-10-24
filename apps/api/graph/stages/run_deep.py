@@ -8,7 +8,6 @@ streams.
 
 from __future__ import annotations
 
-import time
 from collections.abc import Awaitable, Callable
 from uuid import UUID
 
@@ -70,15 +69,21 @@ async def run_deep(env: RunEnv) -> None:
         streamed=plan == "stream",
         state=env.state,
     )
-    started = time.monotonic()
-    async for kind, token in run.stream_answer_with_thinking():
-        if kind == "thinking":
-            await env.bus.publish(
-                env.run_id, ThinkingDelta(run_id=str(env.run_id), text=token)
-            )
-            continue
-        await delivery.push(token)
-    await delivery.flush()
+    generate_step = make_step_timer(
+        node="deep", run_id=env.run_id, latency_ms=run.latency_ms, publish=_publish_step(env)
+    )
+
+    async def _generate() -> None:
+        async for kind, token in run.stream_answer_with_thinking():
+            if kind == "thinking":
+                await env.bus.publish(
+                    env.run_id, ThinkingDelta(run_id=str(env.run_id), text=token)
+                )
+                continue
+            await delivery.push(token)
+        await delivery.flush()
+
+    await generate_step("generate", _generate)
     text = env.state.text
 
     # IsUse (ADR-006, R2b item 1): the same post-generation check Auto runs,
@@ -111,7 +116,7 @@ async def run_deep(env: RunEnv) -> None:
 
         await usefulness_step("isuse", _run_usefulness)
 
-    generate_ms = int((time.monotonic() - started) * 1000)
+    generate_ms = run.latency_ms.get("generate", 0)
     prompt_tokens = sum(
         count_tokens(message["content"])
         for message in build_grounded_messages(run.rewritten, run.contexts, run.history)

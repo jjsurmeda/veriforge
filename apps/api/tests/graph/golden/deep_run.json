@@ -79,6 +79,15 @@
   "kind": "event"
  },
  {
+  "event": {
+   "label": "retrieve: q1",
+   "node": "deep",
+   "seq": 0,
+   "type": "step.started"
+  },
+  "kind": "event"
+ },
+ {
   "kind": "llm",
   "n": 1,
   "role": "embed"
@@ -89,16 +98,61 @@
   "query": "AW-2000 warranty length?"
  },
  {
+  "event": {
+   "label": "retrieve: q1",
+   "node": "deep",
+   "seq": 0,
+   "type": "step.completed"
+  },
+  "kind": "event"
+ },
+ {
+  "event": {
+   "label": "rerank: q1",
+   "node": "deep",
+   "seq": 0,
+   "type": "step.started"
+  },
+  "kind": "event"
+ },
+ {
   "kind": "rerank",
   "questions": [
    "passage_0"
   ]
  },
  {
+  "event": {
+   "label": "rerank: q1",
+   "node": "deep",
+   "seq": 0,
+   "type": "step.completed"
+  },
+  "kind": "event"
+ },
+ {
+  "event": {
+   "label": "sanitize: q1",
+   "node": "deep",
+   "seq": 0,
+   "type": "step.started"
+  },
+  "kind": "event"
+ },
+ {
   "kind": "sanitize",
   "questions": [
    "chunk_injection_0"
   ]
+ },
+ {
+  "event": {
+   "label": "sanitize: q1",
+   "node": "deep",
+   "seq": 0,
+   "type": "step.completed"
+  },
+  "kind": "event"
  },
  {
   "event": {
@@ -206,8 +260,26 @@
   "kind": "event"
  },
  {
+  "event": {
+   "label": "generate",
+   "node": "deep",
+   "seq": 0,
+   "type": "step.started"
+  },
+  "kind": "event"
+ },
+ {
   "kind": "llm",
   "role": "generator"
+ },
+ {
+  "event": {
+   "label": "generate",
+   "node": "deep",
+   "seq": 0,
+   "type": "step.completed"
+  },
+  "kind": "event"
  },
  {
   "event": {

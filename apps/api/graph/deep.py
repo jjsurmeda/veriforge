@@ -28,7 +28,7 @@ from graph.stages.deep_evidence_stage import (
     deep_entity_guard,
     deep_gate_decision,
 )
-from graph.timing import EventPublisher, make_step_timer
+from graph.timing import EventPublisher, make_step_timer, make_sub_step_timer
 from providers.llm import complete
 from quota.usage import get_usage_context
 from retrieval.context import count_tokens, trim_context
@@ -182,6 +182,7 @@ async def prepare_deep_run(
     _step = make_step_timer(
         node="deep", run_id=params.run_id, latency_ms=latency_ms, publish=publish
     )
+    sub_step = make_sub_step_timer(publish, node="deep", run_id=params.run_id)
 
     async with session_factory() as session, session.begin():
         chat = await session.get(Chat, params.chat_id)
@@ -320,6 +321,7 @@ async def prepare_deep_run(
                     chat_id=params.chat_id,
                     client_filters=params.client_filters,
                     lexical_weight=ingress.lexical_weight,
+                    sub_step=sub_step,
                 )
 
             hop_notes = await _step(f"hop_{hop_index}", _run_this_hop)
