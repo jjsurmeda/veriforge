@@ -3107,6 +3107,17 @@
             "title": "Model",
             "type": "string"
           },
+          "reranker": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reranker"
+          },
           "run_id": {
             "default": "",
             "title": "Run Id",

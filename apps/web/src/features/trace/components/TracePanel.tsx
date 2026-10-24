@@ -181,7 +181,9 @@ export function TracePanel({ steps: rawSteps, decisions, thinking, streaming, ch
     { id: 'metrics', label: 'Metrics' },
   ]
   const tracedRunId = started?.run_id
-  const reranker = typeof selectedMessage?.metrics?.reranker === 'string' && (!tracedRunId || !selectedMessage.run_id || selectedMessage.run_id === tracedRunId) ? selectedMessage.metrics.reranker : null
+  const savedReranker = typeof selectedMessage?.metrics?.reranker === 'string' && (!tracedRunId || !selectedMessage.run_id || selectedMessage.run_id === tracedRunId) ? selectedMessage.metrics.reranker : null
+  // A live run has no saved metrics yet; its run.started event names the reranker.
+  const reranker = started?.reranker ?? savedReranker
   const steps = collapseSteps(rawSteps)
   const timelineDecisions = decisions.filter((decision) => !isGateDecision(decision))
 
