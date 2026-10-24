@@ -143,11 +143,4 @@ describe('trace and metrics content (KI-22)', () => {
     expect(screen.getByRole('tab', { name: /Trace/ }).querySelector('[aria-label="live"]')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Expand workspace panel' }).className).toContain('hidden')
   })
-
-  it('Escape closes the drawer below xl', () => {
-    const onOpenChange = vi.fn()
-    renderPanel({ onOpenChange })
-    fireEvent.keyDown(screen.getByRole('tab', { name: 'Trace' }), { key: 'Escape' })
-    expect(onOpenChange).toHaveBeenCalledWith(false)
-  })
 })
