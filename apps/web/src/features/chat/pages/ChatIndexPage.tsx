@@ -5,7 +5,7 @@ import { Menu } from 'lucide-react'
 import { createRunChatsChatIdRunsPost, uploadChatDocumentChatsChatIdDocumentsPost } from '../../../generated/sdk.gen'
 import { useChatList, useCreateChat } from '../hooks/useChatList'
 import { useQuota } from '../hooks/useQuota'
-import { ChatComposer, runOptions, type RunMode, type RunSource } from '../components/ChatComposer'
+import { ChatComposer, runOptions, type SendOptions } from '../components/ChatComposer'
 import { ChatSidebar } from '../components/ChatSidebar'
 import { useLibrary } from '../../library/hooks/useDocuments'
 import { StarterQuestions } from '../../library/components/StarterQuestions'
@@ -45,7 +45,7 @@ export function ChatIndexPage() {
     }
   }
 
-  const startRun = async (message: string, options: { mode: RunMode; source: RunSource }) => {
+  const startRun = async (message: string, options: SendOptions) => {
     setError(null)
     try {
       const chat = await createChat.mutateAsync()
@@ -53,7 +53,7 @@ export function ChatIndexPage() {
       await uploadPendingInto(chatId)
       const { error: runError } = await createRunChatsChatIdRunsPost({
         path: { chat_id: chatId },
-        body: { message, mode: options.mode, source: options.source },
+        body: { message, mode: options.mode, source: options.source, filters: options.filters ?? null },
       })
       if (runError) throw runError
       void navigate({ to: '/chat/$chatId', params: { chatId } })
