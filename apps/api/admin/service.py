@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import urlparse
@@ -678,7 +679,9 @@ def _shadow_answer(answer: dict[str, object]) -> dict[str, object]:
     return {key: answer[key] for key in ("value", "probability", "probabilities") if key in answer}
 
 
-async def decision_stats(session: AsyncSession, *, hours: int = 24) -> DecisionStatsOut:
+async def decision_stats(
+    session: AsyncSession, *, hours: int = 24, include_disagreements: bool = True
+) -> DecisionStatsOut:
     window = max(1, min(168, hours))
     cutoff = datetime.now(UTC) - timedelta(hours=window)
     totals = (
@@ -817,20 +820,22 @@ async def decision_stats(session: AsyncSession, *, hours: int = 24) -> DecisionS
             {"cutoff": cutoff},
         )
     ).mappings().one()
-    disagreements = (
-        await session.execute(
-            text(
-                """
-                SELECT run_id, decision, jev_answer, fallback_answer, created_at
-                FROM decision_shadow
-                WHERE created_at >= :cutoff AND NOT agree
-                ORDER BY created_at DESC
-                LIMIT 20
-                """
-            ),
-            {"cutoff": cutoff},
-        )
-    ).mappings().all()
+    disagreements: Sequence[Any] = []
+    if include_disagreements:  # carries other users' run ids: admin only
+        disagreements = (
+            await session.execute(
+                text(
+                    """
+                    SELECT run_id, decision, jev_answer, fallback_answer, created_at
+                    FROM decision_shadow
+                    WHERE created_at >= :cutoff AND NOT agree
+                    ORDER BY created_at DESC
+                    LIMIT 20
+                    """
+                ),
+                {"cutoff": cutoff},
+            )
+        ).mappings().all()
 
     total = int(totals["total"])
     fallback_count = int(totals["fallback_count"])
