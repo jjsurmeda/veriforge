@@ -1,0 +1,156 @@
+{
+ "rerankers": {
+  "title": "Reranker comparison",
+  "run": "Generated 2026-10-20 21:13 UTC at commit 3ab3510 by scripts/compare_rerankers.py. Pools: the recorded retrieval queries of 20261018-195514.json replayed through hybrid_search (fused top 40); every reranker saw the identical pool. Labels: evals/acceptance/answer_passages.json. Differences under 2 items are ties.",
+  "source": "docs/benchmarks/rerankers.md",
+  "rows": [
+   {
+    "id": "jev",
+    "hits": 31,
+    "items": 33,
+    "recall_at_8": 0.939,
+    "ndcg_at_10": 0.7056,
+    "p50_ms": 670,
+    "p95_ms": 836,
+    "cost_per_1k_queries_usd": 1.162,
+    "cost_source": "OpenRouter generation stats"
+   },
+   {
+    "id": "cohere",
+    "hits": 26,
+    "items": 33,
+    "recall_at_8": 0.788,
+    "ndcg_at_10": 0.5872,
+    "p50_ms": 526,
+    "p95_ms": 767,
+    "cost_per_1k_queries_usd": 2.0,
+    "cost_source": "price table"
+   },
+   {
+    "id": "nvidia",
+    "hits": 27,
+    "items": 33,
+    "recall_at_8": 0.818,
+    "ndcg_at_10": 0.5564,
+    "p50_ms": 870,
+    "p95_ms": 1254,
+    "cost_per_1k_queries_usd": 0.0,
+    "cost_source": "price table"
+   },
+   {
+    "id": "bge",
+    "hits": 25,
+    "items": 33,
+    "recall_at_8": 0.758,
+    "ndcg_at_10": 0.551,
+    "p50_ms": 8610,
+    "p95_ms": 14496,
+    "cost_per_1k_queries_usd": 0.0,
+    "cost_source": "price table"
+   },
+   {
+    "id": "fused",
+    "hits": 26,
+    "items": 33,
+    "recall_at_8": 0.788,
+    "ndcg_at_10": 0.4895,
+    "p50_ms": 0,
+    "p95_ms": 0,
+    "cost_per_1k_queries_usd": 0.0,
+    "cost_source": "price table"
+   }
+  ]
+ },
+ "decision_layer": {
+  "title": "Decision layer: Jev vs an LLM judge",
+  "run": "Shadow pairs on 28 of the 56 books items, shadow_sample_rate 1.0, generator DeepSeek V4 Pro, prompt v6, concurrency 4. Measured 2026-10-22 and 2026-10-23 on the local Compose stack. Judge is openai/gpt-4o-mini.",
+  "caveats": [
+   "Thresholds were calibrated on Jev; the judge ran on the same values, uncalibrated (KI-85).",
+   "Judge latency is in-flight time with our queueing removed; one draw each, small n per area, no confidence intervals.",
+   "Cost is exact from OpenRouter generation records, not the usage ledger."
+  ],
+  "source": "docs/benchmarks/decision-layer.md",
+  "rows": [
+   {
+    "area": "rerank (per passage, floor 0.455)",
+    "jev_p50_ms": 786,
+    "judge_p50_ms": 95317,
+    "speed_ratio": "121x",
+    "jev_usd_per_1k": 0.029,
+    "judge_usd_per_1k": 0.217,
+    "cost_ratio": "7.5x",
+    "agreement": "2392/3195 (75%)"
+   },
+   {
+    "area": "ingress / complexity (9 decisions per batch)",
+    "jev_p50_ms": 500,
+    "judge_p50_ms": 5773,
+    "speed_ratio": "12x",
+    "jev_usd_per_1k": 0.006,
+    "judge_usd_per_1k": 0.052,
+    "cost_ratio": "8.6x",
+    "agreement": "234/256 (91%)"
+   },
+   {
+    "area": "chunk_injection (sanitize, 0.85)",
+    "jev_p50_ms": 481,
+    "judge_p50_ms": 4450,
+    "speed_ratio": "9x",
+    "jev_usd_per_1k": 0.015,
+    "judge_usd_per_1k": 0.076,
+    "cost_ratio": "5.0x",
+    "agreement": "300/300 (100%, benign input)"
+   },
+   {
+    "area": "evidence: conflict (0.60) and entity (0.5)",
+    "jev_p50_ms": 488,
+    "judge_p50_ms": 7919,
+    "speed_ratio": "16x",
+    "jev_usd_per_1k": 0.016,
+    "judge_usd_per_1k": 0.099,
+    "cost_ratio": "6.1x",
+    "agreement": "403/478 (84%)"
+   },
+   {
+    "area": "IsUse (0.47)",
+    "jev_p50_ms": 517,
+    "judge_p50_ms": 1608,
+    "speed_ratio": "3x",
+    "jev_usd_per_1k": 0.123,
+    "judge_usd_per_1k": 0.41,
+    "cost_ratio": "3.3x",
+    "agreement": "18/18 (100%)"
+   },
+   {
+    "area": "prose_decline (0.70)",
+    "jev_p50_ms": 467,
+    "judge_p50_ms": 2013,
+    "speed_ratio": "4x",
+    "jev_usd_per_1k": 0.027,
+    "judge_usd_per_1k": 0.132,
+    "cost_ratio": "4.8x",
+    "agreement": "9/9 (100%)"
+   },
+   {
+    "area": "output_guard (secrets 0.60, toxicity 0.85)",
+    "jev_p50_ms": 471,
+    "judge_p50_ms": 2088,
+    "speed_ratio": "4x",
+    "jev_usd_per_1k": 0.017,
+    "judge_usd_per_1k": 0.072,
+    "cost_ratio": "4.1x",
+    "agreement": "34/34 (100%, benign input)"
+   },
+   {
+    "area": "claim_verdict (exact label)",
+    "jev_p50_ms": 533,
+    "judge_p50_ms": 11798,
+    "speed_ratio": "22x",
+    "jev_usd_per_1k": 0.032,
+    "judge_usd_per_1k": 0.152,
+    "cost_ratio": "4.7x",
+    "agreement": "335/416 (81%)"
+   }
+  ]
+ }
+}

@@ -2,18 +2,21 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { DecisionStatsOut } from '../../../generated/types.gen'
+import type { DecisionStatsOut } from '../../generated/types.gen'
 import { DecisionLayerPanel } from './DecisionLayerPanel'
 
 const statsMock = vi.hoisted(() => vi.fn())
+const publicMock = vi.hoisted(() => vi.fn())
 
-vi.mock('../../../generated/sdk.gen', () => ({
+vi.mock('../../generated/sdk.gen', () => ({
   decisionStatsAdminDecisionsStatsGet: statsMock,
+  publicDecisionStatsDecisionsStatsGet: publicMock,
 }))
 
 afterEach(() => {
   cleanup()
   statsMock.mockReset()
+  publicMock.mockReset()
 })
 
 function stats(overrides: Partial<DecisionStatsOut> = {}): DecisionStatsOut {
@@ -39,7 +42,7 @@ function renderPanel() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      <DecisionLayerPanel />
+      <DecisionLayerPanel admin />
     </QueryClientProvider>,
   )
 }
@@ -137,5 +140,31 @@ describe('DecisionLayerPanel (read-only)', () => {
     select.dispatchEvent(new Event('change', { bubbles: true }))
 
     await waitFor(() => expect(statsMock).toHaveBeenCalledTimes(2))
+  })
+})
+describe('DecisionLayerPanel (any signed-in user)', () => {
+  it('reads the non-admin route and never lists disagreements', async () => {
+    publicMock.mockResolvedValue({ data: stats() })
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <DecisionLayerPanel />
+      </QueryClientProvider>,
+    )
+
+    await waitFor(() => expect(screen.getByText('Jev p50')).toBeTruthy())
+    expect(publicMock).toHaveBeenCalled()
+    expect(statsMock).not.toHaveBeenCalled()
+    expect(screen.getByText(/visible to administrators only/)).toBeTruthy()
+  })
+
+  it('uses judge vocabulary and no tiny text', async () => {
+    publicMock.mockResolvedValue({ data: stats() })
+    const { container } = render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <DecisionLayerPanel />
+      </QueryClientProvider>,
+    )
+    await waitFor(() => expect(screen.getByText('Judge fallback share')).toBeTruthy())
+    expect(container.innerHTML).not.toMatch(/text-\[0\.\d+rem\]/)
   })
 })

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import {
   Activity,
+  BarChart3,
   Boxes,
   CheckCircle2,
   CreditCard,
@@ -23,6 +24,7 @@ import {
   createModelAdminModelsPost,
   createPlanAdminPlansPost,
   createProviderAdminProvidersPost,
+  listRerankersRerankersGet,
   modelsAdminModelsGet,
   plansAdminPlansGet,
   providersAdminProvidersGet,
@@ -52,6 +54,7 @@ import type {
   UserOut,
   UserPatch,
 } from '../../generated/types.gen'
+import { BenchmarksPanel } from './BenchmarksPanel'
 import { DecisionLayerPanel } from './DecisionLayerPanel'
 import { SharedLibraryPanel } from './SharedLibraryPanel'
 import { useMe } from '../auth/hooks/useMe'
@@ -63,6 +66,7 @@ type Section =
   | 'models'
   | 'roles'
   | 'settings'
+  | 'benchmarks'
   | 'library'
   | 'plans'
   | 'users'
@@ -76,15 +80,24 @@ function valueAt(data: Record<string, unknown>, path: string, fallback: number):
   return typeof value === 'number' ? value : fallback
 }
 
+function valueAtString(data: Record<string, unknown>, path: string, fallback: string): string {
+  let node: unknown = data
+  for (const key of path.split('.')) {
+    if (typeof node !== 'object' || node === null) return fallback
+    node = (node as Record<string, unknown>)[key]
+  }
+  return typeof node === 'string' ? node : fallback
+}
+
 function isDecisionModel(model: AdminModelOut): boolean {
   return model.capabilities?.decision === true
 }
 
-function Panel({ title, children }: { title: string; children: React.ReactNode }) {
+function Panel({ title, icon, children }: { title: string; icon?: React.ReactNode; children: React.ReactNode }) {
   return (
     <section className="overflow-hidden rounded-xl border border-border bg-surface">
       <h2 className="flex items-center gap-2 border-b border-border bg-sidebar px-4 py-3 text-xs font-semibold text-fg">
-        <Settings2 size={14} strokeWidth={1.75} className="text-fg" aria-hidden="true" />
+        {icon ?? <Settings2 size={14} strokeWidth={1.75} className="text-fg" aria-hidden="true" />}
         {title}
       </h2>
       <div className="p-4 sm:p-5">{children}</div>
@@ -92,18 +105,19 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
   )
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <label className="flex flex-col gap-1.5 text-xs text-fg-muted">
-      <span className="text-[0.68rem] font-medium text-fg">{label}</span>
+      <span className="text-xs font-medium text-fg">{label}</span>
       {children}
+      {hint && <span className="text-2xs text-fg-muted">{hint}</span>}
     </label>
   )
 }
 
 function TableHeader({ left, right }: { left: string; right: string }) {
   return (
-    <div className="mb-2 grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-border px-1 pb-2 text-[0.65rem] font-medium uppercase tracking-[0.1em] text-fg-muted">
+    <div className="mb-2 grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-border px-1 pb-2 text-2xs font-medium uppercase tracking-[0.1em] text-fg-muted">
       <span>{left}</span>
       <span>{right}</span>
     </div>
@@ -154,6 +168,8 @@ export function AdminPage() {
   const me = useMe()
   const client = useQueryClient()
   const [section, setSection] = useState<Section>('settings')
+  // null = keep whatever the active settings version says
+  const [rerankerDraft, setRerankerDraft] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [providerForm, setProviderForm] = useState<ProviderCreate>({
     name: '',
@@ -187,6 +203,10 @@ export function AdminPage() {
 
   // Every admin read goes through unwrap: a failed request must reach
   // React Query as an error, never as an empty operator-visible list.
+  const rerankers = useQuery({
+    queryKey: ['rerankers'],
+    queryFn: async () => unwrap(await listRerankersRerankersGet()),
+  })
   const providers = useQuery({
     queryKey: ['admin', 'providers'],
     queryFn: async () => unwrap(await providersAdminProvidersGet()),
@@ -295,6 +315,7 @@ export function AdminPage() {
             top_k: settingsDraft.top_k,
             rrf_k: settingsDraft.rrf_k,
             rerank: settingsDraft.rerank,
+            ...(rerankerDraft ? { reranker: rerankerDraft } : {}),
             hop_limit: settingsDraft.hop_limit,
             retry_limit: settingsDraft.retry_limit,
           },
@@ -366,13 +387,22 @@ export function AdminPage() {
 
   if (me.isLoading) return <main className="min-h-screen bg-main p-8 text-fg">Loading admin…</main>
   if (me.data?.role !== 'admin') {
-    return <main className="min-h-screen bg-main p-8 text-fg">Administrator access required.</main>
+    return (
+      <main className="min-h-screen bg-main p-8 text-fg">
+        <h1 className="text-lg font-semibold">Administrator access required.</h1>
+        <p className="mt-2 text-sm text-fg-muted">This area is for administrators. Your chats and the Decision layer page are still available.</p>
+        <a href="/" className="mt-4 inline-flex min-h-9 items-center rounded-lg border border-border bg-raised px-3 text-xs font-medium text-fg hover:bg-raised-hover focus-visible:outline-2 focus-visible:outline-focus-ring">Back to chats</a>
+      </main>
+    )
   }
 
   const current = settings.data
   const data = (current?.data ?? {}) as Record<string, unknown>
   const currentTopK = valueAt(data, 'retrieval.top_k', settingsDraft.top_k)
   const currentThreshold = valueAt(data, 'thresholds.evidence_floor.jev', settingsDraft.threshold)
+  const currentReranker = valueAtString(data, 'retrieval.reranker', 'jev')
+  const selectedReranker = rerankerDraft ?? currentReranker
+  const rerankerInfo = (rerankers.data ?? []).find((r) => r.id === selectedReranker)
   const currentMode = typeof data.decision_engine_mode === 'string' ? data.decision_engine_mode : settingsDraft.mode
   const tabs: Array<[Section, string, React.ReactNode]> = [
     ['decisions', 'Decision layer', <Activity key="decisions" size={14} aria-hidden="true" />],
@@ -381,6 +411,7 @@ export function AdminPage() {
     ['models', 'Models', <Boxes key="models" size={14} aria-hidden="true" />],
     ['roles', 'Roles', <ShieldCheck key="roles" size={14} aria-hidden="true" />],
     ['library', 'Shared library', <LibraryIcon key="library" size={14} aria-hidden="true" />],
+    ['benchmarks', 'Benchmarks', <BarChart3 key="benchmarks" size={14} aria-hidden="true" />],
     ['plans', 'Plans', <CreditCard key="plans" size={14} aria-hidden="true" />],
     ['users', 'Users', <Users key="users" size={14} aria-hidden="true" />],
     ['audit', 'Audit', <History key="audit" size={14} aria-hidden="true" />],
@@ -402,7 +433,13 @@ export function AdminPage() {
         </div>
       </header>
       <div className="mx-auto grid max-w-7xl gap-5 p-5 sm:p-8 lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-8">
-        <nav className="flex gap-1 overflow-x-auto rounded-xl border border-border bg-surface p-1 lg:sticky lg:top-5 lg:flex-col lg:self-start" aria-label="Admin sections">
+        <label className="flex flex-col gap-1.5 text-xs text-fg-muted lg:hidden">
+          <span className="font-medium text-fg">Section</span>
+          <select className={inputClass} value={section} onChange={(e) => setSection(e.target.value as Section)}>
+            {tabs.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+          </select>
+        </label>
+        <nav className="hidden gap-1 rounded-xl border border-border bg-surface p-1 lg:sticky lg:top-5 lg:flex lg:flex-col lg:self-start" aria-label="Admin sections">
           {tabs.map(([id, label, icon]) => (
             <button
               key={id}
@@ -433,10 +470,11 @@ export function AdminPage() {
           ).map(([label, query]) => (
             <QueryError key={label} label={label} query={query} />
           ))}
-          {section === 'decisions' && <DecisionLayerPanel />}
+          {section === 'decisions' && <DecisionLayerPanel admin />}
+          {section === 'benchmarks' && <BenchmarksPanel />}
           {section === 'settings' && (
             <>
-              <Panel title="Runtime settings">
+              <Panel title="Runtime settings" icon={<Settings2 size={14} strokeWidth={1.75} aria-hidden="true" />}>
                 <div className="grid gap-3 sm:grid-cols-3">
                   <Field label="Retrieval top-k">
                     <input className={inputClass} type="number" min={1} value={settingsDraft.top_k} onChange={(e) => setSettingsDraft({ ...settingsDraft, top_k: Number(e.target.value) })} />
@@ -455,6 +493,11 @@ export function AdminPage() {
                 <div className="mt-3 grid gap-3 sm:grid-cols-4">
                   <Field label="Fusion constant"><input className={inputClass} type="number" min={1} value={settingsDraft.rrf_k} onChange={(e) => setSettingsDraft({ ...settingsDraft, rrf_k: Number(e.target.value) })} /></Field>
                   <Field label="Rerank"><select className={inputClass} value={settingsDraft.rerank ? 'on' : 'off'} onChange={(e) => setSettingsDraft({ ...settingsDraft, rerank: e.target.value === 'on' })}><option value="on">On</option><option value="off">Off</option></select></Field>
+                  <Field label="Reranker" hint={rerankerInfo ? `${rerankerInfo.kind}${rerankerInfo.calibrated ? ', calibrated' : ', not calibrated'}${rerankerInfo.cost_per_1k_queries_usd === null ? '' : `, $${rerankerInfo.cost_per_1k_queries_usd}/1k queries`}${rerankerInfo.is_default ? ', default' : ''}${rerankerInfo.key_present ? '' : ', no API key'}` : 'Loading rerankers'}>
+                    <select aria-label="Reranker" className={inputClass} value={selectedReranker} onChange={(e) => setRerankerDraft(e.target.value)} disabled={!rerankers.data}>
+                      {(rerankers.data ?? [{ id: selectedReranker, label: selectedReranker }]).map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
+                    </select>
+                  </Field>
                   <Field label="Hop limit"><input className={inputClass} type="number" min={1} max={4} value={settingsDraft.hop_limit} onChange={(e) => setSettingsDraft({ ...settingsDraft, hop_limit: Number(e.target.value) })} /></Field>
                   <Field label="Retry limit"><input className={inputClass} type="number" min={0} value={settingsDraft.retry_limit} onChange={(e) => setSettingsDraft({ ...settingsDraft, retry_limit: Number(e.target.value) })} /></Field>
                   <Field label="Deep credit cap"><input className={inputClass} type="number" min={1} value={settingsDraft.deep_cap} onChange={(e) => setSettingsDraft({ ...settingsDraft, deep_cap: Number(e.target.value) })} /></Field>
@@ -464,11 +507,11 @@ export function AdminPage() {
                   <Field label="Source priority"><select className={inputClass} value={settingsDraft.source_priority} onChange={(e) => setSettingsDraft({ ...settingsDraft, source_priority: e.target.value })}><option value="documents_first">Documents first</option><option value="web_first">Web first</option></select></Field>
                   <Field label="Trace sample rate"><input className={inputClass} type="number" min={0} max={1} step="0.01" value={settingsDraft.trace_sample_rate} onChange={(e) => setSettingsDraft({ ...settingsDraft, trace_sample_rate: Number(e.target.value) })} /></Field>
                 </div>
-                <p className="mt-3 font-mono text-[0.65rem] text-fg-muted">Active v{current?.version ?? '—'} · top-k {currentTopK} · threshold {currentThreshold} · {currentMode}</p>
+                <p className="mt-3 font-mono text-2xs text-fg-muted">Active v{current?.version ?? '—'} · reranker {currentReranker} · top-k {currentTopK} · threshold {currentThreshold} · {currentMode}</p>
                  <button type="button" className={`${buttonClass} mt-4`} onClick={() => settingsSave.mutate()} disabled={settingsSave.isPending}><Save size={13} aria-hidden="true" />Create version</button>
 
               </Panel>
-              <Panel title="Versions / rollback">
+              <Panel title="Versions / rollback" icon={<RefreshCw size={14} strokeWidth={1.75} aria-hidden="true" />}>
                 <div className="divide-y divide-border">
                   {(versions.data ?? []).map((version: SettingsOut) => (
                      <div key={version.version} className="flex items-center justify-between gap-3 border-b border-border/70 px-1 py-2.5 last:border-b-0">
@@ -482,7 +525,7 @@ export function AdminPage() {
             </>
           )}
           {section === 'providers' && (
-            <Panel title="Providers">
+            <Panel title="Providers" icon={<Server size={14} strokeWidth={1.75} aria-hidden="true" />}>
               <div className="grid gap-3 sm:grid-cols-4">
                 <Field label="Name"><input className={inputClass} value={providerForm.name} onChange={(e) => setProviderForm({ ...providerForm, name: e.target.value })} /></Field>
                 <Field label="Kind"><input className={inputClass} value={providerForm.kind} onChange={(e) => setProviderForm({ ...providerForm, kind: e.target.value })} /></Field>
@@ -512,22 +555,23 @@ export function AdminPage() {
             </Panel>
           )}
           {section === 'models' && (
-            <Panel title="Model catalogue">
+            <Panel title="Model catalogue" icon={<Boxes size={14} strokeWidth={1.75} aria-hidden="true" />}>
               <div className="grid gap-3 sm:grid-cols-3">
                 <Field label="Provider"><select className={inputClass} value={modelForm.provider_id} onChange={(e) => setModelForm({ ...modelForm, provider_id: e.target.value })}><option value="">Select provider</option>{(providers.data ?? []).map((provider: ProviderOut) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}</select></Field>
-                <Field label="Model ID"><input className={inputClass} value={modelForm.model_id} onChange={(e) => setModelForm({ ...modelForm, model_id: e.target.value })} /></Field>
-                <Field label="Context window"><input className={inputClass} type="number" value={modelForm.context_window ?? ''} onChange={(e) => setModelForm({ ...modelForm, context_window: Number(e.target.value) })} /></Field>
-                <Field label="Input price"><input className={inputClass} type="number" step="0.000001" value={modelForm.price_in ?? ''} onChange={(e) => setModelForm({ ...modelForm, price_in: Number(e.target.value) })} /></Field>
-                <Field label="Output price"><input className={inputClass} type="number" step="0.000001" value={modelForm.price_out ?? ''} onChange={(e) => setModelForm({ ...modelForm, price_out: Number(e.target.value) })} /></Field>
+                <Field label="Model ID" hint="Provider model slug, for example vendor/model-name."><input className={inputClass} placeholder="vendor/model-name" value={modelForm.model_id} onChange={(e) => setModelForm({ ...modelForm, model_id: e.target.value })} /></Field>
+                <Field label="Context window" hint="Maximum tokens the model accepts."><input className={inputClass} type="number" value={modelForm.context_window ?? ''} onChange={(e) => setModelForm({ ...modelForm, context_window: Number(e.target.value) })} /></Field>
+                <Field label="Input price" hint="Per token; turns usage into credits. 0 means free."><input className={inputClass} type="number" step="0.000001" value={modelForm.price_in ?? ''} onChange={(e) => setModelForm({ ...modelForm, price_in: Number(e.target.value) })} /></Field>
+                <Field label="Output price" hint="Per token; turns usage into credits. 0 means free."><input className={inputClass} type="number" step="0.000001" value={modelForm.price_out ?? ''} onChange={(e) => setModelForm({ ...modelForm, price_out: Number(e.target.value) })} /></Field>
               </div>
                <button type="button" className={`${buttonClass} mt-4`} onClick={() => modelCreate.mutate(modelForm)} disabled={modelCreate.isPending || !modelForm.provider_id || !modelForm.model_id}><Plus size={13} aria-hidden="true" />Add model</button>
+               {(!modelForm.provider_id || !modelForm.model_id) && <p className="mt-2 text-2xs text-fg-muted">Choose a provider and enter a model ID to add a model.</p>}
 
                <div className="mt-5 border-t border-border/70 pt-3">
                  <TableHeader left="Model / limits" right="Actions" />
-                 {(models.data ?? []).filter((model: AdminModelOut) => !isDecisionModel(model)).map((model: AdminModelOut) => (
+                 {(models.data ?? []).map((model: AdminModelOut) => (
                    <TableRow key={model.id}>
                      <div className="min-w-0">
-                       <div className="truncate font-mono text-sm text-fg">{model.model_id}</div>
+                       <div className="truncate font-mono text-sm text-fg">{model.model_id}{isDecisionModel(model) && <span className="ml-2 rounded border border-border px-1.5 py-0.5 font-sans text-2xs text-fg-muted">decision</span>}</div>
                        <div className="mt-0.5 text-xs text-fg-muted">
                          {model.context_window ?? '—'} tokens · in {model.price_in ?? '—'} / out {model.price_out ?? '—'}
                        </div>
@@ -539,13 +583,13 @@ export function AdminPage() {
             </Panel>
           )}
           {section === 'roles' && (
-             <Panel title="Model roles">
+             <Panel title="Model roles" icon={<ShieldCheck size={14} strokeWidth={1.75} aria-hidden="true" />}>
                <div className="border-t border-border/70 pt-3">
                  <TableHeader left="Role" right="Assigned model" />
                  {(roles.data ?? []).map((role: RoleOut) => (
                    <TableRow key={role.role}>
                      <span className="min-w-0 truncate font-mono text-sm text-fg">{role.role}</span>
-                     <select className={inputClass} value={role.model_id} onChange={(e) => roleSave.mutate({ role: role.role, model_id: e.target.value, fallback_model_id: role.fallback_model_id ?? undefined })}>
+                     <select aria-label={`${role.role} model`} className={inputClass} value={role.model_id} onChange={(e) => roleSave.mutate({ role: role.role, model_id: e.target.value, fallback_model_id: role.fallback_model_id ?? undefined })}>
                        {(models.data ?? []).map((model: AdminModelOut) => <option key={model.id} value={model.model_id}>{model.model_id}</option>)}
                      </select>
                    </TableRow>
@@ -554,7 +598,7 @@ export function AdminPage() {
              </Panel>
           )}
           {section === 'plans' && (
-            <Panel title="Plans and quota overrides">
+            <Panel title="Plans and quota overrides" icon={<CreditCard size={14} strokeWidth={1.75} aria-hidden="true" />}>
               <div className="grid gap-3 sm:grid-cols-3"><Field label="Name"><input className={inputClass} value={planForm.name} onChange={(e) => setPlanForm({ ...planForm, name: e.target.value })} /></Field><Field label="5h credits"><input className={inputClass} type="number" value={planForm.credits_5h} onChange={(e) => setPlanForm({ ...planForm, credits_5h: Number(e.target.value) })} /></Field><Field label="Monthly credits"><input className={inputClass} type="number" value={planForm.credits_month} onChange={(e) => setPlanForm({ ...planForm, credits_month: Number(e.target.value) })} /></Field></div>
                <button type="button" className={`${buttonClass} mt-4`} onClick={() => planCreate.mutate()} disabled={planCreate.isPending}><Plus size={13} aria-hidden="true" />Add plan</button>
 
@@ -565,12 +609,12 @@ export function AdminPage() {
             </Panel>
           )}
           {section === 'library' && (
-            <Panel title="Shared library">
+            <Panel title="Shared library" icon={<LibraryIcon size={14} strokeWidth={1.75} aria-hidden="true" />}>
               <SharedLibraryPanel />
             </Panel>
           )}
           {section === 'users' && (
-             <Panel title="Users">
+             <Panel title="Users" icon={<Users size={14} strokeWidth={1.75} aria-hidden="true" />}>
                <div className="border-t border-border/70 pt-3">
                  <TableHeader left="User / role" right="Overrides" />
                  {(users.data ?? []).map((user: UserOut) => <UserRow key={user.id} user={user} onUpdate={(body) => userUpdate.mutate({ id: user.id, body })} />)}
@@ -578,7 +622,7 @@ export function AdminPage() {
              </Panel>
           )}
           {section === 'audit' && (
-             <Panel title="Audit log">
+             <Panel title="Audit log" icon={<History size={14} strokeWidth={1.75} aria-hidden="true" />}>
                <div className="border-t border-border/70 pt-3">
                  <TableHeader left="Action / target" right="Time" />
                  {(audit.data ?? []).map((row: AuditOut) => (

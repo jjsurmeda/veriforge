@@ -1,7 +1,7 @@
 import { useNavigate } from '@tanstack/react-router'
 import { ArrowLeft } from 'lucide-react'
 
-import { DecisionLayerPanel } from '../components/DecisionLayerPanel'
+import { DecisionLayerPanel } from '../../admin/DecisionLayerPanel'
 
 /** Lane E item 3: the decision layer for the demo role.
  *
