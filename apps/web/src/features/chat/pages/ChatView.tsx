@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowDown, Check, MoreHorizontal, PanelLeft, PanelRight, Pencil, Pin, Trash2 } from 'lucide-react'
+import { ArrowDown, Check, CircleX, MoreHorizontal, PanelLeft, PanelRight, Pencil, Pin, Trash2 } from 'lucide-react'
 import { useNavigate } from '@tanstack/react-router'
 
 import type { MessageOut } from '../../../generated/types.gen'
@@ -114,21 +114,26 @@ export function ChatView({ chatId }: { chatId: string }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [rightPanelOpen, sidebarOpen])
 
+  const selectedMessage = selectedMessageId ? messages.data?.find((message) => message.id === selectedMessageId) : [...(messages.data ?? [])].reverse().find((message) => message.role === 'assistant')
+  // A chat opened from history has no active run, so its Trace and Metrics
+  // follow the selected (default: latest) answer's run instead of saying
+  // "No run yet" about a run that exists.
+  const shownRunId = traceRunId ?? selectedMessage?.run_id ?? null
+
   const { resume } = useRunStream(activeRunId, chatId)
   // A finished run has no store entry, so the stream is what replays its
   // persisted run_events; invalidate: false keeps a replay from refetching.
-  useRunStream(traceRunId !== activeRunId ? traceRunId : null, chatId, { invalidate: false })
+  useRunStream(shownRunId !== activeRunId ? shownRunId : null, chatId, { invalidate: false })
   const live = useChatRunStore((s) => (activeRunId ? s.runs[activeRunId] : undefined))
 
   useEffect(() => {
     if (live?.status === 'completed' || live?.status === 'failed' || live?.status === 'cancelled') setOptimisticQuestion(null)
   }, [live?.status])
-  const trace = useTrace(traceRunId)
+  const trace = useTrace(shownRunId)
   const streaming = live !== undefined && (live.status === 'connecting' || live.status === 'streaming')
-  const selectedMessage = selectedMessageId ? messages.data?.find((message) => message.id === selectedMessageId) : [...(messages.data ?? [])].reverse().find((message) => message.role === 'assistant')
   const lastQuestion = [...(messages.data ?? [])].reverse().find((message) => message.role === 'user')?.content ?? null
-  const replayedTrace = traceRunId
-    ? { runId: traceRunId, decisions: trace?.decisions ?? [], chunks: trace?.chunks ?? [] }
+  const replayedTrace = shownRunId
+    ? { runId: shownRunId, decisions: trace?.decisions ?? [], chunks: trace?.chunks ?? [], abstain: trace?.abstain ?? null }
     : null
 
   const onSend = async (message: string, options: SendOptions) => {
@@ -281,15 +286,15 @@ export function ChatView({ chatId }: { chatId: string }) {
                   <button type="button" onClick={() => void messages.refetch()} className="pressable rounded-lg border border-border/40 px-2 py-1 text-xs text-danger hover:bg-raised focus-visible:outline-2 focus-visible:outline-danger">Try again</button>
                 </p>
               )}
-              <MessageList messages={messages.data ?? []} live={live} optimisticQuestion={optimisticQuestion} replay={replayedTrace} mayUse={{ web: demoMayWeb, deep: demoMayDeep }} onSuggestion={(question) => void onSend(question, runOptions(deep, web))} onAbstainAction={onAbstainAction} onOpenSources={openCitations} onSelectMessage={setSelectedMessageId} onShowSteps={showSteps} onShowGates={showGates} />
-              {live?.status === 'failed' && live.error && <p role="alert" className="mx-auto max-w-[720px] px-4 pb-4 text-sm text-warning">{runFailureMessage(live.error, quota.data?.reset_at_5h)}</p>}
+              <MessageList messages={messages.data ?? []} live={live} optimisticQuestion={optimisticQuestion} loaded={!messages.isPending && !messages.isError} replay={replayedTrace} mayUse={{ web: demoMayWeb, deep: demoMayDeep }} onSuggestion={(question) => void onSend(question, runOptions(deep, web))} onAbstainAction={onAbstainAction} onOpenSources={openCitations} onSelectMessage={setSelectedMessageId} onShowSteps={showSteps} onShowGates={showGates} />
+              {live?.status === 'failed' && live.error && <p role="alert" className="mx-auto flex max-w-[720px] items-start gap-2 px-4 pb-4 text-sm text-danger"><CircleX size={16} strokeWidth={1.75} className="mt-0.5 shrink-0" aria-hidden="true" />{runFailureMessage(live.error, quota.data?.reset_at_5h)}</p>}
               {live?.status === 'connection_lost' && <div className="mx-auto max-w-[720px] px-4 pb-4"><button type="button" onClick={resume} className="pressable rounded-lg border border-border/40 px-3 py-1.5 text-sm text-danger hover:bg-raised focus-visible:outline-2 focus-visible:outline-danger">Connection lost — resume</button></div>}
             </div>
             {showScrollButton && <button type="button" aria-label="Scroll to bottom" onClick={scrollToBottom} className="icon-button absolute bottom-[9.5rem] left-1/2 z-20 size-9 -translate-x-1/2 rounded-full border border-border bg-raised"><ArrowDown size={16} strokeWidth={1.75} aria-hidden="true" /></button>}
             <ChatComposer chatId={chatId} streaming={streaming} modelId={chat.data?.model_id ?? null} quota={quota.data} error={sendError} emptyThread={!messages.isPending && !messages.isError && (messages.data ?? []).length === 0} deep={deep} web={web} onFiles={(files) => void onFiles(files)} onModelChange={(modelId) => void patchChat.mutateAsync({ chatId, patch: { model_id: modelId } })} allowDeep={demoLimits.data?.allow_deep ?? true} allowWeb={demoLimits.data?.allow_web ?? true} onToggleDeep={setDeep} onToggleWeb={setWeb} onSend={(message, options) => void onSend(message, options)} onStop={() => activeRunId && cancelRun.mutate(activeRunId)} />
           </>}
         </main>
-        <TracePanel steps={trace?.steps ?? []} decisions={trace?.decisions ?? []} thinking={trace?.thinking ?? ''} streaming={trace?.streaming ?? false} chunks={trace?.chunks ?? []} metrics={trace?.metrics ?? null} hold={trace?.hold ?? false} query={lastQuestion} chatId={chatId} viewerDocumentId={viewerDocumentId} open={rightPanelOpen} expanded={rightPanelExpanded} activeTab={traceTab} focusSource={focusSource} selectedMessage={selectedMessage} onOpenChange={setRightPanelOpen} onExpandedChange={setRightPanelExpanded} onTabChange={setTraceTab} onViewDocument={viewDocument} onCloseViewer={() => setViewerDocumentId(null)} scrollToTopSignal={traceScrollSignal} traceStatus={trace?.status ?? null} onRetryTrace={traceRunId !== activeRunId ? undefined : resume} />
+        <TracePanel steps={trace?.steps ?? []} decisions={trace?.decisions ?? []} thinking={trace?.thinking ?? ''} streaming={trace?.streaming ?? false} chunks={trace?.chunks ?? []} metrics={trace?.metrics ?? null} hold={trace?.hold ?? false} query={lastQuestion} chatId={chatId} viewerDocumentId={viewerDocumentId} open={rightPanelOpen} expanded={rightPanelExpanded} activeTab={traceTab} focusSource={focusSource} selectedMessage={selectedMessage} onOpenChange={setRightPanelOpen} onExpandedChange={setRightPanelExpanded} onTabChange={setTraceTab} onViewDocument={viewDocument} onCloseViewer={() => setViewerDocumentId(null)} scrollToTopSignal={traceScrollSignal} traceStatus={trace?.status ?? null} onRetryTrace={shownRunId !== activeRunId ? undefined : resume} started={trace?.started ?? null} failure={trace?.status === 'failed' && trace.error ? runFailureMessage(trace.error, quota.data?.reset_at_5h) : null} />
       </div>
     </div>
   )

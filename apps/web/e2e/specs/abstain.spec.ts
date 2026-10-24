@@ -32,8 +32,8 @@ test('offers Web and Deep actions from the abstention template', async ({ page, 
 
   await page.goto(`/chat/${chatId}`)
   await expect(page.getByText('Abstained')).toBeVisible({ timeout: 110_000 })
-  const webAction = page.getByRole('button', { name: /Searching the web/i })
-  const deepAction = page.getByRole('button', { name: /Deep mode/i })
+  const webAction = page.getByRole('button', { name: /Search the web/i })
+  const deepAction = page.getByRole('button', { name: /Run Deep/i })
   await expect(webAction).toBeVisible()
   await expect(deepAction).toBeVisible()
   await webAction.scrollIntoViewIfNeeded()

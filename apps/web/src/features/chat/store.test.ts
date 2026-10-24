@@ -24,6 +24,7 @@ function baseRun(): RunLive {
     hold: false,
     revision: null,
     suggestions: [],
+    started: null,
   }
 }
 

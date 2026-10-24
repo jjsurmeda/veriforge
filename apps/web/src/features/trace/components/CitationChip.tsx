@@ -51,6 +51,19 @@ export function verdictTone(verdict: string | null): VerdictTone {
 const TONE_LABEL: Record<VerdictTone, string> = { pending: 'unverified', supported: 'supported', partial: 'partially supported', unsupported: 'unsupported' }
 const TONE_DOT: Record<VerdictTone, string> = { pending: 'bg-fg-muted', supported: 'bg-success', partial: 'bg-warning', unsupported: 'bg-danger' }
 
+/** The reviewer's verdict as a dot plus a word, so it never rests on colour
+ *  alone (design-system §2). The word is the accessible name; the dot is
+ *  decoration. */
+export function VerdictBadge({ verdict }: { verdict: string | null }) {
+  const tone = verdictTone(verdict)
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1.5 text-2xs text-fg-muted">
+      <span className={`size-1.5 rounded-full ${TONE_DOT[tone]}`} aria-hidden="true" />
+      {TONE_LABEL[tone]}
+    </span>
+  )
+}
+
 export function CitationChip({ n, source, verdict, onOpen, onHover, highlighted = false }: { n: number; source?: ChipSource; verdict?: string | null; onOpen?: () => void; onHover?: (hovered: boolean) => void; highlighted?: boolean }) {
   const tone = verdictTone(verdict ?? source?.verdict ?? null)
   const label = source?.documentName ?? (source?.sourceType === 'web' ? 'Web source' : `Source ${n}`)

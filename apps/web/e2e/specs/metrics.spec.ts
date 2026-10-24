@@ -6,7 +6,7 @@ import { makeTestUser } from '../support/seed'
 
 const question = 'Summarize the warranty terms and explain the exclusions in detail.'
 
-test('shows the latency waterfall and answer usage metrics', async ({ page, request }) => {
+test('shows the run mode, the latency waterfall and usage metrics', async ({ page, request }) => {
   const user = makeTestUser()
   await signUp(page, user)
   const { chatId } = await startSeededRun(request, user, question, 'deep')
@@ -16,11 +16,10 @@ test('shows the latency waterfall and answer usage metrics', async ({ page, requ
   await expect(metricsTab).toBeVisible({ timeout: 30_000 })
   await metricsTab.click()
 
-  await expect(page.getByText('Latency by stage')).toBeVisible({ timeout: 110_000 })
-  await expect(page.getByText('Answer scores')).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Usage' })).toBeVisible()
-  await expect(page.getByText(/faithfulness/)).toBeVisible()
-  await expect(page.getByText(/tokens in/)).toBeVisible()
-  await expect(page.getByText(/credits/).last()).toBeVisible()
-  await expect(page.getByText(/context/).last()).toBeVisible()
+  await expect(page.getByText('Where the time went')).toBeVisible({ timeout: 110_000 })
+  await expect(page.getByRole('region', { name: 'This run' })).toBeVisible()
+  await expect(page.getByText('Faithfulness', { exact: true })).toBeVisible()
+  await expect(page.getByText('Tokens', { exact: true })).toBeVisible()
+  await expect(page.getByText('Credits', { exact: true })).toBeVisible()
+  await expect(page.getByText('Context used')).toBeVisible()
 })
