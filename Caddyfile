@@ -104,7 +104,9 @@
  /healthz /healthz/* \
  /library /library/* \
  /web-sources /web-sources/* \
- /documents /documents/*
+ /documents /documents/* \
+ /decisions /decisions/* \
+ /rerankers /rerankers/*
 
 		# The collision rule: a top-level navigation — a request whose Accept
 		# contains text/html — to one of those prefixes belongs to the SPA, not

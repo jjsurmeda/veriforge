@@ -34,8 +34,9 @@ export function DecisionLayerPage() {
       <div className="mx-auto max-w-5xl px-5 py-6 sm:px-8">
         <p className="mb-5 max-w-[62ch] text-sm leading-6 text-fg-muted">
           Every gate, routing choice and reviewer verdict in Veriforge goes through one decision engine, with
-          Jev as the primary answerer and an LLM fallback behind a circuit breaker. These are the live
-          numbers behind that: which engine answered, how long it took, and where the two disagreed.
+          Jev as the primary answerer and an LLM judge as the fallback behind a circuit breaker. These are
+          the live numbers behind that: which engine answered, how long it took, and how often Jev and the
+          judge agreed.
         </p>
         <DecisionLayerPanel />
       </div>
