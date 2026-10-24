@@ -59,7 +59,7 @@ export function ThemeToggle() {
       title={`Switch to ${nextTheme} theme`}
       aria-pressed={theme === 'dark'}
       onClick={toggleTheme}
-      className="icon-button size-9 rounded-full border border-border bg-surface text-fg-muted hover:bg-raised-hover hover:text-fg"
+      className="icon-button size-9 max-lg:size-11 rounded-full border border-border bg-surface text-fg-muted hover:bg-raised-hover hover:text-fg"
     >
       {theme === 'light' ? <Moon size={16} aria-hidden="true" /> : <Sun size={16} aria-hidden="true" />}
     </button>

@@ -2,6 +2,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { Fragment, useEffect, useMemo, useState, type ReactElement } from 'react'
 import {
   Check,
+  LayoutDashboard,
   MessageSquare,
   MoreHorizontal,
   PanelLeftClose,
@@ -84,6 +85,15 @@ export function ChatSidebar({
 
   useEffect(() => writeStorage(SIDEBAR_STORAGE_KEY, String(collapsed)), [collapsed])
 
+  useEffect(() => {
+    if (!mobileOpen) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !event.defaultPrevented) onMobileClose?.()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [mobileOpen, onMobileClose])
+
   const filteredChats = useMemo(() => {
     const query = searchQuery.trim().toLowerCase()
     if (!query) return chats ?? []
@@ -123,7 +133,7 @@ export function ChatSidebar({
     return (
       <Fragment key={chat.id}>
       <div
-        className={`group relative flex min-h-10 items-center rounded-lg transition-[background-color,color] duration-150 ease-out ${
+        className={`group relative flex min-h-10 items-center rounded-lg max-lg:min-h-11 transition-[background-color,color] duration-150 ease-out ${
           rail ? 'justify-center px-1' : 'gap-0.5 px-1'
         } ${active ? 'bg-raised text-fg' : 'text-fg-muted hover:bg-raised-hover hover:text-fg'}`}
       >
@@ -154,57 +164,29 @@ export function ChatSidebar({
               type="button"
               aria-label={rail ? chat.title : undefined}
               title={rail ? chat.title : undefined}
-              className={`flex min-w-0 items-center rounded-md text-left focus-visible:outline-2 focus-visible:outline-focus-ring ${rail ? 'justify-center p-2' : 'flex-1 gap-2 truncate px-2 py-1.5'}`}
+              className={`flex min-w-0 items-center rounded-md text-left focus-visible:outline-2 focus-visible:outline-focus-ring ${rail ? 'justify-center p-2' : 'flex-1 gap-2 truncate px-2 py-1.5 max-lg:py-2.5'}`}
               onClick={() => void navigate({ to: '/chat/$chatId', params: { chatId: chat.id } })}
             >
-              {chat.pinned ? (
-                <Pin size={14} strokeWidth={1.75} className="shrink-0 text-fg" fill="currentColor" aria-hidden="true" />
-              ) : (
-                <MessageSquare size={14} strokeWidth={1.75} className="shrink-0 text-fg-muted" aria-hidden="true" />
-              )}
+              <MessageSquare size={14} strokeWidth={1.75} className="shrink-0 text-fg-muted" aria-hidden="true" />
               <span className={rail ? 'sr-only' : 'truncate'}>{chat.title}</span>
             </button>
             {!rail && (
-              <>
-                <button
-                  type="button"
-                  aria-label={`Rename ${chat.title}`}
-                  onClick={() => beginRename(chat.id, chat.title)}
-                  className="icon-button size-7 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-                >
-                  <Pencil size={13} strokeWidth={1.75} aria-hidden="true" />
-                </button>
-                <button
-                  type="button"
-                  aria-label={`${chat.pinned ? 'Unpin' : 'Pin'} ${chat.title}`}
-                  aria-pressed={chat.pinned}
-                  onClick={() =>
-                    void patchChat.mutateAsync({
-                      chatId: chat.id,
-                      patch: { pinned: !chat.pinned },
-                    })
-                  }
-                  className="icon-button size-7"
-                >
-                  <Pin size={13} strokeWidth={1.75} fill={chat.pinned ? 'currentColor' : 'none'} aria-hidden="true" />
-                </button>
-                <button
-                  type="button"
-                  aria-label={`Delete ${chat.title}`}
-                  onClick={() => void deleteChat.mutateAsync(chat.id)}
-                  className="icon-button size-7 hover:bg-raised hover:text-danger"
-                >
-                  <Trash2 size={13} strokeWidth={1.75} aria-hidden="true" />
-                </button>
-                <Menu>
-                  <MenuTrigger asChild><IconButton size={28} aria-label={`More actions for ${chat.title}`} className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100"><MoreHorizontal size={14} strokeWidth={1.75} aria-hidden="true" /></IconButton></MenuTrigger>
-                  <MenuContent side="right" align="start" className="w-40">
-                    <MenuItemWithIcon onSelect={() => beginRename(chat.id, chat.title)}><Pencil size={13} strokeWidth={1.75} aria-hidden="true" />Rename</MenuItemWithIcon>
-                    <MenuItemWithIcon onSelect={() => void patchChat.mutateAsync({ chatId: chat.id, patch: { pinned: !chat.pinned } })}><Pin size={13} strokeWidth={1.75} aria-hidden="true" />{chat.pinned ? 'Unpin' : 'Pin'}</MenuItemWithIcon>
-                    <MenuItemWithIcon className="text-danger" onSelect={() => void deleteChat.mutateAsync(chat.id)}><Trash2 size={13} strokeWidth={1.75} aria-hidden="true" />Delete</MenuItemWithIcon>
-                  </MenuContent>
-                </Menu>
-              </>
+              <Menu>
+                <MenuTrigger asChild>
+                  <IconButton
+                    size={28}
+                    aria-label={`Actions for ${chat.title}`}
+                    className="max-lg:size-11 lg:opacity-0 lg:group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
+                  >
+                    <MoreHorizontal size={14} strokeWidth={1.75} aria-hidden="true" />
+                  </IconButton>
+                </MenuTrigger>
+                <MenuContent side="right" align="start" className="w-40">
+                  <MenuItemWithIcon onSelect={() => beginRename(chat.id, chat.title)}><Pencil size={13} strokeWidth={1.75} aria-hidden="true" />Rename</MenuItemWithIcon>
+                  <MenuItemWithIcon onSelect={() => void patchChat.mutateAsync({ chatId: chat.id, patch: { pinned: !chat.pinned } })}><Pin size={13} strokeWidth={1.75} aria-hidden="true" />{chat.pinned ? 'Unpin' : 'Pin'}</MenuItemWithIcon>
+                  <MenuItemWithIcon className="text-danger" onSelect={() => void deleteChat.mutateAsync(chat.id)}><Trash2 size={13} strokeWidth={1.75} aria-hidden="true" />Delete</MenuItemWithIcon>
+                </MenuContent>
+              </Menu>
             )}
           </>
         )}
@@ -230,7 +212,7 @@ export function ChatSidebar({
         <div className={`flex h-14 shrink-0 items-center border-b border-border ${rail ? 'justify-center px-2' : 'justify-between gap-2 px-4'}`}>
           <div className={`flex min-w-0 items-center ${rail ? 'justify-center' : 'gap-2.5'}`}>
             <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-surface text-fg">
-              <MessageSquare size={17} strokeWidth={1.75} aria-hidden="true" />
+              <ShieldCheck size={17} strokeWidth={1.75} aria-hidden="true" />
             </span>
             {!rail && (
               <div className="min-w-0">
@@ -240,7 +222,7 @@ export function ChatSidebar({
             )}
           </div>
           {!rail && (
-            <button type="button" aria-label="Close navigation panel" onClick={onMobileClose} className="icon-button size-8 lg:hidden">
+            <button type="button" aria-label="Close navigation panel" onClick={onMobileClose} className="icon-button size-11 lg:hidden">
               <X size={16} strokeWidth={1.75} aria-hidden="true" />
             </button>
           )}
@@ -261,7 +243,7 @@ export function ChatSidebar({
             <div className="flex flex-col items-center gap-2 border-b border-border px-1.5 py-2">
               <Tooltip label="Admin">
                 <IconButton aria-label="Admin" onClick={() => void navigate({ to: '/admin' })}>
-                  <ShieldCheck size={18} strokeWidth={1.75} aria-hidden="true" />
+                  <LayoutDashboard size={18} strokeWidth={1.75} aria-hidden="true" />
                 </IconButton>
               </Tooltip>
             </div>
@@ -284,7 +266,7 @@ export function ChatSidebar({
                       }
                     }}
                     placeholder="Filter chats"
-                    className="h-9 w-full rounded-lg border border-border bg-surface pl-8 pr-2 text-xs text-fg placeholder:text-fg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+                    className="h-9 w-full rounded-lg border border-border bg-surface pl-8 pr-2 max-lg:h-11 text-xs text-fg placeholder:text-fg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
                   />
                 </label>
               </div>
@@ -294,12 +276,12 @@ export function ChatSidebar({
                   Chats
                 </p>
                 <Tooltip label="Search chats">
-                  <IconButton aria-label="Search chats" onClick={() => setSearchOpen(true)}>
+                  <IconButton aria-label="Search chats" className="max-lg:size-11" onClick={() => setSearchOpen(true)}>
                     <Search size={15} strokeWidth={1.75} aria-hidden="true" />
                   </IconButton>
                 </Tooltip>
                 <Tooltip label="New chat">
-                  <IconButton aria-label="New chat" disabled={creating} onClick={() => void onNewChat()}>
+                  <IconButton aria-label="New chat" className="max-lg:size-11" disabled={creating} onClick={() => void onNewChat()}>
                     <Plus size={16} strokeWidth={1.75} aria-hidden="true" />
                   </IconButton>
                 </Tooltip>
@@ -340,26 +322,14 @@ export function ChatSidebar({
               <p className="px-2 py-3 text-xs text-fg-muted">{searchQuery ? 'No chats match.' : 'No chats yet.'}</p>
             ) : null}
 
-            {me?.role === 'admin' ? (
+            {me?.role === 'admin' && (
               <button
                 type="button"
                 onClick={() => void navigate({ to: '/admin' })}
-                className="mt-2 flex min-h-9 w-full items-center gap-2 rounded-lg px-2 text-left text-xs text-fg-muted transition-colors duration-150 hover:bg-raised-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-focus-ring"
+                className="mt-2 flex min-h-9 w-full items-center gap-2 rounded-lg px-2 text-left text-xs text-fg-muted transition-colors duration-150 hover:bg-raised-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-focus-ring max-lg:min-h-11"
               >
-                <ShieldCheck size={15} strokeWidth={1.75} aria-hidden="true" />
+                <LayoutDashboard size={15} strokeWidth={1.75} aria-hidden="true" />
                 Admin
-              </button>
-            ) : (
-              // The demo role gets the decision layer, not Admin: the page is
-              // read-only and the API refuses it every write (item 3), so
-              // calling it "Admin" would promise a control room it cannot enter.
-              <button
-                type="button"
-                onClick={() => void navigate({ to: '/decision-layer' })}
-                className="mt-2 flex min-h-9 w-full items-center gap-2 rounded-lg px-2 text-left text-xs text-fg-muted transition-colors duration-150 hover:bg-raised-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-focus-ring"
-              >
-                <ShieldCheck size={15} strokeWidth={1.75} aria-hidden="true" />
-                Decision layer
               </button>
             )}
           </nav>

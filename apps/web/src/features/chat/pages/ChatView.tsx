@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowDown, Check, MoreHorizontal, PanelRight, Pencil, Pin, Trash2 } from 'lucide-react'
+import { ArrowDown, Check, MoreHorizontal, PanelLeft, PanelRight, Pencil, Pin, Trash2 } from 'lucide-react'
 import { useNavigate } from '@tanstack/react-router'
 
 import type { MessageOut } from '../../../generated/types.gen'
@@ -11,7 +11,7 @@ import { useUploadChatDocument } from '../../library/hooks/useDocuments'
 import { useDemoLimits } from '../../demo/hooks/useDemoLimits'
 import { useDeleteChat, usePatchChat } from '../hooks/useChatList'
 import { useChatRunStore } from '../store'
-import { ChatComposer, runOptions, type RunMode, type RunSource } from '../components/ChatComposer'
+import { ChatComposer, runOptions, type SendOptions } from '../components/ChatComposer'
 import { ChatSidebar } from '../components/ChatSidebar'
 import { MessageList } from '../components/MessageList'
 import { TracePanel, type TraceTab } from '../../trace/components/TracePanel'
@@ -103,6 +103,17 @@ export function ChatView({ chatId }: { chatId: string }) {
     return () => media.removeEventListener('change', onChange)
   }, [])
 
+  // F-30: below 1024px the workspace is a full-width drawer, so Escape closes
+  // it. A menu or popover open inside it handles its own Escape first.
+  useEffect(() => {
+    if (!rightPanelOpen || sidebarOpen) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !event.defaultPrevented && window.innerWidth < 1024) setRightPanelOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [rightPanelOpen, sidebarOpen])
+
   const { resume } = useRunStream(activeRunId, chatId)
   // A finished run has no store entry, so the stream is what replays its
   // persisted run_events; invalidate: false keeps a replay from refetching.
@@ -120,11 +131,11 @@ export function ChatView({ chatId }: { chatId: string }) {
     ? { runId: traceRunId, decisions: trace?.decisions ?? [], chunks: trace?.chunks ?? [] }
     : null
 
-  const onSend = async (message: string, options: { mode: RunMode; source: RunSource }) => {
+  const onSend = async (message: string, options: SendOptions) => {
     setSendError(null)
     setOptimisticQuestion(message)
     try {
-      const run = await createRun.mutateAsync({ message, modelId: chat.data?.model_id, mode: options.mode, source: options.source })
+      const run = await createRun.mutateAsync({ message, modelId: chat.data?.model_id, mode: options.mode, source: options.source, filters: options.filters })
       useChatRunStore.getState().begin(run!.run_id, run!.message_id)
       setActiveRunId(run!.run_id)
       void quota.refetch()
@@ -223,7 +234,7 @@ export function ChatView({ chatId }: { chatId: string }) {
         <main className="flex min-w-0 flex-1 flex-col">
           <header className="relative z-10 flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border bg-main px-3 sm:px-5">
             <div className="flex min-w-0 items-center gap-2">
-              <button type="button" aria-label="Open navigation" onClick={() => setSidebarOpen(true)} className="icon-button size-9 lg:hidden"><PanelRight size={17} strokeWidth={1.75} aria-hidden="true" /></button>
+              <button type="button" aria-label="Open navigation" onClick={() => setSidebarOpen(true)} className="icon-button size-9 max-lg:size-11 lg:hidden"><PanelLeft size={17} strokeWidth={1.75} aria-hidden="true" /></button>
               {threadEditing ? (
                 <div className="flex min-w-0 items-center gap-1">
                   <input aria-label="Rename thread" value={threadTitleDraft} onChange={(event) => setThreadTitleDraft(event.currentTarget.value)} onKeyDown={(event) => { if (event.key === 'Enter') void saveThreadRename(); if (event.key === 'Escape') setThreadEditing(false) }} className="h-8 min-w-0 max-w-[16rem] rounded-lg border border-border bg-surface px-2 text-sm text-fg focus-visible:outline-2 focus-visible:outline-focus-ring" />
@@ -275,7 +286,7 @@ export function ChatView({ chatId }: { chatId: string }) {
               {live?.status === 'connection_lost' && <div className="mx-auto max-w-[720px] px-4 pb-4"><button type="button" onClick={resume} className="pressable rounded-lg border border-border/40 px-3 py-1.5 text-sm text-danger hover:bg-raised focus-visible:outline-2 focus-visible:outline-danger">Connection lost — resume</button></div>}
             </div>
             {showScrollButton && <button type="button" aria-label="Scroll to bottom" onClick={scrollToBottom} className="icon-button absolute bottom-[9.5rem] left-1/2 z-20 size-9 -translate-x-1/2 rounded-full border border-border bg-raised"><ArrowDown size={16} strokeWidth={1.75} aria-hidden="true" /></button>}
-            <ChatComposer streaming={streaming} modelId={chat.data?.model_id ?? null} quota={quota.data} error={sendError} emptyThread={!messages.isPending && !messages.isError && (messages.data ?? []).length === 0} deep={deep} web={web} onFiles={(files) => void onFiles(files)} onModelChange={(modelId) => void patchChat.mutateAsync({ chatId, patch: { model_id: modelId } })} allowDeep={demoLimits.data?.allow_deep ?? true} allowWeb={demoLimits.data?.allow_web ?? true} onToggleDeep={setDeep} onToggleWeb={setWeb} onSend={(message, options) => void onSend(message, options)} onStop={() => activeRunId && cancelRun.mutate(activeRunId)} />
+            <ChatComposer chatId={chatId} streaming={streaming} modelId={chat.data?.model_id ?? null} quota={quota.data} error={sendError} emptyThread={!messages.isPending && !messages.isError && (messages.data ?? []).length === 0} deep={deep} web={web} onFiles={(files) => void onFiles(files)} onModelChange={(modelId) => void patchChat.mutateAsync({ chatId, patch: { model_id: modelId } })} allowDeep={demoLimits.data?.allow_deep ?? true} allowWeb={demoLimits.data?.allow_web ?? true} onToggleDeep={setDeep} onToggleWeb={setWeb} onSend={(message, options) => void onSend(message, options)} onStop={() => activeRunId && cancelRun.mutate(activeRunId)} />
           </>}
         </main>
         <TracePanel steps={trace?.steps ?? []} decisions={trace?.decisions ?? []} thinking={trace?.thinking ?? ''} streaming={trace?.streaming ?? false} chunks={trace?.chunks ?? []} metrics={trace?.metrics ?? null} hold={trace?.hold ?? false} query={lastQuestion} chatId={chatId} viewerDocumentId={viewerDocumentId} open={rightPanelOpen} expanded={rightPanelExpanded} activeTab={traceTab} focusSource={focusSource} selectedMessage={selectedMessage} onOpenChange={setRightPanelOpen} onExpandedChange={setRightPanelExpanded} onTabChange={setTraceTab} onViewDocument={viewDocument} onCloseViewer={() => setViewerDocumentId(null)} scrollToTopSignal={traceScrollSignal} traceStatus={trace?.status ?? null} onRetryTrace={traceRunId !== activeRunId ? undefined : resume} />

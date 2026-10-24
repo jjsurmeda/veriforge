@@ -61,6 +61,15 @@ describe('ChatSidebar', () => {
     expect(screen.getAllByRole('button', { name: 'Search chats' })).toHaveLength(1)
   })
 
+  // F-8, F-9, F-10: one actions button per row (not four), no Decision layer row.
+  it('gives each chat one actions menu and no Decision layer row', async () => {
+    renderSidebar()
+    await waitFor(() => expect(screen.getByText('Pinned chat')).toBeTruthy())
+    expect(screen.getAllByRole('button', { name: /^Actions for / })).toHaveLength(2)
+    expect(screen.queryByRole('button', { name: /^(Rename|Pin|Delete) / })).toBeNull()
+    expect(screen.queryByText('Decision layer')).toBeNull()
+  })
+
   it('has no Library section and no source UI, even on the active chat', async () => {
     renderSidebar()
 

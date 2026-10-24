@@ -1,13 +1,15 @@
 import { useRef, useState, type ReactNode } from 'react'
 import { ArrowUp, CircleAlert, Globe2, Layers3, Plus, Square } from 'lucide-react'
 
-import type { QuotaOut } from '../../../generated/types.gen'
+import type { QuotaOut, RunFilters } from '../../../generated/types.gen'
+import { formatCredits } from '../../../lib/format'
 import { IconButton } from '../../../components/ui/IconButton'
 import {
   TooltipContent,
   TooltipRoot,
   TooltipTrigger,
 } from '../../../components/ui/primitives'
+import { ComposerFilters, compactFilters } from './ComposerFilters'
 import { ModelPicker } from './ModelPicker'
 
 // Narrower than the API's RunCreateRequest on purpose: the composer only
@@ -19,7 +21,19 @@ export function runOptions(deep: boolean, web: boolean): { mode: RunMode; source
   return { mode: deep ? 'deep' : 'auto', source: web ? 'both' : 'upload' }
 }
 
+export interface SendOptions {
+  mode: RunMode
+  source: RunSource
+  filters?: RunFilters
+}
+
+function resetLabel(iso: string): string {
+  return new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(new Date(iso))
+}
+
 interface Props {
+  /** The chat whose own documents the filter panel lists; null on the index. */
+  chatId?: string | null
   streaming: boolean
   modelId: string | null
   quota?: QuotaOut
@@ -36,7 +50,7 @@ interface Props {
   onModelChange: (modelId: string) => void
   onToggleDeep: (value: boolean) => void
   onToggleWeb: (value: boolean) => void
-  onSend: (message: string, options: { mode: RunMode; source: RunSource }) => void
+  onSend: (message: string, options: SendOptions) => void
   onStop: () => void
 }
 
@@ -59,7 +73,7 @@ function ToggleChip({
       aria-pressed={pressed}
       disabled={disabled}
       onClick={() => onToggle(!pressed)}
-      className={`pressable inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-xs transition-[background-color,color,border-color] duration-150 focus-visible:outline-2 focus-visible:outline-focus-ring disabled:pointer-events-none disabled:opacity-40 ${
+      className={`pressable inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-xs max-lg:h-11 transition-[background-color,color,border-color] duration-150 focus-visible:outline-2 focus-visible:outline-focus-ring disabled:pointer-events-none disabled:opacity-40 ${
         pressed
           ? 'border border-border-strong bg-raised text-fg'
           : 'border border-transparent text-fg-muted hover:bg-raised-hover hover:text-fg'
@@ -72,6 +86,7 @@ function ToggleChip({
 }
 
 export function ChatComposer({
+  chatId = null,
   streaming,
   modelId,
   quota,
@@ -91,6 +106,7 @@ export function ChatComposer({
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [dragOver, setDragOver] = useState(false)
+  const [filters, setFilters] = useState<RunFilters>({})
   const blocked = quota?.blocked ?? false
   const disabled = streaming || blocked
   // A toggle this account may not use is removed rather than disabled: a greyed
@@ -102,7 +118,7 @@ export function ChatComposer({
   const submit = () => {
     const value = textareaRef.current?.value.trim() ?? ''
     if (!value || disabled) return
-    onSend(value, runOptions(effectiveDeep, effectiveWeb))
+    onSend(value, { ...runOptions(effectiveDeep, effectiveWeb), filters: compactFilters(filters) })
     if (textareaRef.current) {
       textareaRef.current.value = ''
       textareaRef.current.style.height = 'auto'
@@ -142,7 +158,7 @@ export function ChatComposer({
             ref={textareaRef}
             aria-label="Question"
             rows={2}
-            placeholder={blocked ? 'Credit limit reached' : streaming ? 'Streaming…' : emptyThread ? 'Ask anything' : 'Ask a follow-up'}
+            placeholder={blocked ? (quota ? `Credit limit reached · resets at ${resetLabel(quota.reset_at_5h)}` : 'Credit limit reached') : streaming ? 'Streaming…' : emptyThread ? 'Ask anything' : 'Ask a follow-up'}
             disabled={streaming || blocked}
             onKeyDown={(event) => {
               if (event.key === 'Enter' && !event.shiftKey) {
@@ -163,7 +179,7 @@ export function ChatComposer({
             className="block max-h-40 min-h-14 w-full resize-none rounded-2xl border-0 bg-transparent px-3 py-2.5 text-base leading-6 text-fg outline-none placeholder:text-fg-muted/80 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none"
           />
           <div className="flex items-center justify-between gap-2 px-1 pt-2">
-            <div className="flex min-w-0 items-center gap-1 overflow-x-auto">
+            <div className="flex min-w-0 flex-wrap items-center gap-1">
               <TooltipRoot>
                 <TooltipTrigger asChild>
                   <IconButton
@@ -171,7 +187,7 @@ export function ChatComposer({
                     aria-label="Add sources"
                     disabled={disabled}
                     onClick={() => fileInputRef.current?.click()}
-                    className="shrink-0 border border-border bg-surface text-fg-muted hover:bg-raised-hover hover:text-fg"
+                    className="shrink-0 border border-border bg-surface text-fg-muted hover:bg-raised-hover hover:text-fg max-lg:size-11"
                   >
                     <Plus size={16} strokeWidth={1.75} aria-hidden="true" />
                   </IconButton>
@@ -196,16 +212,17 @@ export function ChatComposer({
                   onToggle={onToggleWeb}
                 />
               )}
+              <ComposerFilters chatId={chatId} value={filters} onChange={setFilters} disabled={disabled} />
             </div>
             <div className="flex shrink-0 items-center gap-2">
               <ModelPicker value={modelId} disabled={disabled} onChange={onModelChange} />
               {streaming ? (
-                <button type="button" aria-label="Stop" onClick={onStop} className="pressable inline-flex size-8 items-center justify-center rounded-full bg-fg-strong text-on-strong hover:bg-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring">
+                <button type="button" aria-label="Stop" onClick={onStop} className="pressable inline-flex size-8 items-center justify-center rounded-full max-lg:size-11 bg-fg-strong text-on-strong hover:bg-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring">
                   <Square size={15} fill="currentColor" strokeWidth={1.75} aria-hidden="true" />
                   <span className="sr-only">Stop</span>
                 </button>
               ) : (
-                <button type="button" aria-label="Send" onClick={submit} disabled={blocked} className="pressable inline-flex size-8 items-center justify-center rounded-full bg-fg-strong text-on-strong hover:bg-fg disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring">
+                <button type="button" aria-label="Send" onClick={submit} disabled={blocked} className="pressable inline-flex size-8 items-center justify-center rounded-full max-lg:size-11 bg-fg-strong text-on-strong hover:bg-fg disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring">
                   <ArrowUp size={18} strokeWidth={1.75} aria-hidden="true" />
                   <span className="sr-only">Send</span>
                 </button>
@@ -225,6 +242,11 @@ export function ChatComposer({
             }}
           />
         </div>
+        {quota && !blocked && (
+          <p className="mt-2 text-center text-2xs text-fg-muted lg:hidden">
+            {formatCredits(quota.remaining_5h)} credits left · resets at {resetLabel(quota.reset_at_5h)}
+          </p>
+        )}
       </div>
     </div>
   )
