@@ -23,6 +23,7 @@ const navigate = vi.fn()
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => navigate,
   useRouterState: () => '/chat/chat-1',
+  Link: ({ children, to }: { children: React.ReactNode; to: string }) => <a href={to}>{children}</a>,
 }))
 
 const CHAT_ID = 'chat-1'
@@ -133,6 +134,19 @@ beforeEach(() => {
   useChatRunStore.setState({ runs: {} })
 })
 
+function seedRun(offeredActions: string[]) {
+  useChatRunStore.setState({
+    runs: {
+      [LIVE_RUN]: {
+        text: '', lastSeq: 1, messageId: null, error: null, chunks: [], metrics: null, steps: [], plan: null,
+        decisions: [], thinking: '', conflict: null, claims: [], hold: false, revision: null, suggestions: [], started: null,
+        status: 'completed',
+        abstain: { type: 'abstain', found_summary: 'x', missing_summary: 'y', offered_actions: offeredActions },
+      },
+    },
+  })
+}
+
 describe('failed reads', () => {
   // Item 6: every read here used to coerce to `[]`, so a dead API rendered
   // as an empty conversation. Only a 404 may claim the chat is absent.
@@ -171,6 +185,7 @@ describe('failed reads', () => {
     // The composer still accepts a question, so it must not claim the thread
     // is empty while its history is unreadable.
     expect(screen.getByLabelText('Question').getAttribute('placeholder')).toBe('Ask a follow-up')
+    expect(screen.queryByText('Ask anything to start the conversation.')).toBeNull()
   })
 })
 
@@ -233,12 +248,21 @@ describe('composer', () => {
     )
   })
 
+  it('offers abstain actions from abstain.offered_actions, not from the answer text', async () => {
+    seedRun([])
+    renderView()
+
+    await screen.findByText('the second answer')
+    expect(screen.queryByRole('button', { name: /Search the web/ })).toBeNull()
+  })
+
   it('the abstain "Try Web" action turns Web on and resends with source both', async () => {
     const { createRunChatsChatIdRunsPost } = await import('../../../generated/sdk.gen')
+    seedRun(['web', 'deep'])
     renderView()
 
     expect((await screen.findByRole('button', { name: 'Web' })).getAttribute('aria-pressed')).toBe('false')
-    fireEvent.click(await screen.findByRole('button', { name: /Searching the web/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /Search the web/ }))
 
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Web' }).getAttribute('aria-pressed')).toBe('true'),

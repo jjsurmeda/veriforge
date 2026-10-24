@@ -3,6 +3,7 @@ import { ChevronDown, FileText, Globe2, Quote } from 'lucide-react'
 
 import type { MessageOut, RetrievedChunk } from '../../../generated/types.gen'
 import { PanelEmpty } from '../../../components/ui/PanelEmpty'
+import { VerdictBadge } from './CitationChip'
 
 interface Props {
   chunks: RetrievedChunk[]
@@ -45,27 +46,36 @@ export function CitationsTab({ chunks, message, query, onOpenDocument }: Props) 
     )
   }
 
-  const cited = message?.citations?.length
-    ? message.citations.map((citation) => chunkForCitation(citation, chunks))
-    : chunks.slice(0, Math.min(chunks.length, 4))
-  const citedIds = new Set(cited.map((chunk) => chunk.chunk_id))
+  const cited: Array<{ chunk: RetrievedChunk; citation: NonNullable<MessageOut['citations']>[number] | null }> = message?.citations?.length
+    ? message.citations.map((citation) => ({ chunk: chunkForCitation(citation, chunks), citation }))
+    : chunks.slice(0, Math.min(chunks.length, 4)).map((chunk) => ({ chunk, citation: null }))
+  const citedIds = new Set(cited.map(({ chunk }) => chunk.chunk_id))
   const alsoRetrieved = chunks.filter((chunk) => !citedIds.has(chunk.chunk_id))
 
   return (
     <div>
       {query && <p className="border-b border-border px-4 py-3 text-xs text-fg-muted">Results for <span className="text-fg">‘{query.length > 42 ? `${query.slice(0, 42)}…` : query}’</span></p>}
       <section aria-labelledby="cited-sources-heading">
-        <h3 id="cited-sources-heading" className="px-4 pb-1 pt-3 text-[11px] font-medium uppercase tracking-[0.1em] text-fg-subtle">Cited ({cited.length})</h3>
+        <h3 id="cited-sources-heading" className="px-4 pb-1 pt-3 text-2xs font-medium uppercase tracking-[0.1em] text-fg-subtle">Cited ({cited.length})</h3>
         <ol className="divide-y divide-border">
-          {cited.map((chunk, index) => {
+          {cited.map(({ chunk, citation }, index) => {
             const documentId = chunk.document_id ?? null
             const content = (
               <>
                 <div className="mb-1 flex items-center justify-between gap-3">
-                  <span className="flex min-w-0 items-center gap-2 text-xs font-medium text-fg"><span className="inline-flex h-4 min-w-4 items-center justify-center rounded bg-raised px-1 font-mono text-[10px] tabular-nums text-fg-muted">{index + 1}</span><SourceName chunk={chunk} /></span>
+                  <span className="flex min-w-0 items-center gap-2 text-xs font-medium text-fg"><span className="inline-flex h-4 min-w-4 items-center justify-center rounded bg-raised px-1 font-mono text-2xs tabular-nums text-fg-muted">{index + 1}</span><SourceName chunk={chunk} /></span>
           {(chunk.page != null || chunk.heading_path) && <span className="shrink-0 truncate font-mono text-2xs text-fg-muted">{chunk.page != null ? `p.${chunk.page}` : chunk.heading_path}</span>}
                 </div>
                 <p className="line-clamp-3 whitespace-pre-wrap text-xs leading-5 text-fg-muted">{chunk.excerpt}</p>
+                {citation && (
+                  <div className="mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                    <VerdictBadge verdict={citation.verdict ?? null} />
+                    <span className="font-mono text-2xs tabular-nums text-fg-muted">
+                      support {citation.p_supported != null ? citation.p_supported.toFixed(2) : '—'}
+                      {chunk.rerank_score != null && <> · rerank {chunk.rerank_score.toFixed(3)}</>}
+                    </span>
+                  </div>
+                )}
               </>
             )
             return (

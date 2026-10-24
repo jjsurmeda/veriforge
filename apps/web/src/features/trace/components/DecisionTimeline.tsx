@@ -11,6 +11,7 @@ import {
   type DecisionGroup,
   type OutcomeTone,
 } from '../decisionMeta'
+import { formatMs } from '../format'
 
 function engineLabel(engine: Decision['engine']): string {
   if (engine === 'jev') return 'Jev'
@@ -268,7 +269,7 @@ function DecisionGroupSection({ group }: { group: DecisionGroup }) {
       <header className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1 border-b border-border px-3 py-2">
         <h3 className="text-xs font-semibold text-fg">{decisionStageLabel(group.stage)}</h3>
         <span className="font-mono text-2xs text-fg-muted">
-          {callLabel} · {questionCount} questions · {maxLatency} ms
+          {callLabel} · {questionCount} {questionCount === 1 ? 'question' : 'questions'} · {formatMs(maxLatency)}
         </span>
       </header>
       <ul className="divide-y divide-border/70 px-3">
@@ -300,12 +301,12 @@ export function DecisionSummary({ decisions }: { decisions: Decision[] }) {
     ...groupDecisions(decisions).map((group) => Math.max(...group.decisions.map((decision) => decision.latency_ms))),
   )
   return (
-    <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-border bg-sidebar px-2.5 py-2 font-mono text-2xs text-fg-muted">
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-border bg-sidebar px-2.5 py-2 font-mono text-2xs text-fg-muted">
       <span>{decisions.length} decisions</span>
       <span aria-hidden="true">·</span>
       <span>Jev {jevCount}/{decisions.length}</span>
       <span aria-hidden="true">·</span>
-      <span>slowest call {slowestCall} ms</span>
+      <span>slowest call {formatMs(slowestCall)}</span>
     </div>
   )
 }

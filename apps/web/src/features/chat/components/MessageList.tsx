@@ -14,12 +14,12 @@ import {
 } from 'lucide-react'
 
 import { formatCredits } from '../../../lib/format'
-import type { Decision, MessageOut, RetrievedChunk } from '../../../generated/types.gen'
+import type { Abstain, Decision, MessageOut, RetrievedChunk } from '../../../generated/types.gen'
 import {
   CitationChip,
+  VerdictBadge,
   chipSourceFromCitation,
   chipSourceFromChunk,
-  verdictTone,
   worstVerdict,
   type ChipSource,
 } from '../../trace/components/CitationChip'
@@ -41,7 +41,10 @@ interface Props {
    *  so an ordinary account is unaffected. */
   mayUse?: { web: boolean; deep: boolean }
   /** The replayed run's trace, so a reopened decline can name its gate too. */
-  replay?: { runId: string | null; decisions: Decision[]; chunks: RetrievedChunk[] } | null
+  replay?: { runId: string | null; decisions: Decision[]; chunks: RetrievedChunk[]; abstain?: Abstain | null } | null
+  /** False while the thread is still loading or failed to load, so the
+   *  empty-thread hint is not claimed about a thread that may have messages. */
+  loaded?: boolean
   optimisticQuestion?: string | null
 }
 
@@ -57,6 +60,7 @@ function abstentionActions(
   live: RunLive | undefined,
   lastMessage: MessageOut | undefined,
   mayUse: { web: boolean; deep: boolean },
+  replayed: Abstain | null | undefined,
 ): AbstainAction[] {
   // The offered actions come off the server's abstain event, which does not
   // know what this account may do. Filtering here means a demo account is
@@ -67,11 +71,10 @@ function abstentionActions(
     )
 
   if (live?.abstain) return offered(live.abstain.offered_actions ?? [])
+  // A reopened thread reads the same field off the replayed run's abstain
+  // event, never the server-written prose (F-27).
   if (lastMessage?.status !== 'abstained') return []
-  const actions: AbstainAction[] = []
-  if (lastMessage.content.includes('Searching the web')) actions.push('web')
-  if (lastMessage.content.includes('Deep mode')) actions.push('deep')
-  return offered(actions)
+  return offered(replayed?.offered_actions ?? [])
 }
 
 function renderWithCitations(
@@ -218,12 +221,12 @@ function AbstentionActions({ actions, onSelect }: { actions: AbstainAction[]; on
       <div className="flex flex-wrap gap-2">
         {actions.includes('web') && (
           <button type="button" onClick={() => onSelect('web')} className="pressable inline-flex min-h-9 items-center gap-2 rounded-lg border border-border/40 px-3 py-1.5 text-xs text-warning hover:bg-raised focus-visible:outline-2 focus-visible:outline-focus-ring">
-            <Search size={14} strokeWidth={1.75} aria-hidden="true" /> Searching the web
+            <Search size={14} strokeWidth={1.75} aria-hidden="true" /> Search the web
           </button>
         )}
         {actions.includes('deep') && (
           <button type="button" onClick={() => onSelect('deep')} className="pressable inline-flex min-h-9 items-center gap-2 rounded-lg border border-border/40 px-3 py-1.5 text-xs text-warning hover:bg-raised focus-visible:outline-2 focus-visible:outline-focus-ring">
-            <Layers3 size={14} strokeWidth={1.75} aria-hidden="true" /> Deep mode
+            <Layers3 size={14} strokeWidth={1.75} aria-hidden="true" /> Run Deep
           </button>
         )}
       </div>
@@ -263,28 +266,29 @@ function SourceCardRow({ message, onOpenSources, hoveredCitation, onHoverCitatio
   return (
     <div className="mt-4">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <p className="flex items-center gap-1.5 text-[0.68rem] font-medium uppercase tracking-[0.1em] text-fg-muted"><FileText size={12} strokeWidth={1.75} aria-hidden="true" /> Sources</p>
+        <p className="flex items-center gap-1.5 text-2xs font-medium uppercase tracking-[0.1em] text-fg-muted"><FileText size={12} strokeWidth={1.75} aria-hidden="true" /> Sources</p>
         <button type="button" aria-label={`Open ${citations.length} sources`} onClick={() => onOpenSources?.()} className="source-pill">
           <Layers3 size={13} strokeWidth={1.75} aria-hidden="true" /> {citations.length} sources
         </button>
       </div>
       <div className="flex gap-2 overflow-x-auto pb-1" role="list">
         {citations.map((citation) => {
-          const tone = verdictTone(citation.verdict ?? null)
           return (
              <details key={citation.n} role="listitem" data-highlighted={hoveredCitation === citation.n ? 'true' : undefined} onMouseEnter={() => onHoverCitation(citation.n)} onMouseLeave={() => onHoverCitation(null)} className={`group w-56 shrink-0 overflow-hidden rounded-lg border bg-surface transition-[border-color,background-color] duration-150 open:bg-raised hover:border-border-strong ${hoveredCitation === citation.n ? 'border-border-strong bg-raised-hover' : 'border-border'}`}>
 
               <summary onClick={() => onOpenSources?.(citation.n)} className="flex min-h-16 cursor-pointer list-none flex-col gap-1 px-3 py-2 focus-visible:outline-2 focus-visible:outline-focus-ring [&::-webkit-details-marker]:hidden">
                 <span className="flex items-center justify-between gap-2">
                   <span className="truncate text-xs font-medium text-fg">[{citation.n}] {citation.document_name ?? 'Source'}</span>
-                  <span className={`size-1.5 shrink-0 rounded-full ${tone === 'supported' ? 'bg-success' : tone === 'partial' ? 'bg-warning' : tone === 'unsupported' ? 'bg-danger' : 'bg-fg-muted'}`} aria-label={tone} />
                 </span>
-                <span className="line-clamp-2 text-[0.7rem] leading-4 text-fg-muted">{citation.excerpt ?? '(source expired)'}</span>
-                {citation.page != null && <span className="font-mono text-[0.62rem] text-fg-muted">p.{citation.page}</span>}
+                <span className="line-clamp-2 text-2xs leading-4 text-fg-muted">{citation.excerpt ?? '(source expired)'}</span>
+                <span className="flex items-center justify-between gap-2">
+                  <VerdictBadge verdict={citation.verdict ?? null} />
+                  {citation.page != null && <span className="font-mono text-2xs text-fg-muted">p.{citation.page}</span>}
+                </span>
               </summary>
               <div className="border-t border-border px-3 py-2">
                 <p className="mb-1.5 line-clamp-3 whitespace-pre-wrap text-xs leading-5 text-fg-muted">{citation.excerpt ?? '(source expired)'}</p>
-                <span className="font-mono text-[0.62rem] tabular-nums text-fg-muted">rerank {citation.rerank_score != null ? citation.rerank_score.toFixed(3) : '—'}{citation.p_supported != null && <span> · support {citation.p_supported.toFixed(2)}</span>}</span>
+                <span className="font-mono text-2xs tabular-nums text-fg-muted">rerank {citation.rerank_score != null ? citation.rerank_score.toFixed(3) : '—'}{citation.p_supported != null && <span> · support {citation.p_supported.toFixed(2)}</span>}</span>
               </div>
             </details>
           )
@@ -294,7 +298,7 @@ function SourceCardRow({ message, onOpenSources, hoveredCitation, onHoverCitatio
   )
 }
 
-export function MessageList({ messages, live, onSuggestion, onAbstainAction, onOpenSources, onSelectMessage, onShowSteps, onShowGates, mayUse = { web: true, deep: true }, replay, optimisticQuestion }: Props) {
+export function MessageList({ messages, live, onSuggestion, onAbstainAction, onOpenSources, onSelectMessage, onShowSteps, onShowGates, mayUse = { web: true, deep: true }, replay, optimisticQuestion, loaded = true }: Props) {
   const [hoveredCitation, setHoveredCitation] = useState<number | null>(null)
   const optimisticUserId = 'optimistic-user'
   const optimisticAssistantId = 'optimistic-assistant'
@@ -310,7 +314,8 @@ export function MessageList({ messages, live, onSuggestion, onAbstainAction, onO
   const persistedSuggestions = lastAssistantMessage?.role === 'assistant' ? ((lastAssistantMessage.metrics?.suggestions as string[] | undefined) ?? []) : []
   const suggestions = liveSuggestions.length > 0 ? liveSuggestions : live === undefined || live.status === 'completed' ? persistedSuggestions : []
   const showSuggestions = onSuggestion !== undefined && suggestions.length > 0
-  const abstainActions = abstentionActions(live, lastAssistantMessage, mayUse)
+  const replayedAbstain = lastAssistantMessage && replay?.runId === lastAssistantMessage.run_id ? replay?.abstain : undefined
+  const abstainActions = abstentionActions(live, lastAssistantMessage, mayUse, replayedAbstain)
 
   return (
     <div className="mx-auto flex w-full max-w-[720px] flex-col gap-8 px-4 py-8 sm:px-6">
@@ -421,7 +426,7 @@ export function MessageList({ messages, live, onSuggestion, onAbstainAction, onO
       {messages.length === 0 && optimisticQuestion && (
         <div className="sr-only" role="status">Question sent. Waiting for the assistant.</div>
       )}
-      {displayedMessages.length === 0 && !optimisticQuestion && (
+      {loaded && displayedMessages.length === 0 && !optimisticQuestion && (
         <div className="flex min-h-[42vh] items-center justify-center px-4 text-center">
           <div className="max-w-[32rem]">
             <p className="text-sm text-fg-muted">Ask anything to start the conversation.</p>

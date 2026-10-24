@@ -105,3 +105,9 @@ export function evidenceGates(decisions: Decision[]): EvidenceGate[] {
 export function failedGate(decisions: Decision[]): EvidenceGate | null {
   return evidenceGates(decisions).find((gate) => gate.state === 'blocked') ?? null
 }
+
+/** True for a decision the Evidence gates card already shows, so the decision
+ *  timeline does not list the same gate a second time. */
+export function isGateDecision(decision: Decision): boolean {
+  return GATES.some((gate) => gate.match(decision.name))
+}

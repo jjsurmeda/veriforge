@@ -9,6 +9,7 @@ import type {
   RetrievedChunk,
   ReviewClaim,
   Revision,
+  RunStarted,
   StepCompleted,
   StepStarted,
 } from '../../generated/types.gen'
@@ -40,6 +41,8 @@ export interface RunLive {
   hold: boolean
   revision: Revision | null
   suggestions: string[]
+  /** The run.started event: which mode, model and source produced the run. */
+  started: RunStarted | null
 }
 
 interface ChatRunStore {
@@ -67,6 +70,7 @@ const empty: RunLive = {
   hold: false,
   revision: null,
   suggestions: [],
+  started: null,
 }
 
 export const useChatRunStore = create<ChatRunStore>()((set) => ({
@@ -93,6 +97,7 @@ export const useChatRunStore = create<ChatRunStore>()((set) => ({
       switch (event.type) {
         case 'run.started':
           next.status = 'streaming'
+          next.started = event
           break
         case 'step.started':
         case 'step.completed':

@@ -23,6 +23,7 @@ export function useTrace(runId: string | null) {
         hold: run.hold,
         revision: run.revision,
         suggestions: run.suggestions,
+        started: run.started,
         streaming: run.status === 'streaming' || run.status === 'connecting',
       }
     }),

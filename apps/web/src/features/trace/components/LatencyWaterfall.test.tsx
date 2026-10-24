@@ -39,9 +39,8 @@ describe('LatencyWaterfall', () => {
     // 900 + 1400 + 300 + 240 = 2840: the pipeline before the generator, and
     // the same total the run's own clock measured.
     const terms = screen.getByText('Time to first token').closest('dl')
-    expect(terms?.textContent).toBe(
-      'Time to first token2840 ms=before the generator2840 ms+answer1800 ms',
-    )
+    expect(terms?.textContent).toBe('Time to first token2.8 s')
+    expect(screen.getByText('Before the first token').parentElement?.textContent).toBe('Before the first token2.8 s')
   })
 
   it('states every stage with its own millisecond value as text', () => {
@@ -52,13 +51,13 @@ describe('LatencyWaterfall', () => {
     const rows = screen.getAllByRole('listitem').map((row) => row.textContent)
     expect(rows).toEqual([
       'ingress rewrite900 ms',
-      'retrieve1400 ms',
+      'retrieve1.4 s',
       'rerank300 ms',
       'evidence240 ms',
-      'generate1800 ms',
+      'generate1.8 s',
       'review500 ms',
     ])
-    expect(screen.getByText('total 5140 ms')).toBeTruthy()
+    expect(screen.getByText('total 5.1 s')).toBeTruthy()
   })
 
   it('orders stages as the run executes them, not alphabetically', () => {
@@ -83,7 +82,7 @@ describe('LatencyWaterfall', () => {
     expect(
       screen.getByRole('img').getAttribute('aria-label'),
     ).toBe(
-      'Total 5140 milliseconds. Time to first token 2840 milliseconds: 2840 before the generator, 1800 generating the answer.',
+      'Total 5.1 s. Time to first token 2.8 s: 2.8 s before the generator, 1.8 s generating the answer.',
     )
   })
 
@@ -109,7 +108,7 @@ describe('LatencyWaterfall', () => {
     expect(screen.queryByText('Time to first token')).toBeNull()
     expect(screen.getByText('total 900 ms')).toBeTruthy()
     expect(screen.getByRole('img').getAttribute('aria-label')).toBe(
-      'Total 900 milliseconds across 2 stages.',
+      'Total 900 ms across 2 stages.',
     )
   })
 

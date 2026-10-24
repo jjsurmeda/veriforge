@@ -12,6 +12,10 @@ vi.mock('../../../generated/sdk.gen', () => ({
   listChunksDocumentsDocumentIdChunksGet: vi.fn(async () => ({ data: [] })),
 }))
 
+vi.mock('@tanstack/react-router', () => ({
+  Link: ({ children, to }: { children: React.ReactNode; to: string }) => <a href={to}>{children}</a>,
+}))
+
 const { TracePanel } = await import('./TracePanel')
 const { TooltipProvider } = await import('../../../components/ui/primitives')
 
@@ -86,5 +90,64 @@ describe('workspace panel empty states', () => {
     expect(screen.queryByText('No run yet.')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Reconnect' }))
     expect(onRetryTrace).toHaveBeenCalled()
+  })
+})
+
+
+describe('trace and metrics content (KI-22)', () => {
+  const decisions = [
+    { name: 'evidence', engine: 'jev', latency_ms: 12, value: 0.8, probability: 0.8, threshold: 0.5, stage: 'gate', call_id: 'c1' },
+    { name: 'guard_pii', engine: 'jev', latency_ms: 9, value: 0.1, probability: 0.1, threshold: 0.5, stage: 'ingress', call_id: 'c0' },
+  ] as never
+
+  it('shows each step once and the evidence gate once', () => {
+    renderPanel({
+      steps: [
+        { type: 'step.started', node: 'retrieve', label: 'Searching' },
+        { type: 'step.completed', node: 'retrieve', label: 'Searching', duration_ms: 1500 },
+      ],
+      decisions,
+    })
+
+    expect(screen.getAllByText('Searching')).toHaveLength(1)
+    expect(screen.getByText('1.5 s')).toBeTruthy()
+    // The gate lives in the Evidence gates card, not again in the timeline.
+    expect(screen.getAllByText('Evidence')).toHaveLength(1)
+    expect(screen.queryByText('Evidence gate')).toBeNull()
+    expect(screen.getByText('Ingress')).toBeTruthy()
+  })
+
+  it('says a failed run failed', () => {
+    renderPanel({ failure: 'The run could not finish. Try again.' })
+    expect(screen.getByText(/This run failed/)).toBeTruthy()
+    expect(screen.queryByText('No run yet.')).toBeNull()
+  })
+
+  it('Metrics names the run, scales units and links the decision layer', () => {
+    renderPanel({
+      started: { type: 'run.started', mode: 'deep', model: 'm-1', source: 'upload', run_id: 'r1' },
+      selectedMessage: { id: 'm', chat_id: 'c', role: 'assistant', content: '', status: 'complete', created_at: '', run_id: 'r1', metrics: { reranker: 'jev' } },
+      metrics: { type: 'metrics', latency_ms: { retrieve: 400, generate: 12000 }, tokens_in: 4000, tokens_out: 1710, credits: 3, context_used: 5000, context_window: 128000, faithfulness: 0.9, min_support: 0.8, ttft_ms: 700 },
+    })
+    fireEvent.click(screen.getByRole('tab', { name: 'Metrics' }))
+
+    expect(screen.getByText('Deep')).toBeTruthy()
+    expect(screen.getByText('jev')).toBeTruthy()
+    expect(screen.getByText('12.4 s')).toBeTruthy()
+    expect(screen.getByText('5,710')).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'System-wide decision layer' }).getAttribute('href')).toBe('/decision-layer')
+  })
+
+  it('shows live on the Trace tab itself and drops the Expand button below xl', () => {
+    renderPanel({ streaming: true })
+    expect(screen.getByRole('tab', { name: /Trace/ }).querySelector('[aria-label="live"]')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Expand workspace panel' }).className).toContain('hidden')
+  })
+
+  it('Escape closes the drawer below xl', () => {
+    const onOpenChange = vi.fn()
+    renderPanel({ onOpenChange })
+    fireEvent.keyDown(screen.getByRole('tab', { name: 'Trace' }), { key: 'Escape' })
+    expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 })
