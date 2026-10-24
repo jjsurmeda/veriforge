@@ -113,7 +113,7 @@ function MetricsTab({ metrics, decisions, started, reranker }: { metrics: Metric
       <RunInfo started={started} reranker={reranker} />
       <div className="space-y-1.5">
         <DecisionSummary decisions={decisions} />
-        <Link to="/decision-layer" className="inline-flex min-h-9 items-center text-xs text-fg-muted underline decoration-border underline-offset-2 hover:text-fg focus-visible:outline-2 focus-visible:outline-focus-ring">
+        <Link to="/decision-layer" className="inline-flex min-h-9 items-center text-xs text-fg underline decoration-fg-muted underline-offset-2 hover:decoration-fg focus-visible:outline-2 focus-visible:outline-focus-ring">
           System-wide decision layer
         </Link>
       </div>
