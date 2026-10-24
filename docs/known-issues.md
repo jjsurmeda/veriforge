@@ -7,7 +7,7 @@ The Phase column is authoritative; section placement below is from the first tri
 Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 - When you fix one, move it to the archive in the same commit, with the fixing commit hash.
 - A new finding that breaks no check is added under **post-beta** and opens no lane.
-- New IDs continue from KI-92.
+- New IDs continue from KI-93.
 
 ## Index
 
@@ -17,6 +17,7 @@ Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 | closed 2026-10-23 | KI-79 | `plot-speckled-band` passes in all 5 DeepSeek V4 Pro draws; closed by the ADR-007 generator change |
 | R3 (generator) | KI-86 | the reply language is not enforced: a Tagalog question answered in English (DeepSeek), an English one in German (Sonnet) |
 | before deploy | KI-88 | the decision fallback's LLM call can stall for minutes: it has no effective timeout |
+| R3 (Deep) | KI-93 | Deep has no conflict check (Auto discloses contradicting passages; Deep may not), and its trace hides retrieve, rerank and sanitize inside `hop_N` and has no `generate` step |
 | UI redesign | KI-92 | UI pass leftovers: duplicate Escape handlers, sub-44 px mobile targets, F-34 tiny text, live specs not run, F-25/F-26 checked on mocks only, two README nits |
 | before deploy | KI-91 | `UsageContext.record_call` raises `MultipleResultsFound` once a run has an `async_judge` ledger row: its aggregate-row query is not filtered by role |
 | before deploy | KI-90 | generator price constants (`config.py`) may be stale: the public list shows DeepSeek V4 Pro at about 2x the recorded $0.4427 / $0.8853 per 1M |
@@ -662,6 +663,21 @@ Logged 2026-10-12 (phase 1, `make check-work` on `beta/phase1-check-work`).
   the embedding cache write is not under it, and a test runs two parallel hops on one
   session.
 
+## KI-93: Deep lacks Auto's conflict check and its trace hides stages
+
+- **What:** Auto runs a conflict batch over the evidence and discloses contradicting passages
+  (`graph/stages/finish_stage.py`, `evidence_stage.py`). `graph/deep.py` and `run_deep.py` have
+  no conflict handling that I found; whether `finish_stage.py` covers Deep is not traced, so
+  this is a likely gap, not a confirmed one. Separately, Deep's trace shows `ingress+rewrite`,
+  `plan`, `hop_N`, `controller_N`, `followup_N` and `isuse`: retrieve, rerank and sanitize run
+  inside `hop_retrieve.py` and surface only as part of `hop_N`, and generation is timed outside a
+  step (`run_deep.py`). Found 2026-10-25 when the owner asked why Deep shows fewer stages.
+- **Phase:** the trace half goes in the UI polish pass (steps only, no behaviour change);
+  the conflict check is a behaviour change, so it belongs to the post-deploy Deep rework
+  (with G6/G10) and needs the eval gate.
+- **Done when:** Deep's trace lists the same stages as Auto, and Deep either runs the conflict
+  check or the TRD §7 table says why it does not.
+
 ## KI-92: UI pass leftovers
 
 - **What:** found while merging UI slices A, B and C (reports in `docs/history/reports/2026-10-24-*-ui-*.md`, not in git).
@@ -672,6 +688,7 @@ Logged 2026-10-12 (phase 1, `make check-work` on `beta/phase1-check-work`).
   - F-25 (past-chat Trace and Metrics follow the latest answer) and F-26 (failed-run display) were verified against mocks only.
   - The blocked-composer message shows the reset time of the 5h window only, not the monthly one.
   - README: the "Quality" row is stale (faithfulness 0.976, 2 Oct); the Sonnet 5.5 v6 "1 confident wrong" row does not say it is the `outside-holmes-boston` decline-then-summarise case.
+  - Deep's trace parity with Auto (steps only; the behaviour half is KI-93).
   - Deferred by owner decision: the Library page.
 - **Phase:** UI redesign (polish); live specs at the pre-deploy recheck.
 - **Done when:** each bullet is fixed or struck with a reason, the live specs pass at the pre-deploy `check-work`, and the README rows are corrected.
