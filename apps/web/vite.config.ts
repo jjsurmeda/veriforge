@@ -27,6 +27,8 @@ const proxy = Object.fromEntries(
     '/library',
     '/web-sources',
     '/documents',
+    '/decisions',
+    '/rerankers',
   ].map((path) => [
     path,
     { target: apiTarget, changeOrigin: true, bypass: bypassDocumentNavigation },

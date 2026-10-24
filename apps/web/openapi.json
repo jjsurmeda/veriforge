@@ -5556,6 +5556,54 @@
         ]
       }
     },
+    "/decisions/stats": {
+      "get": {
+        "operationId": "public_decision_stats_decisions_stats_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "hours",
+            "required": false,
+            "schema": {
+              "default": 24,
+              "title": "Hours",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionStatsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Public Decision Stats",
+        "tags": [
+          "decisions"
+        ]
+      }
+    },
     "/documents/{document_id}": {
       "delete": {
         "operationId": "delete_document_documents__document_id__delete",

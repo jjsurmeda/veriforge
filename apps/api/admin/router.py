@@ -6,7 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Body, Query
 
 from admin import service
-from auth.deps import AdminOrDemoUser, AdminUser
+from auth.deps import AdminOrDemoUser, AdminUser, CurrentUser
 from db.session import SessionDep
 from schemas.admin import (
     AdminModelOut,
@@ -30,6 +30,7 @@ from schemas.admin import (
 )
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+decisions_router = APIRouter(tags=["decisions"])
 
 
 @router.get("/providers", response_model=list[ProviderOut])
@@ -204,6 +205,17 @@ async def decision_stats(
     # decision-layer view. Every other endpoint here stays `AdminUser`: this is
     # a read of aggregate engine statistics, not a route to admin data.
     return await service.decision_stats(session, hours=hours)
+
+
+@decisions_router.get("/decisions/stats", response_model=DecisionStatsOut)
+async def public_decision_stats(
+    _: CurrentUser,
+    session: SessionDep,
+    hours: Annotated[int, Query()] = 24,
+) -> DecisionStatsOut:
+    # Any signed-in user: aggregates only. recent_disagreements names other
+    # users' run ids, so it is dropped here and stays on the admin route.
+    return await service.decision_stats(session, hours=hours, include_disagreements=False)
 
 
 @router.get("/audit", response_model=list[AuditOut])
