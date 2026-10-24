@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowDown, Check, MoreHorizontal, PanelRight, Pencil, Pin, Trash2 } from 'lucide-react'
+import { ArrowDown, Check, MoreHorizontal, PanelLeft, PanelRight, Pencil, Pin, Trash2 } from 'lucide-react'
 import { useNavigate } from '@tanstack/react-router'
 
 import type { MessageOut } from '../../../generated/types.gen'
@@ -102,6 +102,17 @@ export function ChatView({ chatId }: { chatId: string }) {
     media.addEventListener('change', onChange)
     return () => media.removeEventListener('change', onChange)
   }, [])
+
+  // F-30: below 1024px the workspace is a full-width drawer, so Escape closes
+  // it. A menu or popover open inside it handles its own Escape first.
+  useEffect(() => {
+    if (!rightPanelOpen || sidebarOpen) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !event.defaultPrevented && window.innerWidth < 1024) setRightPanelOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [rightPanelOpen, sidebarOpen])
 
   const { resume } = useRunStream(activeRunId, chatId)
   // A finished run has no store entry, so the stream is what replays its
@@ -223,7 +234,7 @@ export function ChatView({ chatId }: { chatId: string }) {
         <main className="flex min-w-0 flex-1 flex-col">
           <header className="relative z-10 flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border bg-main px-3 sm:px-5">
             <div className="flex min-w-0 items-center gap-2">
-              <button type="button" aria-label="Open navigation" onClick={() => setSidebarOpen(true)} className="icon-button size-9 lg:hidden"><PanelRight size={17} strokeWidth={1.75} aria-hidden="true" /></button>
+              <button type="button" aria-label="Open navigation" onClick={() => setSidebarOpen(true)} className="icon-button size-9 max-lg:size-11 lg:hidden"><PanelLeft size={17} strokeWidth={1.75} aria-hidden="true" /></button>
               {threadEditing ? (
                 <div className="flex min-w-0 items-center gap-1">
                   <input aria-label="Rename thread" value={threadTitleDraft} onChange={(event) => setThreadTitleDraft(event.currentTarget.value)} onKeyDown={(event) => { if (event.key === 'Enter') void saveThreadRename(); if (event.key === 'Escape') setThreadEditing(false) }} className="h-8 min-w-0 max-w-[16rem] rounded-lg border border-border bg-surface px-2 text-sm text-fg focus-visible:outline-2 focus-visible:outline-focus-ring" />

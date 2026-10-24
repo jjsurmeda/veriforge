@@ -15,7 +15,7 @@ import type { TourQuestion } from '../../demo/tourData'
 
 export function ChatIndexPage() {
   const navigate = useNavigate()
-  const { data: chats, isPending } = useChatList()
+  const { data: chats, isPending, isError: chatsFailed, refetch: refetchChats } = useChatList()
   const createChat = useCreateChat()
   const library = useLibrary()
   const quota = useQuota()
@@ -80,17 +80,22 @@ export function ChatIndexPage() {
       <ChatSidebar currentChatId={null} mobileOpen={sidebarOpen} onMobileClose={() => setSidebarOpen(false)} />
       <main className="flex min-w-0 flex-1 flex-col">
         <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-3 lg:hidden">
-          <button type="button" aria-label="Open navigation" onClick={() => setSidebarOpen(true)} className="icon-button size-9"><Menu size={17} strokeWidth={1.75} aria-hidden="true" /></button>
+          <button type="button" aria-label="Open navigation" onClick={() => setSidebarOpen(true)} className="icon-button size-9 max-lg:size-11"><Menu size={17} strokeWidth={1.75} aria-hidden="true" /></button>
           <span className="text-sm font-semibold text-fg">Veriforge</span>
-          <span className="size-9" aria-hidden="true" />
+          <span className="size-9 max-lg:size-11" aria-hidden="true" />
         </div>
         <div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-4 py-10 sm:px-8">
           <section className="w-full max-w-[720px]">
             <div className="mb-8 text-center">
-              <h1 className="text-xs font-medium uppercase tracking-[0.12em] text-fg-subtle">No chat selected</h1>
-              <h1 className="mt-3 text-3xl font-semibold tracking-tight text-fg sm:text-4xl">What do you want to know?</h1>
+              <h1 className="text-3xl font-semibold tracking-tight text-fg sm:text-4xl">What do you want to know?</h1>
               <p className="mx-auto mt-3 max-w-[42ch] text-sm leading-6 text-fg-muted">Drop files to start, or just ask. Follow the evidence while the answer forms.</p>
             </div>
+            {chatsFailed && (
+              <p role="status" className="mx-auto mb-4 flex max-w-[52ch] flex-wrap items-center justify-center gap-x-2 gap-y-1 text-center text-xs text-fg-muted">
+                Your earlier chats could not be loaded, so a new question starts a fresh chat.
+                <button type="button" onClick={() => void refetchChats()} className="pressable min-h-8 rounded-lg border border-border bg-surface px-2.5 text-fg hover:bg-raised-hover focus-visible:outline-2 focus-visible:outline-focus-ring max-lg:min-h-11">Try again</button>
+              </p>
+            )}
             <ChatComposer streaming={false} modelId={null} quota={quota.data} emptyThread error={error} deep={deep} web={web} allowDeep={demoLimits.data?.allow_deep ?? true} allowWeb={demoLimits.data?.allow_web ?? true} onFiles={(files) => void onFiles(files)} onModelChange={() => undefined} onToggleDeep={setDeep} onToggleWeb={setWeb} onSend={(message, options) => void startRun(message, options)} onStop={() => undefined} />
             {/* Item 4: the tour replaces the starter questions for a demo
                 account. A visitor who cannot upload has no sources of their

@@ -14,7 +14,8 @@ test('creates and deletes chats from the sidebar', async ({ page }) => {
   await expect(rows).toHaveCount(2)
 
   await rows.first().hover()
-  await rows.first().locator('button[aria-label^="Delete"]').click()
+  await rows.first().getByRole('button', { name: /^Actions for/ }).click()
+  await page.getByRole('menuitem', { name: 'Delete' }).click()
   await expect(rows).toHaveCount(1)
 })
 
@@ -26,8 +27,9 @@ test('offers rename and pin controls for a chat', async ({ page }) => {
   await openNavigation(page)
   const row = page.locator('aside nav > div.group').first()
   await row.hover()
-  await expect(row.getByRole('button', { name: /rename/i })).toBeVisible()
-  await expect(row.getByRole('button', { name: /pin/i })).toBeVisible()
+  await row.getByRole('button', { name: /^Actions for/ }).click()
+  await expect(page.getByRole('menuitem', { name: 'Rename' })).toBeVisible()
+  await expect(page.getByRole('menuitem', { name: 'Pin' })).toBeVisible()
 })
 
 test('collapses the chat sidebar and persists the rail preference', async ({ page, viewport }) => {

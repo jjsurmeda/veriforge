@@ -1,5 +1,5 @@
 import { useNavigate } from '@tanstack/react-router'
-import { LogOut, ShieldCheck, UserRound } from 'lucide-react'
+import { LayoutDashboard, LogOut, Network, UserRound } from 'lucide-react'
 
 import { useMe } from '../features/auth/hooks/useMe'
 import { useQuota } from '../features/chat/hooks/useQuota'
@@ -61,7 +61,8 @@ export function ProfileMenu({ side = 'top', align = 'start', collapsed = false }
           <div className="mb-2 flex items-center justify-between"><span className="text-xs font-medium text-fg">Credits</span>{quota.data?.blocked && <span className="font-mono text-[0.65rem] text-danger">limit reached</span>}</div>
           {quota.isPending ? <p className="text-xs text-fg-muted">Loading quota…</p> : !quota.data ? <p className="text-xs text-fg-muted">Quota unavailable</p> : <div className="space-y-2.5">{windows.map((window) => <div key={window.label} role="group" aria-label={`${window.label} quota`}><div className="mb-1 flex justify-between text-[0.68rem] text-fg-muted"><span>{window.label}</span><span className="font-mono tabular-nums">{formatCredits(window.remaining)} / {formatCredits(window.limit)}</span></div><div className="h-1 overflow-hidden rounded-full bg-raised"><div className="h-full rounded-full bg-fg-strong" style={{ width: `${window.limit > 0 ? Math.min(100, Math.max(0, window.remaining / window.limit * 100)) : 0}%` }} /></div><p className="mt-1 text-[0.62rem] text-fg-subtle">Resets {new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(new Date(window.reset))}</p></div>)}</div>}
         </div>
-        {user?.role === 'admin' && <MenuItemWithIcon onSelect={() => void navigate({ to: '/admin' })}><ShieldCheck size={15} aria-hidden="true" />Admin console</MenuItemWithIcon>}
+        <MenuItemWithIcon onSelect={() => void navigate({ to: '/decision-layer' })}><Network size={15} aria-hidden="true" />Decision layer</MenuItemWithIcon>
+        {user?.role === 'admin' && <MenuItemWithIcon onSelect={() => void navigate({ to: '/admin' })}><LayoutDashboard size={15} aria-hidden="true" />Admin console</MenuItemWithIcon>}
         <MenuItemWithIcon className="text-danger" onSelect={() => void onLogout()}><LogOut size={15} aria-hidden="true" />Log out</MenuItemWithIcon>
       </MenuContent>
     </Menu>

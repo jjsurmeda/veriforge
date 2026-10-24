@@ -65,6 +65,15 @@ describe('ProfileMenu', () => {
   })
 })
 
+describe('ProfileMenu decision layer entry', () => {
+  it('offers the Decision layer to an ordinary user and no Admin console', async () => {
+    renderWithTheme(<ProfileMenu />)
+    await openProfileMenu()
+    expect(screen.getByRole('menuitem', { name: 'Decision layer' })).toBeTruthy()
+    expect(screen.queryByRole('menuitem', { name: 'Admin console' })).toBeNull()
+  })
+})
+
 describe('theme toggle', () => {
   it('sits in the app header and flips data-theme', async () => {
     renderWithTheme(<AppHeader />)
