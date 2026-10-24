@@ -242,9 +242,9 @@ export function ChatComposer({
             }}
           />
         </div>
-        {quota && (
-          <p className={`mt-2 text-center text-2xs lg:hidden ${blocked ? 'text-danger' : 'text-fg-muted'}`}>
-            {blocked ? 'Credit limit reached' : `${formatCredits(quota.remaining_5h)} credits left`} · resets at {resetLabel(quota.reset_at_5h)}
+        {quota && !blocked && (
+          <p className="mt-2 text-center text-2xs text-fg-muted lg:hidden">
+            {formatCredits(quota.remaining_5h)} credits left · resets at {resetLabel(quota.reset_at_5h)}
           </p>
         )}
       </div>
