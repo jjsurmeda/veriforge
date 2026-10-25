@@ -4,6 +4,7 @@ import { FileText, MoreHorizontal, RotateCcw, Trash2 } from 'lucide-react'
 import type { LibraryDocumentOut } from '../../generated/types.gen'
 import { DocumentViewer } from '../library/components/DocumentViewer'
 import { StatusChip } from '../library/components/StatusChip'
+import { OcrBadge } from '../library/components/OcrBadge'
 import { UploadDropzone } from '../library/components/UploadDropzone'
 import { useDocumentChunks } from '../library/hooks/useDocumentChunks'
 import {
@@ -120,6 +121,7 @@ export function SharedLibraryPanel() {
                   {document.tags.join(', ')}
                 </span>
               )}
+              <OcrBadge pageFlags={document.page_flags} />
               <StatusChip status={document.status} />
               <Menu>
                 <MenuTrigger asChild>

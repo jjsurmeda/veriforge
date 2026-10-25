@@ -33,6 +33,8 @@ DEFAULT_DATA: dict[str, Any] = {
         "retry_limit": 2,
     },
     "deep": {"per_run_credit_cap": 40000},
+    # OCR engine id, validated against `ingest.ocr.OCR_ENGINES`.
+    "ocr": {"engine": "tesseract"},
     "guardrails": {
         "enabled": True,
         "actions": {

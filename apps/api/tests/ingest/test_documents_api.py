@@ -297,3 +297,55 @@ async def test_chunks_are_ordered_and_include_heading_path(
         ("Section 2", 1),
     ]
     assert rows[0]["metadata"] == {"n": 1}
+
+
+async def test_image_uploads_are_accepted_by_content_and_renamed_text_is_refused(
+    client: AsyncClient,
+    admin_headers: dict[str, str],
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from PIL import Image
+
+    from tests.ingest.pdfs import png_bytes
+
+    async def fake_defer(document_id: UUID) -> None:
+        return None
+
+    monkeypatch.setattr(get_settings(), "object_storage_dir", str(tmp_path))
+    get_object_store.cache_clear()
+    monkeypatch.setattr("ingest.upload.defer_ingest_document", fake_defer)
+    image = Image.new("RGB", (8, 8), "white")
+    for fmt, mime in (("PNG", "image/png"), ("JPEG", "image/jpeg"), ("WEBP", "image/webp")):
+        body = png_bytes(image, fmt)
+        response = await client.post(
+            "/library/documents",
+            files={"file": (f"scan.{fmt.lower()}", body, mime)},
+            headers=admin_headers,
+        )
+        assert response.status_code == 201, response.text
+        assert response.json()["mime"] == mime
+    fake = await client.post(
+        "/library/documents",
+        files={"file": ("scan.png", b"just some text", "image/png")},
+        headers=admin_headers,
+    )
+    assert fake.status_code == 415, fake.text
+    anonymous = await client.post(
+        "/library/documents", files={"file": ("scan.png", png_bytes(image), "image/png")}
+    )
+    assert anonymous.status_code == 401
+
+
+async def test_unknown_ocr_engine_is_a_clear_422_on_save(
+    client: AsyncClient, admin_headers: dict[str, str]
+) -> None:
+    ok = await client.patch(
+        "/admin/settings", json={"ocr": {"engine": "tesseract"}}, headers=admin_headers
+    )
+    assert ok.status_code == 200, ok.text
+    bad = await client.patch(
+        "/admin/settings", json={"ocr": {"engine": "paddle"}}, headers=admin_headers
+    )
+    assert bad.status_code == 422
+    assert "ocr.engine" in bad.text

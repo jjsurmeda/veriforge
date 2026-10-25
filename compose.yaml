@@ -58,7 +58,11 @@ services:
   # one single-concurrency worker per queue. restart: on-failure covers a
   # worker racing the api service's schema apply on first boot.
   worker-ingest:
-    image: ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+    # Built from Dockerfile.dev-worker: the stock uv image plus Tesseract (OCR).
+    build:
+      context: .
+      dockerfile: Dockerfile.dev-worker
+    image: veriforge-worker-ingest-ocr:dev
     working_dir: /app
     command: sh -c "uv sync && uv run python -m procrastinate --app=ingest.worker.app worker --queues=ingest --concurrency=1"
     restart: on-failure

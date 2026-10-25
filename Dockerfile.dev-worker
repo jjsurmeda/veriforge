@@ -1,0 +1,9 @@
+# Dev-only: the stock uv image plus Tesseract, for `worker-ingest` (the only
+# service that runs OCR). The checkout is still bind-mounted by compose.yaml.
+# Same packages as Dockerfile.api.
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+    tesseract-ocr tesseract-ocr-eng tesseract-ocr-spa tesseract-ocr-fra \
+    tesseract-ocr-chi-sim tesseract-ocr-jpn tesseract-ocr-fil \
+ && rm -rf /var/lib/apt/lists/*

@@ -53,7 +53,7 @@ describe('workspace panel empty states', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Sources' }))
 
     expect(await screen.findByText('Add sources to this chat.')).toBeTruthy()
-    expect(screen.getByText('PDF, DOCX, MD, TXT, up to 20 MB.')).toBeTruthy()
+    expect(screen.getByText('PDF, DOCX, MD, TXT, images, up to 20 MB. Scanned PDFs and images are read with OCR (beta).')).toBeTruthy()
   })
 
   it('Citations, Trace and Metrics each use PanelEmpty', () => {

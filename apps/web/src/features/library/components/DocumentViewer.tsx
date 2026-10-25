@@ -4,7 +4,13 @@ import { AlertTriangle, ArrowLeft, Check, RotateCcw, Tag, X } from 'lucide-react
 import type { ChunkOut, DocumentOut } from '../../../generated/types.gen'
 import { StatusChip } from './StatusChip'
 
-const FLAG_LABELS: Record<string, string> = { low_text: 'Scanned?', table_heavy: 'Table-heavy' }
+const FLAG_LABELS: Record<string, string> = {
+  low_text: 'Scanned?',
+  table_heavy: 'Table-heavy',
+  ocr: 'Read with OCR (beta)',
+  ocr_low_confidence: 'Low OCR confidence',
+  ocr_skipped: 'OCR skipped',
+}
 
 function PageFlags({ document, page }: { document: DocumentOut; page: number | null }) {
   if (page === null) return null
