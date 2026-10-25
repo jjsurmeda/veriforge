@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from functools import partial
 from itertools import combinations
+from uuid import UUID
 
 from db.models import Citation
 from decisions import threshold
@@ -104,16 +105,17 @@ async def _resolve_conflict(env: StageEnv, state: AutoRunState, attempt: Attempt
         )
     else:
         return
-    conflict = _best_conflict(env, attempt, answers)
+    conflict = best_conflict(env.params.run_id, attempt.sides, answers)
     if conflict is not None:
         state.conflict_event = conflict
 
 
-def _best_conflict(
-    env: StageEnv, attempt: Attempt, answers: dict[str, Answer]
+def best_conflict(
+    run_id: UUID | str, sides: list[ScoredChunk], answers: dict[str, Answer]
 ) -> Conflict | None:
+    """The strongest disclosed pair, shared with Deep (KI-93)."""
     best: tuple[ScoredChunk, ScoredChunk, Answer] | None = None
-    for index, (left, right) in enumerate(combinations(attempt.sides, 2)):
+    for index, (left, right) in enumerate(combinations(sides, 2)):
         pair_answer = answers.get(f"conflict_{index}")
         if pair_answer is None:
             continue
@@ -125,7 +127,7 @@ def _best_conflict(
         return None
     left, right, _ = best
     return Conflict(
-        run_id=str(env.params.run_id),
+        run_id=str(run_id),
         citation_ids_left=[str(left.chunk_id)],
         citation_ids_right=[str(right.chunk_id)],
         rule_applied=str(runtime_value("source_priority", "documents_first")),

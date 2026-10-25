@@ -53,6 +53,8 @@ async def run_deep(env: RunEnv) -> None:
         await env.bus.publish(env.run_id, run.gate_event)
     for row in run.entity_unavailable_rows:
         await env.bus.publish(env.run_id, row)
+    if run.conflict_event is not None:
+        await env.bus.publish(env.run_id, run.conflict_event)
     if run.abstain_event is not None:
         await env.bus.publish(env.run_id, run.abstain_event)
 

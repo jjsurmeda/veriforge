@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from config import get_settings
 from db.models import Chat, Citation
 from decisions import DecisionEngine
+from decisions.engine import DecisionUnavailable
 from graph import rewrite as rewrite_node
 from graph.abstain import build_abstain_event, stream_abstention
 from graph.controller import controller_decide
@@ -23,12 +24,14 @@ from graph.history import history_messages
 from graph.hop_retrieve import HopNote, ready_sub_questions, run_hop_batch
 from graph.ingress import IngressOutcome, run_ingress
 from graph.planner import generate_followup, plan_question
+from graph.stages.checks import _conflict_pair_questions, _conflict_sides
 from graph.stages.deep_evidence_stage import (
     GateVerdict,
     deep_entity_guard,
     deep_gate_decision,
     evidence_summary,
 )
+from graph.stages.finish_stage import best_conflict
 from graph.timing import EventPublisher, make_step_timer, make_sub_step_timer
 from providers.llm import complete
 from quota.usage import get_usage_context
@@ -39,7 +42,7 @@ from retrieval.hybrid import ScoredChunk
 from retrieval.web import ensure_web_chunks
 from runtime import runtime_value
 from schemas.decisions import Answer
-from schemas.events import Abstain, Decision, Plan, Retrieval, SubQuestion
+from schemas.events import Abstain, Conflict, Decision, Plan, Retrieval, SubQuestion
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +89,9 @@ class DeepRun:
     context_used: int
     ingress: IngressOutcome
     credits_used: int
+    # KI-93: Auto's conflict check over Deep's final evidence; None = no
+    # disclosure (no pair fired, one source, or the pair call was unreachable).
+    conflict_event: Conflict | None = None
 
     async def stream_answer_with_thinking(self) -> AsyncIterator[tuple[str, str]]:
         """Yields `("content", text)` / `("thinking", text)` pairs — the
@@ -159,6 +165,25 @@ def _decision_event(run_id: UUID, name: str, answer: Answer) -> Decision:
 
 def _rerank_score_key(chunk: ScoredChunk) -> float:
     return chunk.rerank_score if chunk.rerank_score is not None else chunk.fused_score
+
+
+async def _deep_conflict(
+    engine: DecisionEngine, run_id: UUID, question: str, winners: list[ScoredChunk]
+) -> Conflict | None:
+    """Auto's conflict batch (checks.py pairs, finish_stage disclosure rule)
+    over the passages Deep answers from. One extra `decide` call; an outage
+    discloses nothing, as the answer itself is already grounded."""
+    sides = _conflict_sides(winners)
+    if len(sides) < 2:
+        return None
+    try:
+        answers = await engine.decide(
+            state={"run_id": str(run_id), "kind": "conflict"},
+            questions=_conflict_pair_questions(sides, question),
+        )
+    except DecisionUnavailable:
+        return None
+    return best_conflict(run_id, sides, answers)
 
 
 async def prepare_deep_run(
@@ -354,6 +379,7 @@ async def prepare_deep_run(
                 break
 
         abstain_event: Abstain | None = None
+        conflict_event: Conflict | None = None
         gate: GateVerdict | None = None
         entity_rows: list[Decision] = []
         contexts: list[ExpandedContext] = []
@@ -384,6 +410,11 @@ async def prepare_deep_run(
                 contexts = []
                 abstain_event = build_abstain_event(
                     str(params.run_id), winners, offered_actions=["web"]
+                )
+            else:
+                conflict_event = await _step(
+                    "conflict",
+                    lambda: _deep_conflict(engine, params.run_id, params.question, winners),
                 )
         else:
             contexts = []
@@ -423,6 +454,7 @@ async def prepare_deep_run(
         context_used=context_used,
         ingress=ingress,
         credits_used=credits_used,
+        conflict_event=conflict_event,
     )
 
 

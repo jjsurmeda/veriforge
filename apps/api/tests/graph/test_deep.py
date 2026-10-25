@@ -362,3 +362,96 @@ async def test_the_controller_is_shown_the_evidence_grade(db: AsyncSession, user
     assert "[evidence]" in prompts[0]
     assert "mean of top 3 = 1.00" in prompts[0]  # the fake rubric is one-hot
     assert "evidence floor 0.455" in prompts[0]
+
+
+async def _seed_two_documents(db: AsyncSession, user: User) -> tuple[Chat, Message, Any]:
+    chat, message, collection = await _seed(db, user)
+    other = await make_document(db, collection)
+    section = await make_section(db, other)
+    await add_chunk(
+        db, document=other, section=section, ord=0,
+        text_="the AW-2000-XE ships with a 24 month blade warranty",
+        embedding=vec(1, bump=2),
+    )
+    return chat, message, collection
+
+
+class _ConflictJev(_ScriptedJev):
+    def __init__(self, value: float) -> None:
+        super().__init__(["sufficient"])
+        self.value = value
+        self.conflict_calls = 0
+
+    async def decide(self, *, state: Any, questions: dict[str, Question]) -> dict[str, Answer]:
+        if isinstance(state, dict) and state.get("kind") == "conflict":
+            self.conflict_calls += 1
+            return {
+                name: Answer(engine="jev", latency_ms=1, value=self.value, probability=self.value)
+                for name in questions
+            }
+        return await super().decide(state=state, questions=questions)
+
+
+async def test_deep_discloses_a_contradiction_between_two_sources(
+    db: AsyncSession, user_a: User
+) -> None:
+    """KI-93: Auto's conflict batch runs over Deep's final evidence and the
+    same Conflict event comes out, naming one passage per side."""
+    chat, message, collection = await _seed_two_documents(db, user_a)
+    jev = _ConflictJev(0.95)
+
+    run = await prepare_deep_run(
+        get_session_factory(),
+        _params(user_a, chat, message, collection.id),
+        DecisionEngine(jev=jev, mode="jev_only"),
+    )
+
+    assert run.abstain_event is None
+    assert run.conflict_event is not None
+    assert run.conflict_event.run_id == str(message.id)
+    left, right = run.conflict_event.citation_ids_left, run.conflict_event.citation_ids_right
+    assert len(left) == len(right) == 1 and left != right
+    assert "conflict" in run.latency_ms
+
+
+async def test_deep_no_conflict_when_pairs_agree_or_there_is_one_source(
+    db: AsyncSession, user_a: User
+) -> None:
+    chat, message, collection = await _seed_two_documents(db, user_a)
+    agree = _ConflictJev(0.01)
+    run = await prepare_deep_run(
+        get_session_factory(),
+        _params(user_a, chat, message, collection.id),
+        DecisionEngine(jev=agree, mode="jev_only"),
+    )
+    assert agree.conflict_calls == 1
+    assert run.conflict_event is None
+
+    chat, message, collection = await _seed(db, user_a)  # one document
+    single = _ConflictJev(0.95)
+    run = await prepare_deep_run(
+        get_session_factory(),
+        _params(user_a, chat, message, collection.id),
+        DecisionEngine(jev=single, mode="jev_only"),
+    )
+    assert single.conflict_calls == 0
+    assert run.conflict_event is None
+
+
+async def test_deep_abstain_runs_no_conflict_check(db: AsyncSession, user_a: User) -> None:
+    chat, message, collection = await _seed_two_documents(db, user_a)
+    jev = _ConflictJev(0.95)
+    jev._rerank = jev._rubric(*_levels(), 0.0)  # below the floor
+    run = await prepare_deep_run(
+        get_session_factory(),
+        _params(user_a, chat, message, collection.id),
+        DecisionEngine(jev=jev, mode="jev_only"),
+    )
+    assert run.abstain_event is not None
+    assert jev.conflict_calls == 0 and run.conflict_event is None
+
+
+def _levels() -> tuple[dict[str, float], tuple[str, ...]]:
+    from retrieval.rerank import ANSWER_LEVEL_VALUE, ANSWER_LEVELS
+
+    return ANSWER_LEVEL_VALUE, ANSWER_LEVELS

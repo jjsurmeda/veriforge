@@ -195,6 +195,24 @@
  },
  {
   "event": {
+   "label": "conflict",
+   "node": "deep",
+   "seq": 0,
+   "type": "step.started"
+  },
+  "kind": "event"
+ },
+ {
+  "event": {
+   "label": "conflict",
+   "node": "deep",
+   "seq": 0,
+   "type": "step.completed"
+  },
+  "kind": "event"
+ },
+ {
+  "event": {
    "seq": 0,
    "sub_questions": [
     {
