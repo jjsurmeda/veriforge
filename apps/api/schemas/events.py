@@ -30,6 +30,7 @@ class RunStarted(RunEvent):
     source: str = "auto"
     model: str = ""
     settings_version: int | None = None
+    reranker: str | None = None
 
 
 class RetrievedChunk(BaseModel):

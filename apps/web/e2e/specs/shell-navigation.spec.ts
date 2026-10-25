@@ -64,7 +64,7 @@ test('mobile controls are at least 44px', async ({ page, viewport }) => {
   test.skip((viewport?.width ?? 0) >= 1024, 'mobile target floor')
   await mockApi(page, { chats })
   await page.goto('/chat/c1')
-  for (const name of ['Open navigation', 'Add sources', 'Send', 'Filters']) {
+  for (const name of ['Open navigation', 'Thread actions', 'Toggle workspace panel', 'Add sources', 'Send', 'Filters']) {
     const box = await page.getByRole('button', { name, exact: true }).boundingBox()
     expect(box?.height, name).toBeGreaterThanOrEqual(44)
     expect(box?.width, name).toBeGreaterThanOrEqual(44 - 1)

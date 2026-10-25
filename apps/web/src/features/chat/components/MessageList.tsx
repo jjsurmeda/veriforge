@@ -156,7 +156,7 @@ function AnswerFooter({ metrics }: { metrics: Record<string, unknown> | null | u
     tokensIn !== undefined
   if (!hasAnything) return null
   return (
-    <div className="mt-4 flex flex-wrap items-baseline gap-x-3 gap-y-1 border-t border-border pt-2 font-mono text-[0.65rem] tabular-nums text-fg-muted">
+    <div className="mt-4 flex flex-wrap items-baseline gap-x-3 gap-y-1 border-t border-border pt-2 font-mono text-2xs tabular-nums text-fg-muted">
       {faithfulness !== null && faithfulness !== undefined && <span>faithful <span className="text-success">{fmt(faithfulness)}</span></span>}
       {minSupport !== null && minSupport !== undefined && <span>min support {fmt(minSupport)}</span>}
       {totalMs !== null && <span>{(totalMs / 1000).toFixed(1)}s</span>}
@@ -188,7 +188,7 @@ function RevisionBanner({ diff }: { diff: string }) {
         <span>Reviewer revised this answer — show what changed</span>
         <ChevronDown size={14} strokeWidth={1.75} aria-hidden="true" className="text-warning/70 transition-transform duration-150 group-open:rotate-180" />
       </summary>
-      <div className="max-h-48 overflow-auto border-t border-border/50 py-2 font-mono text-[0.65rem] leading-5">
+      <div className="max-h-48 overflow-auto border-t border-border/50 py-2 font-mono text-2xs leading-5">
         {diff.split('\n').map((line, index) => <DiffLine key={`${index}-${line}`} line={line} />)}
       </div>
     </details>
@@ -200,7 +200,7 @@ function SuggestionsRow({ questions, onSelect }: { questions: string[]; onSelect
     <section className="mx-auto w-full max-w-[720px] px-1 pb-4" aria-labelledby="related-follow-ups-heading">
       <div className="rounded-xl border border-border bg-surface p-2">
         <span id="related-follow-ups-heading" className="block px-2 py-1 text-xs font-medium text-fg">Related</span>
-        <span className="block px-2 pb-1 text-[0.65rem] text-fg-muted">Suggested follow-ups:</span>
+        <span className="block px-2 pb-1 text-2xs text-fg-muted">Suggested follow-ups:</span>
         <div className="divide-y divide-border">
           {questions.map((question) => (
             <button key={question} type="button" onClick={() => onSelect(question)} className="flex min-h-11 w-full items-center gap-2 rounded-none px-3 text-left text-sm text-fg transition-colors duration-150 hover:bg-raised-hover focus-visible:outline-2 focus-visible:outline-focus-ring">

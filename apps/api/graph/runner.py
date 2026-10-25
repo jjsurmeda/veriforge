@@ -788,6 +788,7 @@ async def execute_run(spec: RunSpec) -> None:
                 source=source,
                 model=model_id,
                 settings_version=settings_version,
+                reranker=active_reranker_id(),
             ),
         )
         await _touch_heartbeat(session_factory, run_id)

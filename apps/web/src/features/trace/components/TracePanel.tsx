@@ -181,14 +181,16 @@ export function TracePanel({ steps: rawSteps, decisions, thinking, streaming, ch
     { id: 'metrics', label: 'Metrics' },
   ]
   const tracedRunId = started?.run_id
-  const reranker = typeof selectedMessage?.metrics?.reranker === 'string' && (!tracedRunId || !selectedMessage.run_id || selectedMessage.run_id === tracedRunId) ? selectedMessage.metrics.reranker : null
+  const savedReranker = typeof selectedMessage?.metrics?.reranker === 'string' && (!tracedRunId || !selectedMessage.run_id || selectedMessage.run_id === tracedRunId) ? selectedMessage.metrics.reranker : null
+  // A live run has no saved metrics yet; its run.started event names the reranker.
+  const reranker = started?.reranker ?? savedReranker
   const steps = collapseSteps(rawSteps)
   const timelineDecisions = decisions.filter((decision) => !isGateDecision(decision))
 
   return (
     <>
       {isOpen && <button type="button" aria-label="Close workspace panel" onClick={() => setOpen(false)} className="fixed inset-0 z-30 bg-main/70 xl:hidden" />}
-      <aside aria-label="Evidence workspace" onKeyDown={(event) => { if (event.key === 'Escape' && isOpen && !(window.matchMedia?.('(min-width: 1280px)').matches ?? false)) setOpen(false) }} className={`${isOpen ? 'flex' : 'hidden'} ${isExpanded ? 'xl:w-[min(50vw,640px)]' : 'xl:w-[400px]'} fixed inset-y-0 right-0 z-40 w-[min(100vw,400px)] shrink-0 flex-col border-l border-border bg-sidebar text-fg xl:static xl:z-auto`}>
+      <aside aria-label="Evidence workspace" className={`${isOpen ? 'flex' : 'hidden'} ${isExpanded ? 'xl:w-[min(50vw,640px)]' : 'xl:w-[400px]'} fixed inset-y-0 right-0 z-40 w-[min(100vw,400px)] shrink-0 flex-col border-l border-border bg-sidebar text-fg xl:static xl:z-auto`}>
         <header className="flex min-h-14 shrink-0 items-center justify-between gap-1 border-b border-border px-2">
           <nav className="flex min-w-0 items-center gap-0.5" aria-label="Trace tabs" role="tablist">
             {tabs.map((item, index) => (

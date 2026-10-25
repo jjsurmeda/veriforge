@@ -3,6 +3,7 @@
   "event": {
    "mode": "fast",
    "model": "openai/gpt-4o-mini",
+   "reranker": "jev",
    "seq": 0,
    "settings_version": null,
    "source": "upload",

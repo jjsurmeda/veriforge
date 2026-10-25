@@ -123,6 +123,13 @@ describe('trace and metrics content (KI-22)', () => {
     expect(screen.queryByText('No run yet.')).toBeNull()
   })
 
+  it('Metrics shows the reranker from run.started on a live run with no saved message', () => {
+    renderPanel({ started: { type: 'run.started', mode: 'auto', model: 'm-1', source: 'upload', run_id: 'r2', reranker: 'llm' }, streaming: true })
+    fireEvent.click(screen.getByRole('tab', { name: 'Metrics' }))
+    expect(screen.getByText('Reranker')).toBeTruthy()
+    expect(screen.getByText('llm')).toBeTruthy()
+  })
+
   it('Metrics names the run, scales units and links the decision layer', () => {
     renderPanel({
       started: { type: 'run.started', mode: 'deep', model: 'm-1', source: 'upload', run_id: 'r1' },
@@ -142,12 +149,5 @@ describe('trace and metrics content (KI-22)', () => {
     renderPanel({ streaming: true })
     expect(screen.getByRole('tab', { name: /Trace/ }).querySelector('[aria-label="live"]')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Expand workspace panel' }).className).toContain('hidden')
-  })
-
-  it('Escape closes the drawer below xl', () => {
-    const onOpenChange = vi.fn()
-    renderPanel({ onOpenChange })
-    fireEvent.keyDown(screen.getByRole('tab', { name: 'Trace' }), { key: 'Escape' })
-    expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 })

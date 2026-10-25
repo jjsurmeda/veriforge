@@ -3,13 +3,17 @@ sub-question. Reuses slice 3's hybrid retrieval and slice 4's sanitizer —
 no forked retrieval path (python.md package-boundary rule)."""
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from functools import partial
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from decisions import DecisionEngine
 from decisions.sanitize import sanitize_chunks
+from graph.timing import make_sub_step_timer
 from retrieval.cache import get_query_embedding
 from retrieval.expand import dedupe_adjacent
 from retrieval.filters import ClientFilters, Ownership
@@ -21,6 +25,8 @@ from schemas.events import Retrieval, RetrievedChunk, SubQuestion
 EXCERPT_CHARS = 240
 NOTE_CHUNKS = 5
 NOTE_EXCERPT_CHARS = 500
+
+SubStep = Callable[[str, Callable[[], Awaitable[Any]]], Awaitable[Any]]
 
 
 @dataclass(frozen=True)
@@ -54,29 +60,43 @@ async def run_hop(
     chat_id: UUID,
     client_filters: ClientFilters,
     lexical_weight: float,
+    sub_step: SubStep | None = None,
 ) -> HopNote:
-    embedding = await get_query_embedding(session, sub_question.question)
-    ownership = Ownership(user_id=user_id, collection_ids=collection_ids, chat_id=chat_id)
-    fused = await hybrid_search(
-        session,
-        query_text=sub_question.question,
-        query_embedding=embedding,
-        ownership=ownership,
-        filters=client_filters,
-        lexical_weight=lexical_weight,
-    )
-    reranked = dedupe_adjacent(
-        await apply_rerank(
-            get_reranker(engine, str(run_id)),
-            query=sub_question.question,
-            chunks=fused,
+    # CH-5 / KI-93: retrieve, rerank and sanitize show as sub-steps of this
+    # hop, labelled by sub-question so parallel hops stay distinguishable.
+    # No sub_step publisher means no events, same behaviour as before.
+    step = sub_step or make_sub_step_timer(None, node="deep", run_id=run_id)
+
+    async def _retrieve() -> list[ScoredChunk]:
+        embedding = await get_query_embedding(session, sub_question.question)
+        ownership = Ownership(user_id=user_id, collection_ids=collection_ids, chat_id=chat_id)
+        return await hybrid_search(
+            session,
+            query_text=sub_question.question,
+            query_embedding=embedding,
+            ownership=ownership,
+            filters=client_filters,
+            lexical_weight=lexical_weight,
         )
-    )
+
+    fused: list[ScoredChunk] = await step(f"retrieve: {sub_question.id}", _retrieve)
+
+    async def _rerank() -> list[ScoredChunk]:
+        return dedupe_adjacent(
+            await apply_rerank(
+                get_reranker(engine, str(run_id)),
+                query=sub_question.question,
+                chunks=fused,
+            )
+        )
+
+    reranked: list[ScoredChunk] = await step(f"rerank: {sub_question.id}", _rerank)
     # Sanitize after rerank (TRD §11 layer 4, amended for KI-11): only the
     # chunks that can reach the generator are asked about; a dropped chunk
     # is not backfilled from beyond the reranked set.
-    winners, dropped, answers = await sanitize_chunks(
-        engine, run_id=str(run_id), chunks=reranked
+    winners, dropped, answers = await step(
+        f"sanitize: {sub_question.id}",
+        partial(sanitize_chunks, engine, run_id=str(run_id), chunks=reranked),
     )
 
     dropped_ids = {c.chunk_id for c in dropped}
@@ -136,6 +156,7 @@ async def run_hop_batch(
     chat_id: UUID,
     client_filters: ClientFilters,
     lexical_weight: float,
+    sub_step: SubStep | None = None,
 ) -> list[HopNote]:
     """Independent sub-questions in the same batch run concurrently
     (asyncio.gather, not sequential) — this is what keeps Deep's p50 under
@@ -154,6 +175,7 @@ async def run_hop_batch(
                     chat_id=chat_id,
                     client_filters=client_filters,
                     lexical_weight=lexical_weight,
+                    sub_step=sub_step,
                 )
                 for sq in sub_questions
             )
