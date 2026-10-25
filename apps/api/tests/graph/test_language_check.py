@@ -45,7 +45,18 @@ async def test_undetectable_language_does_not_retry() -> None:
     assert regen.languages == []
 
 
-def test_language_line_is_only_added_for_a_retry() -> None:
-    plain = build_grounded_messages("q", [], [])[0]["content"]
-    named = build_grounded_messages("q", [], [], language="Tagalog")[0]["content"]
-    assert named.startswith(plain) and "in Tagalog" in named and "Tagalog" not in plain
+def _system(question: str, **kw: str) -> str:
+    return build_grounded_messages(question, [], [], **kw)[0]["content"]
+
+
+def test_the_detected_language_is_named_on_the_first_generation() -> None:
+    assert _system(TAGALOG_Q).count("in Tagalog, the language of the question") == 1
+    assert "the language of the question" not in _system("What did Darcy say about pride?")
+
+
+def test_an_undetectable_language_adds_nothing() -> None:
+    assert "the language of the question" not in _system("2024?")
+
+
+def test_a_retry_names_the_language_exactly_once() -> None:
+    assert _system(TAGALOG_Q, language="Tagalog").count("the language of the question") == 1

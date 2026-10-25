@@ -311,7 +311,13 @@ async def _run_item(
                     # by the TR-4 decline, and the item records as an
                     # abstention.
                     abstained = True
-                    answer = usefulness_decline(str(pipeline_run_id), deep_run.contexts)
+                    answer = await usefulness_decline(
+                        str(pipeline_run_id),
+                        deep_run.contexts,
+                        question=item.question,
+                        litellm_model=generator_model,
+                        metadata={"run_id": str(pipeline_run_id)},
+                    )
                     tokens_out = count_tokens(answer)
         else:
             run = await prepare_auto_run(
@@ -368,7 +374,13 @@ async def _run_item(
                     # it: the drafted answer is replaced by the TR-4 decline,
                     # and the item is recorded as an abstention.
                     abstained = True
-                    answer = usefulness_decline(str(pipeline_run_id), run.contexts)
+                    answer = await usefulness_decline(
+                        str(pipeline_run_id),
+                        run.contexts,
+                        question=item.question,
+                        litellm_model=generator_model,
+                        metadata={"run_id": str(pipeline_run_id)},
+                    )
                     tokens_out = count_tokens(answer)
 
     # KI-18 (D2 2c): the generation ids are collected here but the stats
