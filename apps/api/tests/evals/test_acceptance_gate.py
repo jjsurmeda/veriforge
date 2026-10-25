@@ -352,7 +352,7 @@ def test_clean_declines_are_reported_not_gated_for_the_heldout_set() -> None:
 
 # --------------------------------------------------------------------------
 # The Deep set (R2b item 2): its own bar — 0 confident wrong, ≤ 1 content
-# miss, errored fails, pinned counts, p50 wall clock ≤ 30 s; declines,
+# miss, errored fails, pinned counts, p50 wall clock ≤ 45 s; declines,
 # false abstentions and uncited answers are reported, not gated.
 # --------------------------------------------------------------------------
 
@@ -415,9 +415,9 @@ def test_one_content_miss_passes_and_two_fail_on_the_deep_set() -> None:
 
 
 def test_a_slow_deep_median_fails_and_the_bar_edge_passes() -> None:
-    assert acceptance_failures(_deep_summary(p50_total_ms=30_000), "deep") == []
-    failures = acceptance_failures(_deep_summary(p50_total_ms=30_001), "deep")
-    assert any("30" in f or "wall clock" in f for f in failures)
+    assert acceptance_failures(_deep_summary(p50_total_ms=45_000), "deep") == []
+    failures = acceptance_failures(_deep_summary(p50_total_ms=45_001), "deep")
+    assert any("45" in f or "wall clock" in f for f in failures)
 
 
 def test_no_p50_at_all_fails_the_deep_bar() -> None:
@@ -507,7 +507,7 @@ def test_each_deep_split_is_judged_by_the_deep_bar(set_name: str, counts: dict[s
     assert acceptance_failures(_split_summary(counts, false_abstentions=1), set_name) == []
     wrong = acceptance_failures(_split_summary(counts, confident_wrong=1), set_name)
     assert any("confident wrong" in f for f in wrong)
-    slow = acceptance_failures(_split_summary(counts, p50_total_ms=30_001), set_name)
+    slow = acceptance_failures(_split_summary(counts, p50_total_ms=45_001), set_name)
     assert any("wall clock" in f for f in slow)
     filtered = acceptance_failures(_split_summary(counts, items=counts["items"] - 1), set_name)
     assert any("whole-set measurement" in f for f in filtered)

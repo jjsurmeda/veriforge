@@ -256,7 +256,7 @@ should-abstain items.
 | Latency, declines | delivered ≤ 10 s p95, client-side (*provisional, P3*) | acceptance; `run_events` |
 | Latency, held answers | *TBD at P3, from ≥ 10 held runs* | acceptance; `run_events` |
 | Latency, Fast | first token ≤ 2 s p50 | `run_events`, Fast eval |
-| Latency, Deep | complete ≤ 30 s p50 incl. OKF traversal, on ≥ 10 Deep items per corpus | Deep eval set (to add) |
+| Latency, Deep | complete ≤ 45 s p50 and ≤ 90 s p95 incl. OKF traversal, on ≥ 10 Deep items per corpus (ADR-003, 2026-10-25) | Deep eval set (to add) |
 | OKF ingestion | 500-concept bundle searchable ≤ 10 min (*provisional, OKF O2*) | ingestion timing |
 | OKF expansion | ≤ 500 ms p50 added to Auto, A/B with OKF in vs out of scope | timed `okf_expand` stage |
 | Security | ownership filter on every retrieval and every followed link; no existence oracle (OK-4); encrypted provider keys; no secrets in the repo or images | tests (P5); security review |

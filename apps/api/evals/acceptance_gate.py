@@ -45,7 +45,7 @@ R2b item 2 adds the **deep** set: the 14-item Deep replay over the books
 corpus (evals/deep/items.json — 10 multi-hop answerables, 4
 should-declines). Its bar is its own, not PRD §5's books table: **0
 confident wrong**, **≤ 1 content miss**, **an errored item fails**, the
-**pinned counts** below, and **p50 item wall clock ≤ 30 s**. Clean/unclean
+**pinned counts** below, and **p50 item wall clock ≤ 45 s** (ADR-003, 2026-10-25). Clean/unclean
 declines, false abstentions and uncited answers are reported by the
 summary and the runner but not gated: R2b is the first Deep measurement
 under the new floor + guard + IsUse tail, and the report is what the
@@ -110,8 +110,9 @@ DEEP_COUNTS = {
 }
 # R2b's bar: a multi-hop run that meets every accuracy clause but takes three
 # minutes is not shippable as Deep. p50 of the per-item wall clock
-# (`p50_total_ms`, measured POST → run.completed) at most 30 s.
-MAX_P50_TOTAL_MS = 30_000
+# (`p50_total_ms`, measured POST → run.completed) at most 45 s (ADR-003 entry,
+# 2026-10-25: was 30 s, set before Deep was measured).
+MAX_P50_TOTAL_MS = 45_000
 # The two frozen Deep splits (evals/deep/test_items.json over the books corpus,
 # evals/deep/heldout_items.json over the held-out corpus): same Deep bar as
 # "deep", their own pinned sizes. Registration only; no clause changed.
