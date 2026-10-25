@@ -8,6 +8,7 @@ decline, drops the citations, records the message as an abstention, and still
 ends the run through the normal tail (a completed run, no run.failed).
 """
 
+from collections.abc import AsyncIterator
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -138,7 +139,9 @@ async def test_a_fail_declines_with_the_found_missing_template(
     )
 
     assert outcome.state == "fail"
-    decline = usefulness_decline(str(RUN_ID), [_context(document_name="doc-1.md")])
+    decline = await usefulness_decline(
+        str(RUN_ID), [_context(document_name="doc-1.md")], **_DECLINE
+    )
     # TR-4: found, missing, offered actions — the same shape a pre-generation
     # abstention renders.
     assert "What I found:" in decline
@@ -402,3 +405,45 @@ async def test_a_passing_isuse_changes_nothing(
     assert seen["text"] == "The warranty is 24 months."
     assert len(await _citation_rows(message.id)) == 2
     assert _event(bus, "run.completed")[0].status == "completed"
+
+
+_DECLINE = {"question": "How long is the warranty?", "litellm_model": "m", "metadata": {}}
+
+
+def _fake_stream(monkeypatch: pytest.MonkeyPatch, calls: list[str], *, fail: bool = False) -> None:
+    async def stream(**kwargs: object) -> AsyncIterator[str]:
+        calls.append(str(kwargs["messages"]))
+        if fail:
+            raise RuntimeError("provider down")
+        yield "TRADUIT"
+
+    monkeypatch.setattr("graph.abstain.stream_completion", stream)
+
+
+async def test_english_decline_is_the_template_with_no_model_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+    _fake_stream(monkeypatch, calls)
+    text = await usefulness_decline(str(RUN_ID), [_context()], **_DECLINE)
+    assert "What is missing:" in text and calls == []
+
+
+async def test_non_english_decline_goes_through_the_translation_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+    _fake_stream(monkeypatch, calls)
+    kw = {**_DECLINE, "question": "Combien de temps dure la garantie du produit ?"}
+    assert await usefulness_decline(str(RUN_ID), [_context()], **kw) == "TRADUIT"
+    assert len(calls) == 1
+
+
+async def test_a_translation_failure_falls_back_to_english(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+    _fake_stream(monkeypatch, calls, fail=True)
+    kw = {**_DECLINE, "question": "Combien de temps dure la garantie du produit ?"}
+    text = await usefulness_decline(str(RUN_ID), [_context()], **kw)
+    assert "What is missing:" in text

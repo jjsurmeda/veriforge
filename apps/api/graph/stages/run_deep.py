@@ -129,7 +129,13 @@ async def run_deep(env: RunEnv) -> None:
                 on_unavailable=_publish_outage_row(env),
             )
             if usefulness.state != "pass":
-                decline_text = usefulness_decline(str(env.run_id), run.contexts)
+                decline_text = await usefulness_decline(
+                    str(env.run_id),
+                    run.contexts,
+                    question=env.user_message,
+                    litellm_model=run.params.litellm_model,
+                    metadata={"run_id": str(run.params.run_id), "user_id": str(run.params.user_id)},
+                )
 
         await usefulness_step("isuse", _run_usefulness)
 

@@ -28,7 +28,7 @@ from typing import TYPE_CHECKING
 
 from decisions import threshold
 from decisions.engine import DecisionUnavailable, EngineProtocol
-from graph.abstain import build_abstain_event, build_abstain_template
+from graph.abstain import build_abstain_event, build_abstain_template, stream_abstention
 from schemas.decisions import Answer, Noul
 from schemas.events import Decision
 
@@ -93,8 +93,19 @@ def is_use_question(
     return Noul(prompt=IS_USE_PROMPT.format(q=question, a=answer, s=sources))
 
 
-def usefulness_decline(run_id: str, contexts: Sequence[ExpandedContext]) -> str:
-    """The TR-4 found/missing decline that replaces a failed answer.
+async def usefulness_decline(
+    run_id: str,
+    contexts: Sequence[ExpandedContext],
+    *,
+    question: str,
+    litellm_model: str,
+    metadata: dict[str, str],
+) -> str:
+    """The TR-4 found/missing decline that replaces a failed answer, in the
+    question's language (KI-95): `stream_abstention` keeps an English or
+    undetectable question as the fixed template with no model call and
+    translates otherwise; a translation failure falls back to the English
+    template, it never fails the run.
 
     The same fixed template a pre-generation abstention renders — plain text,
     no citations (KI-25) — over what was retrieved.
@@ -109,7 +120,19 @@ def usefulness_decline(run_id: str, contexts: Sequence[ExpandedContext]) -> str:
         "The retrieved sources do not directly state what the question "
         "asks for, so the drafted answer was not delivered."
     )
-    return build_abstain_template(abstain)
+    try:
+        text = "".join(
+            [
+                t
+                async for t in stream_abstention(
+                    abstain, litellm_model=litellm_model, question=question, metadata=metadata
+                )
+            ]
+        )
+    except Exception:
+        logger.warning("IsUse decline translation failed; English template", exc_info=True)
+        return build_abstain_template(abstain)
+    return text or build_abstain_template(abstain)
 
 
 async def run_usefulness(
