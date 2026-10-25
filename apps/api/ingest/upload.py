@@ -22,6 +22,9 @@ from schemas.sources import DocumentOut
 
 _SNIFFED_MIMES = {
     "application/pdf",
+    "image/png",
+    "image/jpeg",
+    "image/webp",
     "application/msword",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "application/vnd.ms-excel",

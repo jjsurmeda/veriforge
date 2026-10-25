@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
+from typing import cast
 from uuid import UUID
 
 import pdfplumber
@@ -16,11 +17,13 @@ from db.session import get_session_factory
 from ingest.accept import IngestError, sniff_mime
 from ingest.chunk import SectionDraft, chunk_document
 from ingest.flags import PageScan, flag_pages
-from ingest.parse import PDF_MIME, parse_document
+from ingest.ocr import OcrEngine, get_ocr_engine
+from ingest.parse import PDF_MIME, ParsedDocument, parse_document
 from ingest.storage import get_object_store
 from ingest.summarise import SummaryError, summarise_document
 from observability import signals
 from providers.llm import complete, embed_batch
+from runtime import load_active_runtime
 
 logger = logging.getLogger(__name__)
 
@@ -39,8 +42,10 @@ async def run_pipeline(document_id: UUID) -> None:
         if mime is None:
             raise IngestError("Unsupported or unreadable document type")
 
-        parsed = await parse_document(mime, data)
-        page_flags = await _page_flags(mime, data, parsed.page_texts)
+        parsed = await parse_document(mime, data, engine=await _ocr_engine())
+        page_flags = _with_ocr_flags(
+            await _page_flags(mime, data, parsed.page_texts), parsed
+        )
 
         await _mark_embedding(document_id, mime)
         logger.info("ingest embedding", extra={"document_id": str(document_id)})
@@ -70,6 +75,31 @@ async def run_pipeline(document_id: UUID) -> None:
     except Exception as exc:
         logger.error("ingest failed", extra={"document_id": str(document_id)}, exc_info=True)
         await _mark_failed(document_id, str(exc)[:1000])
+
+
+async def _ocr_engine() -> OcrEngine | None:
+    """The configured engine, None when OCR is switched off. An unknown engine
+    id raises (the document fails with that message); there is no fallback."""
+    if not get_settings().ocr_enabled:
+        return None
+    async with get_session_factory()() as session:
+        runtime = await load_active_runtime(session)
+    return get_ocr_engine(str(runtime.get("ocr.engine", "tesseract")))
+
+
+def _with_ocr_flags(
+    flags: list[dict[str, object]], parsed: ParsedDocument
+) -> list[dict[str, object]]:
+    """Add `ocr`, `ocr_low_confidence` and `ocr_skipped` to the per-page flags."""
+    by_page = {int(cast(int, f["page"])): list(cast(list[str], f["flags"])) for f in flags}
+    for pages, flag in (
+        (parsed.ocr_pages, "ocr"),
+        (parsed.ocr_low_confidence_pages, "ocr_low_confidence"),
+        (parsed.ocr_skipped_pages, "ocr_skipped"),
+    ):
+        for page in pages:
+            by_page.setdefault(page, []).append(flag)
+    return [{"page": page, "flags": by_page[page]} for page in sorted(by_page)]
 
 
 async def _pause_if_busy() -> None:

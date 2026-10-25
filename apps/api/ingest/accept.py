@@ -8,6 +8,9 @@ from errors import AppError
 
 ALLOWED_MIMES = {
     "application/pdf",
+    "image/png",
+    "image/jpeg",
+    "image/webp",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

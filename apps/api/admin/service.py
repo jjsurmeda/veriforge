@@ -24,6 +24,7 @@ from db.models import (
 )
 from decisions.breaker import get_breaker
 from errors import AppError
+from ingest.ocr import OCR_ENGINES
 from netguard import BlockedAddress, assert_public_url
 from providers.credentials import decrypt_provider_key, encrypt_provider_key
 from runtime import RuntimeSettings
@@ -60,6 +61,7 @@ _ALLOWED_SETTINGS = {
     "quota_estimates",
     "retrieval",
     "deep",
+    "ocr",
     "guardrails",
     "web_search_provider",
     "web_search_keys",
@@ -112,6 +114,13 @@ def _validate_settings(data: dict[str, Any]) -> None:
     ):
         raise AppError(
             "invalid_settings", "retrieval.retry_limit must be non-negative", status_code=422
+        )
+    ocr = data.get("ocr", {})
+    if not isinstance(ocr, dict) or str(ocr.get("engine")) not in OCR_ENGINES:
+        raise AppError(
+            "invalid_settings",
+            f"ocr.engine must be one of {sorted(OCR_ENGINES)}",
+            status_code=422,
         )
     thresholds = data.get("thresholds", {})
     if not isinstance(thresholds, dict):

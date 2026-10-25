@@ -91,6 +91,14 @@ class Settings(BaseSettings):
     embedding_batch_size: int = 100
     # New ingestion jobs pause (self-retry) while more chat runs are active.
     ingest_pause_active_runs: int = 3
+    # OCR (beta, TRD §9.1). Compute only: no credits. The engine id itself is
+    # the runtime setting `ocr.engine`; these are the env-level limits.
+    ocr_enabled: bool = True
+    ocr_languages: str = "eng+spa+fra+chi_sim+jpn+fil"
+    ocr_dpi: int = 200
+    ocr_max_pages_per_document: int = 50
+    ocr_page_timeout_seconds: float = 30.0
+    ocr_min_confidence: int = 30
     ingest_pause_retry_seconds: int = 30
     # Procrastinate uses psycopg (not asyncpg); `queue` schema via search_path.
     procrastinate_conninfo: str = "postgresql://veriforge:veriforge@localhost:5432/veriforge"
