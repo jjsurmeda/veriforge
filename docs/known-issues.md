@@ -737,7 +737,16 @@ Logged 2026-10-12 (phase 1, `make check-work` on `beta/phase1-check-work`).
   reasoning. `finish_reason` is not stored.
 - **Done in `60d3214`:** the controller reads the pooled evidence line (G4), Deep runs the conflict check and uses
   the intent blocks. The controller line's wording is not replay-verified: replay it on the 14 Deep items and
-  the books set (Jev calls only, a fraction of a cent) before trusting it.
+  the books set (Jev calls only) before trusting it.
+- **Controller replay 2026-10-26** (`docs/history/reports/2026-10-26-0420-controller-replay.md`, about 613 Jev calls,
+  estimated $0.07 against a $0.05 cap: the brief assumed $0.00003 per call, the measured sample was
+  $0.00012): the evidence line is safe to keep (0 of 14 decoys stop early, 56 decoy hops, highest decoy
+  P(sufficient) 0.37 against 0.50) but its effect is small: 1 of 24 answerables stops earlier, answerable
+  4-hop cap-outs go from 5 to 4, mean P(sufficient) +0.066 on answerable hops. It does not rescue
+  first-and-clerval (0.48), bovary (0.42) or creature-books (0.23). The stop decision is therefore not the
+  main cause of the false abstentions; the generator budget and the merge are. Approximations: grades rebuilt
+  from recorded rerank decision rows, the user's message instead of the rewritten question; 3 of 96 old-prompt
+  hops differ from the recorded verdicts and are excluded from the counts.
 - **Open:** (1) raise or cap the Deep generator's budget and check `finish_reason` (a setting change,
   disclose it); (2) a per-sub-question share when hop winners are merged; (3) partial answers (answer the
   supported clauses, name the missing one) with 0 confident wrong kept; (4) entity-guard locator wording is a
