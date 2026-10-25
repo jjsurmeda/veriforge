@@ -15,7 +15,7 @@ Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 | --- | --- | --- |
 | closed 2026-10-23 | KI-78 | `ho-near-vlad` declines cleanly on DeepSeek V4 Pro v6 (held-out, 2 runs); closed by the ADR-007 generator change |
 | closed 2026-10-23 | KI-79 | `plot-speckled-band` passes in all 5 DeepSeek V4 Pro draws; closed by the ADR-007 generator change |
-| R3 (generator) | KI-86 | the reply language is not enforced: a Tagalog question answered in English (DeepSeek), an English one in German (Sonnet) |
+| before deploy | KI-86 | the reply language is not enforced: a Tagalog question answered in English (DeepSeek), an English one in German (Sonnet) |
 | before deploy | KI-88 | the decision fallback's LLM call can stall for minutes: it has no effective timeout |
 | R3 (Deep) | KI-93 | Deep has no conflict check (Auto discloses contradicting passages; Deep may not); trace parity done in `da72a48` |
 | UI redesign | KI-92 | UI pass leftovers: duplicate Escape handlers, sub-44 px mobile targets, F-34 tiny text, live specs not run, F-25/F-26 checked on mocks only, two README nits |
@@ -618,9 +618,13 @@ Logged 2026-10-12 (phase 1, `make check-work` on `beta/phase1-check-work`).
   `ml-tl-maria-clara` in English (v5 draw 1, v6 draw 2); Sonnet 5.5 answered the
   English `xl-en-samsa` in German (v6). Each is a books content miss
   (`language_mismatch`), and they are the recurring cause of DeepSeek's misses.
-- **Phase:** R3: a deterministic check on the detected question language (retry once
-  with the language named, or fail the run's language step), as its own tested change.
-- **Done when:** a books draw has no `language_mismatch` on two draws in a row.
+- **Phase:** before deploy (owner 2026-10-25). `prompts/grounded_answer.md` already says to answer in the
+  question's language, so more wording is weak. Plan: (1) a post-generation check with `textkit.detect_language`
+  on question and answer, one retry with the language named (code, unit tests, $0; one extra generator call
+  on a mismatch); (2) naming the language in the prompt is a prompt change (v7) and needs the eval gate and
+  a disclosed exception, so decide it after (1).
+- **Done when:** a books draw has no `language_mismatch` on two draws in a row, and the check has tests for a
+  mismatch, a match and an undetectable language.
 
 ## KI-87: decline detection is a regex over wordings
 
