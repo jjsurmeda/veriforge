@@ -15,11 +15,15 @@ logger = logging.getLogger(__name__)
 CONTROLLER_OPTIONS = ["sufficient", "need_more"]
 
 
-def _controller_question(question: str, notes: str) -> Choice:
+def _controller_question(question: str, notes: str, evidence: str | None = None) -> Choice:
+    # G4 (R3 generator report, Check 3): the controller used to read notes only,
+    # blind to how strongly the retrieved passages answer. `evidence` is the
+    # compact grade line from `deep_evidence_stage.evidence_summary`.
+    graded = f"\n\n[evidence]\n{evidence}" if evidence else ""
     return Choice(
         prompt=(
             "Do the notes gathered so far contain enough evidence to fully "
-            f"answer the question?\n\n[question]\n{question}\n\n[notes]\n{notes}"
+            f"answer the question?\n\n[question]\n{question}\n\n[notes]\n{notes}{graded}"
         ),
         options=CONTROLLER_OPTIONS,
         criteria="whether every part of the question is answered by the notes",
@@ -27,7 +31,7 @@ def _controller_question(question: str, notes: str) -> Choice:
 
 
 async def controller_decide(
-    engine: DecisionEngine, *, run_id: str, question: str, notes: str
+    engine: DecisionEngine, *, run_id: str, question: str, notes: str, evidence: str | None = None
 ) -> tuple[bool, Answer]:
     """Returns (sufficient, answer) — `sufficient=False` on a low-confidence
     or ambiguous answer too (same safe-default rule as ingress Choices).
@@ -37,7 +41,7 @@ async def controller_decide(
     (KI-57). Deep is R2b's scope and this is the one line that keeps a decision
     outage from failing a Deep run mid-loop.
     """
-    question_asked = _controller_question(question, notes)
+    question_asked = _controller_question(question, notes, evidence)
     try:
         answers = await engine.decide(
             state={"run_id": run_id, "kind": "controller"},

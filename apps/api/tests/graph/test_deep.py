@@ -338,3 +338,27 @@ async def test_deep_run_gate_outage_declines(db: AsyncSession, user_a: User) -> 
     assert run.contexts == []
     outage = [d for d in run.decision_events if d.engine == "unavailable" and d.stage == "entity"]
     assert outage
+
+
+async def test_the_controller_is_shown_the_evidence_grade(db: AsyncSession, user_a: User) -> None:
+    """G4: each controller question carries the pooled grade line, computed
+    from the passages gathered so far."""
+    prompts: list[str] = []
+
+    class _Spy(_ScriptedJev):
+        async def decide(self, *, state: Any, questions: dict[str, Question]) -> dict[str, Answer]:
+            if "controller" in questions:
+                prompts.append(getattr(questions["controller"], "prompt", ""))
+            return await super().decide(state=state, questions=questions)
+
+    chat, message, collection = await _seed(db, user_a)
+    engine = DecisionEngine(jev=_Spy(["sufficient"], rerank_grade=0.9), mode="jev_only")
+
+    await prepare_deep_run(
+        get_session_factory(), _params(user_a, chat, message, collection.id), engine
+    )
+
+    assert len(prompts) == 1
+    assert "[evidence]" in prompts[0]
+    assert "mean of top 3 = 1.00" in prompts[0]  # the fake rubric is one-hot
+    assert "evidence floor 0.455" in prompts[0]

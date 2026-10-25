@@ -27,6 +27,7 @@ from graph.stages.deep_evidence_stage import (
     GateVerdict,
     deep_entity_guard,
     deep_gate_decision,
+    evidence_summary,
 )
 from graph.timing import EventPublisher, make_step_timer, make_sub_step_timer
 from providers.llm import complete
@@ -343,6 +344,9 @@ async def prepare_deep_run(
                     run_id=str(params.run_id),
                     question=rewritten,
                     notes="\n\n".join(notes),
+                    evidence=evidence_summary(
+                        dedupe_adjacent(sorted(all_kept, key=_rerank_score_key, reverse=True))
+                    ),
                 ),
             )
             decision_events.append(_decision_event(params.run_id, "controller", controller_answer))
