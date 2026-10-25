@@ -3,11 +3,13 @@ paid model by default, and must still be able to bind the free pool for a
 local experiment. No network: the catalogue is passed in (testing.md)."""
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from config import ASYNC_JUDGE_MODEL_ID
 from db.models import LlmProvider, Model, ModelRole
 from db.session import get_session_factory
-from scripts.seed_models import ROLES, FreeModel, pick, seed
+from scripts.seed_models import ROLES, FreeModel, bind_async_judge, pick, seed
 
 JEV = "typesafe/jev-1.13"
 DEFAULT_MODEL = "openai/gpt-4o-mini"
@@ -150,3 +152,33 @@ async def test_free_flag_restores_the_free_pool_after_the_paid_default() -> None
 
     assert roles["generator"].endswith(":free")
     assert roles["decision_engine"] == JEV
+
+
+async def test_async_judge_binding_is_seeded_once_and_an_admin_change_survives() -> None:
+    factory = get_session_factory()
+    async with factory() as session, session.begin():
+        provider = (
+            await session.execute(select(LlmProvider).where(LlmProvider.name == "openrouter"))
+        ).scalar_one_or_none()
+        if provider is None:
+            provider = LlmProvider(name="openrouter", kind="openrouter", enabled=True)
+            session.add(provider)
+            await session.flush()
+        for model_id in (ASYNC_JUDGE_MODEL_ID, DEFAULT_MODEL):
+            await session.execute(
+                pg_insert(Model)
+                .values(provider_id=provider.id, model_id=model_id, price_in=1, price_out=1,
+                        context_window=100_000, capabilities={}, enabled=True)
+                .on_conflict_do_nothing(index_elements=[Model.provider_id, Model.model_id])
+            )
+        await session.execute(delete(ModelRole).where(ModelRole.role == "async_judge"))
+
+    await bind_async_judge()
+    assert (await _roles())["async_judge"] == ASYNC_JUDGE_MODEL_ID
+
+    async with factory() as session, session.begin():
+        await session.execute(
+            update(ModelRole).where(ModelRole.role == "async_judge").values(model_id=DEFAULT_MODEL)
+        )
+    await bind_async_judge()
+    assert (await _roles())["async_judge"] == DEFAULT_MODEL

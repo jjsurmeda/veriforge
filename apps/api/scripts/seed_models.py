@@ -38,6 +38,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from config import (
+    ASYNC_JUDGE_MODEL_ID,
     DEFAULT_MODEL_ID,
     GENERATOR_CONTEXT_WINDOW,
     GENERATOR_MODEL_ID,
@@ -179,6 +180,31 @@ async def bind_generator() -> None:
     print(f"generator -> {GENERATOR_MODEL_ID}")
 
 
+async def bind_async_judge() -> None:
+    """Bind the `async_judge` role to its default model if it has no binding.
+
+    Unlike the other roles this never overwrites: the admin Roles page is where it is
+    changed, and a reseed must not undo that. Skipped when the model is not seeded."""
+    factory = get_session_factory()
+    async with factory() as session, session.begin():
+        found = (
+            await session.execute(
+                select(Model.id).where(
+                    Model.model_id == ASYNC_JUDGE_MODEL_ID, Model.enabled.is_(True)
+                )
+            )
+        ).scalar_one_or_none()
+        if found is None:
+            print(f"async_judge: {ASYNC_JUDGE_MODEL_ID} is not seeded; role left unbound")
+            return
+        await session.execute(
+            pg_insert(ModelRole)
+            .values(role="async_judge", model_id=ASYNC_JUDGE_MODEL_ID)
+            .on_conflict_do_nothing(index_elements=[ModelRole.role])
+        )
+    print(f"async_judge -> {ASYNC_JUDGE_MODEL_ID} (kept if already bound)")
+
+
 async def seed(
     catalogue: dict[str, FreeModel] | None = None,
     override: str | None = None,
@@ -218,6 +244,7 @@ async def seed(
                 )
         if override is None:
             await bind_generator()
+            await bind_async_judge()
         print(f"rebound {len(ROLES)} roles; decision_engine untouched")
         return
 

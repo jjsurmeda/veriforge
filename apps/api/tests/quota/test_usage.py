@@ -138,3 +138,24 @@ async def test_usage_context_is_task_local(db: AsyncSession) -> None:
         from quota.usage import reset_usage_context
 
         reset_usage_context(token)
+
+
+async def test_the_async_judge_role_binding_overrides_the_requested_model(db: AsyncSession) -> None:
+    user, run_id = await _run(db)
+    context = UsageContext(
+        session_factory=get_session_factory(),
+        user_id=user.id,
+        run_id=run_id,
+        model_roles={"async_judge": "openrouter/openai/gpt-4o-mini"},
+    )
+
+    bound = await context.resolve_model("openrouter/anthropic/claude-haiku-4.5", "async_judge")
+    unbound = UsageContext(
+        session_factory=get_session_factory(), user_id=user.id, run_id=run_id, model_roles={}
+    )
+
+    assert bound == "openrouter/openai/gpt-4o-mini"
+    assert (
+        await unbound.resolve_model("openrouter/anthropic/claude-haiku-4.5", "async_judge")
+        == "openrouter/anthropic/claude-haiku-4.5"
+    )

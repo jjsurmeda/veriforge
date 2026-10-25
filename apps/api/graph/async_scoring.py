@@ -9,7 +9,7 @@ import logging
 import random
 from uuid import UUID
 
-from config import get_settings
+from config import ASYNC_JUDGE_MODEL_ID, get_settings
 from evals.judge import judge_answer
 from observability import tracing
 from quota.usage import get_usage_context
@@ -18,7 +18,8 @@ from runtime import runtime_value
 
 logger = logging.getLogger(__name__)
 
-_SMALL_MODEL = "openrouter/anthropic/claude-haiku-4.5"
+# The `async_judge` role binding overrides this per call (providers.llm resolves the role).
+_SMALL_MODEL = f"openrouter/{ASYNC_JUDGE_MODEL_ID}"
 
 
 def _push_scores(trace_id: str, scores: dict[str, float]) -> None:

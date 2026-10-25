@@ -192,6 +192,11 @@ GENERATOR_PRICE_IN = 0.955
 GENERATOR_PRICE_OUT = 1.911
 GENERATOR_CONTEXT_WINDOW = 1_048_576
 
+# The async quality judge (graph/async_scoring.py) is the `async_judge` role. This is its default
+# binding: seeded once, then an admin changes it on the Roles page. Without a binding the call
+# still runs on this model.
+ASYNC_JUDGE_MODEL_ID = "anthropic/claude-haiku-4.5"
+
 
 def is_free_model(model_id: str) -> bool:
     """Whether a model id is an OpenRouter free-tier id.
