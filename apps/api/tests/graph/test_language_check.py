@@ -6,13 +6,14 @@ from graph.generate import build_grounded_messages
 from graph.stages.language_check import fix_reply_language
 
 TAGALOG_Q = "Sino ang may-akda ng Noli Me Tangere at ano ang kanyang layunin sa nobela?"
-ENGLISH_A = "The author of the novel is Jose Rizzal, and the purpose of the book is to expose the abuses."
-TAGALOG_A = "Ang may-akda ng nobela ay si Jose Rizal, at ang layunin niya ay ilantad ang mga pang-aabuso."
+ENGLISH_A = "The author of the novel is Jose Rizal, and the book exists to expose abuses."
+TAGALOG_A = "Ang may-akda ng nobela ay si Jose Rizal, at layunin niyang ilantad ang pang-aabuso."
 
 
 class Regen:
     def __init__(self, reply: str) -> None:
-        self.reply, self.languages = reply, []
+        self.reply = reply
+        self.languages: list[str] = []
 
     def __call__(self, language: str) -> AsyncIterator[str]:
         self.languages.append(language)
