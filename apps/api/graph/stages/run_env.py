@@ -53,6 +53,8 @@ class FinishRequest:
     # the TR-4 decline, so the tail persists it and records the message as an
     # abstention without running the reviewer over the decline itself.
     decline_text: str | None = None
+    # The generator's provider finish_reason, kept in runs.metrics only.
+    finish_reason: str | None = None
 
 
 FinishRun = Callable[["FinishRequest"], Awaitable[None]]

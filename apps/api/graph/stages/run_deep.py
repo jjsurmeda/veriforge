@@ -168,6 +168,7 @@ async def run_deep(env: RunEnv) -> None:
             abstained=run.abstain_event is not None,
             plan=plan,
             decline_text=decline_text,
+            finish_reason=run.generation_finish_reason,
         )
     )
 

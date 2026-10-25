@@ -92,6 +92,12 @@ class DeepRun:
     # KI-93: Auto's conflict check over Deep's final evidence; None = no
     # disclosure (no pair fired, one source, or the pair call was unreachable).
     conflict_event: Conflict | None = None
+    # The provider's finish_reason for the grounded generation ("length" = the
+    # budget ended the answer); None until generated or when not reported.
+    generation_finish_reason: str | None = None
+
+    def _record_finish(self, reason: str) -> None:
+        self.generation_finish_reason = reason
 
     async def stream_answer_with_thinking(self) -> AsyncIterator[tuple[str, str]]:
         """Yields `("content", text)` / `("thinking", text)` pairs — the
@@ -129,6 +135,8 @@ class DeepRun:
                     },
                     intent=self.ingress.intent,
                     on_reasoning=on_reasoning,
+                    max_tokens=get_settings().deep_generator_max_tokens,
+                    on_finish=self._record_finish,
                 ):
                     await queue.put(("content", token))
             finally:
