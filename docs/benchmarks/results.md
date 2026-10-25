@@ -51,9 +51,9 @@ small sample.
 DeepSeek is third-party served through OpenRouter, so latency and data handling vary by
 provider.
 
-Cost: the generator price recorded in `config.py` ($0.4427 / $0.8853 per 1M tokens) may be stale
-against the public list ($0.955 / $1.911) and has not been checked against the billed rate
-(KI-90). This page therefore quotes quality, not generator cost.
+Cost: the generator price in `config.py` was $0.4427 / $0.8853 per 1M tokens when these runs were
+recorded. It is now the OpenRouter list price, $0.955 / $1.911: billed cost of 53 calls was 0.98x of
+that (KI-90, ADR-007). This page still quotes quality, not generator cost.
 
 ## Held-out (31 items)
 

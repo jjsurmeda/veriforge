@@ -65,9 +65,9 @@ Decision-layer cost per run (32 runs with decision calls, real USD):
 | Jev decisions | $0.1252 | $0.0039 |
 | LLM judge decisions (shadow) | $0.8706 | $0.0272 (7.0x Jev) |
 
-The generator's cost is not quoted here: the generator price constants in `config.py`
-may be stale (ADR-007 price check, KI-90) and have not been checked against the rate
-the key is billed.
+The generator's cost is not quoted here. Its price constants in `config.py` were corrected on
+2026-10-25 to the OpenRouter list price after a billed-rate check (KI-90, ADR-007); the runs on
+this page were recorded before that.
 
 ### Caveats specific to this table
 

@@ -106,8 +106,8 @@ async def test_seed_binds_the_generator_to_deepseek_with_its_price(
                 )
             )
         ).one()
-    assert float(row.price_in) == pytest.approx(0.4427)
-    assert float(row.price_out) == pytest.approx(0.8853)
+    assert float(row.price_in) == pytest.approx(0.955)
+    assert float(row.price_out) == pytest.approx(1.911)
     assert row.enabled is True
 
 

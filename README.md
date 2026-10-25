@@ -52,8 +52,9 @@ means one run, so it can move between runs (the same DeepSeek configuration scor
   against 13/16 for gpt-4o-mini, not distinguishable.
 - **Judge latency is in-flight time.** Wall time in the shadow run was inflated by our own
   queueing (rerank wall p50 150 s, in flight 95 s).
-- **Generator cost is not quoted.** The generator price in the config is unchecked against the billed
-  rate (KI-90). Decision-layer costs are exact from OpenRouter generation records.
+- **Generator cost is not quoted.** The generator price in the config was corrected to OpenRouter's
+  list price after a billed-rate check (53 calls billed 0.98x of it; single runs swing 0.77x to 1.12x
+  with provider routing; KI-90, ADR-007). Decision-layer costs are exact from OpenRouter generation records.
 - **Three changes were made after results, each approved by the owner:** `outside-whitman` was removed
   from the books set (57 to 56 items; DeepSeek v5 had scored 54, 55 and 52 of 57); prompt v6 replaced
   v5; the scorer's decline detection was widened (`7e73ffe`; Sonnet 5.5 v5's reply to

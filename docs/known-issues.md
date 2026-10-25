@@ -7,7 +7,7 @@ The Phase column is authoritative; section placement below is from the first tri
 Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 - When you fix one, move it to the archive in the same commit, with the fixing commit hash.
 - A new finding that breaks no check is added under **post-beta** and opens no lane.
-- New IDs continue from KI-93.
+- New IDs continue from KI-94.
 
 ## Index
 
@@ -20,7 +20,8 @@ Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 | R3 (Deep) | KI-93 | Deep has no conflict check (Auto discloses contradicting passages; Deep may not); trace parity done in `da72a48` |
 | UI redesign | KI-92 | UI pass leftovers: duplicate Escape handlers, sub-44 px mobile targets, F-34 tiny text, live specs not run, F-25/F-26 checked on mocks only, two README nits |
 | before deploy | KI-91 | `UsageContext.record_call` raises `MultipleResultsFound` once a run has an `async_judge` ledger row: its aggregate-row query is not filtered by role |
-| before deploy | KI-90 | generator price constants (`config.py`) may be stale: the public list shows DeepSeek V4 Pro at about 2x the recorded $0.4427 / $0.8853 per 1M |
+| closed 2026-10-25 | KI-90 | generator price constants set to the OpenRouter list price after a billed-rate check (53 calls billed 0.98x of it) |
+| before deploy | KI-94 | every run triggers an async quality judge on a hardcoded Haiku 4.5 (about $0.007 per run, more than the generator); it bypasses `model_roles` |
 | before deploy | KI-89 | `retrieval_statement_timeout_ms` (`SET LOCAL`) leaks onto the shared hop session and cancels an embedding cache write |
 | R3 (scorer) | KI-87 | decline detection is a regex over wordings; new phrasings slip past it (3 found in 3 days) |
 | closed 2026-10-22 | KI-80 | outside-whitman removed from the books set: the only passage says a distinction exists but not what it is |
@@ -710,12 +711,30 @@ Logged 2026-10-12 (phase 1, `make check-work` on `beta/phase1-check-work`).
   `async_judge` rows), and a test records two `async_judge` calls and a late shadow call
   on one run without an error and with every call in the ledger.
 
+## KI-94: the async quality judge runs on every run, on a hardcoded Haiku 4.5
+
+- **What:** `graph/async_scoring.py` (`_SMALL_MODEL = "openrouter/anthropic/claude-haiku-4.5"`) scores
+  context precision, context recall and answer relevance after each run and pushes them to Langfuse.
+  It runs unless `trace_sample_rate` (default 1.0) skips it, uses a model id that is not in
+  `model_roles`, and cost $0.116 over 17 runs in the KI-90 measurement (about $0.007 per run), more
+  than the generator ($0.0735 for the same 17 runs). Found 2026-10-25 reading the KI-90 run.
+- **Phase:** before deploy (operator cost per user message; a public demo multiplies it).
+- **Done when:** the sample rate for deployed use is decided and set, the model comes from a role
+  (so it can be a cheaper one), and any README or benchmark per-run cost figure says whether it
+  includes this judge (not checked).
+
 ## KI-90: generator price constants may be stale
 
 - **What:** `GENERATOR_PRICE_IN/OUT` in `config.py` ($0.4427 / $0.8853 per 1M) feed the
   cost accounting for the generator role. The public OpenRouter model list on
   2026-10-23 shows `deepseek/deepseek-v4-pro` at $0.955 / $1.911. Whether the key is
   billed at that rate is not checked (the key and credit endpoints were not used).
+- **Closed 2026-10-25.** 53 `deepseek-v4-pro` generation records (36 short shadow-run calls, 17 full generator
+  prompts from a 16-item books run, $0.277 for the whole run) billed $0.240: 0.98x the cost at the list price
+  ($0.955 / $1.911) and 2.12x the old constants. Single samples ran 0.77x and 1.12x; by provider 0.07x (cached)
+  to 1.93x. `GENERATOR_PRICE_IN/OUT` and the catalogue row now use the list price; ADR-007, README and the
+  benchmark pages are corrected. Credits still use a fixed price; settling from the record's `total_cost`
+  would be exact if the drift matters (not opened).
 - **Phase:** before deploy (quota settlement and the README cost claims use these).
 - **Done when:** the billed rate is read from a generation record of a real run, the
   constants and `seed_models.py` row match it, and ADR-007's cost line is corrected.
