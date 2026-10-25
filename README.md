@@ -82,7 +82,8 @@ Deep is being improved. Before the last change dev scored 4 false abstentions of
   there shows no detection.
 - Held-out on the LLM judge: not run.
 - A second unseen set: the held-out set has been run several times and is one set.
-- OCR and multimodal inputs.
+- OCR (beta, Tesseract): built, but no accuracy measurement on real scans, and ruled tables are not read.
+- Multimodal inputs other than OCR'd text.
 - Laya and Microsoft-Decision-1 as decision models (not pluggable yet; KI-85).
 
 ## Which model runs what

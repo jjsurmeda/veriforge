@@ -344,6 +344,31 @@ their surrounding context.
 1 light job; embedding calls are batched; the worker pauses new ingestion
 jobs when more than 3 chat runs are active.
 
+#### OCR (beta)
+
+Scanned PDF pages and image uploads are read with OCR. Compute only: no credits.
+
+- **What is OCR'd.** Per PDF page: when the page is `low_text` (under 200
+  characters) or embedded images cover more than 50% of its area (a full-page
+  scan is about 100%; a figure with a caption stays well under). The OCR text
+  replaces the text layer only when it is longer. A digital PDF with no such
+  page is parsed exactly as before and never reaches the engine. An uploaded
+  PNG, JPEG or WebP is one page; its OCR text is the document.
+- **Flags.** `page_flags` gains `ocr`, `ocr_low_confidence` (page mean word
+  confidence under 60) and `ocr_skipped` (disabled, binary missing, page cap or
+  timeout). Citations keep page numbers.
+- **Engine.** `ocr.engine` (runtime setting, default `tesseract`, admin
+  Settings) is validated against `ingest/ocr.py:OCR_ENGINES`; an unknown id is
+  a 422 on save and a failed ingest, never a fallback. There is no UI picker.
+  Adding an engine is one class and one registry entry in that file.
+- **Limits** (env, `config.py`): `ocr_enabled`, `ocr_languages` (whitelist of
+  Tesseract codes; default `eng+spa+fra+chi_sim+jpn+fil`, Tagalog is `fil`),
+  `ocr_dpi` 200, `ocr_max_pages_per_document` 50, `ocr_page_timeout_seconds`
+  30 (the subprocess is killed), `ocr_min_confidence` 30 (words below it are
+  dropped). One OCR at a time per worker; image pixels capped at 90 M.
+- **Not supported.** Tesseract does not read ruled tables (1 of 18 cells in
+  the bake-off), so a scanned table comes out as scrambled text.
+
 ### 9.2 Retrieval query
 
 ```

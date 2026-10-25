@@ -7,7 +7,7 @@ The Phase column is authoritative; section placement below is from the first tri
 Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 - When you fix one, move it to the archive in the same commit, with the fixing commit hash.
 - A new finding that breaks no check is added under **post-beta** and opens no lane.
-- New IDs continue from KI-97.
+- New IDs continue from KI-98.
 
 ## Index
 
@@ -21,6 +21,7 @@ Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 | closed 2026-10-25 | KI-88 | the decision fallback has one deadline over its retries and failover, `llm_timeout_seconds` = 90 s (`2b92d0c`); a tighter ceiling would break the slow judge-only rerank |
 | closed 2026-10-26 | KI-93 | Deep runs Auto's conflict check and its trace matches Auto's stages (`da72a48`, `60d3214`) |
 | R3 (Deep) | KI-97 | Deep false abstentions: replay found entity-guard stops (locator words, a starved second clause) and IsUse stops that look like the 2048-token generator budget used up by reasoning; the controller-grade change is merged but unverified |
+| post-beta | KI-98 | Tesseract OCR (beta) reads text pages but not ruled tables (1 of 18 cells in the bake-off); no accuracy number on real scans yet |
 | UI redesign | KI-92 | UI pass leftovers: duplicate Escape handlers, sub-44 px mobile targets, F-34 tiny text, live specs not run, F-25/F-26 checked on mocks only, two README nits |
 | closed 2026-10-25 | KI-91 | usage recording selects only the run's aggregate ledger row (`781714a`) |
 | closed 2026-10-25 | KI-90 | generator price constants set to the OpenRouter list price after a billed-rate check (53 calls billed 0.98x of it) |
@@ -693,6 +694,15 @@ Logged 2026-10-12 (phase 1, `make check-work` on `beta/phase1-check-work`).
   (with G6/G10) and needs the eval gate.
 - **Done when:** Deep's trace lists the same stages as Auto, and Deep either runs the conflict
   check or the TRD §7 table says why it does not.
+
+## KI-98: OCR (beta) does not read ruled tables
+
+- **What:** Tesseract reads 1 of 18 cells of a ruled table
+  (`docs/history/reports/2026-10-26-0356-ocr-bakeoff.md`). A scanned table is
+  indexed as scrambled text, and the page is not flagged `table_heavy` because
+  that flag counts text-layer cells. Real-scan accuracy is unmeasured.
+- **Phase:** post-beta. The engine is swappable (`ocr.engine`); a table-capable
+  engine is one registry entry.
 
 ## KI-92: UI pass leftovers
 
