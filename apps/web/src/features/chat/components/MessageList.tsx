@@ -23,6 +23,7 @@ import {
   worstVerdict,
   type ChipSource,
 } from '../../trace/components/CitationChip'
+import { SourceLink } from '../../trace/components/SourceLink'
 import { CitationsTab } from '../../trace/components/CitationsTab'
 import { DeclineReason } from '../../trace/components/DeclineReason'
 import type { RunLive } from '../store'
@@ -278,8 +279,9 @@ function SourceCardRow({ message, onOpenSources, hoveredCitation, onHoverCitatio
 
               <summary onClick={() => onOpenSources?.(citation.n)} className="flex min-h-16 cursor-pointer list-none flex-col gap-1 px-3 py-2 focus-visible:outline-2 focus-visible:outline-focus-ring [&::-webkit-details-marker]:hidden">
                 <span className="flex items-center justify-between gap-2">
-                  <span className="truncate text-xs font-medium text-fg">[{citation.n}] {citation.document_name ?? 'Source'}</span>
+                  <span className="truncate text-xs font-medium text-fg">[{citation.n}] {citation.document_name ?? (citation.url ? 'Web source' : 'Source')}</span>
                 </span>
+                {citation.url && <SourceLink url={citation.url} />}
                 <span className="line-clamp-2 text-2xs leading-4 text-fg-muted">{citation.excerpt ?? '(source expired)'}</span>
                 <span className="flex items-center justify-between gap-2">
                   <VerdictBadge verdict={citation.verdict ?? null} />

@@ -4,6 +4,7 @@ import { ChevronDown, FileText, Globe2, Quote } from 'lucide-react'
 import type { MessageOut, RetrievedChunk } from '../../../generated/types.gen'
 import { PanelEmpty } from '../../../components/ui/PanelEmpty'
 import { VerdictBadge } from './CitationChip'
+import { SourceLink } from './SourceLink'
 
 interface Props {
   chunks: RetrievedChunk[]
@@ -16,7 +17,10 @@ function SourceName({ chunk }: { chunk: RetrievedChunk }) {
   return (
     <span className="flex min-w-0 items-center gap-1.5">
       {chunk.source_type === 'web' ? <Globe2 size={13} strokeWidth={1.75} className="shrink-0 text-fg-muted" aria-hidden="true" /> : <FileText size={13} strokeWidth={1.75} className="shrink-0 text-fg-muted" aria-hidden="true" />}
-      <span className="truncate">{chunk.document_name ?? (chunk.source_type === 'web' ? 'Web source' : 'Source')}</span>
+      <span className="min-w-0">
+        <span className="block truncate">{chunk.document_name ?? (chunk.source_type === 'web' ? 'Web source' : 'Source')}</span>
+        {chunk.source_type === 'web' && <SourceLink url={chunk.url} />}
+      </span>
     </span>
   )
 }
@@ -26,11 +30,12 @@ function chunkForCitation(citation: NonNullable<MessageOut['citations']>[number]
     chunk_id: citation.chunk_id ?? `citation-${citation.n}`,
     document_id: citation.document_id ?? null,
     document_name: citation.document_name ?? null,
+    url: citation.url ?? null,
     page: citation.page ?? null,
     heading_path: citation.heading_path ?? null,
     excerpt: citation.excerpt ?? null,
     rerank_score: citation.rerank_score ?? null,
-    source_type: 'document',
+    source_type: citation.url ? 'web' : 'document',
   }
 }
 
