@@ -747,10 +747,16 @@ Logged 2026-10-12 (phase 1, `make check-work` on `beta/phase1-check-work`).
   main cause of the false abstentions; the generator budget and the merge are. Approximations: grades rebuilt
   from recorded rerank decision rows, the user's message instead of the rewritten question; 3 of 96 old-prompt
   hops differ from the recorded verdicts and are excluded from the counts.
-- **Open:** (1) raise or cap the Deep generator's budget and check `finish_reason` (a setting change,
-  disclose it); (2) a per-sub-question share when hop winners are merged; (3) partial answers (answer the
-  supported clauses, name the missing one) with 0 confident wrong kept; (4) entity-guard locator wording is a
-  Jev question text change, not a threshold change: leave it until (1) to (3) are measured.
+- **Round 2 merged in `19fe0b2` (not yet measured by a draw):** (1) `deep_generator_max_tokens` = 8192 for Deep only
+  (Auto stays 2048) and the provider `finish_reason` recorded in `runs.metrics`; a setting change, disclosed
+  here. Risk: reasoning runs at about 50 tokens/s, so a runaway thought could add a minute and push the p95
+  past 90 s; check `finish_reason` and generate time in the next draw and lower the setting if needed.
+  (2) `merge_winners`: each sub-question's best two chunks come first; on the 38 recorded runs 8 change
+  (4 answerable, 4 not-in-sources), no gold term is lost, `cross-two-elizabeths` does not change (its second
+  sub-question already holds 2 of 6 slots), so the recorded upside is small.
+- **Still open:** (3) partial answers (answer the supported clauses, name the missing one) with 0 confident
+  wrong kept; (4) entity-guard locator wording is a Jev question text change, not a threshold change: leave it
+  until a draw shows what (1) and (2) fixed.
 - **Phase:** R3 (Deep); post-deploy unless the owner moves it earlier.
 - **Done when:** a new frozen unseen Deep set (about 20 items) passes at least 80% of answerable items with
   0 confident wrong over 2 draws.
