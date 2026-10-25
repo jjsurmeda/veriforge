@@ -159,3 +159,36 @@ async def test_the_async_judge_role_binding_overrides_the_requested_model(db: As
         await unbound.resolve_model("openrouter/anthropic/claude-haiku-4.5", "async_judge")
         == "openrouter/anthropic/claude-haiku-4.5"
     )
+
+
+async def test_calls_after_async_judge_rows_do_not_fail_and_all_are_recorded(
+    db: AsyncSession,
+) -> None:
+    """KI-91: a run with async_judge rows still takes late calls of any role."""
+    user, run_id = await _run(db)
+    await gate_and_reserve(
+        db,
+        user_id=user.id,
+        run_id=run_id,
+        mode="fast",
+        settings={"quota_estimates": {"fast": 100}},
+    )
+    await db.commit()
+    context = UsageContext(get_session_factory(), user.id, run_id, {})
+
+    for _ in range(2):
+        await context.record_call(
+            model_id="anthropic/claude-haiku-4.5", role="async_judge", tokens_in=10, tokens_out=2
+        )
+    # a late shadow-style call after the judge rows exist
+    await context.record_call(
+        model_id="openai/gpt-4o-mini", role="shadow_judge", tokens_in=20, tokens_out=5
+    )
+
+    rows = (
+        await db.execute(select(UsageLedger).where(UsageLedger.run_id == run_id))
+    ).scalars().all()
+    assert sorted(row.role for row in rows) == ["async_judge", "async_judge", "run"]
+    aggregate = next(row for row in rows if row.role == "run")
+    assert aggregate.tokens_in == 20
+    assert aggregate.status == "reserved"

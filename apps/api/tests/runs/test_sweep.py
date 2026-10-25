@@ -166,3 +166,67 @@ async def test_uuid7_is_version7_and_sortable() -> None:
     assert a.version == 7
     assert b.version == 7
     assert b > a
+
+
+async def _killed_between_finalize_and_settlement(
+    db: AsyncSession, *, heartbeat_age: timedelta
+) -> UUID:
+    """A completed run whose scoring-time settlement never ran (KI-76)."""
+    from graph.runner import _finalize
+    from quota.service import gate_and_reserve
+
+    run_id, message_id = await make_run_row(db)
+    user_id = (
+        await db.execute(
+            text(
+                "SELECT c.user_id FROM messages m JOIN chats c ON c.id = m.chat_id "
+                "WHERE m.id = :i"
+            ),
+            {"i": message_id},
+        )
+    ).scalar_one()
+    await gate_and_reserve(
+        db, user_id=user_id, run_id=run_id, mode="fast", settings={"quota_estimates": {"fast": 5}}
+    )
+    await db.commit()
+    # The completion path with settle_usage=False, then the process dies: no settle.
+    await _finalize(
+        get_session_factory(), run_id, message_id, status="complete", text="a", settle_usage=False
+    )
+    await db.execute(
+        text("UPDATE runs SET heartbeat_at = :t WHERE id = :i"),
+        {"t": datetime.now(UTC) - heartbeat_age, "i": run_id},
+    )
+    await db.commit()
+    return run_id
+
+
+async def _ledger_status(db: AsyncSession, run_id: UUID) -> str:
+    return (
+        await db.execute(text("SELECT status FROM usage_ledger WHERE run_id = :i"), {"i": run_id})
+    ).scalar_one()
+
+
+async def test_sweep_settles_reserved_ledger_of_a_terminal_run(
+    db: AsyncSession, bus: PostgresRunBus
+) -> None:
+    run_id = await _killed_between_finalize_and_settlement(db, heartbeat_age=timedelta(hours=1))
+    assert await _ledger_status(db, run_id) == "reserved"
+
+    await sweep_stale_runs(bus, get_session_factory())
+
+    assert await _ledger_status(db, run_id) == "settled"
+    status = (
+        await db.execute(text("SELECT status FROM runs WHERE id = :i"), {"i": run_id})
+    ).scalar_one()
+    assert status == "completed", "the sweep must not touch the run itself"
+
+
+async def test_sweep_leaves_a_recent_terminal_runs_ledger_for_its_scoring_task(
+    db: AsyncSession, bus: PostgresRunBus
+) -> None:
+    run_id = await _killed_between_finalize_and_settlement(db, heartbeat_age=timedelta(seconds=5))
+
+    await sweep_stale_runs(bus, get_session_factory())
+
+    assert await _ledger_status(db, run_id) == "reserved"

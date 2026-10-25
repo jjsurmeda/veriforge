@@ -67,7 +67,10 @@ class UsageContext:
                 aggregate = (
                     await session.execute(
                         select(UsageLedger)
-                        .where(UsageLedger.run_id == self.run_id)
+                        .where(
+                            UsageLedger.run_id == self.run_id,
+                            UsageLedger.role != "async_judge",
+                        )
                         .with_for_update()
                     )
                 ).scalar_one_or_none()
