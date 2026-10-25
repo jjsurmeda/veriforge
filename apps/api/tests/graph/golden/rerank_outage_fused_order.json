@@ -236,6 +236,7 @@
      "page": null,
      "rerank_score": 1.0,
      "source_type": "document",
+     "url": null,
      "vector_score": 1.0
     }
    ],

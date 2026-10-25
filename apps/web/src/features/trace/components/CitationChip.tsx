@@ -2,10 +2,12 @@ import { FileText, Globe2 } from 'lucide-react'
 
 import { HoverCardContent, HoverCardRoot, HoverCardTrigger } from '../../../components/ui/primitives'
 
+import { SourceLink } from './SourceLink'
 import type { CitationOut, RetrievedChunk } from '../../../generated/types.gen'
 
 export interface ChipSource {
   documentName: string | null
+  url: string | null
   page: number | null
   headingPath: string | null
   excerpt: string | null
@@ -16,11 +18,11 @@ export interface ChipSource {
 }
 
 export function chipSourceFromCitation(citation: CitationOut): ChipSource {
-  return { documentName: citation.document_name ?? null, page: citation.page ?? null, headingPath: citation.heading_path ?? null, excerpt: citation.excerpt ?? null, rerankScore: citation.rerank_score ?? null, sourceType: 'document', verdict: citation.verdict ?? null, pSupported: citation.p_supported ?? null }
+  return { documentName: citation.document_name ?? null, url: citation.url ?? null, page: citation.page ?? null, headingPath: citation.heading_path ?? null, excerpt: citation.excerpt ?? null, rerankScore: citation.rerank_score ?? null, sourceType: citation.url ? 'web' : 'document', verdict: citation.verdict ?? null, pSupported: citation.p_supported ?? null }
 }
 
 export function chipSourceFromChunk(chunk: RetrievedChunk): ChipSource {
-  return { documentName: chunk.document_name ?? null, page: chunk.page ?? null, headingPath: chunk.heading_path ?? null, excerpt: chunk.excerpt ?? '', rerankScore: chunk.rerank_score ?? null, sourceType: chunk.source_type ?? 'document', verdict: null, pSupported: null }
+  return { documentName: chunk.document_name ?? null, url: chunk.url ?? null, page: chunk.page ?? null, headingPath: chunk.heading_path ?? null, excerpt: chunk.excerpt ?? '', rerankScore: chunk.rerank_score ?? null, sourceType: chunk.source_type ?? 'document', verdict: null, pSupported: null }
 }
 
 export type VerdictTone = 'pending' | 'supported' | 'partial' | 'unsupported'
@@ -81,6 +83,7 @@ export function CitationChip({ n, source, verdict, onOpen, onHover, highlighted 
           <span className="truncate text-[13px] font-medium text-fg">{label}</span>
           {(source?.page != null || source?.headingPath) && <span className="ml-auto shrink-0 truncate font-mono text-[11px] text-fg-muted">{source.page != null ? `p.${source.page}` : source.headingPath}</span>}
         </div>
+        {source?.sourceType === 'web' && <div className="mb-1"><SourceLink url={source.url} /></div>}
         <p className="line-clamp-4 whitespace-pre-wrap text-xs leading-5 text-fg-muted">{source?.excerpt ?? '(source expired)'}</p>
         <div className="mt-2 flex items-center justify-between gap-3 border-t border-border pt-2 font-mono text-[10px] text-fg-muted">
           <span className="inline-flex items-center gap-1.5"><span className={`size-1.5 rounded-full ${TONE_DOT[tone]}`} aria-hidden="true" />{TONE_LABEL[tone]}</span>

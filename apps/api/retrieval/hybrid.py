@@ -101,11 +101,13 @@ rescued AS (
 ),
 pool AS (SELECT * FROM kept UNION ALL SELECT * FROM rescued)
 SELECT c.id, c.document_id, c.section_id, c.ord, c.page, c.text, c.source_type,
-       d.name AS document_name, s.heading_path,
+       COALESCE(d.name, wp.title) AS document_name, wp.url AS url, s.heading_path,
        p.vector_score, p.bm25_score, p.fused_score
 FROM pool p
 JOIN chunks c ON c.id = p.id
 LEFT JOIN documents d ON d.id = c.document_id
+LEFT JOIN web_pages wp ON c.source_type = 'web' AND wp.chat_id = c.chat_id
+  AND CAST(wp.id AS text) = c.metadata->>'web_page_id'
 LEFT JOIN sections s ON s.id = c.section_id
 ORDER BY p.fused_score DESC
 """
@@ -126,6 +128,7 @@ class ScoredChunk:
     bm25_score: float | None
     fused_score: float
     rerank_score: float | None = None
+    url: str | None = None
 
     def with_rerank(self, score: float) -> "ScoredChunk":
         return replace(self, rerank_score=score)
@@ -205,6 +208,7 @@ async def hybrid_search(
             vector_score=row.vector_score,
             bm25_score=row.bm25_score,
             fused_score=row.fused_score,
+            url=row.url,
         )
         for row in rows
     ]

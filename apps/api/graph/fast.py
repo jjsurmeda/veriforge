@@ -180,6 +180,7 @@ async def prepare_fast_run(
                         else None
                     ),
                     document_name=context.chunk.document_name,
+                    url=context.chunk.url,
                     page=context.chunk.page,
                     heading_path=context.chunk.heading_path,
                     source_type=context.chunk.source_type,

@@ -4,7 +4,7 @@ injected server-side on every query (CLAUDE.md non-negotiable)."""
 from uuid import UUID
 
 from fastapi import APIRouter, Request, UploadFile
-from sqlalchemy import func, select
+from sqlalchemy import String, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth import ratelimit
@@ -30,6 +30,7 @@ from db.models import (
     Run,
     Section,
     User,
+    WebPage,
 )
 from db.session import SessionDep
 from decisions.thresholds import reranker_calibrated
@@ -262,7 +263,7 @@ async def list_messages(
     )
     citations = (
         await session.execute(
-            select(Citation, Chunk, Document, Section)
+            select(Citation, Chunk, Document, Section, WebPage)
             .join(Chunk, Citation.chunk_id == Chunk.id, isouter=True)
             .join(
                 Document,
@@ -274,18 +275,29 @@ async def list_messages(
                 func.coalesce(Chunk.section_id, Citation.section_id) == Section.id,
                 isouter=True,
             )
+            .join(
+                WebPage,
+                (WebPage.chat_id == Chunk.chat_id)
+                & (cast(WebPage.id, String) == Chunk.chunk_metadata["web_page_id"].astext),
+                isouter=True,
+            )
             .where(Citation.message_id.in_([m.id for m in messages]))
             .order_by(Citation.message_id, Citation.n)
         )
     ).all()
     by_message: dict[UUID, list[CitationOut]] = {}
-    for citation, chunk, document, section in citations:
+    for citation, chunk, document, section, web_page in citations:
         by_message.setdefault(citation.message_id, []).append(
             CitationOut(
                 n=citation.n,
                 chunk_id=str(chunk.id) if chunk is not None else None,
                 document_id=str(document.id) if document is not None else None,
-                document_name=document.name if document is not None else None,
+                document_name=(
+                    document.name
+                    if document is not None
+                    else (web_page.title if web_page is not None else None)
+                ),
+                url=web_page.url if web_page is not None else None,
                 page=chunk.page if chunk is not None else None,
                 heading_path=section.heading_path if section is not None else None,
                 excerpt=(chunk.text[:240] if chunk is not None else citation.excerpt),

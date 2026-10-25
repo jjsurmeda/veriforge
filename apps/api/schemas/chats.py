@@ -29,6 +29,7 @@ class CitationOut(BaseModel):
     chunk_id: str | None = None
     document_id: str | None = None
     document_name: str | None = None
+    url: str | None = None
     page: int | None = None
     heading_path: str | None = None
     excerpt: str | None = None

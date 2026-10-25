@@ -595,6 +595,17 @@
             ],
             "title": "Rerank Score"
           },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
           "verdict": {
             "anyOf": [
               {
@@ -2587,6 +2598,17 @@
             "default": "document",
             "title": "Source Type",
             "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
           },
           "vector_score": {
             "anyOf": [
