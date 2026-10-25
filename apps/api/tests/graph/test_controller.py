@@ -49,3 +49,22 @@ async def test_controller_low_confidence_defaults_to_not_sufficient() -> None:
     engine = DecisionEngine(jev=_FakeJev("sufficient", 0.1), mode="jev_only")
     sufficient, _ = await controller_decide(engine, run_id="r1", question="q", notes="evidence")
     assert sufficient is False
+
+
+async def test_controller_prompt_carries_the_evidence_line_only_when_given() -> None:
+    """G4: the controller is shown the pooled evidence grade; the threshold is
+    unchanged (the probability test above still decides)."""
+    seen: list[str] = []
+
+    class _Spy(_FakeJev):
+        async def decide(
+            self, *, state: dict[str, Any] | str, questions: dict[str, Question]
+        ) -> dict[str, Answer]:
+            seen.extend(getattr(q, "prompt", "") for q in questions.values())
+            return await super().decide(state=state, questions=questions)
+
+    engine = DecisionEngine(jev=_Spy("sufficient", 0.9), mode="jev_only")
+    await controller_decide(engine, run_id="r1", question="q", notes="n")
+    await controller_decide(engine, run_id="r1", question="q", notes="n", evidence="mean 0.91")
+    assert "[evidence]" not in seen[0]
+    assert seen[1].endswith("[evidence]\nmean 0.91")

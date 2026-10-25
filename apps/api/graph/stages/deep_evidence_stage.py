@@ -40,6 +40,7 @@ from decisions import threshold
 from decisions.engine import DecisionUnavailable, EngineProtocol
 from decisions.thresholds import active_reranker_id, reranker_threshold
 from graph.stages.checks import (
+    GATE_TOP_N,
     TOP_CHUNKS_FOR_CHECKS,
     _entity_passage_decision,
     _entity_passage_questions,
@@ -101,6 +102,22 @@ def deep_gate_decision(run_id: UUID, winners: list[ScoredChunk]) -> GateVerdict:
         ),
     )
     return GateVerdict(passes=passes, mean_top3=mean_top3, floor=floor, decision=decision)
+
+
+def evidence_summary(winners: list[ScoredChunk]) -> str:
+    """The pooled evidence grade as one line for the controller (G4): the
+    best three passage grades, their mean and the evidence floor. Read-only
+    over the same numbers the gate uses; no threshold moves."""
+    grades = sorted(rubric_grades(winners), reverse=True)[:GATE_TOP_N]
+    mean_top3 = rubric_mean_top3(grades)
+    floor = reranker_threshold("evidence_floor", active_reranker_id())
+    if mean_top3 is None:
+        return f"no passage gathered so far has been graded (evidence floor {floor:.3f})"
+    shown = ", ".join(f"{grade:.2f}" for grade in grades)
+    return (
+        f"answer-containment grades of the best passages so far: {shown}; "
+        f"mean of top 3 = {mean_top3:.2f} (evidence floor {floor:.3f})"
+    )
 
 
 @dataclass

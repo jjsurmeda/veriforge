@@ -53,6 +53,8 @@ async def run_deep(env: RunEnv) -> None:
         await env.bus.publish(env.run_id, run.gate_event)
     for row in run.entity_unavailable_rows:
         await env.bus.publish(env.run_id, row)
+    if run.conflict_event is not None:
+        await env.bus.publish(env.run_id, run.conflict_event)
     if run.abstain_event is not None:
         await env.bus.publish(env.run_id, run.abstain_event)
 
@@ -98,6 +100,7 @@ async def run_deep(env: RunEnv) -> None:
                     "run_id": str(run.params.run_id),
                     "user_id": str(run.params.user_id),
                 },
+                intent=run.ingress.intent,
                 language=language,
             ),
         )
@@ -142,7 +145,9 @@ async def run_deep(env: RunEnv) -> None:
     generate_ms = run.latency_ms.get("generate", 0)
     prompt_tokens = sum(
         count_tokens(message["content"])
-        for message in build_grounded_messages(run.rewritten, run.contexts, run.history)
+        for message in build_grounded_messages(
+            run.rewritten, run.contexts, run.history, run.ingress.intent
+        )
     )
     await finalize_deep_run(
         env.session_factory,
