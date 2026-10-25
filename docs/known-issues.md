@@ -21,7 +21,7 @@ Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 | UI redesign | KI-92 | UI pass leftovers: duplicate Escape handlers, sub-44 px mobile targets, F-34 tiny text, live specs not run, F-25/F-26 checked on mocks only, two README nits |
 | before deploy | KI-91 | `UsageContext.record_call` raises `MultipleResultsFound` once a run has an `async_judge` ledger row: its aggregate-row query is not filtered by role |
 | closed 2026-10-25 | KI-90 | generator price constants set to the OpenRouter list price after a billed-rate check (53 calls billed 0.98x of it) |
-| before deploy | KI-94 | every run triggers an async quality judge on Haiku 4.5 (about $0.007 per run, more than the generator); model now a role, sample rate still to decide |
+| before deploy | KI-94 | every run triggers an async quality judge on Haiku 4.5 (about $0.007 per run, more than the generator); model is a role; deployed `trace_sample_rate` decided (0.1), set it at deploy |
 | before deploy | KI-89 | `retrieval_statement_timeout_ms` (`SET LOCAL`) leaks onto the shared hop session and cancels an embedding cache write |
 | R3 (scorer) | KI-87 | decline detection is a regex over wordings; new phrasings slip past it (3 found in 3 days) |
 | closed 2026-10-22 | KI-80 | outside-whitman removed from the books set: the only passage says a distinction exists but not what it is |
@@ -723,8 +723,11 @@ Logged 2026-10-12 (phase 1, `make check-work` on `beta/phase1-check-work`).
   `seed_models.py` without overwriting, changed on the admin Roles page); with no binding it still
   runs on Haiku. Needs a `seed_models.py` run on an existing database for the role to show on the page.
 - **Phase:** before deploy (operator cost per user message; a public demo multiplies it).
-- **Done when:** the sample rate for deployed use is decided and set (`trace_sample_rate`, default
-  1.0), and any README or benchmark per-run cost figure says whether it includes this judge (not checked).
+- **Decided 2026-10-25 (owner):** deployed `trace_sample_rate` is 0.1 (about $0.0007 per run on average);
+  keep 1.0 for local work and for the pre-deploy recheck run. The README and benchmark pages quote only
+  decision-layer cost per run, so no figure there includes this judge (checked).
+- **Done when:** `trace_sample_rate` is set to 0.1 in admin Settings on the deployed environment, then
+  this entry moves to closed with that date.
 
 ## KI-90: generator price constants may be stale
 
