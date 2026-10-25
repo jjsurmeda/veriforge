@@ -39,6 +39,46 @@ class HopNote:
     decision_answers: dict[str, Answer]
 
 
+# Each sub-question keeps at least its best two chunks in the merged winners.
+# Two, because a compound question needs the fact and one corroborating or
+# neighbouring passage per clause, and more would start to crowd out the
+# globally best chunks the rerank score exists to pick.
+MIN_PER_SUB_QUESTION = 2
+
+
+def rerank_score_key(chunk: ScoredChunk) -> float:
+    return chunk.rerank_score if chunk.rerank_score is not None else chunk.fused_score
+
+
+def merge_winners(groups: list[list[ScoredChunk]]) -> list[ScoredChunk]:
+    """Merge the hops' winners (one list per sub-question) into one ranked list.
+
+    Ranked by rerank score, as before, so one sub-question could take every
+    slot of the final context (`cross-two-elizabeths`). Each sub-question's
+    best `MIN_PER_SUB_QUESTION` surviving chunks now come first, the rest
+    follow by score. The set of winners is unchanged (the evidence floor and
+    entity guard see the same chunks); only the order, which is what the
+    context trim keeps from the front, moves. With one non-empty group the
+    guaranteed chunks are already the first ones, so the result is identical
+    to the plain sort.
+    """
+    ranked = dedupe_adjacent(
+        sorted((c for group in groups for c in group), key=rerank_score_key, reverse=True)
+    )
+    if sum(1 for group in groups if group) < 2:
+        return ranked
+    surviving = {c.chunk_id for c in ranked}
+    guaranteed: set[object] = set()
+    for group in groups:
+        best = [
+            c for c in sorted(group, key=rerank_score_key, reverse=True) if c.chunk_id in surviving
+        ]
+        guaranteed.update(c.chunk_id for c in best[:MIN_PER_SUB_QUESTION])
+    return [c for c in ranked if c.chunk_id in guaranteed] + [
+        c for c in ranked if c.chunk_id not in guaranteed
+    ]
+
+
 def _note_text(sub_question: SubQuestion, winners: list[ScoredChunk]) -> str:
     if not winners:
         return f"[{sub_question.id}] {sub_question.question}\n(no evidence retrieved)"

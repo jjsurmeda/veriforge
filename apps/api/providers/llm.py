@@ -356,6 +356,8 @@ async def _stream_once(
     *,
     on_reasoning: Callable[[str], Awaitable[None]] | None,
     temperature: float | None = None,
+    max_tokens: int | None = None,
+    on_finish: Callable[[str], None] | None = None,
 ) -> AsyncIterator[tuple[str, str]]:
     """One streamed attempt. Yields (model that answered, content delta). A
     provider error raised while iterating surfaces to the caller, which is what
@@ -367,6 +369,7 @@ async def _stream_once(
         # A caller that renders the thinking stream (Deep mode) needs it on.
         reasoning=on_reasoning is not None,
         temperature=temperature,
+        max_tokens=max_tokens,
         stream=True,
         stream_options={"include_usage": True},
     )
@@ -376,9 +379,12 @@ async def _stream_once(
         if chunk_usage is not None:
             usage = chunk_usage
         try:
-            delta = chunk["choices"][0]["delta"]
+            choice = chunk["choices"][0]
+            delta = choice["delta"]
         except (KeyError, IndexError, TypeError):
             continue
+        if on_finish is not None and choice.get("finish_reason"):
+            on_finish(str(choice["finish_reason"]))
         if on_reasoning is not None:
             reasoning = getattr(delta, "reasoning_content", None) or delta.get("reasoning_content")
             if reasoning:
@@ -397,6 +403,8 @@ async def stream_completion(
     metadata: dict[str, str],
     on_reasoning: Callable[[str], Awaitable[None]] | None = None,
     temperature: float | None = None,
+    max_tokens: int | None = None,
+    on_finish: Callable[[str], None] | None = None,
 ) -> AsyncIterator[str]:
     """Yield content deltas from one streamed chat completion.
 
@@ -412,6 +420,11 @@ async def stream_completion(
     where a call's output has to be reproducible — claim extraction, whose
     claim list feeds the faithfulness mean — is a caller decision, not a
     default here.
+
+    `max_tokens` only ever raises the role's cap (see `_request_kwargs`);
+    `on_finish`, when given, is called with the provider's `finish_reason`
+    ("stop", "length", ...) when the stream reports one, so a caller can tell
+    a truncated answer from a finished one.
 
     A provider that dies after its first chunk restarts the whole request on
     llm_fallback_model rather than killing the run. Partial output is
@@ -436,6 +449,8 @@ async def stream_completion(
                 # Re-applied on every restart: the retry is a new request to a
                 # new model, so it carries the same pinned temperature.
                 temperature=temperature,
+                max_tokens=max_tokens,
+                on_finish=on_finish,
             ):
                 current = answered
                 if held is None:

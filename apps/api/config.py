@@ -153,6 +153,12 @@ class Settings(BaseSettings):
         # headroom over the largest observed response.
         "decision_fallback": 4096,
     }
+    # Deep's generator streams the model's reasoning (`on_reasoning` turns it
+    # on), and the reasoning shares the role's `generator` cap with the answer
+    # (KI-97: 2048 tokens ended some Deep answers mid-thought). 8192 leaves
+    # ~6k for thinking on top of the 2k the answer needs, and is still a
+    # fraction of the model's window. It only raises the cap; Auto keeps 2048.
+    deep_generator_max_tokens: int = 8192
     # OpenRouter reasoning models think by default: seconds of latency, and
     # under a tight cap the reasoning spills into the answer. Only these
     # roles keep it on.

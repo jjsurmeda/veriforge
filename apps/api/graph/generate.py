@@ -151,6 +151,8 @@ async def stream_grounded_answer(
     intent: str | None = None,
     on_reasoning: Callable[[str], Awaitable[None]] | None = None,
     language: str | None = None,
+    max_tokens: int | None = None,
+    on_finish: Callable[[str], None] | None = None,
 ) -> AsyncIterator[str]:
     """Stream the grounded answer.
 
@@ -171,6 +173,8 @@ async def stream_grounded_answer(
         metadata={**metadata, "role": "generator"},
         on_reasoning=on_reasoning,
         temperature=runtime_value("generation.temperature", None),
+        max_tokens=max_tokens,
+        on_finish=on_finish,
     ):
         yield token
 
