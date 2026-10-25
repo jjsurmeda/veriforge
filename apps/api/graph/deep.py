@@ -21,7 +21,7 @@ from graph.abstain import build_abstain_event, stream_abstention
 from graph.controller import controller_decide
 from graph.generate import order_for_lost_in_the_middle, stream_grounded_answer
 from graph.history import history_messages
-from graph.hop_retrieve import HopNote, ready_sub_questions, run_hop_batch
+from graph.hop_retrieve import HopNote, merge_winners, ready_sub_questions, run_hop_batch
 from graph.ingress import IngressOutcome, run_ingress
 from graph.planner import generate_followup, plan_question
 from graph.stages.checks import _conflict_pair_questions, _conflict_sides
@@ -36,7 +36,7 @@ from graph.timing import EventPublisher, make_step_timer, make_sub_step_timer
 from providers.llm import complete
 from quota.usage import get_usage_context
 from retrieval.context import count_tokens, trim_context
-from retrieval.expand import ExpandedContext, dedupe_adjacent, expand_context
+from retrieval.expand import ExpandedContext, expand_context
 from retrieval.filters import ClientFilters
 from retrieval.hybrid import ScoredChunk
 from retrieval.web import ensure_web_chunks
@@ -172,10 +172,6 @@ def _decision_event(run_id: UUID, name: str, answer: Answer) -> Decision:
     )
 
 
-def _rerank_score_key(chunk: ScoredChunk) -> float:
-    return chunk.rerank_score if chunk.rerank_score is not None else chunk.fused_score
-
-
 async def _deep_conflict(
     engine: DecisionEngine, run_id: UUID, question: str, winners: list[ScoredChunk]
 ) -> Conflict | None:
@@ -304,6 +300,7 @@ async def prepare_deep_run(
 
         answered_ids: set[str] = set()
         all_kept: list[ScoredChunk] = []
+        kept_by_sub_question: list[list[ScoredChunk]] = []
         all_dropped: list[ScoredChunk] = []
         notes: list[str] = []
         hop_index = 0
@@ -364,6 +361,7 @@ async def prepare_deep_run(
                 answered_ids.add(hop_note.sub_question.id)
                 notes.append(hop_note.note)
                 all_kept.extend(hop_note.kept_chunks)
+                kept_by_sub_question.append(hop_note.kept_chunks)
                 all_dropped.extend(hop_note.dropped_chunks)
                 retrieval_events.append(hop_note.retrieval_event)
                 for name, answer in hop_note.decision_answers.items():
@@ -378,9 +376,7 @@ async def prepare_deep_run(
                     run_id=str(params.run_id),
                     question=rewritten,
                     notes="\n\n".join(notes),
-                    evidence=evidence_summary(
-                        dedupe_adjacent(sorted(all_kept, key=_rerank_score_key, reverse=True))
-                    ),
+                    evidence=evidence_summary(merge_winners(kept_by_sub_question)),
                 ),
             )
             decision_events.append(_decision_event(params.run_id, "controller", controller_answer))
@@ -392,7 +388,7 @@ async def prepare_deep_run(
         gate: GateVerdict | None = None
         entity_rows: list[Decision] = []
         contexts: list[ExpandedContext] = []
-        winners = dedupe_adjacent(sorted(all_kept, key=_rerank_score_key, reverse=True))
+        winners = merge_winners(kept_by_sub_question)
 
         # The evidence floor and the entity guard from Auto (R2b item 1), over
         # what the hop loop gathered, whether the controller said `sufficient`
