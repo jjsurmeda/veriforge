@@ -17,7 +17,7 @@ Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 | closed 2026-10-23 | KI-79 | `plot-speckled-band` passes in all 5 DeepSeek V4 Pro draws; closed by the ADR-007 generator change |
 | R3 (generator) | KI-86 | the reply language is not enforced: a Tagalog question answered in English (DeepSeek), an English one in German (Sonnet) |
 | before deploy | KI-88 | the decision fallback's LLM call can stall for minutes: it has no effective timeout |
-| R3 (Deep) | KI-93 | Deep has no conflict check (Auto discloses contradicting passages; Deep may not), and its trace hides retrieve, rerank and sanitize inside `hop_N` and has no `generate` step |
+| R3 (Deep) | KI-93 | Deep has no conflict check (Auto discloses contradicting passages; Deep may not); trace parity done in `da72a48` |
 | UI redesign | KI-92 | UI pass leftovers: duplicate Escape handlers, sub-44 px mobile targets, F-34 tiny text, live specs not run, F-25/F-26 checked on mocks only, two README nits |
 | before deploy | KI-91 | `UsageContext.record_call` raises `MultipleResultsFound` once a run has an `async_judge` ledger row: its aggregate-row query is not filtered by role |
 | before deploy | KI-90 | generator price constants (`config.py`) may be stale: the public list shows DeepSeek V4 Pro at about 2x the recorded $0.4427 / $0.8853 per 1M |
@@ -33,7 +33,7 @@ Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 | check-stable | KI-43 | absence-claim verdict flips between runs (grader quality) |
 | check-stable | KI-49 | reviewer rarely makes an unsupported judgement itself |
 | check-stable | KI-51 | cf subset spread 0.0667 vs 0.06 band |
-| UI redesign | KI-22 | mostly closed by UI slice B (`d8922a2`); leftovers: Trace section navigation, reranker on live run events, per-area decision numbers only in the static Benchmarks tab |
+| UI redesign | KI-22 | mostly closed by UI slice B (`d8922a2`); leftovers: Trace section navigation, per-area decision numbers only in the static Benchmarks tab (reranker on live events done, `da72a48`) |
 | closed 2026-10-24 | KI-74 | composer Filters popover with a Playwright spec (UI slice A, `c7275c6`) |
 | UI redesign | KI-65 | screenshots and tab-order audit; the UI pass is merged, so the re-shoot and audit can run now |
 | before deploy | KI-59 | uvicorn forwarded_allow_ips must match the deployed proxy |
@@ -161,9 +161,7 @@ dispatch — not fixed in P2a.
 to Metrics (mode, model, source, reranker), split the waterfall, and showed the reviewer
 verdict on source cards and the Citations tab. Open leftovers:
 - No section navigation inside the Trace tab.
-- The reranker is not on the live run events, only in saved message metrics, so a live run
-  shows none until the messages refetch. Fix: add it to `RunStarted` (Pydantic model first,
-  then codegen).
+- Done in `da72a48` (UI polish): the reranker is on `RunStarted`, so a live run shows it in Metrics.
 - Per-area decision numbers (Jev vs judge) exist only in the static Benchmarks tab; the live
   API aggregates by decision name only.
 - Batch 1 backend step coverage below was not part of slice B; check it before closing.
@@ -672,6 +670,7 @@ Logged 2026-10-12 (phase 1, `make check-work` on `beta/phase1-check-work`).
   `plan`, `hop_N`, `controller_N`, `followup_N` and `isuse`: retrieve, rerank and sanitize run
   inside `hop_retrieve.py` and surface only as part of `hop_N`, and generation is timed outside a
   step (`run_deep.py`). Found 2026-10-25 when the owner asked why Deep shows fewer stages.
+- **Trace half done in `da72a48`:** `generate` is its own step and each hop shows retrieve, rerank and sanitize sub-steps; Deep's `generate` latency no longer includes IsUse (as in Auto).
 - **Phase:** the trace half goes in the UI polish pass (steps only, no behaviour change);
   the conflict check is a behaviour change, so it belongs to the post-deploy Deep rework
   (with G6/G10) and needs the eval gate.
@@ -681,9 +680,10 @@ Logged 2026-10-12 (phase 1, `make check-work` on `beta/phase1-check-work`).
 ## KI-92: UI pass leftovers
 
 - **What:** found while merging UI slices A, B and C (reports in `docs/history/reports/2026-10-24-*-ui-*.md`, not in git).
-  - Two Escape-closes-drawer handlers do the same job (`ChatView.tsx` from A, `TracePanel.tsx` from B); keep one.
-  - Thread-header buttons and the Model picker are still under 44 px on mobile (F-40); the Model picker was left untouched by rule.
-  - F-34: tiny text remains in `MessageList.tsx`.
+  - Duplicate Escape handler removed in `da72a48` (`ChatView.tsx` kept).
+  - Model picker is still under 44 px on mobile (F-40), left untouched by rule (thread-header buttons done in `da72a48`).
+  - `ChatSidebar` still has text under 11 px (F-34 fixed in `MessageList.tsx` only).
+  - `npm run lint` prints a bogus JSON error; `npx oxlint` works.
   - The live specs `abstain.spec.ts` and `metrics.spec.ts` were edited but not run (they need the real stack and model calls).
   - F-25 (past-chat Trace and Metrics follow the latest answer) and F-26 (failed-run display) were verified against mocks only.
   - The blocked-composer message shows the reset time of the 5h window only, not the monthly one.
