@@ -219,7 +219,8 @@ and `retrieve` publishes a sub-step per query variant, so no gap exceeds
 ## 8. Decision layer: pluggable decision providers
 
 All classification, routing, scoring and verification go through one
-`DecisionEngine` interface. The engine runs a **primary decision provider**
+`DecisionEngine` interface (which model runs each stage, decisions and text
+roles alike: [`model-roles.md`](model-roles.md)). The engine runs a **primary decision provider**
 and a **fallback provider**, both behind the `DecisionProvider` interface
 (ADR-005): Jev (default primary), an LLM judge (default fallback), and other
 decision models from OpenRouter's decision list. The provider is chosen per

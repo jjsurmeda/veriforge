@@ -85,6 +85,24 @@ Deep is being improved. Before the last change dev scored 4 false abstentions of
 - OCR and multimodal inputs.
 - Laya and Microsoft-Decision-1 as decision models (not pluggable yet; KI-85).
 
+## Which model runs what
+
+Every routing, scoring and verification decision (ingress checks, rerank, injection and entity
+guards, conflict check, IsUse, output guard, claim verdicts, the Deep controller) goes through one
+decision layer whose default provider is **Jev**; an LLM judge takes over if Jev fails. Models that
+write text are bound per role and changed on the admin Roles page.
+
+| Role | Default | Does |
+| --- | --- | --- |
+| Decisions | Jev (`typesafe/jev-1.13`) | every decision listed above |
+| Generator | DeepSeek V4 Pro | the cited answer; the composer's model picker overrides it |
+| Planner, rewriter, claim extractor, suggester, titler, small | `gpt-4o-mini` | Deep planning, query rewrite and variants, claim extraction, follow-up suggestions, chat titles |
+| Async judge | Claude Haiku 4.5 | quality scores sent to Langfuse after a run, sampled by `trace_sample_rate` |
+| Embeddings | `text-embedding-3-large` | query and chunk vectors |
+
+All models are reached through OpenRouter. The stage-by-stage table, with the rules for how a
+model is chosen, is in [`docs/model-roles.md`](docs/model-roles.md).
+
 ## Layout
 
 ```
