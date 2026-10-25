@@ -32,7 +32,16 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from config import Settings, get_settings
-from db.models import Citation, Claim, LlmProvider, Message, Model, ModelRole, Run
+from db.models import (
+    Citation,
+    Claim,
+    LlmProvider,
+    Message,
+    Model,
+    ModelRole,
+    Run,
+    UsageLedger,
+)
 from decisions import DecisionCall, DecisionEngine, display_threshold, make_shadow_writer
 from decisions.output_guard import OutputGuardResult, guard_output
 from decisions.thresholds import active_reranker_id, threshold
@@ -1168,6 +1177,11 @@ async def _finish_run(
     )
 
 
+# Longer than any scoring task runs; terminal runs older than this with a reserved
+# ledger row lost their settlement (KI-76).
+_SCORING_SETTLE_GRACE = timedelta(minutes=5)
+
+
 async def sweep_stale_runs(
     bus: PostgresRunBus, session_factory: async_sessionmaker[AsyncSession]
 ) -> int:
@@ -1210,6 +1224,26 @@ async def sweep_stale_runs(
             message = await session.get(Message, message_id)
             if message is not None and message.status is None:
                 message.status = "failed"
+            await settle_run(session, run_id, None)
+        # KI-76: a completed run settles after its scoring task. If the process
+        # died in between, the ledger row stays `reserved` forever; settle those
+        # once the run is terminal and past the scoring grace (TRD §14).
+        orphaned = (
+            (
+                await session.execute(
+                    select(Run.id)
+                    .join(UsageLedger, UsageLedger.run_id == Run.id)
+                    .where(
+                        UsageLedger.status == "reserved",
+                        Run.status != "running",
+                        Run.heartbeat_at < datetime.now(UTC) - _SCORING_SETTLE_GRACE,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for run_id in orphaned:
             await settle_run(session, run_id, None)
         return [(row[0], row[1]) for row in swept]
 
