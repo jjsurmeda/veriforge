@@ -51,7 +51,7 @@ def _system(question: str, **kw: str) -> str:
 
 def test_the_detected_language_is_named_on_the_first_generation() -> None:
     assert _system(TAGALOG_Q).count("in Tagalog, the language of the question") == 1
-    assert "in English, the language of the question" in _system("What did Darcy say about pride?")
+    assert "the language of the question" not in _system("What did Darcy say about pride?")
 
 
 def test_an_undetectable_language_adds_nothing() -> None:

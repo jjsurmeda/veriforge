@@ -11,7 +11,7 @@ from prompts.load import load_prompt
 from providers.llm import stream_completion
 from retrieval.expand import ExpandedContext
 from runtime import runtime_value
-from textkit import detect_language, language_name
+from textkit import DEFAULT_LANGUAGE, detect_language, language_name
 
 SOURCE_MAX_CHARS = 6000
 
@@ -55,10 +55,13 @@ def build_grounded_messages(
     language: str | None = None,
 ) -> list[dict[str, str]]:
     system = grounded_system_prompt(intent)
-    # KI-86: name the question's language up front (code, not a prompt file), so
-    # streamed answers are covered too. An explicit `language` is the retry's.
+    # KI-86: name a NON-English question's language up front (code, not a prompt file), so
+    # streamed answers are covered too. English adds nothing, which keeps the measured
+    # English prompt as it was (and a rewrite that turned a question into English cannot
+    # force English on the user). An explicit `language` is the retry's.
     detected = detect_language(question)
-    language = language or (language_name(detected) if detected else None)
+    if language is None and detected and detected != DEFAULT_LANGUAGE:
+        language = language_name(detected)
     if language:
         system += f"\n\nWrite the whole answer in {language}, the language of the question."
     messages: list[dict[str, str]] = [{"role": "system", "content": system}]
