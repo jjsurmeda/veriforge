@@ -127,6 +127,7 @@ class DeepRun:
                         "run_id": str(self.params.run_id),
                         "user_id": str(self.params.user_id),
                     },
+                    intent=self.ingress.intent,
                     on_reasoning=on_reasoning,
                 ):
                     await queue.put(("content", token))

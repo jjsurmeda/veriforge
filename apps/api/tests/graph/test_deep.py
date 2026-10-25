@@ -455,3 +455,36 @@ def _levels() -> tuple[dict[str, float], tuple[str, ...]]:
     from retrieval.rerank import ANSWER_LEVEL_VALUE, ANSWER_LEVELS
 
     return ANSWER_LEVEL_VALUE, ANSWER_LEVELS
+
+
+async def test_the_generator_gets_the_ingress_intent(
+    db: AsyncSession, user_a: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Deep uses the same ingress as Auto, so it hands the generator the same
+    intent and gets the same per-intent block."""
+    seen: dict[str, Any] = {}
+
+    class _CompareJev(_ScriptedJev):
+        async def decide(self, *, state: Any, questions: dict[str, Question]) -> dict[str, Answer]:
+            answers = await super().decide(state=state, questions=questions)
+            if "intent" in questions:
+                answers["intent"] = Answer(
+                    engine="jev", latency_ms=1, value="compare", probability=0.9,
+                    probabilities={"compare": 0.9},
+                )
+            return answers
+
+    async def fake_stream(**kwargs: Any) -> Any:
+        seen.update(kwargs)
+        yield "ok"
+
+    monkeypatch.setattr(deep_module, "stream_grounded_answer", fake_stream)
+    chat, message, collection = await _seed(db, user_a)
+    run = await prepare_deep_run(
+        get_session_factory(),
+        _params(user_a, chat, message, collection.id),
+        DecisionEngine(jev=_CompareJev(["sufficient"]), mode="jev_only"),
+    )
+    assert run.abstain_event is None
+    assert [pair async for pair in run.stream_answer_with_thinking()] == [("content", "ok")]
+    assert seen["intent"] == run.ingress.intent == "compare"
