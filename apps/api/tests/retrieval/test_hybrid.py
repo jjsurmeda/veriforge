@@ -363,7 +363,7 @@ async def test_icu_tokenizer_does_not_loosen_english_retrieval(
 
 
 async def _statement_timeout(db: AsyncSession) -> str:
-    return (await db.execute(text("SHOW statement_timeout"))).scalar_one()
+    return str((await db.execute(text("SHOW statement_timeout"))).scalar_one())
 
 
 async def test_statement_timeout_does_not_outlive_the_retrieval_statement(

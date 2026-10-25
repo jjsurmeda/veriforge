@@ -202,9 +202,13 @@ async def _killed_between_finalize_and_settlement(
 
 
 async def _ledger_status(db: AsyncSession, run_id: UUID) -> str:
-    return (
-        await db.execute(text("SELECT status FROM usage_ledger WHERE run_id = :i"), {"i": run_id})
-    ).scalar_one()
+    return str(
+        (
+            await db.execute(
+                text("SELECT status FROM usage_ledger WHERE run_id = :i"), {"i": run_id}
+            )
+        ).scalar_one()
+    )
 
 
 async def test_sweep_settles_reserved_ledger_of_a_terminal_run(

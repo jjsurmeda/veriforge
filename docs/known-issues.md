@@ -7,7 +7,7 @@ The Phase column is authoritative; section placement below is from the first tri
 Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 - When you fix one, move it to the archive in the same commit, with the fixing commit hash.
 - A new finding that breaks no check is added under **post-beta** and opens no lane.
-- New IDs continue from KI-94.
+- New IDs continue from KI-95.
 
 ## Index
 
@@ -15,21 +15,22 @@ Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 | --- | --- | --- |
 | closed 2026-10-23 | KI-78 | `ho-near-vlad` declines cleanly on DeepSeek V4 Pro v6 (held-out, 2 runs); closed by the ADR-007 generator change |
 | closed 2026-10-23 | KI-79 | `plot-speckled-band` passes in all 5 DeepSeek V4 Pro draws; closed by the ADR-007 generator change |
-| before deploy | KI-86 | the reply language is not enforced: a Tagalog question answered in English (DeepSeek), an English one in German (Sonnet) |
-| before deploy | KI-88 | the decision fallback's LLM call can stall for minutes: it has no effective timeout |
+| before deploy | KI-86 | part 1 done (`47f83d5`): a held answer in the wrong language is regenerated once; part 2 open: streamed Auto answers are unchecked, so name the language up front |
+| before deploy | KI-95 | an IsUse decline for a non-English question is the English template (4 of 187 completed answers in the acceptance databases); the pre-generation abstain translates, the IsUse decline does not |
+| closed 2026-10-25 | KI-88 | the decision fallback has one deadline over its retries and failover, `llm_timeout_seconds` = 90 s (`2b92d0c`); a tighter ceiling would break the slow judge-only rerank |
 | R3 (Deep) | KI-93 | Deep has no conflict check (Auto discloses contradicting passages; Deep may not); trace parity done in `da72a48` |
 | UI redesign | KI-92 | UI pass leftovers: duplicate Escape handlers, sub-44 px mobile targets, F-34 tiny text, live specs not run, F-25/F-26 checked on mocks only, two README nits |
-| before deploy | KI-91 | `UsageContext.record_call` raises `MultipleResultsFound` once a run has an `async_judge` ledger row: its aggregate-row query is not filtered by role |
+| closed 2026-10-25 | KI-91 | usage recording selects only the run's aggregate ledger row (`781714a`) |
 | closed 2026-10-25 | KI-90 | generator price constants set to the OpenRouter list price after a billed-rate check (53 calls billed 0.98x of it) |
 | before deploy | KI-94 | every run triggers an async quality judge on Haiku 4.5 (about $0.007 per run, more than the generator); model is a role; deployed `trace_sample_rate` decided (0.1), set it at deploy |
-| before deploy | KI-89 | `retrieval_statement_timeout_ms` (`SET LOCAL`) leaks onto the shared hop session and cancels an embedding cache write |
+| closed 2026-10-25 | KI-89 | the retrieval statement timeout is reset right after the statement (`2b92d0c`); two hops interleaving on one session can still briefly reset each other's bound |
 | R3 (scorer) | KI-87 | decline detection is a regex over wordings; new phrasings slip past it (3 found in 3 days) |
 | closed 2026-10-22 | KI-80 | outside-whitman removed from the books set: the only passage says a distinction exists but not what it is |
 | R3 (floor) | KI-81 | the evidence floor flips on borderline items: the grade varies 0.444-0.468 around 0.455 between runs |
 | check-work (CI) | KI-82 | Playwright specs are not run in CI; paid evals are manual |
 | R3 (reviewer) | KI-83 | citation precision is claim-level support; per-citation verification is not done |
 | phase 3 (latency) | KI-84 | `our_overhead_ms` subtracts overlapping provider calls (ingress and rewrite run together); it can go negative |
-| check-stable | KI-76 | credits stay reserved if the process dies between completion and settlement |
+| closed 2026-10-25 | KI-76 | the sweep settles reserved ledger rows of terminal runs past a 5 minute grace (`781714a`) |
 | check-stable | KI-32 | record of faithfulness variance; gate tolerances already set |
 | check-stable | KI-43 | absence-claim verdict flips between runs (grader quality) |
 | check-stable | KI-49 | reviewer rarely makes an unsupported judgement itself |
@@ -618,6 +619,12 @@ Logged 2026-10-12 (phase 1, `make check-work` on `beta/phase1-check-work`).
   `ml-tl-maria-clara` in English (v5 draw 1, v6 draw 2); Sonnet 5.5 answered the
   English `xl-en-samsa` in German (v6). Each is a books content miss
   (`language_mismatch`), and they are the recurring cause of DeepSeek's misses.
+- **Part 1 done 2026-10-25 (`47f83d5`):** `graph/stages/language_check.py` regenerates a HELD grounded answer
+  once when `detect_language` says it differs from the question's. Deep always holds; Auto holds only below the
+  stream line (about 20% of 187 replayed answers were held), and a streamed answer is not checked because a
+  retry would retract text the user read. The check is correct but covers a minority of Auto answers. Part 2:
+  name the question's language in the system prompt up front (code, applies to streamed answers too); that
+  changes generation for every non-English question, so it needs a books draw before it ships.
 - **Phase:** before deploy (owner 2026-10-25). `prompts/grounded_answer.md` already says to answer in the
   question's language, so more wording is weak. Plan: (1) a post-generation check with `textkit.detect_language`
   on question and answer, one retry with the language named (code, unit tests, $0; one extra generator call
@@ -697,6 +704,18 @@ Logged 2026-10-12 (phase 1, `make check-work` on `beta/phase1-check-work`).
   - Deferred by owner decision: the Library page.
 - **Phase:** UI redesign (polish); live specs at the pre-deploy recheck.
 - **Done when:** each bullet is fixed or struck with a reason, the live specs pass at the pre-deploy `check-work`, and the README rows are corrected.
+
+## KI-95: an IsUse decline for a non-English question is in English
+
+- **What:** `usefulness_decline` (`graph/stages/usefulness_stage.py`) renders the found/missing template with
+  `build_abstain_template`, which is English. The pre-generation abstain (`graph/abstain.py`) detects the
+  question's language and has the generator translate the template; the IsUse decline does not. A replay of
+  the 187 completed answers in the three acceptance databases found 4 declines in English for a Chinese,
+  a Japanese and two French questions (one held, three streamed then retracted). Found 2026-10-25 while
+  checking the KI-86 fix.
+- **Phase:** before deploy (same user-visible defect as KI-86).
+- **Done when:** the IsUse decline text is in the question's language (reuse `stream_abstention`'s
+  translation path, English questions stay a fixed template with no model call), with a test per case.
 
 ## KI-91: usage recording fails after a run's first async_judge ledger row
 
