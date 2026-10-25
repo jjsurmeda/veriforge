@@ -7,6 +7,7 @@ carries the same state Jev would see, so per-engine thresholds — not
 shared ones — gate downstream behaviour.
 """
 
+import asyncio
 import json
 import logging
 import re
@@ -211,7 +212,14 @@ class FallbackEngine:
             )
 
         try:
-            answers = await self._decide_batch(state_text, questions, started)
+            # KI-88: one deadline over every retry, split and failover below.
+            # litellm's own timeout is per attempt, so 90 s x retry x failover
+            # x our two attempts could hold a run for minutes. A stall becomes
+            # the TimeoutError caught below -> FallbackError -> fail-closed.
+            answers = await asyncio.wait_for(
+                self._decide_batch(state_text, questions, started),
+                timeout=get_settings().llm_timeout_seconds,
+            )
         except (FallbackError, json.JSONDecodeError) as exc:
             wrapped = exc if isinstance(exc, FallbackError) else FallbackError(
                 f"fallback returned non-JSON: {exc}"

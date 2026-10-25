@@ -4,10 +4,14 @@ entity-mismatch set fails its item — the batched JSON truncated mid-string
 at the same offset on every re-run. LiteLLM is faked (testing.md: no live
 LLM calls)."""
 
+import asyncio
 import json
+import time
+
+import pytest
 
 from config import get_settings
-from decisions.fallback import FallbackEngine
+from decisions.fallback import FallbackEngine, FallbackError
 from retrieval.context import count_tokens
 from schemas.decisions import Choice, Noul, Score
 
@@ -76,3 +80,23 @@ async def test_the_fallback_cap_covers_the_twelve_question_response() -> None:
         f"12-answer response is {tokens} tokens; the decision_fallback cap "
         f"({settings.llm_max_tokens['decision_fallback']}) must cover it"
     )
+
+
+async def test_a_stalled_provider_ends_in_fallback_error_within_the_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """KI-88: a hung call used to hold the run for the sum of every retry."""
+    monkeypatch.setattr(get_settings(), "llm_timeout_seconds", 0.2)
+    calls = 0
+
+    async def hung(**_: object) -> str:
+        nonlocal calls
+        calls += 1
+        await asyncio.sleep(3600)
+        return ""
+
+    started = time.monotonic()
+    with pytest.raises(FallbackError, match="TimeoutError"):
+        await FallbackEngine(complete_fn=hung).decide(state="s", questions=_questions(2))
+    assert time.monotonic() - started < 2
+    assert calls == 1  # the deadline is not retried or split
