@@ -37,6 +37,14 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # --- runtime ----------------------------------------------------------------
 FROM python:${PYTHON_VERSION}-slim-bookworm AS runtime
 
+# OCR (beta, TRD 9.1): the Tesseract binary and the six language packs named in
+# `ocr_languages` (fil is Tagalog; there is no `tgl` package). About 140 MB.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+    tesseract-ocr tesseract-ocr-eng tesseract-ocr-spa tesseract-ocr-fra \
+    tesseract-ocr-chi-sim tesseract-ocr-jpn tesseract-ocr-fil \
+ && rm -rf /var/lib/apt/lists/*
+
 # Non-root. The uid is fixed so a bind-mounted EBS volume can be chowned to it
 # in user data; the api writes nothing outside /data.
 RUN groupadd --gid 10001 vf \
