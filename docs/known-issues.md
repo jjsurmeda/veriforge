@@ -7,7 +7,7 @@ The Phase column is authoritative; section placement below is from the first tri
 Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 - When you fix one, move it to the archive in the same commit, with the fixing commit hash.
 - A new finding that breaks no check is added under **post-beta** and opens no lane.
-- New IDs continue from KI-96.
+- New IDs continue from KI-97.
 
 ## Index
 
@@ -19,7 +19,8 @@ Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 | before deploy | KI-95 | fixed (`7da07ec`): the IsUse decline is translated to the question's language; closes with KI-86's draw |
 | closed 2026-10-25 | KI-96 | web sources showed no title or URL anywhere; retrieval, citations and the UI now carry both (`1e1f7d1`) |
 | closed 2026-10-25 | KI-88 | the decision fallback has one deadline over its retries and failover, `llm_timeout_seconds` = 90 s (`2b92d0c`); a tighter ceiling would break the slow judge-only rerank |
-| R3 (Deep) | KI-93 | Deep has no conflict check (Auto discloses contradicting passages; Deep may not); trace parity done in `da72a48` |
+| closed 2026-10-26 | KI-93 | Deep runs Auto's conflict check and its trace matches Auto's stages (`da72a48`, `60d3214`) |
+| R3 (Deep) | KI-97 | Deep false abstentions: replay found entity-guard stops (locator words, a starved second clause) and IsUse stops that look like the 2048-token generator budget used up by reasoning; the controller-grade change is merged but unverified |
 | UI redesign | KI-92 | UI pass leftovers: duplicate Escape handlers, sub-44 px mobile targets, F-34 tiny text, live specs not run, F-25/F-26 checked on mocks only, two README nits |
 | closed 2026-10-25 | KI-91 | usage recording selects only the run's aggregate ledger row (`781714a`) |
 | closed 2026-10-25 | KI-90 | generator price constants set to the OpenRouter list price after a billed-rate check (53 calls billed 0.98x of it) |
@@ -720,6 +721,30 @@ Logged 2026-10-12 (phase 1, `make check-work` on `beta/phase1-check-work`).
 - **Phase:** before deploy (same user-visible defect as KI-86).
 - **Done when:** the IsUse decline text is in the question's language (reuse `stream_abstention`'s
   translation path, English questions stay a fixed template with no model call), with a test per case.
+
+## KI-97: Deep false abstentions on compound questions (replay 2026-10-26)
+
+- **Evidence:** `docs/history/reports/2026-10-26-0030-deep-replay.md` ($0, 24 answerable current-era Deep
+  items from draw 1: 6 ended in a decline, the evidence floor stopped none). Entity guard: 3 wrong stops,
+  one a locator word ("Hertfordshire" read 0.47), one a starved second clause (Deep merges hop winners by
+  rerank score with no per-sub-question share, so the top 5 were all one book), one Tagalog passages against
+  an English entity plus the locator "San Diego". The wrong readings (.47, .42) sit inside the range of
+  correct decoy stops (.46, .33): no threshold separates them. IsUse: 3 wrong stops (.13, .20, .45) whose
+  drafts named the gold facts; two have a 40 s generate and a thinking stream that ends mid-sentence.
+- **Mechanism (code read, not proven):** Deep calls the generator with `on_reasoning`, which turns reasoning
+  on (`providers/llm.py`), and the reasoning shares `llm_max_tokens["generator"]` = 2048 with the answer, so a
+  long thought can cut the answer off and IsUse scores a truncated or empty text. Auto does not request
+  reasoning. `finish_reason` is not stored.
+- **Done in `60d3214`:** the controller reads the pooled evidence line (G4), Deep runs the conflict check and uses
+  the intent blocks. The controller line's wording is not replay-verified: replay it on the 14 Deep items and
+  the books set (Jev calls only, a fraction of a cent) before trusting it.
+- **Open:** (1) raise or cap the Deep generator's budget and check `finish_reason` (a setting change,
+  disclose it); (2) a per-sub-question share when hop winners are merged; (3) partial answers (answer the
+  supported clauses, name the missing one) with 0 confident wrong kept; (4) entity-guard locator wording is a
+  Jev question text change, not a threshold change: leave it until (1) to (3) are measured.
+- **Phase:** R3 (Deep); post-deploy unless the owner moves it earlier.
+- **Done when:** a new frozen unseen Deep set (about 20 items) passes at least 80% of answerable items with
+  0 confident wrong over 2 draws.
 
 ## KI-96: web sources showed no title or URL (closed 2026-10-25)
 
