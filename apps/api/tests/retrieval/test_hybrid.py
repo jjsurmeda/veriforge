@@ -4,13 +4,14 @@ at ~100% branch coverage of build_scope."""
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.models import Document, Section, User
+from db.models import Document, Section, User, WebPage
 from retrieval.filters import ClientFilters, Ownership
 from retrieval.hybrid import ScoredChunk, hybrid_search
 from tests.retrieval.conftest import (
@@ -383,3 +384,44 @@ async def test_parallel_hops_on_one_session_keep_the_cache_write_unbounded(
     own = Ownership(user_id=user_a.id, collection_ids=[], chat_id=None)
     await asyncio.gather(*(_search(db, own) for _ in range(2)))
     assert await _statement_timeout(db) == before
+
+
+async def _web_page(db: AsyncSession, chat_id: UUID, url: str, title: str) -> WebPage:
+    page = WebPage(
+        chat_id=chat_id, url=url, title=title, expires_at=datetime.now(UTC) + timedelta(days=1)
+    )
+    db.add(page)
+    await db.commit()
+    await db.refresh(page)
+    return page
+
+
+async def test_web_chunk_carries_page_title_and_url_and_stays_chat_scoped(
+    db: AsyncSession, user_a: User, user_b: User
+) -> None:
+    chat_a = await make_chat(db, user_a)
+    chat_b = await make_chat(db, user_b)
+    page_a = await _web_page(db, chat_a.id, "https://example.com/a", "Page A")
+    page_b = await _web_page(db, chat_b.id, "https://example.com/b", "Page B")
+    await add_chunk(
+        db, document=None, section=None, ord=0, text_=QUERY_TEXT, embedding=vec(1, bump=1),
+        source_type="web", chat_id=chat_a.id, chunk_metadata={"web_page_id": str(page_a.id)},
+    )
+    other = await add_chunk(
+        db, document=None, section=None, ord=0, text_=QUERY_TEXT, embedding=vec(1, bump=1),
+        source_type="web", chat_id=chat_b.id, chunk_metadata={"web_page_id": str(page_b.id)},
+    )
+    # A chunk of chat A pointing at chat B's page must not borrow B's title or url.
+    stray = await add_chunk(
+        db, document=None, section=None, ord=1, text_=QUERY_TEXT, embedding=vec(1, bump=1),
+        source_type="web", chat_id=chat_a.id, chunk_metadata={"web_page_id": str(page_b.id)},
+    )
+
+    results = await _search(
+        db, Ownership(user_id=user_a.id, collection_ids=[], chat_id=chat_a.id)
+    )
+    by_id = {r.chunk_id: r for r in results}
+    assert other.id not in by_id
+    own = next(r for r in results if r.chunk_id != stray.id)
+    assert (own.document_name, own.url) == ("Page A", "https://example.com/a")
+    assert by_id[stray.id].url is None

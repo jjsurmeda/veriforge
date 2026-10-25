@@ -109,6 +109,7 @@ async def run_hop(
                 chunk_id=str(c.chunk_id),
                 document_id=str(c.document_id) if c.document_id else None,
                 document_name=c.document_name,
+                url=c.url,
                 page=c.page,
                 heading_path=c.heading_path,
                 source_type=c.source_type,

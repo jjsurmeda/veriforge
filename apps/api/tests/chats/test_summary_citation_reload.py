@@ -50,3 +50,42 @@ async def test_a_chunkless_citation_resolves_through_its_own_document_and_excerp
     assert citation["document_id"] == str(document.id)
     assert citation["document_name"] == "Dracula.txt"
     assert citation["excerpt"] == "A short summary of the whole book."
+
+
+async def test_a_web_citation_resolves_page_title_and_url_after_reload(
+    client: AsyncClient, db: AsyncSession
+) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from db.models import WebPage
+    from tests.retrieval.conftest import add_chunk, vec
+
+    signup = await client.post(
+        "/auth/signup", json={"email": "webcite@test.dev", "password": "password123"}
+    )
+    headers = {"Authorization": f"Bearer {signup.json()['access_token']}"}
+    user = (await db.execute(select(User).where(User.email == "webcite@test.dev"))).scalar_one()
+    chat = Chat(user_id=user.id, title="t")
+    db.add(chat)
+    await db.flush()
+    page = WebPage(
+        chat_id=chat.id,
+        url="https://example.com/x",
+        title="Example X",
+        expires_at=datetime.now(UTC) + timedelta(days=1),
+    )
+    db.add(page)
+    message = Message(chat_id=chat.id, role="assistant", content="Web [1].", status="complete")
+    db.add(message)
+    await db.flush()
+    chunk = await add_chunk(
+        db, document=None, section=None, ord=0, text_="web text", embedding=vec(1),
+        source_type="web", chat_id=chat.id, chunk_metadata={"web_page_id": str(page.id)},
+    )
+    db.add(Citation(message_id=message.id, n=1, chunk_id=chunk.id))
+    await db.commit()
+
+    listed = (await client.get(f"/chats/{chat.id}/messages", headers=headers)).json()
+    (citation,) = listed[-1]["citations"]
+    assert citation["document_name"] == "Example X"
+    assert citation["url"] == "https://example.com/x"

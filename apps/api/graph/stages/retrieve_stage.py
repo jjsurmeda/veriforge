@@ -402,6 +402,7 @@ def _retrieval_event(env: StageEnv, variant: str, chunks: list[ScoredChunk]) -> 
                 chunk_id=str(chunk.chunk_id),
                 document_id=str(chunk.document_id) if chunk.document_id else None,
                 document_name=chunk.document_name,
+                url=chunk.url,
                 page=chunk.page,
                 heading_path=chunk.heading_path,
                 source_type=chunk.source_type,

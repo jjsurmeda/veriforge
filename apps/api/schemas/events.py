@@ -37,6 +37,7 @@ class RetrievedChunk(BaseModel):
     chunk_id: str
     document_id: str | None = None
     document_name: str | None = None
+    url: str | None = None
     page: int | None = None
     heading_path: str | None = None
     source_type: str = "document"

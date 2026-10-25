@@ -105,6 +105,7 @@ async def add_chunk(
     page: int | None = None,
     source_type: str = "document",
     chat_id: UUID | None = None,
+    chunk_metadata: dict[str, str] | None = None,
 ) -> Chunk:
     chunk = Chunk(
         document_id=document.id if document else None,
@@ -115,6 +116,7 @@ async def add_chunk(
         embedding=embedding,
         source_type=source_type,
         chat_id=chat_id,
+        chunk_metadata=chunk_metadata or {},
     )
     db.add(chunk)
     await db.commit()
