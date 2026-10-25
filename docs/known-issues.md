@@ -7,7 +7,7 @@ The Phase column is authoritative; section placement below is from the first tri
 Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 - When you fix one, move it to the archive in the same commit, with the fixing commit hash.
 - A new finding that breaks no check is added under **post-beta** and opens no lane.
-- New IDs continue from KI-95.
+- New IDs continue from KI-96.
 
 ## Index
 
@@ -15,8 +15,9 @@ Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 | --- | --- | --- |
 | closed 2026-10-23 | KI-78 | `ho-near-vlad` declines cleanly on DeepSeek V4 Pro v6 (held-out, 2 runs); closed by the ADR-007 generator change |
 | closed 2026-10-23 | KI-79 | `plot-speckled-band` passes in all 5 DeepSeek V4 Pro draws; closed by the ADR-007 generator change |
-| before deploy | KI-86 | part 1 done (`47f83d5`): a held answer in the wrong language is regenerated once; part 2 open: streamed Auto answers are unchecked, so name the language up front |
-| before deploy | KI-95 | an IsUse decline for a non-English question is the English template (4 of 187 completed answers in the acceptance databases); the pre-generation abstain translates, the IsUse decline does not |
+| before deploy | KI-86 | fixed in code (`47f83d5` retry on held answers, `7da07ec` language named up front for non-English questions); closes after a books draw shows no `language_mismatch` on two draws (paid, waits for the owner) |
+| before deploy | KI-95 | fixed (`7da07ec`): the IsUse decline is translated to the question's language; closes with KI-86's draw |
+| closed 2026-10-25 | KI-96 | web sources showed no title or URL anywhere; retrieval, citations and the UI now carry both (`1e1f7d1`) |
 | closed 2026-10-25 | KI-88 | the decision fallback has one deadline over its retries and failover, `llm_timeout_seconds` = 90 s (`2b92d0c`); a tighter ceiling would break the slow judge-only rerank |
 | R3 (Deep) | KI-93 | Deep has no conflict check (Auto discloses contradicting passages; Deep may not); trace parity done in `da72a48` |
 | UI redesign | KI-92 | UI pass leftovers: duplicate Escape handlers, sub-44 px mobile targets, F-34 tiny text, live specs not run, F-25/F-26 checked on mocks only, two README nits |
@@ -619,6 +620,9 @@ Logged 2026-10-12 (phase 1, `make check-work` on `beta/phase1-check-work`).
   `ml-tl-maria-clara` in English (v5 draw 1, v6 draw 2); Sonnet 5.5 answered the
   English `xl-en-samsa` in German (v6). Each is a books content miss
   (`language_mismatch`), and they are the recurring cause of DeepSeek's misses.
+- **Part 2 done 2026-10-25 (`7da07ec`):** `build_grounded_messages` adds the one-line language instruction on the first
+  generation when the question's language is detected and is not English (English keeps the measured prompt; a
+  rewrite that produced English cannot force English). Not yet verified by a draw.
 - **Part 1 done 2026-10-25 (`47f83d5`):** `graph/stages/language_check.py` regenerates a HELD grounded answer
   once when `detect_language` says it differs from the question's. Deep always holds; Auto holds only below the
   stream line (about 20% of 187 replayed answers were held), and a streamed answer is not checked because a
@@ -716,6 +720,14 @@ Logged 2026-10-12 (phase 1, `make check-work` on `beta/phase1-check-work`).
 - **Phase:** before deploy (same user-visible defect as KI-86).
 - **Done when:** the IsUse decline text is in the question's language (reuse `stream_abstention`'s
   translation path, English questions stay a fixed template with no model call), with a test per case.
+
+## KI-96: web sources showed no title or URL (closed 2026-10-25)
+
+- **What:** a web chunk has no document, so `document_name` was null, and neither the retrieval event nor the
+  saved citation carried a URL; the UI showed a web source with no name and no link. Reported by the owner.
+- **Closed by** `1e1f7d1`: retrieval LEFT JOINs `web_pages` inside the chat scope (ownership test first), `url` is
+  on `RetrievedChunk` and `CitationOut` (including persisted citations), and the UI shows the title and the
+  host as a link only for `http` and `https`.
 
 ## KI-91: usage recording fails after a run's first async_judge ledger row
 

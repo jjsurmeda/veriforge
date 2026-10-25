@@ -139,9 +139,7 @@ async def test_a_fail_declines_with_the_found_missing_template(
     )
 
     assert outcome.state == "fail"
-    decline = await usefulness_decline(
-        str(RUN_ID), [_context(document_name="doc-1.md")], **_DECLINE
-    )
+    decline = await _decline([_context(document_name="doc-1.md")])
     # TR-4: found, missing, offered actions — the same shape a pre-generation
     # abstention renders.
     assert "What I found:" in decline
@@ -407,7 +405,12 @@ async def test_a_passing_isuse_changes_nothing(
     assert _event(bus, "run.completed")[0].status == "completed"
 
 
-_DECLINE = {"question": "How long is the warranty?", "litellm_model": "m", "metadata": {}}
+async def _decline(
+    contexts: list[ExpandedContext], question: str = "How long is the warranty?"
+) -> str:
+    return await usefulness_decline(
+        str(RUN_ID), contexts, question=question, litellm_model="m", metadata={}
+    )
 
 
 def _fake_stream(monkeypatch: pytest.MonkeyPatch, calls: list[str], *, fail: bool = False) -> None:
@@ -425,7 +428,7 @@ async def test_english_decline_is_the_template_with_no_model_call(
 ) -> None:
     calls: list[str] = []
     _fake_stream(monkeypatch, calls)
-    text = await usefulness_decline(str(RUN_ID), [_context()], **_DECLINE)
+    text = await _decline([_context()])
     assert "What is missing:" in text and calls == []
 
 
@@ -434,8 +437,9 @@ async def test_non_english_decline_goes_through_the_translation_path(
 ) -> None:
     calls: list[str] = []
     _fake_stream(monkeypatch, calls)
-    kw = {**_DECLINE, "question": "Combien de temps dure la garantie du produit ?"}
-    assert await usefulness_decline(str(RUN_ID), [_context()], **kw) == "TRADUIT"
+    assert (
+        await _decline([_context()], "Combien de temps dure la garantie du produit ?") == "TRADUIT"
+    )
     assert len(calls) == 1
 
 
@@ -444,6 +448,5 @@ async def test_a_translation_failure_falls_back_to_english(
 ) -> None:
     calls: list[str] = []
     _fake_stream(monkeypatch, calls, fail=True)
-    kw = {**_DECLINE, "question": "Combien de temps dure la garantie du produit ?"}
-    text = await usefulness_decline(str(RUN_ID), [_context()], **kw)
+    text = await _decline([_context()], "Combien de temps dure la garantie du produit ?")
     assert "What is missing:" in text
