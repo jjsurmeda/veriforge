@@ -12,8 +12,9 @@ from collections.abc import Awaitable, Callable
 from uuid import UUID
 
 from graph.deep import DeepRunInput, finalize_deep_run, prepare_deep_run
-from graph.generate import build_grounded_messages
+from graph.generate import build_grounded_messages, stream_grounded_answer
 from graph.stages.delivery import Delivery
+from graph.stages.language_check import fix_reply_language
 from graph.stages.run_env import FinishRequest, RunEnv
 from graph.stages.usefulness_stage import UsefulnessOutcome, run_usefulness, usefulness_decline
 from graph.timing import EventPublisher, make_step_timer
@@ -84,6 +85,22 @@ async def run_deep(env: RunEnv) -> None:
         await delivery.flush()
 
     await generate_step("generate", _generate)
+    if plan == "hold":  # KI-86: Deep holds every grounded answer
+        env.state.text = await fix_reply_language(
+            env.user_message,
+            env.state.text,
+            lambda language: stream_grounded_answer(
+                litellm_model=run.params.litellm_model,
+                question=run.rewritten,
+                contexts=run.contexts,
+                history=run.history,
+                metadata={
+                    "run_id": str(run.params.run_id),
+                    "user_id": str(run.params.user_id),
+                },
+                language=language,
+            ),
+        )
     text = env.state.text
 
     # IsUse (ADR-006, R2b item 1): the same post-generation check Auto runs,

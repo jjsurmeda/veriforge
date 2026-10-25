@@ -51,10 +51,13 @@ def build_grounded_messages(
     contexts: list[ExpandedContext],
     history: list[tuple[str, str]],
     intent: str | None = None,
+    language: str | None = None,
 ) -> list[dict[str, str]]:
-    messages: list[dict[str, str]] = [
-        {"role": "system", "content": grounded_system_prompt(intent)}
-    ]
+    system = grounded_system_prompt(intent)
+    if language:
+        # KI-86 retry only: code, not a prompt-file change.
+        system += f"\n\nWrite the whole answer in {language}, the language of the question."
+    messages: list[dict[str, str]] = [{"role": "system", "content": system}]
     for role, content in history[-6:]:
         messages.append({"role": role, "content": content})
     if contexts:
@@ -140,6 +143,7 @@ async def stream_grounded_answer(
     metadata: dict[str, str],
     intent: str | None = None,
     on_reasoning: Callable[[str], Awaitable[None]] | None = None,
+    language: str | None = None,
 ) -> AsyncIterator[str]:
     """Stream the grounded answer.
 
@@ -156,7 +160,7 @@ async def stream_grounded_answer(
     """
     async for token in stream_completion(
         litellm_model=litellm_model,
-        messages=build_grounded_messages(question, contexts, history, intent),
+        messages=build_grounded_messages(question, contexts, history, intent, language),
         metadata={**metadata, "role": "generator"},
         on_reasoning=on_reasoning,
         temperature=runtime_value("generation.temperature", None),
