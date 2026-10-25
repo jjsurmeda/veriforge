@@ -13,6 +13,7 @@ import {
 
 import type { DocumentOut, LibraryDocumentOut } from '../../../generated/types.gen'
 import { DocumentViewer } from '../../library/components/DocumentViewer'
+import { OcrBadge } from '../../library/components/OcrBadge'
 import { StatusChip } from '../../library/components/StatusChip'
 import { useDocumentChunks } from '../../library/hooks/useDocumentChunks'
 import {
@@ -69,6 +70,7 @@ function DocumentRow({
         >
           {document.name}
         </button>
+        <OcrBadge pageFlags={document.page_flags} />
         {flagged && (
           <span className="inline-flex shrink-0 items-center gap-1 text-2xs text-warning">
             <AlertTriangle size={11} strokeWidth={1.75} aria-hidden="true" />
@@ -318,7 +320,7 @@ export function SourcesTab({ chatId, viewerDocumentId, onViewDocument, onCloseVi
             hint={
               chatId === null
                 ? 'Start a chat from the composer and its sources will show up here.'
-                : 'PDF, DOCX, MD, TXT, up to 20 MB.'
+                : 'PDF, DOCX, MD, TXT, images, up to 20 MB. Scanned PDFs and images are read with OCR (beta).'
             }
             action={
               <button

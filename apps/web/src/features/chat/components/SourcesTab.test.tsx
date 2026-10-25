@@ -99,7 +99,7 @@ describe('SourcesTab', () => {
     renderTab()
 
     expect(await screen.findByText('Add sources to this chat.')).toBeTruthy()
-    expect(screen.getByText('PDF, DOCX, MD, TXT, up to 20 MB.')).toBeTruthy()
+    expect(screen.getByText('PDF, DOCX, MD, TXT, images, up to 20 MB. Scanned PDFs and images are read with OCR (beta).')).toBeTruthy()
     expect(screen.getByText(/always searched/)).toBeTruthy()
   })
 
@@ -137,7 +137,7 @@ describe('SourcesTab', () => {
       await screen.findByText('This chat’s sources could not be read.'),
     ).toBeTruthy()
     expect(screen.queryByText('Add sources to this chat.')).toBeNull()
-    expect(screen.queryByText('PDF, DOCX, MD, TXT, up to 20 MB.')).toBeNull()
+    expect(screen.queryByText('PDF, DOCX, MD, TXT, images, up to 20 MB. Scanned PDFs and images are read with OCR (beta).')).toBeNull()
     expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy()
   })
 
