@@ -14,6 +14,7 @@ run ingress cannot accidentally fuse with an arbitrary weight.
 
 import logging
 from dataclasses import dataclass, replace
+from typing import Any
 from uuid import UUID
 
 import asyncpg
@@ -130,6 +131,27 @@ class ScoredChunk:
         return replace(self, rerank_score=score)
 
 
+async def execute_with_statement_timeout(
+    session: AsyncSession, statement: str, params: dict[str, Any]
+) -> Any:
+    """Run one retrieval statement under `retrieval_statement_timeout_ms` (KI-89).
+
+    `SET LOCAL` lasts the whole transaction and the hops share one, so the bound
+    is put back to the default right after the statement; otherwise it cancels
+    the next write on the session (the `query_cache` embedding upsert). A
+    timed-out statement aborts the transaction, so nothing is reset there.
+    # ponytail: two hops interleaving on one session can still reset each
+    # other's bound; per-hop sessions would close that.
+    """
+    # int() keeps the SET literal injection-safe.
+    await session.execute(
+        text(f"SET LOCAL statement_timeout = {int(get_settings().retrieval_statement_timeout_ms)}")
+    )
+    rows = await session.execute(text(statement), params)
+    await session.execute(text("SET LOCAL statement_timeout = DEFAULT"))
+    return rows
+
+
 async def hybrid_search(
     session: AsyncSession,
     *,
@@ -140,7 +162,6 @@ async def hybrid_search(
     lexical_weight: float,
 ) -> list[ScoredChunk]:
     """Run the §9.2 query; returns up to FUSED_LIMIT chunks, fused order."""
-    settings = get_settings()
     weight = lexical_weight
     vec_limit = int(runtime_value("retrieval.vec_limit", VEC_LIMIT))
     lex_limit = int(runtime_value("retrieval.lex_limit", LEX_LIMIT))
@@ -161,12 +182,10 @@ async def hybrid_search(
             "lex_w": weight,
         }
     )
-    # int() keeps the SET literal injection-safe.
-    await session.execute(
-        text(f"SET LOCAL statement_timeout = {int(settings.retrieval_statement_timeout_ms)}")
-    )
     try:
-        rows = await session.execute(text(_QUERY.format(scope=scope, rrf_k=rrf_k)), params)
+        rows = await execute_with_statement_timeout(
+            session, _QUERY.format(scope=scope, rrf_k=rrf_k), params
+        )
     except DBAPIError as exc:
         if isinstance(exc.orig, asyncpg.QueryCanceledError):
             logger.warning("retrieval statement timeout")

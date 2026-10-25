@@ -2,10 +2,12 @@
 query in the system — cross-user leakage and widen-attempts are covered here
 at ~100% branch coverage of build_scope."""
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from uuid import UUID
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import Document, Section, User
@@ -358,3 +360,26 @@ async def test_icu_tokenizer_does_not_loosen_english_retrieval(
     )
 
     assert {c.chunk_id for c in hits if c.bm25_score is not None} == {hit.id}
+
+
+async def _statement_timeout(db: AsyncSession) -> str:
+    return (await db.execute(text("SHOW statement_timeout"))).scalar_one()
+
+
+async def test_statement_timeout_does_not_outlive_the_retrieval_statement(
+    db: AsyncSession, user_a: User
+) -> None:
+    """KI-89: `SET LOCAL` lasts the whole transaction, and the hops share one,
+    so the 1.5 s bound used to stay on and cancel the query_cache write."""
+    before = await _statement_timeout(db)
+    await _search(db, Ownership(user_id=user_a.id, collection_ids=[], chat_id=None))
+    assert await _statement_timeout(db) == before
+
+
+async def test_parallel_hops_on_one_session_keep_the_cache_write_unbounded(
+    db: AsyncSession, user_a: User
+) -> None:
+    before = await _statement_timeout(db)
+    own = Ownership(user_id=user_a.id, collection_ids=[], chat_id=None)
+    await asyncio.gather(*(_search(db, own) for _ in range(2)))
+    assert await _statement_timeout(db) == before

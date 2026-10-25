@@ -34,14 +34,12 @@ from dataclasses import dataclass, replace
 from uuid import UUID
 
 import asyncpg
-from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from config import get_settings
 from retrieval.errors import RetrievalTimeout
 from retrieval.filters import ClientFilters, Ownership, ScopeTable, build_scope
-from retrieval.hybrid import LEX_LIMIT, RRF_K, VEC_LIMIT
+from retrieval.hybrid import LEX_LIMIT, RRF_K, VEC_LIMIT, execute_with_statement_timeout
 from runtime import runtime_value
 
 logger = logging.getLogger(__name__)
@@ -172,7 +170,6 @@ async def search_summaries(
     Returns an empty list when nothing is in scope, which is the normal state
     for a document ingested before the backfill reached it — not an error.
     """
-    settings = get_settings()
     vec_limit = int(runtime_value("retrieval.vec_limit", VEC_LIMIT))
     lex_limit = int(runtime_value("retrieval.lex_limit", LEX_LIMIT))
     rrf_k = int(runtime_value("retrieval.rrf_k", RRF_K))
@@ -190,12 +187,10 @@ async def search_summaries(
             "lex_w": lexical_weight,
         }
     )
-    # int() keeps the SET literal injection-safe.
-    await session.execute(
-        text(f"SET LOCAL statement_timeout = {int(settings.retrieval_statement_timeout_ms)}")
-    )
     try:
-        rows = await session.execute(text(_SUMMARY_QUERY.format(scope=scope, rrf_k=rrf_k)), params)
+        rows = await execute_with_statement_timeout(
+            session, _SUMMARY_QUERY.format(scope=scope, rrf_k=rrf_k), params
+        )
     except DBAPIError as exc:
         if isinstance(exc.orig, asyncpg.QueryCanceledError):
             logger.warning("summary retrieval statement timeout")
