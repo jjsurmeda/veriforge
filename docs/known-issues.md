@@ -791,6 +791,13 @@ Logged 2026-10-12 (phase 1, `make check-work` on `beta/phase1-check-work`).
   label that requires the Japanese string. Slow tail: 98% of generate time is reasoning (3.6k and 2.6k tokens at about
   50 tokens/s); no cap at or above 4096 would have cut any run, so `deep_generator_max_tokens` stays 8192. Partial
   answers are not supported by this data.
+- **Unseen Deep set frozen (`538d3fd`):** `evals/deep/unseen_items.json` (20 items: 14 answerable, 6 should-decline;
+  books corpus; written blind, the pipeline never ran on them, every fact checked against `veriforge_accept`; no
+  question or required fact repeats an earlier set) and `unseen_audit.json`, pinned by SHA-256 in
+  `tests/evals/test_deep_unseen_set.py`: items `dc31c4713082c6b427b3f91e502dccfc37583fba42e8884da4e383de7b387636`,
+  audit `eafa0da3f6c96d200ce1194798f94c79a3240fc83b0666144a502aace2e62126`. Registered as `deep_unseen` in the gate
+  (counts only). **Do not edit these files, and do not read model output for them before the first draw**; the first
+  paid draw on this set is the unseen-set evidence for the agentic rating.
 - **Still open:** (3) partial answers (answer the supported clauses, name the missing one) with 0 confident
   wrong kept; (4) entity-guard locator wording is a Jev question text change, not a threshold change: leave it
   until a draw shows what (1) and (2) fixed.
