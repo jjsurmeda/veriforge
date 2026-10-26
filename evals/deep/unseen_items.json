@@ -1,0 +1,266 @@
+{
+  "about": "FROZEN unseen Deep set (2026-10-26). Written blind to how the system behaves: the pipeline was not run on these items and no model output for them was read. 14 answerable items (each needs two or more separate passages or books) and 6 should-decline lookalikes (not-in-sources or false premise), over the books corpus. Uses Sherlock Holmes stories, Pride and Prejudice scenes, Frankenstein and Alice passages the earlier Deep splits did not ask about. Labels written from my own knowledge of the books, then the corpus was queried only to confirm each fact is present or absent (evals/deep/unseen_audit.json, with the gold chunk ids). Scoring fields as test_items.json: mention_all = strings the answer must all contain. Do not edit after the freeze: the SHA-256 of this file and of unseen_audit.json is pinned by a test.",
+  "corpus": "books",
+  "items": [
+    {
+      "id": "deep-unseen-sherlock-thumb-engineer",
+      "turns": [
+        "What is the name of the hydraulic engineer in The Engineer's Thumb, and what name does the man who hires him go by?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Sherlock"
+      ],
+      "mention_all": [
+        "Hatherley",
+        "Stark"
+      ],
+      "proof": "Label written from my own knowledge of the book BEFORE any model output for it existed; the corpus was only queried afterwards to confirm the facts are present (audit file). Why more than one hop: the engineer's name is on his card in the opening chapter; the employer's name (Colonel Lysander Stark) appears only in the narrated journey to the press, several passages later."
+    },
+    {
+      "id": "deep-unseen-sherlock-noble-bachelor",
+      "turns": [
+        "Whom is Lord St. Simon to marry in The Noble Bachelor, and who is the man she had secretly married before and who turns up at the end?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Sherlock"
+      ],
+      "mention_all": [
+        "Doran",
+        "Moulton"
+      ],
+      "proof": "Label written from my own knowledge of the book BEFORE any model output for it existed; the corpus was only queried afterwards to confirm the facts are present (audit file). Why more than one hop: the engagement is in the newspaper notice and Lord St. Simon's interview; the first husband is revealed only in the closing explanation."
+    },
+    {
+      "id": "deep-unseen-sherlock-copper-beeches-dress",
+      "turns": [
+        "What colour of dress is the governess in The Copper Beeches asked to wear indoors, and what is the surname of the man who hires her?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Sherlock"
+      ],
+      "mention_all": [
+        "blue",
+        "Rucastle"
+      ],
+      "proof": "Label written from my own knowledge of the book BEFORE any model output for it existed; the corpus was only queried afterwards to confirm the facts are present (audit file). Why more than one hop: the dress condition is in the employer's offer in the middle of the story; the surname is given at the start of the correspondence and on the journey, in other passages."
+    },
+    {
+      "id": "deep-unseen-sherlock-beryl-coronet",
+      "turns": [
+        "Which banker is entrusted with the beryl coronet, and which friend of his son Arthur is the real thief?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Sherlock"
+      ],
+      "mention_all": [
+        "Holder",
+        "Burnwell"
+      ],
+      "proof": "Label written from my own knowledge of the book BEFORE any model output for it existed; the corpus was only queried afterwards to confirm the facts are present (audit file). Why more than one hop: the banker introduces himself in the first chapter of the story; the friend is named in his account of the household and again in Holmes's explanation."
+    },
+    {
+      "id": "deep-unseen-sherlock-boscombe-valley",
+      "turns": [
+        "Who is accused of murdering Charles McCarthy at the Boscombe Pool, and who turns out to be the real murderer?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Sherlock"
+      ],
+      "mention_all": [
+        "James McCarthy",
+        "Turner"
+      ],
+      "proof": "Label written from my own knowledge of the book BEFORE any model output for it existed; the corpus was only queried afterwards to confirm the facts are present (audit file). Why more than one hop: the accusation is in the newspaper and inquest passages; the real culprit is named only when he calls on Holmes near the end."
+    },
+    {
+      "id": "deep-unseen-sherlock-pips-bridge-ship",
+      "turns": [
+        "In The Five Orange Pips, near which bridge is John Openshaw found drowned, and what is the name of the barque that Holmes traces the senders to?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Sherlock"
+      ],
+      "mention_all": [
+        "Waterloo",
+        "Lone Star"
+      ],
+      "proof": "Label written from my own knowledge of the book BEFORE any model output for it existed; the corpus was only queried afterwards to confirm the facts are present (audit file). Why more than one hop: the bridge is in the newspaper account after Openshaw's death; the ship is found later through the shipping register and the telegram to Savannah."
+    },
+    {
+      "id": "deep-unseen-sherlock-twisted-lip",
+      "turns": [
+        "Who is the beggar Hugh Boone really, and in which opium den does Watson find Holmes?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Sherlock"
+      ],
+      "mention_all": [
+        "St. Clair",
+        "Bar of Gold"
+      ],
+      "proof": "Label written from my own knowledge of the book BEFORE any model output for it existed; the corpus was only queried afterwards to confirm the facts are present (audit file). Why more than one hop: the den is in the opening scene; the beggar's real identity is revealed in the final chapter."
+    },
+    {
+      "id": "deep-unseen-cross-lucas-lodge-geneva",
+      "turns": [
+        "What is the name of Sir William Lucas's house near Meryton in Pride and Prejudice, and in which Swiss city did Victor Frankenstein grow up?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Pride",
+        "Frankenstein"
+      ],
+      "mention_all": [
+        "Lucas Lodge",
+        "Geneva"
+      ],
+      "proof": "Label written from my own knowledge of the book BEFORE any model output for it existed; the corpus was only queried afterwards to confirm the facts are present (audit file). Why more than one hop: two separate books, one fact from each."
+    },
+    {
+      "id": "deep-unseen-cross-dormouse-palace",
+      "turns": [
+        "What are the names of the three little sisters in the Dormouse's story at the Mad Tea-Party, and what is the name of the building in which the Time Traveller finds a gallery of palaeontology?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Alice",
+        "Time Machine"
+      ],
+      "mention_all": [
+        "Elsie",
+        "Green Porcelain"
+      ],
+      "proof": "Label written from my own knowledge of the book BEFORE any model output for it existed; the corpus was only queried afterwards to confirm the facts are present (audit file). Why more than one hop: two separate books, one fact from each."
+    },
+    {
+      "id": "deep-unseen-frankenstein-cottage-family",
+      "turns": [
+        "What is the name of the old man in the cottage that the creature secretly watches, and of the foreign young woman who joins the family?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Frankenstein"
+      ],
+      "mention_all": [
+        "De Lacey",
+        "Safie"
+      ],
+      "proof": "Label written from my own knowledge of the book BEFORE any model output for it existed; the corpus was only queried afterwards to confirm the facts are present (audit file). Why more than one hop: the old man is introduced in the creature's first account of the cottage; Safie's arrival and her own history come in later passages."
+    },
+    {
+      "id": "deep-unseen-frankenstein-university-islands",
+      "turns": [
+        "At which university town does Victor Frankenstein study and make the creature, and which remote islands does he retreat to while building the second one?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Frankenstein"
+      ],
+      "mention_all": [
+        "Ingolstadt",
+        "Orkney"
+      ],
+      "proof": "Label written from my own knowledge of the book BEFORE any model output for it existed; the corpus was only queried afterwards to confirm the facts are present (audit file). Why more than one hop: the university is in the early chapters; the islands are in the third volume."
+    },
+    {
+      "id": "deep-unseen-alice-caterpillar-arithmetic",
+      "turns": [
+        "Which creature advises Alice from the top of a mushroom, and what are the branches of Arithmetic the Mock Turtle names?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Alice"
+      ],
+      "mention_all": [
+        "Caterpillar",
+        "Uglification"
+      ],
+      "proof": "Label written from my own knowledge of the book BEFORE any model output for it existed; the corpus was only queried afterwards to confirm the facts are present (audit file). Why more than one hop: the mushroom scene and the Mock Turtle's school lessons are in different chapters, far apart."
+    },
+    {
+      "id": "deep-unseen-pride-entail-colonel",
+      "turns": [
+        "Who is the heir to the Bennets' entailed estate, and which colonel, a cousin of Mr. Darcy, visits the parsonage with him?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Pride"
+      ],
+      "mention_all": [
+        "Collins",
+        "Fitzwilliam"
+      ],
+      "proof": "Label written from my own knowledge of the book BEFORE any model output for it existed; the corpus was only queried afterwards to confirm the facts are present (audit file). Why more than one hop: the entail is explained near the beginning; the colonel appears in the Kent chapters."
+    },
+    {
+      "id": "deep-unseen-pride-patroness-park",
+      "turns": [
+        "Which noble lady is Mr. Collins's patroness, and what is the name of the park where she lives in Kent?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Pride"
+      ],
+      "mention_all": [
+        "de Bourgh",
+        "Rosings"
+      ],
+      "proof": "Label written from my own knowledge of the book BEFORE any model output for it existed; the corpus was only queried afterwards to confirm the facts are present (audit file). Why more than one hop: the patroness is named in the early chapters when Collins's situation is described; the park is named later, when Elizabeth visits Charlotte at Hunsford."
+    },
+    {
+      "id": "deep-unseen-sherlock-noble-clergyman",
+      "turns": [
+        "What is the name of the clergyman who married Lord St. Simon and Hatty Doran at St. George's, Hanover Square, and who played the organ at the ceremony?"
+      ],
+      "expect": "not_in_sources",
+      "proof": "Decoy written from my own knowledge of the book BEFORE any model output for it existed. The wedding is reported but neither the clergyman nor an organist is named; looks in-corpus (right story, right church, plausible details)."
+    },
+    {
+      "id": "deep-unseen-sherlock-lestrade-first-name",
+      "turns": [
+        "What is Inspector Lestrade's first name, and in which year did he join Scotland Yard?"
+      ],
+      "expect": "not_in_sources",
+      "proof": "Decoy written from my own knowledge of the book BEFORE any model output for it existed. Lestrade appears as a surname only and no year is given."
+    },
+    {
+      "id": "deep-unseen-frankenstein-degree",
+      "turns": [
+        "In what year did Victor Frankenstein take his degree at Ingolstadt, and what was the title of his dissertation?"
+      ],
+      "expect": "not_in_sources",
+      "proof": "Decoy written from my own knowledge of the book BEFORE any model output for it existed. False premise: Victor studies at Ingolstadt but no degree, year or dissertation is mentioned."
+    },
+    {
+      "id": "deep-unseen-alice-governess",
+      "turns": [
+        "What is the name of Alice's governess, and how old is Alice at the start of the story?"
+      ],
+      "expect": "not_in_sources",
+      "proof": "Decoy written from my own knowledge of the book BEFORE any model output for it existed. Alice's lessons are alluded to but no governess is named and her age is not stated."
+    },
+    {
+      "id": "deep-unseen-timemachine-doctor",
+      "turns": [
+        "What is the Doctor's name among the Time Traveller's dinner guests, and in what year is the dinner held?"
+      ],
+      "expect": "not_in_sources",
+      "proof": "Decoy written from my own knowledge of the book BEFORE any model output for it existed. The guests are known by their professions (the Doctor, the Psychologist) and no year is given."
+    },
+    {
+      "id": "deep-unseen-sherlock-fowler-ship",
+      "turns": [
+        "On which ship do Alice Rucastle and Mr. Fowler sail to America?"
+      ],
+      "expect": "not_in_sources",
+      "proof": "Decoy written from my own knowledge of the book BEFORE any model output for it existed. False premise: Fowler is a seaman who takes a government post in Mauritius; no ship and no American voyage is stated."
+    }
+  ]
+}

@@ -118,13 +118,17 @@ MAX_P50_TOTAL_MS = 45_000
 # "deep", their own pinned sizes. Registration only; no clause changed.
 DEEP_TEST_COUNTS = {**DEEP_COUNTS, "items": 16, "answer_items": 10, "abstain_items": 6}
 DEEP_HELDOUT_COUNTS = {**DEEP_COUNTS, "items": 8, "answer_items": 4, "abstain_items": 4}
-DEEP_SETS = ("deep", "deep_test", "deep_heldout")
+# The unseen Deep set (evals/deep/unseen_items.json, books corpus, frozen
+# 2026-10-26, written before any run): 14 answerable, 6 should-decline.
+DEEP_UNSEEN_COUNTS = {**DEEP_COUNTS, "items": 20, "answer_items": 14, "abstain_items": 6}
+DEEP_SETS = ("deep", "deep_test", "deep_heldout", "deep_unseen")
 EXPECTED_BY_SET = {
     "books": EXPECTED_COUNTS,
     "heldout": HELDOUT_COUNTS,
     "deep": DEEP_COUNTS,
     "deep_test": DEEP_TEST_COUNTS,
     "deep_heldout": DEEP_HELDOUT_COUNTS,
+    "deep_unseen": DEEP_UNSEEN_COUNTS,
 }
 
 # PRD §5, as the brief takes it for one run. Named with the arithmetic rather
@@ -342,7 +346,7 @@ def main(argv: list[str]) -> int:
     if len(args) != 1 or set_name not in EXPECTED_BY_SET:
         print(
             "usage: python -m evals.acceptance_gate <summary.json> "
-            "[--set=books|heldout|deep|deep_test|deep_heldout]",
+            "[--set=books|heldout|deep|deep_test|deep_heldout|deep_unseen]",
             file=sys.stderr,
         )
         return 2
