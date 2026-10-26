@@ -215,11 +215,18 @@ async def test_the_prompt_is_the_probe_s_byte_for_byte() -> None:
     assert question.prompt == expected
 
 
-async def test_sources_are_truncated_like_the_probe() -> None:
-    long_text = "x" * 2000
+async def test_sources_are_shown_up_to_the_generator_window() -> None:
+    """KI-97: a fact after char 1200 must reach the verifier; the cut is the
+    generator's own `SOURCE_MAX_CHARS`, not the probe's old 1200."""
+    from graph.generate import SOURCE_MAX_CHARS
+
+    text = "x" * 2000 + "THE FACT"
+    question = is_use_question("q", "a", [_context(text)])
+    assert "THE FACT" in question.prompt
+    long_text = "y" * (SOURCE_MAX_CHARS + 500)
     question = is_use_question("q", "a", [_context(long_text)])
-    assert question.prompt.count("x" * 1200) == 1
-    assert "x" * 1201 not in question.prompt
+    assert question.prompt.count("y" * SOURCE_MAX_CHARS) == 1
+    assert "y" * (SOURCE_MAX_CHARS + 1) not in question.prompt
 
 
 # ---------------------------------------------------------------------------

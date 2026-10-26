@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING
 from decisions import threshold
 from decisions.engine import DecisionUnavailable, EngineProtocol
 from graph.abstain import build_abstain_event, build_abstain_template, stream_abstention
+from graph.generate import SOURCE_MAX_CHARS
 from schemas.decisions import Answer, Noul
 from schemas.events import Decision
 
@@ -56,9 +57,12 @@ IS_USE_PROMPT = (
     "asks for, or if the sources do not contain what the question asks for."
 )
 
-# The probe truncated each source at these chars, so the truncation is part of
-# the measurement the threshold was derived from.
-_SOURCE_CHARS = 1200
+# Each source is shown to the verifier up to the same length the generator sees
+# (`graph.generate.SOURCE_MAX_CHARS`). The probe the `is_use` threshold was
+# derived from cut sources at 1200 chars, which hid facts that sit later in a
+# context (KI-97: alice-knave-pig, verwandlung-apple); the window change is a
+# disclosed exception and the threshold is re-checked in the validation report.
+_SOURCE_CHARS = SOURCE_MAX_CHARS
 
 
 @dataclass

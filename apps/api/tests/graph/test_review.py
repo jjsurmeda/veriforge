@@ -987,3 +987,23 @@ class TestClaimExtractionV2Captures:
         ):
             for claim in self._claims(seed_id):
                 assert not welds.search(claim), f"{seed_id}: {claim!r} is not atomic"
+
+
+class TestCitedSourceWindow:
+    def test_claim_question_shows_the_cited_source_up_to_the_generator_window(self) -> None:
+        """KI-97: the decisive phrase sat past char 2000 and revision deleted a true claim."""
+        from uuid import uuid4
+
+        from graph.generate import SOURCE_MAX_CHARS
+        from graph.review import ExtractedClaim, _claim_question
+
+        text = "x" * 2500 + "THE DECISIVE PHRASE" + "z" * (SOURCE_MAX_CHARS)
+        chunk = ScoredChunk(
+            chunk_id=uuid4(), document_id=None, document_name="d", section_id=None, ord=0,
+            page=1, text=text, heading_path=None, source_type="document",
+            vector_score=0.5, bm25_score=0.5, fused_score=0.5, rerank_score=0.9,
+        )
+        claim = ExtractedClaim(claim_id="c1", text="the claim", citation_ids=[1], is_factual=True)
+        prompt = _claim_question(claim, [ExpandedContext(chunk, text)]).prompt
+        assert "THE DECISIVE PHRASE" in prompt
+        assert "z" * (SOURCE_MAX_CHARS - 2519 + 1) not in prompt  # still capped at the generator window

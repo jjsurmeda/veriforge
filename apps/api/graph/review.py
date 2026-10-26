@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from decisions.engine import DecisionUnavailable, EngineProtocol
+from graph.generate import SOURCE_MAX_CHARS
 from prompts.load import load_prompt
 from providers.llm import complete
 from retrieval.context import count_tokens
@@ -31,6 +32,9 @@ PARTIAL_CREDIT = 0.5
 REVISION_MIN_SUPPORT = 0.5
 BATCH_TOKEN_BUDGET = 28_000
 _CHUNK_CAP = 2000
+# A claim is checked against the cited source as long as the generator saw it
+# (KI-97: the 2000-char cut hid the decisive phrase and revision deleted true claims).
+_CITED_SOURCE_CHARS = SOURCE_MAX_CHARS
 
 _FENCE_RE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
 _CITATION_RE = re.compile(r"\[(\d{1,2})\]")
@@ -214,7 +218,7 @@ def _claim_question(claim: ExtractedClaim, contexts: list[ExpandedContext]) -> C
     cited: list[str] = []
     for n in claim.citation_ids:
         if 1 <= n <= len(contexts):
-            cited.append(f"[{n}] {contexts[n - 1].context_text[:_CHUNK_CAP]}")
+            cited.append(f"[{n}] {contexts[n - 1].context_text[:_CITED_SOURCE_CHARS]}")
     state_text = "\n\n".join(cited) if cited else "(no cited source — uncited claim)"
     return Choice(
         prompt=(
