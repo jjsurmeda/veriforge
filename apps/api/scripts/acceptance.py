@@ -190,8 +190,9 @@ def passes(item: dict[str, Any], result: dict[str, Any]) -> bool:
     if expected == "answer":
         return completed and bool(result["citations"]) and cite_hit and mention_hit
     if expected == "not_in_sources":
-        plain = result["message_status"] == "abstained" or says_not_in_sources(answer)
-        return plain and not result["citations"]
+        # Citations do not decide the item: a cited decline is *unclean* (PRD §5,
+        # reported by the summary and the books gate), not an asserted answer.
+        return result["message_status"] == "abstained" or says_not_in_sources(answer)
     return False
 
 
