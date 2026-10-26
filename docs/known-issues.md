@@ -764,6 +764,16 @@ Logged 2026-10-12 (phase 1, `make check-work` on `beta/phase1-check-work`).
   (2) `merge_winners`: each sub-question's best two chunks come first; on the 38 recorded runs 8 change
   (4 answerable, 4 not-in-sources), no gold term is lost, `cross-two-elizabeths` does not change (its second
   sub-question already holds 2 of 6 slots), so the recorded upside is small.
+- **Deep draw 2, 2026-10-26** (`docs/history/reports/2026-10-26-1100-deep-draw-2.md`, served commit `c7d234e`,
+  $1.049 for 38 items from generation records, tuning evidence on the same frozen splits): **26/38** (test 12/16,
+  dev 9/14, held-out 5/8) against draw 1's 21/38 (10, 6, 5). Pre-declared bar 2 (at least 27/38) **missed by one
+  item**; no split fell below draw 1. Gate as it stands: test PASS, dev FAIL (2 flagged confident wrong, 2
+  content misses against a limit of 1), held-out FAIL (1 flagged). All 3 flagged confident-wrong items are cited
+  prose declines the KI-87 regex missed (conservatory-name, traveller-name, renfield-first-name); so are
+  frankenstein-advocate and candide-baron: 5 should-abstain items scored as failures by the scorer, no real wrong
+  answer found. Mechanism: 0 of 38 `finish_reason=length` (draw 1 about 2), answerable cap-outs 2 (draw 1: 5),
+  total p50 30 s / p95 71 s, generate p50 13.7 s / p95 58 s (two runs with a 58 to 76 s generate, one run at 94 s:
+  the thinking tail is real), mean hops 2.45, 0 conflict disclosures (no conflicts in these sets).
 - **Still open:** (3) partial answers (answer the supported clauses, name the missing one) with 0 confident
   wrong kept; (4) entity-guard locator wording is a Jev question text change, not a threshold change: leave it
   until a draw shows what (1) and (2) fixed.
