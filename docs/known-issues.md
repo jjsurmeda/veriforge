@@ -27,7 +27,7 @@ Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 | closed 2026-10-25 | KI-90 | generator price constants set to the OpenRouter list price after a billed-rate check (53 calls billed 0.98x of it) |
 | before deploy | KI-94 | every run triggers an async quality judge on Haiku 4.5 (about $0.007 per run, more than the generator); model is a role; deployed `trace_sample_rate` decided (0.1), set it at deploy |
 | closed 2026-10-25 | KI-89 | the retrieval statement timeout is reset right after the statement (`2b92d0c`); two hops interleaving on one session can still briefly reset each other's bound |
-| R3 (scorer) | KI-87 | decline detection is a regex over wordings; new phrasings slip past it (3 found in 3 days) |
+| closed 2026-10-26 | KI-87 | decline detection recognises prose declines that name the missing thing; 50 recorded replies as tests; 9 stored should-abstain runs reclassify, no answerable run changes (`fb15ed4`) |
 | closed 2026-10-22 | KI-80 | outside-whitman removed from the books set: the only passage says a distinction exists but not what it is |
 | R3 (floor) | KI-81 | the evidence floor flips on borderline items: the grade varies 0.444-0.468 around 0.455 between runs |
 | check-work (CI) | KI-82 | Playwright specs are not run in CI; paid evals are manual |
@@ -774,6 +774,23 @@ Logged 2026-10-12 (phase 1, `make check-work` on `beta/phase1-check-work`).
   answer found. Mechanism: 0 of 38 `finish_reason=length` (draw 1 about 2), answerable cap-outs 2 (draw 1: 5),
   total p50 30 s / p95 71 s, generate p50 13.7 s / p95 58 s (two runs with a 58 to 76 s generate, one run at 94 s:
   the thinking tail is real), mean hops 2.45, 0 conflict disclosures (no conflicts in these sets).
+- **KI-87 scorer fix merged in `fb15ed4` (disclosed exception, owner approved after seeing draw 2):** confident wrong in the
+  stored runs goes OLD to NEW draw 2 accept 2 to 0, draw 2 held-out 1 to 0, draw 1 accept 4 to 0, draw 1 held-out 2 to 0
+  (the 3 flags in the draw-2 report were counted per split; r3dec identical). The gate moves dev FAIL to FAIL (two content
+  misses remain) and held-out FAIL to PASS. **The per-item pass count stays 26/38**: the flipped replies cite their
+  sources while declining, so they classify as unclean declines, not passes. My earlier estimate of about 31/38 was
+  wrong for that reason. Whether a cited prose decline should count as a clean decline is a policy question (the clean
+  decline rule is "no citations"); 9 runs changed class, all should-abstain; one is outside the draw-2 list
+  (deep-quixote-rosinante-birth, draw 1).
+- **Failure analysis 2026-10-26** (`docs/history/reports/2026-10-26-1025-failure-analysis.md`): of the 7 real failures,
+  none is a generator that failed to state a fact it had. IsUse reads each source's first 1200 characters and the claim
+  reviewer the first 2000, so alice-knave-pig (IsUse 0.43 vs 0.47), verwandlung-apple and ho-twocities-carton-lucie lost
+  correct facts to the verifier and the review step; the two false abstentions (carbuncle-thief, norton-adler) are the
+  entity guard on "Countess" (0.46) and "King" (0.44) against 0.50 with the evidence gate passed (0.90, 0.93);
+  cross-two-elizabeths never retrieved the marriage chunks and the revision deleted its supported half; rashomon is a
+  label that requires the Japanese string. Slow tail: 98% of generate time is reasoning (3.6k and 2.6k tokens at about
+  50 tokens/s); no cap at or above 4096 would have cut any run, so `deep_generator_max_tokens` stays 8192. Partial
+  answers are not supported by this data.
 - **Still open:** (3) partial answers (answer the supported clauses, name the missing one) with 0 confident
   wrong kept; (4) entity-guard locator wording is a Jev question text change, not a threshold change: leave it
   until a draw shows what (1) and (2) fixed.
