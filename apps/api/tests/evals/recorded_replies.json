@@ -1,0 +1,352 @@
+[
+ {
+  "item": "deep-test-pride-collins-charlotte",
+  "expect_class": "answer",
+  "source": "recorded answered, veriforge_accept 2026-10-22",
+  "cited": true,
+  "reply": "Elizabeth Bennet firmly declines Mr. Collins's proposal, stating, \"it is impossible for me to do otherwise than decline them\" and insisting she is \"perfectly serious in my refusal\" [9]. Despite pressure from her mother and Mr. Collins's persistence, her determination remains unwavering [2].\n\nCharlotte Lucas becomes engaged to Mr. Collins soon after Elizabeth's rejection. Charlotte aims \"to secure her from any return of Mr. Collins’s addresses, by engaging them towards herself\" [4]. Mr. Collins quickly visits Charlotte at Lucas Lodge, and \"in as short a time as Mr. Collins’s long speeches would allow, everything was settled between them\" [4]. Elizabeth later reflects on \"the strangeness of Mr. Collins’s making two offers of marriage within three days\" [8], confirming the rapid timeline."
+ },
+ {
+  "item": "deep-test-sherlock-carbuncle-thief",
+  "expect_class": "answer",
+  "source": "recorded answered, veriforge_accept 2026-10-22",
+  "cited": true,
+  "reply": "James Ryder stole the blue carbuncle [1]. The hat and goose found by commissionaire Peterson on Christmas morning belong to Henry Baker [2][3]."
+ },
+ {
+  "item": "deep-test-sherlock-redheaded-purpose",
+  "expect_class": "answer",
+  "source": "recorded answered, veriforge_accept 2026-10-22",
+  "cited": true,
+  "reply": "The Red-Headed League paid Jabez Wilson to copy out the *Encyclopædia Britannica* for four hours a day, from ten to two [1]. The League was really a cover to get Wilson out of his pawnbroker's shop for a number of hours every day so that his assistant could tunnel from the shop's cellar into the neighboring City and Suburban Bank in order to rob it [2]."
+ },
+ {
+  "item": "deep-test-frankenstein-justine-proof",
+  "expect_class": "answer",
+  "source": "recorded answered, veriforge_accept 2026-10-22",
+  "cited": true,
+  "reply": "Justine Moritz is the servant executed for William’s murder; she perished on the scaffold as a murderess [1][5]. The item found in her pocket and taken as proof against her was the picture of Victor’s mother, which Elizabeth had placed around William’s neck an hour before he was missed [3][15]."
+ },
+ {
+  "item": "deep-test-alice-knave-pig",
+  "expect_class": "answer",
+  "source": "recorded answered, veriforge_accept 2026-10-22",
+  "cited": true,
+  "reply": "The Duchess’s baby turns into a **pig** while in Alice’s arms [2]."
+ },
+ {
+  "item": "deep-test-timemachine-sphinx-fire",
+  "expect_class": "answer",
+  "source": "recorded answered, veriforge_accept 2026-10-22",
+  "cited": true,
+  "reply": "The monument is the White Sphinx [1], and in the woods he lights camphor to keep the Morlocks away [3].\n\nThe Time Machine is hidden inside the hollow pedestal of the White Sphinx [1][10]. When the Time Traveller is fleeing through the woods with the Morlocks pursuing him, he takes a lump of camphor from his pocket, lights it, and flings it to the ground so that it flares up and drives back the Morlocks and the shadows [3]. He also later uses camphor when building a bonfire to defend their encampment [12]."
+ },
+ {
+  "item": "deep-test-frankenstein-advocate",
+  "expect_class": "decline",
+  "source": "KI-97 draw 1 2026-10-22",
+  "cited": true,
+  "reply": "The sources do not name an advocate who defends Justine Moritz at her trial. Justine requests \"permission to have a few witnesses examined concerning my character\" [2], and \"several witnesses were called\" [2]. The trial does feature an \"advocate against her\" who states the charge [8]."
+ },
+ {
+  "item": "deep-pride-wickham-elopement",
+  "expect_class": "answer",
+  "source": "recorded answered, veriforge_accept 2026-10-22",
+  "cited": true,
+  "reply": "Lydia Bennet elopes with George Wickham [1]. In the end, it is Mr. Darcy who pays for the marriage [2].\n\nElizabeth reveals to her father that Mr. Darcy was the one who “made up the match, gave the money, paid the fellow’s debts, and got him his commission” [2]. Darcy's actions included purchasing Wickham's commission [6]."
+ },
+ {
+  "item": "deep-frankenstein-creature-books",
+  "expect_class": "answer",
+  "source": "recorded answered, veriforge_accept 2026-10-22",
+  "cited": true,
+  "reply": "The three works the creature finds are *Paradise Lost*, a volume of *Plutarch’s Lives*, and *The Sorrows of Werter* [1].\n\nReading these prompts deep reflections on his own solitary and miserable place among men. He applies what he reads personally to his own feelings and condition, finding himself similar yet strangely unlike the beings he reads about [5]. Reflecting on *Paradise Lost*, he compares his situation to Adam, as he is \"apparently united by no link to any other being in existence,\" yet notes Adam was a perfect creature while he is \"wretched, helpless, and alone,\" and often sees Satan as a \"fitter emblem\" of his condition due to the bitter envy he feels [3]. He also reflects that he is ignorant of his own creation and creator, and knows himself to possess no money, friends, or property, while also recognizing he is \"not even of the same nature as man\" [4]."
+ },
+ {
+  "item": "deep-quixote-sancho-office",
+  "expect_class": "answer",
+  "source": "recorded answered, veriforge_accept 2026-10-22",
+  "cited": true,
+  "reply": "The Duke and Duchess promise Sancho Panza an *ínsula* (island) to govern as a reward for his services. The Duchess tells Sancho: \"El duque, mi señor y marido... cumplirá la palabra de la prometida ínsula\" [13].\n\nWhen Sancho leaves the governorship behind, he says that he arrived \"desnudo\" and leaves \"desnudo\": \"fui a gobernar vuestra ínsula Barataria, en la cual entré desnudo, y desnudo me hallo: ni pierdo, ni gano\" [5]. He also states that he has not taken bribes or collected dues, and that if he left poor, people would consider him a fool rather than a thief [5]. In recounting his experience to Ricote, Sancho says what he gained was the knowledge that he is not fit to govern anything but a herd of cattle, and that the riches gained in such offices come at the cost of rest, sleep, and even sustenance [11][14]."
+ },
+ {
+  "item": "deep-sherlock-norton-adler",
+  "expect_class": "answer",
+  "source": "recorded answered, veriforge_accept 2026-10-22",
+  "cited": true,
+  "reply": "Irene Adler marries **Godfrey Norton** under Sherlock Holmes's own eyes in the church [1][7]. She is there described as “Irene Adler, spinster,” and after the ceremony is witnessed by Holmes the pair are thanked as bride and groom [1]. In her farewell letter, she signs herself **“IRENE NORTON, _née_ ADLER”** [6]. The King still calls her **“Irene’s photograph”** when he asks for the photograph [2][6] and also refers to her simply as **“Irene”** in conversation [2]."
+ },
+ {
+  "item": "deep-verwandlung-apple",
+  "expect_class": "answer",
+  "source": "recorded answered, veriforge_accept 2026-10-22",
+  "cited": true,
+  "reply": "An apple [1]. The serious wound Gregor suffers makes him suffer for over a month; his mobility is probably permanently lost, and he moves only slowly like an invalid [5]."
+ },
+ {
+  "item": "deep-timemachine-two-species",
+  "expect_class": "answer",
+  "source": "recorded answered, veriforge_accept 2026-10-22",
+  "cited": true,
+  "reply": "The Time Traveller finds that humanity has differentiated into two distinct species: the Eloi, who are the graceful but feeble Upperworld people, and the Morlocks, a bleached, nocturnal, subterranean race [5][3]. The Morlocks live underground and prey upon the Eloi [1][2]."
+ },
+ {
+  "item": "deep-alice-first-changes",
+  "expect_class": "answer",
+  "source": "recorded answered, veriforge_accept 2026-10-22",
+  "cited": true,
+  "reply": "The first thing that makes Alice change size is the little bottle labeled “DRINK ME” that she finds on the glass table [8]. After drinking it, she shrinks to ten inches high [8]. The second item she discovers is a small cake with “EAT ME” marked in currants, which she finds in a glass box under the table [3]. Alice decides to eat the cake, thinking it will help her either grow larger to reach the key or shrink smaller to fit under the door [3]."
+ },
+ {
+  "item": "deep-rashomon-servant-theft",
+  "expect_class": "answer",
+  "source": "recorded answered, veriforge_accept 2026-10-22",
+  "cited": true,
+  "reply": "When the servant goes into the gate's upper chamber, the old woman is pulling hair from a corpse's head. The servant strips her of her kimono and takes it [1]."
+ },
+ {
+  "item": "deep-verwandlung-conservatory-name",
+  "expect_class": "decline",
+  "source": "KI-97 draw 1 2026-10-22",
+  "cited": true,
+  "reply": "The sources name the institution only as “das Konservatorium” (the conservatory) [1][2][11], without specifying which conservatory or where it is located. It was Gregor's secret plan to send his sister there next year [1], and he intended to announce this plan, as he thought about it during Christmas time [11]. The sources do not state the cost of one year of study at the conservatory."
+ },
+ {
+  "item": "deep-timemachine-traveller-name",
+  "expect_class": "decline",
+  "source": "KI-97 draw 1 2026-10-22",
+  "cited": true,
+  "reply": "The sources do not give the Time Traveller’s full name. He is introduced only as “the Time Traveller (for so it will be convenient to speak of him)” [10], and elsewhere his name is rendered as a blank, “Mr. ——” [12]. They also do not state that he marries anyone after his journey; they say he vanished and never returned [3]. The only named woman mentioned is Weena, whom he meets in the future [2]. She is described as a companion and later as having died, not as his wife [1]."
+ },
+ {
+  "item": "deep-test-pride-collins-charlotte",
+  "expect_class": "answer",
+  "source": "recorded answered, veriforge_accept 2026-10-26",
+  "cited": true,
+  "reply": "Elizabeth Bennet turns down Mr. Collins’s proposal [1], and her friend Charlotte Lucas subsequently accepts his proposal [11].\n\nThe sources state that Mr. Collins made an offer of marriage to Elizabeth, which she refused [1][3]. Charlotte Lucas later accepted Mr. Collins's proposal, and it is noted that “the strangeness of Mr. Collins’s making two offers of marriage within three days was nothing in comparison of his being now accepted” [11]."
+ },
+ {
+  "item": "deep-test-sherlock-two-stepfathers",
+  "expect_class": "answer",
+  "source": "recorded answered, veriforge_accept 2026-10-26",
+  "cited": true,
+  "reply": "The two stepfathers are **James Windibank**, who disguised himself as his stepdaughter’s suitor, Mr. Hosmer Angel [5], and **Dr. Grimesby Roylott**, who had a violent temper and was known for brawls during his time in the village [6]."
+ },
+ {
+  "item": "deep-test-pride-pemberley-netherfield",
+  "expect_class": "answer",
+  "source": "recorded answered, veriforge_accept 2026-10-26",
+  "cited": true,
+  "reply": "Mr. Darcy's estate in Derbyshire is **Pemberley**[1], and the house Mr. Bingley rents is **Netherfield Park**[1][15]."
+ },
+ {
+  "item": "deep-test-sherlock-redheaded-purpose",
+  "expect_class": "answer",
+  "source": "recorded answered, veriforge_accept 2026-10-26",
+  "cited": true,
+  "reply": "The Red-Headed League paid Jabez Wilson to copy out the *Encyclopædia Britannica* each day [2]. The League was really a cover for an attempted bank robbery: the conspirators dug a tunnel from the cellar of Wilson’s premises into the adjacent City and Suburban Bank to steal the bullion [1][5][9]."
+ },
+ {
+  "item": "deep-test-frankenstein-justine-proof",
+  "expect_class": "answer",
+  "source": "recorded answered, veriforge_accept 2026-10-26",
+  "cited": true,
+  "reply": "Justine (Justine Moritz) is the servant condemned and executed for William’s murder; she perishes on the scaffold as a murderess [13]. The item found in her pocket and taken as proof against her is the picture of Victor’s mother — the same picture Elizabeth had placed around William’s neck an hour before he was missed [1][2]."
+ },
+ {
+  "item": "deep-test-frankenstein-first-and-clerval",
+  "expect_class": "answer",
+  "source": "recorded answered, veriforge_accept 2026-10-26",
+  "cited": true,
+  "reply": "The creature kills **William Frankenstein** [2]. While Victor is in Ireland, he is distressed by the death of **Henry Clerval**, who has been murdered [10][12]."
+ },
+ {
+  "item": "deep-test-timemachine-sphinx-fire",
+  "expect_class": "answer",
+  "source": "recorded answered, veriforge_accept 2026-10-26",
+  "cited": true,
+  "reply": "The monument is the White Sphinx, whose hollow pedestal holds the Time Machine [3]; approaching that pedestal, the Time Traveller finds the machine inside [1]. As he prepares to defend himself, he lights a block of camphor and flings it to the ground; it drives back the Morlocks and the shadows [2]."
+ },
+ {
+  "item": "deep-test-cross-two-elizabeths",
+  "expect_class": "answer",
+  "source": "recorded answered, veriforge_accept 2026-10-26",
+  "cited": true,
+  "reply": "Elizabeth Lavenza is Victor’s adopted cousin. In *Frankenstein*, Victor’s father explicitly refers to “your marriage with our dear Elizabeth,” and Victor confirms he loves his cousin and looks forward to their union [3]. Elizabeth Lavenza is betrothed to Victor, and the marriage is agreed upon and scheduled [3][4]."
+ },
+ {
+  "item": "deep-test-frankenstein-advocate",
+  "expect_class": "decline",
+  "source": "KI-97 draw 2 2026-10-26",
+  "cited": true,
+  "reply": "The sources do not name an advocate who defends Justine Moritz at her trial. After the advocate against her had stated the charge, several witnesses were called [9]. However, the sources do not specify how many witnesses were called. Therefore, the sources do not answer either part of the question."
+ },
+ {
+  "item": "deep-quixote-sancho-office",
+  "expect_class": "answer",
+  "source": "recorded answered, veriforge_accept 2026-10-26",
+  "cited": true,
+  "reply": "The Duke and Duchess promise Sancho Panza the governorship of an island [3]. When he leaves it, Sancho says: “I entered naked, and naked I find myself: I neither lose nor gain” [4]."
+ },
+ {
+  "item": "deep-pride-wickham-elopement",
+  "expect_class": "answer",
+  "source": "recorded answered, veriforge_accept 2026-10-26",
+  "cited": true,
+  "reply": "Lydia Bennet elopes with Wickham [1]. Mr. Bennet initially believed the expense fell on his brother-in-law [7]. In the end, however, Mr. Darcy is the one who pays for the marriage: he gave the money, paid Wickham’s debts, and got him his commission [3]."
+ },
+ {
+  "item": "deep-frankenstein-creature-books",
+  "expect_class": "answer",
+  "source": "recorded answered, veriforge_accept 2026-10-26",
+  "cited": true,
+  "reply": "The three works are Milton's *Paradise Lost*, *Plutarch's Lives*, and Goethe's *The Sorrows of Werter* [2]. *Paradise Lost* excited different and far deeper emotions in him. He read it as a true history, and it moved every feeling of wonder and awe that the picture of an omnipotent God warring with his creatures was capable of exciting. He often referred the several situations, as their similarity struck him, to his own. Like Adam, he felt united by no link to any other being in existence; he had come forth from the hands of God as a creature that was not perfect, but the creature in *Paradise Lost* was happy and prosperous, guarded by the special care of his Creator, unlike himself, who felt wretched, helpless, and alone. He often considered Satan as the fitter emblem of his condition, for often, like Satan, he felt bitter envy at the bliss of others [13]."
+ },
+ {
+  "item": "deep-verwandlung-apple",
+  "expect_class": "answer",
+  "source": "recorded answered, veriforge_accept 2026-10-26",
+  "cited": true,
+  "reply": "Gregor’s father approaches him with a fierce expression, and Gregor struggles to maneuver on the floor, half-expecting his father to interpret any movement toward the walls as malicious intent [1]. \n\nAfter a while, the wound remains unremoved, serving as a visible reminder of the incident [5]. The injury renders Gregor likely unable to move as he once did, taking long minutes to cross his room, and crawling is no longer an option [5]."
+ },
+ {
+  "item": "deep-timemachine-two-species",
+  "expect_class": "answer",
+  "source": "recorded answered, veriforge_accept 2026-10-26",
+  "cited": true,
+  "reply": "The two kinds are the **Eloi** and the **Morlocks** [5]. The **Morlocks** live underground [1] and prey on the **Eloi** [6]."
+ },
+ {
+  "item": "deep-alice-first-changes",
+  "expect_class": "answer",
+  "source": "recorded answered, veriforge_accept 2026-10-26",
+  "cited": true,
+  "reply": "The first item is the little bottle labeled “DRINK ME,” which shrinks Alice to ten inches high [1]. The second item is the small cake marked “EAT ME” in currants, which Alice eats hoping it will help her reach the key to the garden, but it does not affect her size [4]."
+ },
+ {
+  "item": "deep-noli-ibarra-project",
+  "expect_class": "answer",
+  "source": "recorded answered, veriforge_accept 2026-10-26",
+  "cited": true,
+  "reply": "Ibarra builds a school for the children of San Diego [1][5][14]. While he was abroad, his father's grave was destroyed: when Ibarra visits the cemetery, the cross is gone and the ground has been dug up [3]. He is told that his father's body was thrown into the water at that spot [15]."
+ },
+ {
+  "item": "deep-bovary-emma-poison",
+  "expect_class": "answer",
+  "source": "recorded answered, veriforge_accept 2026-10-26",
+  "cited": true,
+  "reply": "Emma Bovary takes a white powder — arsenic — from a blue jar in the capharnaüm (the pharmacist's storeroom) [8], and she takes it from the pharmacist Homais without him realising [8]. She obtains the key from Justin, Homais’s assistant, and after eating the powder she warns him that if he speaks, “tout retomberait sur ton maître!” (everything will fall back on your master, i.e., Homais) [8]. Later, Homais himself admits he does not know where she got the arsenic [10]."
+ },
+ {
+  "item": "deep-rashomon-servant-theft",
+  "expect_class": "answer",
+  "source": "recorded answered, veriforge_accept 2026-10-26",
+  "cited": true,
+  "reply": "The old woman is pulling hair from a female corpse, strand by strand, so she can make a wig [8]. At the end, the servant strips her of her kimono and takes it [1]."
+ },
+ {
+  "item": "deep-verwandlung-conservatory-name",
+  "expect_class": "decline",
+  "source": "KI-97 draw 2 2026-10-26",
+  "cited": true,
+  "reply": "Gregor Samsa wanted to send his sister to “the conservatory” — the text refers only to *das Konservatorium* and does not name a particular institution [2]. The sources mention “great costs” associated with sending her there [2]. During conversations with his sister, the conservatory was discussed as a beautiful dream that was not considered realizable, but Gregor thought very clearly about it and intended to express this plan to her on Christmas Eve [2]."
+ },
+ {
+  "item": "deep-timemachine-traveller-name",
+  "expect_class": "decline",
+  "source": "KI-97 draw 2 2026-10-26",
+  "cited": true,
+  "reply": "The sources do not give the Time Traveller’s full name, and they do not name any woman he marries after his journey. He is introduced only as “The Time Traveller (for so it will be convenient to speak of him)” [14], and when the narrator asks a servant about him, the name appears only as “Mr. ——” [11]. The named woman he meets in the future is Weena, described as a childlike “little woman” whose friendship became a comfort to him [1]. The sources later refer to “the horrible death of little Weena” [2]."
+ },
+ {
+  "item": "deep-ho-dracula-demeter-whitby",
+  "expect_class": "answer",
+  "source": "recorded answered, veriforge_accept_heldout 2026-10-22",
+  "cited": true,
+  "reply": "The ship is the Russian schooner **Demeter**, and it runs aground at the seaside town of **Whitby** [2][8][12].\n\nThe Demeter was a schooner from Varna carrying a cargo that included “a number of great wooden boxes filled with mould” [2]. During a violent storm, the Demeter was driven into Whitby harbour and “pitched herself on that accumulation of sand and gravel … known locally as Tate Hill Pier” [12]. Later, the characters’ research suggested that the events of that night were significant concerning Count Dracula, as they were aware of a connection to his arrival, although the specific moment of his landing is not confirmed in the text [8]."
+ },
+ {
+  "item": "deep-ho-twocities-carton-lucie",
+  "expect_class": "answer",
+  "source": "recorded answered, veriforge_accept_heldout 2026-10-22",
+  "cited": true,
+  "reply": "Sydney Carton takes Charles Darnay’s place at the guillotine, having gone as “the supposed Evrémonde” [2][3]. Darnay had married Lucie Manette, the only daughter of Doctor Manette, in England [1][10]."
+ },
+ {
+  "item": "deep-ho-janeeyre-helen-thornfield",
+  "expect_class": "answer",
+  "source": "recorded answered, veriforge_accept_heldout 2026-10-22",
+  "cited": true,
+  "reply": "The girl Jane befriends at school who dies of consumption is Helen Burns [4][5]. The estate where Jane afterwards becomes a governess is Thornfield [1][2]."
+ },
+ {
+  "item": "deep-ho-cross-pangloss-henry",
+  "expect_class": "answer",
+  "source": "recorded answered, veriforge_accept_heldout 2026-10-22",
+  "cited": true,
+  "reply": "Candide's philosophy tutor is Pangloss [3][14], and the cynical lord who influences Dorian Gray is Lord Henry Wotton [5][10]."
+ },
+ {
+  "item": "deep-ho-dracula-renfield-first-name",
+  "expect_class": "decline",
+  "source": "KI-97 draw 1 2026-10-22",
+  "cited": true,
+  "reply": "The sources show that Dr. Seward's notes refer to the patient as \"R. M. Renfield\" [16], but they never spell out what the initials stand for, so his first name is not stated. The sources also do not mention from which county he was committed to the asylum. They do not answer the question."
+ },
+ {
+  "item": "deep-ho-candide-baron-name",
+  "expect_class": "decline",
+  "source": "KI-97 draw 1 2026-10-22",
+  "cited": true,
+  "reply": "The provided sources do not state the given name of the Baron of Thunder-ten-tronckh, nor do they state the family name of his wife.\n\nMonsieur le baron de Thunder-ten-tronckh is referred to as \"monsieur le baron\" or \"M. le baron de Thunder-ten-tronckh\" [1]. His wife is referred to as \"madame la baronne\" [1]. Later sources recounting the family's history may not include names, but they detail events surrounding the family [8][11][12][15]."
+ },
+ {
+  "item": "deep-ho-dracula-demeter-whitby",
+  "expect_class": "answer",
+  "source": "recorded answered, veriforge_accept_heldout 2026-10-26",
+  "cited": true,
+  "reply": "The ship is the *Demeter*, a Russian schooner from Varna, and it runs aground at Whitby [2]. It came ashore at Tate Hill Pier in Whitby Harbour [13]."
+ },
+ {
+  "item": "deep-ho-twocities-carton-lucie",
+  "expect_class": "answer",
+  "source": "recorded answered, veriforge_accept_heldout 2026-10-26",
+  "cited": true,
+  "reply": "Sydney Carton takes Charles Darnay’s place at the guillotine [3]."
+ },
+ {
+  "item": "deep-ho-cross-pangloss-henry",
+  "expect_class": "answer",
+  "source": "recorded answered, veriforge_accept_heldout 2026-10-26",
+  "cited": true,
+  "reply": "Candide's philosophy tutor is Pangloss (also called doctor Pangloss and the preceptor) [1][13]. The cynical lord who influences Dorian Gray is Lord Henry Wotton, referred to as Harry [3][8]."
+ },
+ {
+  "item": "deep-ho-janeeyre-helen-thornfield",
+  "expect_class": "answer",
+  "source": "recorded answered, veriforge_accept_heldout 2026-10-26",
+  "cited": true,
+  "reply": "The girl is Helen Burns [3], and the estate is Thornfield [1][2].\n\nHelen Burns is Jane’s fellow pupil at Lowood School who suffers from consumption (tuberculosis) [3]; she dies in the night with Jane beside her [7]. After leaving Lowood, Jane takes a position as governess at Thornfield, where she teaches Adèle Varens [1][2]."
+ },
+ {
+  "item": "deep-ho-dracula-renfield-first-name",
+  "expect_class": "decline",
+  "source": "KI-97 draw 2 2026-10-26",
+  "cited": true,
+  "reply": "The sources do not state Renfield’s first name or the county from which he was committed to Dr. Seward’s asylum. They identify him only as “R. M. Renfield, ætat 59” [3]."
+ },
+ {
+  "item": "deep-ho-candide-baron-name",
+  "expect_class": "decline",
+  "source": "KI-97 draw 2 2026-10-26",
+  "cited": true,
+  "reply": "The sources do not provide the Baron of Thunder-ten-tronckh's given name. He is consistently referred to only by his title, such as \"monsieur le baron\" [2] or \"M. le baron de Thunder-ten-tronckh\" [17]. His wife is likewise referred to only as \"madame la baronne\" without a family name stated [2][14].\n\nThe sources do not answer the question."
+ },
+ {
+  "item": "deep-quixote-rosinante-birth",
+  "expect_class": "decline",
+  "source": "KI-97 draw 1 2026-10-22",
+  "cited": true,
+  "reply": "The sources do not state in which village Rocinante was foaled, nor do they name his dam. The sources do state that Rocinante was the horse of Don Quijote [2], who was \"de la Mancha\" (of La Mancha) [2]. The sources cover Don Quijote's naming of the horse [2] and his adventures."
+ }
+]

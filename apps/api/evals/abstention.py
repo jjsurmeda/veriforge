@@ -39,7 +39,11 @@ NOT_IN_SOURCES = tuple(
         r"(?:sources?|documents?|passages?|texts?|context|excerpts?)\b)"
         r"[^.\n]{0,80}?"
         r"(?:don'?t|do not|cannot|can ?not|can'?t|could not|couldn'?t|doesn'?t|does not) "
-        r"(?:find|have|contain|cover|see|show|answer|determine|tell|say)\b",
+        # KI-87: the verbs a decline names the missing thing with ("do not name an
+        # advocate", "do not give the full name", "does not state ..."). Each one
+        # still needs the sources (or "I") as its subject within 80 characters.
+        r"(?:find|have|contain|cover|see|show|answer|determine|tell|say|"
+        r"name|give|state|provide|specify|identify|mention|list|spell out)\b",
         r"(?:isn'?t|is not|aren'?t|are not|wasn'?t) (?:in|among|covered|included)\b",
         r"no (?:matching|relevant|such) ",
         r"not part of ",
@@ -78,6 +82,22 @@ _NEGATED = re.compile(
 )
 
 
+_SENTENCE_BREAK = re.compile(r"[.!?。]\s|\n")
+
+
+def _belongs_to_decline(answer: str, decline_at: int, contrast_at: int) -> bool:
+    """A contrast turns a decline into an answer only when it sits in the
+    decline's own sentence ("I cannot find the price, but it costs $999") or
+    opens a later sentence ("The sources do not say. However, it costs $999").
+    A "but" in the middle of a later sentence is describing the sources ("... was
+    not realizable, but Gregor thought about it [2]"), not answering (KI-87:
+    conservatory-name, candide-baron)."""
+    if _SENTENCE_BREAK.search(answer, decline_at, contrast_at) is None:
+        return True
+    before = answer[:contrast_at].rstrip(' \t"“')
+    return before == "" or before.endswith((".", "!", "?", "。", "\n"))
+
+
 def asserts_after_decline(answer: str) -> bool:
     """A decline phrase followed by a contrast and then a figure or citation."""
     for pattern in NOT_IN_SOURCES:
@@ -85,6 +105,8 @@ def asserts_after_decline(answer: str) -> bool:
         if match is None:
             continue
         for contrast in _CONTRAST.finditer(answer, match.start()):
+            if not _belongs_to_decline(answer, match.start(), contrast.start()):
+                continue
             if _NEGATED.match(answer, contrast.end()):
                 continue
             if _ASSERTS.search(answer, contrast.end()):
