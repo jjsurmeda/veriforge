@@ -49,7 +49,7 @@
       ],
       "expect": "answer",
       "cite": ["Verwandlung"],
-      "mention": ["Apfel"],
+      "mention": ["Apfel", "apple"],
       "proof": "Label written before the corpus was reopened: the father bombards Gregor with apples from the fruit bowl, one lodges in his back and rots, steadily weakening him. The German edition (Gutenberg 22367) is in the corpus, so the answer is German and 'Apfel' is the attested word."
     },
     {
