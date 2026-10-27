@@ -47,6 +47,13 @@ NOT_IN_SOURCES = tuple(
         r"(?:isn'?t|is not|aren'?t|are not|wasn'?t) (?:in|among|covered|included)\b",
         r"no (?:matching|relevant|such) ",
         r"not part of ",
+        # "neither the year nor the title is mentioned in the sources" (unseen
+        # Deep draw 1, frankenstein-degree). Both halves and the sources noun
+        # are required, so a story sentence using "neither ... nor" stays an answer.
+        r"\bneither\b[^.\n]{0,100}?\bnor\b[^.\n]{0,100}?"
+        r"\b(?:is|are|was|were)\s+(?:mentioned|stated|given|named|specified|provided|found)\s+"
+        r"(?:in|by)\s+(?:the|these|your|my)\s+"
+        r"(?:sources?|passages?|texts?|documents?|excerpts?|context)\b",
         r"outside (?:the|my|your) ",
         # The reply is in the language of the question (books set: es fr de zh
         # ja tl), so the shape has to be recognised there too.
