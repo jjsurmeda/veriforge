@@ -1,0 +1,264 @@
+{
+  "about": "FROZEN second unseen Deep set (2026-10-27). Written blind to how the system behaves: the pipeline was not run on these items and no model output for them was read. 14 answerable items (each needs two or more separate passages) and 6 should-decline lookalikes (not-in-sources or false premise), over the books corpus. Prefers Time Machine, Madame Bovary, Don Quijote, Die Verwandlung, Noli Me Tangere, Alice and Sherlock stories the earlier Deep sets did not ask about. Every required string is an English-writable name (ASCII, no transliteration, no foreign word) because the questions are English and the answers will be English. Labels were written from my own knowledge of the books, then the corpus was queried only to confirm each fact is present or absent (evals/deep/unseen2_audit.json, with the gold chunk ids). Scoring fields as test_items.json: mention_all = strings the answer must all contain. Do not edit after the freeze: the SHA-256 of this file and of unseen2_audit.json is pinned by a test.",
+  "corpus": "books",
+  "items": [
+    {
+      "id": "deep-unseen2-timemachine-nickel-filby",
+      "turns": [
+        "Which metal bar of the Time Machine had to be remade just before it was finished, and what is the name of the red-haired guest who argues with the Time Traveller about geometry at the first dinner?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Time Machine"
+      ],
+      "mention_all": [
+        "nickel",
+        "Filby"
+      ],
+      "proof": "Label written from my own knowledge of the book BEFORE any model output for it existed; the corpus was only queried afterwards to confirm the facts are present (audit file). Why more than one hop: the short bar is mentioned in the Time Traveller's speech at the second dinner; Filby is introduced in the first dinner's geometry argument, a different chapter."
+    },
+    {
+      "id": "deep-unseen2-alice-maryann-dinah",
+      "turns": [
+        "Whom does the White Rabbit mistake Alice for when he sends her to fetch his gloves and fan, and what is the name of Alice's cat that she keeps mentioning?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Alice"
+      ],
+      "mention_all": [
+        "Mary Ann",
+        "Dinah"
+      ],
+      "proof": "Label written from my own knowledge of the book BEFORE any model output for it existed; the corpus was only queried afterwards to confirm the facts are present (audit file). Why more than one hop: the mistaken name is in the Rabbit's house scene (ch. IV); Dinah is mentioned in several other chapters (the pool of tears, the Rabbit's house, the Mouse's story)."
+    },
+    {
+      "id": "deep-unseen2-bovary-dubuc-berthe",
+      "turns": [
+        "What was the surname of Charles Bovary's first wife, and what is the name of the daughter he has with Emma?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Bovary"
+      ],
+      "mention_all": [
+        "Dubuc",
+        "Berthe"
+      ],
+      "proof": "Label written from my own knowledge of the book BEFORE any model output for it existed; the corpus was only queried afterwards to confirm the facts are present (audit file). Why more than one hop: the first wife (the widow Dubuc) belongs to the opening chapters at Tostes; Berthe is Emma's child, named much later in the novel."
+    },
+    {
+      "id": "deep-unseen2-bovary-canivet-lheureux",
+      "turns": [
+        "Which surgeon is called in to amputate the stable-boy's leg after Charles's operation goes wrong, and which merchant keeps pressing Emma for the money she owes him?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Bovary"
+      ],
+      "mention_all": [
+        "Canivet",
+        "Lheureux"
+      ],
+      "proof": "Label written from my own knowledge of the book BEFORE any model output for it existed; the corpus was only queried afterwards to confirm the facts are present (audit file). Why more than one hop: the surgeon appears after the club-foot operation (part II); the merchant is the creditor of part III, in different passages."
+    },
+    {
+      "id": "deep-unseen2-bovary-guillaumin-binet",
+      "turns": [
+        "In Yonville, which notary employs the clerk Leon, and which tax collector spends his evenings turning napkin rings on a lathe?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Bovary"
+      ],
+      "mention_all": [
+        "Guillaumin",
+        "Binet"
+      ],
+      "proof": "Label written from my own knowledge of the book BEFORE any model output for it existed; the corpus was only queried afterwards to confirm the facts are present (audit file). Why more than one hop: the notary is named where Leon's clerkship is introduced; the tax collector with the lathe is a separate character met in other chapters."
+    },
+    {
+      "id": "deep-unseen2-quixote-aldonza-teresa",
+      "turns": [
+        "What was the real name of the peasant girl whom Don Quixote chose as his lady, and what is the name of Sancho Panza's wife?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Quijote"
+      ],
+      "mention_all": [
+        "Aldonza",
+        "Teresa"
+      ],
+      "proof": "Label written from my own knowledge of the book BEFORE any model output for it existed; the corpus was only queried afterwards to confirm the facts are present (audit file). Why more than one hop: the lady's real name is given in the first part when Quixote names her and again when Sancho describes her; Sancho's wife Teresa appears in other chapters (his letter, the visit of the page)."
+    },
+    {
+      "id": "deep-unseen2-quixote-carrasco-cecial",
+      "turns": [
+        "Which village bachelor disguises himself as the Knight of the Mirrors, and what is the name of his neighbour who serves as his squire?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Quijote"
+      ],
+      "mention_all": [
+        "Carrasco",
+        "Cecial"
+      ],
+      "proof": "Label written from my own knowledge of the book BEFORE any model output for it existed; the corpus was only queried afterwards to confirm the facts are present (audit file). Why more than one hop: the bachelor is introduced where the plan is made (second part), and the squire's identity is revealed only after the combat, in a separate chapter."
+    },
+    {
+      "id": "deep-unseen2-verwandlung-grete-violin",
+      "turns": [
+        "What is the name of Gregor Samsa's sister, and which instrument does she play that draws Gregor out of his room near the end?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Verwandlung"
+      ],
+      "mention_all": [
+        "Grete",
+        "violin"
+      ],
+      "proof": "Label written from my own knowledge of the book BEFORE any model output for it existed; the corpus was only queried afterwards to confirm the facts are present (audit file). Why more than one hop: the sister's name appears early, in the scenes at the door; her playing is in the lodgers' scene near the end."
+    },
+    {
+      "id": "deep-unseen2-noli-victorina-tiburcio",
+      "turns": [
+        "Which pretentious woman in Noli Me Tangere pretends to be a Spanish lady, and what is the first name of her lame husband whom she forces to pose as a doctor?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Noli"
+      ],
+      "mention_all": [
+        "Victorina",
+        "Tiburcio"
+      ],
+      "proof": "Label written from my own knowledge of the book BEFORE any model output for it existed; the corpus was only queried afterwards to confirm the facts are present (audit file). Why more than one hop: the wife is introduced in the early social scenes and the husband's imposture is told in a separate backstory chapter."
+    },
+    {
+      "id": "deep-unseen2-quixote-barataria-recio",
+      "turns": [
+        "What is the name of the island that Sancho Panza governs, and which doctor forbids him to eat the dishes served at table?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Quijote"
+      ],
+      "mention_all": [
+        "Barataria",
+        "Recio"
+      ],
+      "proof": "Label written from my own knowledge of the book BEFORE any model output for it existed; the corpus was only queried afterwards to confirm the facts are present (audit file). Why more than one hop: the island is promised and named in earlier chapters and appears in Sancho's letters; the physician Pedro Recio appears in the separate governorship banquet scene."
+    },
+    {
+      "id": "deep-unseen2-alice-dodo-bill",
+      "turns": [
+        "Who presents Alice with her own thimble as the prize at the end of the Caucus-race, and which lizard is sent down the chimney of the Rabbit's house?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Alice"
+      ],
+      "mention_all": [
+        "Dodo",
+        "Bill"
+      ],
+      "proof": "Label written from my own knowledge of the book BEFORE any model output for it existed; the corpus was only queried afterwards to confirm the facts are present (audit file). Why more than one hop: the thimble prize is in the Caucus-race chapter (ch. III); the lizard sent down the chimney is in the Rabbit's house chapter (ch. IV), a different passage."
+    },
+    {
+      "id": "deep-unseen2-frankenstein-krempe-waldman",
+      "turns": [
+        "At the university of Ingolstadt, which professor scornfully dismisses Victor's alchemist authors, and which professor of chemistry wins him over?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Frankenstein"
+      ],
+      "mention_all": [
+        "Krempe",
+        "Waldman"
+      ],
+      "proof": "Label written from my own knowledge of the book BEFORE any model output for it existed; the corpus was only queried afterwards to confirm the facts are present (audit file). Why more than one hop: the two professors appear at the first lectures and again, with their later opinions of Victor's progress, in separate passages of his student years."
+    },
+    {
+      "id": "deep-unseen2-bovary-rouault-bertaux",
+      "turns": [
+        "What is the name of Emma's father, and what is the name of the farm where Charles first meets her?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Bovary"
+      ],
+      "mention_all": [
+        "Rouault",
+        "Bertaux"
+      ],
+      "proof": "Label written from my own knowledge of the book BEFORE any model output for it existed; the corpus was only queried afterwards to confirm the facts are present (audit file). Why more than one hop: the farm is named when Charles is called out to set a broken leg (opening chapters); the father is named as the farmer there and again in later chapters when he is sent for."
+    },
+    {
+      "id": "deep-unseen2-bovary-bournisien-lagardy",
+      "turns": [
+        "Which priest in Yonville is the pharmacist Homais's rival in argument, and which tenor do Emma and Leon go to hear in Rouen?"
+      ],
+      "expect": "answer",
+      "cite": [
+        "Bovary"
+      ],
+      "mention_all": [
+        "Bournisien",
+        "Lagardy"
+      ],
+      "proof": "Label written from my own knowledge of the book BEFORE any model output for it existed; the corpus was only queried afterwards to confirm the facts are present (audit file). Why more than one hop: the priest is a village figure from the Yonville chapters; the tenor belongs to the later opera scene in Rouen, a different part of the novel."
+    },
+    {
+      "id": "deep-unseen2-quixote-ducal-churchman",
+      "turns": [
+        "What is the name of the churchman at the Duke's table who scolds Don Quixote and Sancho, and in which city did he study theology?"
+      ],
+      "expect": "not_in_sources",
+      "proof": "Decoy written from my own knowledge of the book BEFORE any model output for it existed. The churchman is only 'el eclesiastico' and no name or university is given. Looks in-corpus (the scene with the Duke, the Duchess and the churchman is real)."
+    },
+    {
+      "id": "deep-unseen2-alice-conger-eel",
+      "turns": [
+        "What was the name of the old conger-eel who taught the Mock Turtle Drawling, and from which town did he come?"
+      ],
+      "expect": "not_in_sources",
+      "proof": "Decoy written from my own knowledge of the book BEFORE any model output for it existed. The conger-eel is mentioned as the Drawling-master but never named and no town is given. Plausible (the eel is really in the book)."
+    },
+    {
+      "id": "deep-unseen2-bovary-homais-wife",
+      "turns": [
+        "What is the first name of the pharmacist Homais's wife, and in which year did they marry?"
+      ],
+      "expect": "not_in_sources",
+      "proof": "Decoy written from my own knowledge of the book BEFORE any model output for it existed. She appears only as 'madame Homais'; no first name and no marriage year are given. Looks in-corpus (Homais and his family are all over the novel)."
+    },
+    {
+      "id": "deep-unseen2-verwandlung-chiefclerk",
+      "turns": [
+        "What is the surname of the chief clerk who comes to Gregor Samsa's door, and what is the name of the firm they both work for?"
+      ],
+      "expect": "not_in_sources",
+      "proof": "Decoy written from my own knowledge of the book BEFORE any model output for it existed. The chief clerk is only 'der Prokurist' and the firm is never named. Plausible (the clerk and the firm are central to the opening scene)."
+    },
+    {
+      "id": "deep-unseen2-timemachine-psychologist",
+      "turns": [
+        "What is the Psychologist's name at the Time Traveller's dinners, and at which university does he teach?"
+      ],
+      "expect": "not_in_sources",
+      "proof": "Decoy written from my own knowledge of the book BEFORE any model output for it existed. Dinner guests are given only as titles (the Psychologist, the Medical Man, the Provincial Mayor, the Very Young Man), with Filby the one named guest; no name or university for the Psychologist."
+    },
+    {
+      "id": "deep-unseen2-pride-fitzwilliam-brother",
+      "turns": [
+        "What is the name of Colonel Fitzwilliam's elder brother, and what is the name of the estate that brother will inherit?"
+      ],
+      "expect": "not_in_sources",
+      "proof": "Decoy written from my own knowledge of the book BEFORE any model output for it existed. Colonel Fitzwilliam is Darcy's cousin and a younger son, but his brother and the family estate are never named. Looks in-corpus (the Colonel appears in many scenes at Rosings)."
+    }
+  ]
+}

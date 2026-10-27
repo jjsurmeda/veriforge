@@ -1,0 +1,407 @@
+{
+  "summary": {
+    "set": "unseen2_items",
+    "corpus": "every visibility='shared' collection (what a fresh test user sees)",
+    "passages_in_scope": 10704,
+    "items": 20,
+    "clean": 14,
+    "findings": {
+      "abstain_false_hit": 6
+    },
+    "total_findings": 6
+  },
+  "items": [
+    {
+      "id": "deep-unseen2-timemachine-nickel-filby",
+      "expect": "answer",
+      "hits": 3,
+      "ok": true,
+      "findings": [],
+      "proof": "Audited by scripts/audit_labels.py over all 10704 passages the test user can retrieve (testing.md: 'Test data is audited like code'). Expect 'answer'. Query 'Which metal bar of the Time Machine had to be remade just before it was finished, and what is the name of the red-haired guest who argues with the Time Traveller about geometry at the first dinner?' (content terms ['traveller', 'finished', 'geometry', 'machine', 'argues', 'dinner', 'haired', 'remade', 'first', 'guest', 'metal', 'name', 'time', 'bar', 'red']) hits 3+ passages; top hit 'The Time Machine.txt' ord 8 (score 31.36): \"\u201cOh, _this_,\u201d began Filby, \u201cis all\u2014\u201d  \u201cWhy not?\u201d said the Time Traveller.  \u201cIt\u2019s against reason,\u201d said Filby.  \u201cWhat reason?\u201d said the Time Traveller.  \u201cYou can show black is white by argument,\u201d said Filby, \u201cbut you will never convince me.\u201d  \u201cPossibly not,\u201d said the Time Traveller. \u201cBut now you begin to see the object of my investigations into the geometry of Four Dimensions. Long ago I had a vagu\"",
+      "gold_chunks": [
+        {
+          "chunk_id": "01a16516-ade9-7b6a-b8b2-c8f19bd39bbc",
+          "document": "The Time Machine.txt",
+          "ord": "5",
+          "quote": "one inch too short"
+        },
+        {
+          "chunk_id": "01a16516-ad97-70d9-b2ef-47e46fafd85c",
+          "document": "The Time Machine.txt",
+          "ord": "1",
+          "quote": "Filby, an argumentative"
+        }
+      ]
+    },
+    {
+      "id": "deep-unseen2-alice-maryann-dinah",
+      "expect": "answer",
+      "hits": 3,
+      "ok": true,
+      "findings": [],
+      "proof": "Audited by scripts/audit_labels.py over all 10704 passages the test user can retrieve (testing.md: 'Test data is audited like code'). Expect 'answer'. Query \"Whom does the White Rabbit mistake Alice for when he sends her to fetch his gloves and fan, and what is the name of Alice's cat that she keeps mentioning?\" (content terms ['mentioning', 'mistake', 'gloves', 'rabbit', 'alice', 'fetch', 'keeps', 'sends', 'white', 'name', 'cat', 'fan']) hits 3+ passages; top hit \"Alice's Adventures in Wonderland.txt\" ord 2 (score 57.67): \"CHAPTER IV. The Rabbit Sends in a Little Bill  It was the White Rabbit, trotting slowly back again, and looking anxiously about as it went, as if it had lost something; and she heard it muttering to itself \u201cThe Duchess! The Duchess! Oh my dear paws! Oh my fur and whiskers! She\u2019ll get me executed, as sure as ferrets are ferrets! Where _can_ I have dropped them, I wonder?\u201d Alice guessed in a moment\"",
+      "gold_chunks": [
+        {
+          "chunk_id": "01a16516-527b-73a3-82b9-f4fc3c23f707",
+          "document": "Alice's Adventures in Wonderland.txt",
+          "ord": "2",
+          "quote": "Why, Mary Ann, what"
+        },
+        {
+          "chunk_id": "01a16516-527b-773e-83da-5d651bb66fb1",
+          "document": "Alice's Adventures in Wonderland.txt",
+          "ord": "0",
+          "quote": "I wish I had our Dinah here"
+        }
+      ]
+    },
+    {
+      "id": "deep-unseen2-bovary-dubuc-berthe",
+      "expect": "answer",
+      "hits": 3,
+      "ok": true,
+      "findings": [],
+      "proof": "Audited by scripts/audit_labels.py over all 10704 passages the test user can retrieve (testing.md: 'Test data is audited like code'). Expect 'answer'. Query \"What was the surname of Charles Bovary's first wife, and what is the name of the daughter he has with Emma?\" (content terms ['daughter', 'charles', 'surname', 'bovary', 'first', 'emma', 'name', 'wife']) hits 3+ passages; top hit 'Madame Bovary.txt' ord 5 (score 16.15): \"Madame Bovary m\u00e8re, la veille au soir, en traversant le corridor, l\u2019avait surprise dans la compagnie d\u2019un homme, un homme \u00e0 collier brun, d\u2019environ quarante ans, et qui, au bruit de ses pas, s\u2019\u00e9tait vite \u00e9chapp\u00e9 de la cuisine. Alors Emma se prit \u00e0 rire; mais la bonne dame s\u2019emporta, d\u00e9clarant qu\u2019\u00e0 moins de se moquer des m\u0153urs, on devait surveiller celles des domestiques.  \u2014 De quel monde \u00eates-vous\"",
+      "gold_chunks": [
+        {
+          "chunk_id": "01a16519-472f-7c9e-ad56-51214786708b",
+          "document": "Madame Bovary.txt",
+          "ord": "1",
+          "quote": "veuve Dubuc"
+        },
+        {
+          "chunk_id": "01a16519-5222-7a33-87dc-48a043c92f7c",
+          "document": "Madame Bovary.txt",
+          "ord": "0",
+          "quote": "la petite Berthe, qui ne l\u2019avait"
+        }
+      ]
+    },
+    {
+      "id": "deep-unseen2-bovary-canivet-lheureux",
+      "expect": "answer",
+      "hits": 3,
+      "ok": true,
+      "findings": [],
+      "proof": "Audited by scripts/audit_labels.py over all 10704 passages the test user can retrieve (testing.md: 'Test data is audited like code'). Expect 'answer'. Query \"Which surgeon is called in to amputate the stable-boy's leg after Charles's operation goes wrong, and which merchant keeps pressing Emma for the money she owes him?\" (content terms ['operation', 'amputate', 'merchant', 'pressing', 'charles', 'surgeon', 'called', 'stable', 'keeps', 'money', 'wrong', 'emma', 'goes', 'owes', 'boy', 'leg']) hits 3+ passages; top hit 'The Adventures of Sherlock Holmes.txt' ord 2 (score 19.14): \"find me ungrateful for what you have done. Your skill has indeed exceeded all that I have heard of it. And now I must fly to my dear boy to apologise to him for the wrong which I have done him. As to what you tell me of poor Mary, it goes to my very heart. Not even your skill can inform me where she is now.\u201d  \u201cI think that we may safely say,\u201d returned Holmes, \u201cthat she is wherever Sir George Burnw\"",
+      "gold_chunks": [
+        {
+          "chunk_id": "01a16519-5222-7750-8f1d-00a295e96515",
+          "document": "Madame Bovary.txt",
+          "ord": "1",
+          "quote": "M. Canivet accourut"
+        },
+        {
+          "chunk_id": "01a16519-4d87-7eda-a910-225e85ea3e36",
+          "document": "Madame Bovary.txt",
+          "ord": "0",
+          "quote": "M. Lheureux, surtout, le harcelait"
+        }
+      ]
+    },
+    {
+      "id": "deep-unseen2-bovary-guillaumin-binet",
+      "expect": "answer",
+      "hits": 3,
+      "ok": true,
+      "findings": [],
+      "proof": "Audited by scripts/audit_labels.py over all 10704 passages the test user can retrieve (testing.md: 'Test data is audited like code'). Expect 'answer'. Query 'In Yonville, which notary employs the clerk Leon, and which tax collector spends his evenings turning napkin rings on a lathe?' (content terms ['collector', 'evenings', 'yonville', 'employs', 'turning', 'napkin', 'notary', 'spends', 'clerk', 'lathe', 'rings', 'leon', 'tax']) hits 3+ passages; top hit 'Madame Bovary.txt' ord 3 (score 14.07): \"Il ne se h\u00e2ta point. Chaque jour, durant tout un mois, Hivert transporta pour lui d\u2019Yonville \u00e0 Rouen, de Rouen \u00e0 Yonville, des coffres, des valises, des paquets; et, quand L\u00e9on eut remont\u00e9 sa garde-robe, fait rembourrer ses trois fauteuils, achet\u00e9 une provision de foulards, pris en un mot plus de dispositions que pour un voyage autour du monde, il s\u2019ajourna de semaine en semaine, jusqu\u2019\u00e0 ce qu\u2019il\"",
+      "gold_chunks": [
+        {
+          "chunk_id": "01a16519-4942-718b-9d35-8e029b815a18",
+          "document": "Madame Bovary.txt",
+          "ord": "1",
+          "quote": "clerc chez ma\u00eetre Guillaumin"
+        },
+        {
+          "chunk_id": "01a16519-4922-7cf8-9f3a-81ecbbdd2981",
+          "document": "Madame Bovary.txt",
+          "ord": "0",
+          "quote": "tourner des ronds de serviette"
+        }
+      ]
+    },
+    {
+      "id": "deep-unseen2-quixote-aldonza-teresa",
+      "expect": "answer",
+      "hits": 3,
+      "ok": true,
+      "findings": [],
+      "proof": "Audited by scripts/audit_labels.py over all 10704 passages the test user can retrieve (testing.md: 'Test data is audited like code'). Expect 'answer'. Query \"What was the real name of the peasant girl whom Don Quixote chose as his lady, and what is the name of Sancho Panza's wife?\" (content terms ['peasant', 'quixote', 'sancho', 'chose', 'panza', 'girl', 'lady', 'name', 'real', 'wife', 'don']) hits 3+ passages; top hit 'Don Quijote.txt' ord 6 (score 17.04): \"A todo esto no respondi\u00f3 don Quijote otra palabra si no fue dar un profundo suspiro, y luego se tendi\u00f3 en su lecho, agradeciendo a los duques la merced, no porque \u00e9l ten\u00eda temor de aquella canalla gatesca, encantadora y cencerruna, sino porque hab\u00eda conocido la buena intenci\u00f3n con que hab\u00edan venido a socorrerle. Los duques le dejaron sosegar, y se fueron, pesarosos del mal suceso de la burla; que\"",
+      "gold_chunks": [
+        {
+          "chunk_id": "01a16518-45fd-7dca-970d-997011b2a443",
+          "document": "Don Quijote.txt",
+          "ord": "3",
+          "quote": "Llam\u00e1base Aldonza Lorenzo"
+        },
+        {
+          "chunk_id": "01a16518-4529-7450-bda5-70a21c7c7a9f",
+          "document": "Don Quijote.txt",
+          "ord": "0",
+          "quote": "su mujer Teresa Panza"
+        }
+      ]
+    },
+    {
+      "id": "deep-unseen2-quixote-carrasco-cecial",
+      "expect": "answer",
+      "hits": 3,
+      "ok": true,
+      "findings": [],
+      "proof": "Audited by scripts/audit_labels.py over all 10704 passages the test user can retrieve (testing.md: 'Test data is audited like code'). Expect 'answer'. Query 'Which village bachelor disguises himself as the Knight of the Mirrors, and what is the name of his neighbour who serves as his squire?' (content terms ['disguises', 'neighbour', 'bachelor', 'himself', 'mirrors', 'village', 'knight', 'serves', 'squire', 'name']) hits 3+ passages; top hit 'The Adventures of Sherlock Holmes.txt' ord 7 (score 15.19): \"Holmes nodded his head. \u201cThe name is familiar to me,\u201d said he.  \u201cThe family was at one time among the richest in England, and the estates extended over the borders into Berkshire in the north, and Hampshire in the west. In the last century, however, four successive heirs were of a dissolute and wasteful disposition, and the family ruin was eventually completed by a gambler in the days of the Regen\"",
+      "gold_chunks": [
+        {
+          "chunk_id": "01a16518-5916-7895-8381-c07cfe132ba8",
+          "document": "Don Quijote.txt",
+          "ord": "4",
+          "quote": "ofreci\u00f3sele por escudero Tom\u00e9 Cecial"
+        },
+        {
+          "chunk_id": "01a16518-5936-7d48-b8a1-c4d0939002f8",
+          "document": "Don Quijote.txt",
+          "ord": "0",
+          "quote": "era la misma de Tom\u00e9 Cecial"
+        }
+      ]
+    },
+    {
+      "id": "deep-unseen2-verwandlung-grete-violin",
+      "expect": "answer",
+      "hits": 3,
+      "ok": true,
+      "findings": [],
+      "proof": "Audited by scripts/audit_labels.py over all 10704 passages the test user can retrieve (testing.md: 'Test data is audited like code'). Expect 'answer'. Query \"What is the name of Gregor Samsa's sister, and which instrument does she play that draws Gregor out of his room near the end?\" (content terms ['instrument', 'gregor', 'sister', 'draws', 'samsa', 'name', 'near', 'play', 'room', 'end']) hits 3+ passages; top hit 'Pride and Prejudice.txt' ord 3 (score 22.03): \"that no excellence in music is to be acquired without constant practice. I have told Miss Bennet several times, that she will never play really well, unless she practises more; and though Mrs. Collins has no instrument, she is very welcome, as I have often told her, to come to Rosings every day, and play on the pianoforte in Mrs. Jenkinson\u2019s room. She would be in nobody\u2019s way, you know, in that p\"",
+      "gold_chunks": [
+        {
+          "chunk_id": "01a16519-d814-79eb-86b1-d0af70e28791",
+          "document": "Die Verwandlung.txt",
+          "ord": "0",
+          "quote": "Grete! Grete!"
+        },
+        {
+          "chunk_id": "01a16519-d880-7342-b075-dd0056903a7d",
+          "document": "Die Verwandlung.txt",
+          "ord": "1",
+          "quote": "r\u00fchrend Violine zu spielen"
+        }
+      ]
+    },
+    {
+      "id": "deep-unseen2-noli-victorina-tiburcio",
+      "expect": "answer",
+      "hits": 3,
+      "ok": true,
+      "findings": [],
+      "proof": "Audited by scripts/audit_labels.py over all 10704 passages the test user can retrieve (testing.md: 'Test data is audited like code'). Expect 'answer'. Query 'Which pretentious woman in Noli Me Tangere pretends to be a Spanish lady, and what is the first name of her lame husband whom she forces to pose as a doctor?' (content terms ['pretentious', 'pretends', 'husband', 'spanish', 'tangere', 'doctor', 'forces', 'first', 'woman', 'lady', 'lame', 'name', 'noli', 'pose', 'me']) hits 3+ passages; top hit 'Noli Me Tangere.txt' ord 0 (score 26.77): \"o\u00dfes denn durch sie geschehn?\u00ab  Schiller. Ang anino ni Shakespeare. Limbagan ni M. Fernandez PAZ, 447, Sta. Cruz. 1909  Ang sabing Noli me Tangere ay wikang latin. M~ga wika sa Evangelio ni San L\u00facas. Ang cahulug\u00e1n sa wikang tagalog ay Huwag acong salan~gin nino man. Tinatawag din nam\u00e1ng Noli me Tangere ang masamang bukol na nacamamatay na Cancer cung pamagat\u00e1n n~g m~ga pant\u00e1s na mangagamot.\"",
+      "gold_chunks": [
+        {
+          "chunk_id": "01a1651b-4652-79e6-913c-152311f9e9fe",
+          "document": "Noli Me Tangere.txt",
+          "ord": "0",
+          "quote": "Naisipan ni do\u00f1a Victorinang"
+        },
+        {
+          "chunk_id": "01a1651b-4652-79e6-913c-152311f9e9fe",
+          "document": "Noli Me Tangere.txt",
+          "ord": "0",
+          "quote": "ESPECIALISTA EN TODA CLASE"
+        }
+      ]
+    },
+    {
+      "id": "deep-unseen2-quixote-barataria-recio",
+      "expect": "answer",
+      "hits": 3,
+      "ok": true,
+      "findings": [],
+      "proof": "Audited by scripts/audit_labels.py over all 10704 passages the test user can retrieve (testing.md: 'Test data is audited like code'). Expect 'answer'. Query 'What is the name of the island that Sancho Panza governs, and which doctor forbids him to eat the dishes served at table?' (content terms ['forbids', 'governs', 'dishes', 'doctor', 'island', 'sancho', 'served', 'panza', 'table', 'name', 'eat']) hits 3+ passages; top hit 'The Adventures of Sherlock Holmes.txt' ord 3 (score 14.68): \"\u201cI am sorry to knock you up so early, Doctor,\u201d said he, \u201cbut I have had a very serious accident during the night. I came in by train this morning, and on inquiring at Paddington as to where I might find a doctor, a worthy fellow very kindly escorted me here. I gave the maid a card, but I see that she has left it upon the side-table.\u201d  I took it up and glanced at it. \u201cMr. Victor Hatherley, hydrauli\"",
+      "gold_chunks": [
+        {
+          "chunk_id": "01a16518-6331-7e3f-a5ee-c2d5b447f551",
+          "document": "Don Quijote.txt",
+          "ord": "0",
+          "quote": "se llama la \u00ednsula Barataria"
+        },
+        {
+          "chunk_id": "01a16518-61a5-74ac-94e0-f715902c8fff",
+          "document": "Don Quijote.txt",
+          "ord": "1",
+          "quote": "doctor Pedro Recio Tirteafuera"
+        }
+      ]
+    },
+    {
+      "id": "deep-unseen2-alice-dodo-bill",
+      "expect": "answer",
+      "hits": 3,
+      "ok": true,
+      "findings": [],
+      "proof": "Audited by scripts/audit_labels.py over all 10704 passages the test user can retrieve (testing.md: 'Test data is audited like code'). Expect 'answer'. Query \"Who presents Alice with her own thimble as the prize at the end of the Caucus-race, and which lizard is sent down the chimney of the Rabbit's house?\" (content terms ['presents', 'chimney', 'thimble', 'caucus', 'lizard', 'rabbit', 'alice', 'house', 'prize', 'down', 'race', 'sent', 'end', 'own']) hits 3+ passages; top hit \"Alice's Adventures in Wonderland.txt\" ord 0 (score 37.69): \"CHAPTER I.     Down the Rabbit-Hole  CHAPTER II.    The Pool of Tears  CHAPTER III.   A Caucus-Race and a Long Tale  CHAPTER IV.    The Rabbit Sends in a Little Bill  CHAPTER V.     Advice from a Caterpillar  CHAPTER VI.    Pig and Pepper  CHAPTER VII.   A Mad Tea-Party  CHAPTER VIII.  The Queen\u2019s Croquet-Ground  CHAPTER IX.    The Mock Turtle\u2019s Story  CHAPTER X.     The Lobster Quadrille  CHAPTER\"",
+      "gold_chunks": [
+        {
+          "chunk_id": "01a16516-5262-71c1-bc30-d1d70bc26fc5",
+          "document": "Alice's Adventures in Wonderland.txt",
+          "ord": "4",
+          "quote": "Only a thimble"
+        },
+        {
+          "chunk_id": "01a16516-5295-791a-b960-1c4b920d1297",
+          "document": "Alice's Adventures in Wonderland.txt",
+          "ord": "2",
+          "quote": "Bill! fetch it here"
+        }
+      ]
+    },
+    {
+      "id": "deep-unseen2-frankenstein-krempe-waldman",
+      "expect": "answer",
+      "hits": 3,
+      "ok": true,
+      "findings": [],
+      "proof": "Audited by scripts/audit_labels.py over all 10704 passages the test user can retrieve (testing.md: 'Test data is audited like code'). Expect 'answer'. Query \"At the university of Ingolstadt, which professor scornfully dismisses Victor's alchemist authors, and which professor of chemistry wins him over?\" (content terms ['ingolstadt', 'scornfully', 'university', 'alchemist', 'chemistry', 'dismisses', 'professor', 'authors', 'victor', 'wins']) hits 3+ passages; top hit 'Frankenstein.txt' ord 6 (score 18.23): \"The next morning I delivered my letters of introduction and paid a visit to some of the principal professors. Chance\u2014or rather the evil influence, the Angel of Destruction, which asserted omnipotent sway over me from the moment I turned my reluctant steps from my father\u2019s door\u2014led me first to M. Krempe, professor of natural philosophy. He was an uncouth man, but deeply imbued in the secrets of his\"",
+      "gold_chunks": [
+        {
+          "chunk_id": "01a16515-c5e3-738b-9458-d647f31b7736",
+          "document": "Frankenstein.txt",
+          "ord": "0",
+          "quote": "M. Krempe was a little squat"
+        },
+        {
+          "chunk_id": "01a16515-c5fb-78cc-87c6-84d27caff3a1",
+          "document": "Frankenstein.txt",
+          "ord": "0",
+          "quote": "In M. Waldman I found a true friend"
+        }
+      ]
+    },
+    {
+      "id": "deep-unseen2-bovary-rouault-bertaux",
+      "expect": "answer",
+      "hits": 3,
+      "ok": true,
+      "findings": [],
+      "proof": "Audited by scripts/audit_labels.py over all 10704 passages the test user can retrieve (testing.md: 'Test data is audited like code'). Expect 'answer'. Query \"What is the name of Emma's father, and what is the name of the farm where Charles first meets her?\" (content terms ['charles', 'father', 'first', 'meets', 'emma', 'farm', 'name']) hits 3+ passages; top hit 'Frankenstein.txt' ord 4 (score 15.86): \"My generous friend reassured the suppliant, and on being informed of the name of her lover, instantly abandoned his pursuit. He had already bought a farm with his money, on which he had designed to pass the remainder of his life; but he bestowed the whole on his rival, together with the remains of his prize-money to purchase stock, and then himself solicited the young woman\u2019s father to consent to\"",
+      "gold_chunks": [
+        {
+          "chunk_id": "01a16519-46f0-7997-b83f-16bc76ae2e05",
+          "document": "Madame Bovary.txt",
+          "ord": "1",
+          "quote": "ferme des Bertaux"
+        },
+        {
+          "chunk_id": "01a16519-519c-78a1-a2f9-f68fe21196ac",
+          "document": "Madame Bovary.txt",
+          "ord": "0",
+          "quote": "Le p\u00e8re Rouault arriva"
+        }
+      ]
+    },
+    {
+      "id": "deep-unseen2-bovary-bournisien-lagardy",
+      "expect": "answer",
+      "hits": 3,
+      "ok": true,
+      "findings": [],
+      "proof": "Audited by scripts/audit_labels.py over all 10704 passages the test user can retrieve (testing.md: 'Test data is audited like code'). Expect 'answer'. Query \"Which priest in Yonville is the pharmacist Homais's rival in argument, and which tenor do Emma and Leon go to hear in Rouen?\" (content terms ['pharmacist', 'argument', 'yonville', 'homais', 'priest', 'rival', 'rouen', 'tenor', 'emma', 'hear', 'leon', 'go']) hits 3+ passages; top hit 'Madame Bovary.txt' ord 3 (score 28.37): \"Il ne se h\u00e2ta point. Chaque jour, durant tout un mois, Hivert transporta pour lui d\u2019Yonville \u00e0 Rouen, de Rouen \u00e0 Yonville, des coffres, des valises, des paquets; et, quand L\u00e9on eut remont\u00e9 sa garde-robe, fait rembourrer ses trois fauteuils, achet\u00e9 une provision de foulards, pris en un mot plus de dispositions que pour un voyage autour du monde, il s\u2019ajourna de semaine en semaine, jusqu\u2019\u00e0 ce qu\u2019il\"",
+      "gold_chunks": [
+        {
+          "chunk_id": "01a16519-4db9-7785-9476-5321e35f4112",
+          "document": "Madame Bovary.txt",
+          "ord": "0",
+          "quote": "M. Bournisien, comme autrefois"
+        },
+        {
+          "chunk_id": "01a16519-4db9-7844-b977-eaff6383ae88",
+          "document": "Madame Bovary.txt",
+          "ord": "1",
+          "quote": "t\u00e9nor Lagardy"
+        }
+      ]
+    },
+    {
+      "id": "deep-unseen2-quixote-ducal-churchman",
+      "expect": "not_in_sources",
+      "hits": 3,
+      "ok": false,
+      "findings": [
+        {
+          "code": "abstain_false_hit",
+          "detail": "the question's most corpus-specific term 'duke' is attested in 6 passage(s) of ['The Adventures of Sherlock Holmes.txt']. Spot-read before trusting the label."
+        }
+      ],
+      "proof": "Audited by scripts/audit_labels.py over all 10704 passages the test user can retrieve. Expect not_in_sources, so every content term must be absent (or spot-read and named as a false hit). Question \"What is the name of the churchman at the Duke's table who scolds Don Quixote and Sancho, and in which city did he study theology?\" 'churchman': 0 hits 'theology': 0 hits 'quixote': 0 hits 'sancho': 1187 hit(s) in ['Don Quijote.txt'] \u2014 SPOT-READ: 'Don Quijote.txt' ord 0: \"bac\u00eda y mi albarda, con todos mis aparejos que me robastes! Sancho, que se vio acometer tan de improviso y oy\u00f3 los vituperios que le dec\u00edan, con la una mano asi\u00f3 de la albarda, y c\" | 'Don Quijote.txt' ord 0: \"asarme, aunque fuese con el ave f\u00e9nix.  Pareci\u00f3le tan mal a Sancho lo que \u00faltimamente su amo dijo acerca de no querer casarse, que, con grande enojo, alzando la voz, dijo:\" | 'Don Quijote.txt' ord 0: \"\u2014 \u00a1Bien, por Dios! \u2014dijo Sancho\u2014. No diga m\u00e1s vuestra merced, se\u00f1or y amo m\u00edo, en su abono, porque no hay m\u00e1s que decir, ni m\u00e1s que pensar, ni m\u00e1s que perseverar en el mundo. Y m\u00e1s\" 'scolds': 0 hits 'study': 38 hit(s) in ['Frankenstein.txt', 'Pride and Prejudice.txt', 'The Adventures of Sherlock Holmes.txt', 'The Time Machine.txt'] \u2014 SPOT-READ: 'Frankenstein.txt' ord 0: \"a female without again devoting several months to profound study and laborious disquisition. I had heard of some discoveries having been made by an English philosopher, the knowle\" | 'Frankenstein.txt' ord 0: \"sophers.  If this journey had taken place during my days of study and happiness, it would have afforded me inexpressible pleasure. But a blight had come over my existence, and I on\" | 'Frankenstein.txt' ord 0: \"aking with unremitting ardour. My cheek had grown pale with study, and my person had become emaciated with confinement. Sometimes, on the very brink of certainty, I failed; yet sti\" 'table': 169 hit(s) in [\"Alice's Adventures in Wonderland.txt\", 'Frankenstein.txt', 'Madame Bovary.txt', 'Pride and Prejudice.txt', 'The Adventures of Sherlock Holmes.txt', 'The Time Machine.txt'] \u2014 SPOT-READ: \"Alice's Adventures in Wonderland.txt\" ord 0: \"The table was a large one, but the three were all crowded together at one corner of it: \u201cNo room! No room!\u201d they cried out when they saw Alice coming. \u201cThere\u2019s _plenty_ of room!\u201d s\" | \"Alice's Adventures in Wonderland.txt\" ord 0: \"ver get to twenty at that rate! However, the Multiplication Table doesn\u2019t signify: let\u2019s try Geography. London is the capital of Paris, and Paris is the capital of Rome, and Rome\u2014n\" | \"Alice's Adventures in Wonderland.txt\" ord 0: \"use in waiting by the little door, so she went back to the table, half hoping she might find another key on it, or at any rate a book of rules for shutting people up like telescop\" 'city': 29 hit(s) in ['Frankenstein.txt', 'Pride and Prejudice.txt', 'The Adventures of Sherlock Holmes.txt'] \u2014 SPOT-READ: 'Frankenstein.txt' ord 0: \"s before my arrival they had lived in a large and luxurious city called Paris, surrounded by friends and possessed of every enjoyment which virtue, refinement of intellect, or tast\" | 'Frankenstein.txt' ord 0: \"y hired a vessel to convey him to Constantinople, for which city he should sail in a few hours. He intended to leave his daughter under the care of a confidential servant, to follo\" | 'Frankenstein.txt' ord 0: \"d to remain several months in this wonderful and celebrated city. Clerval desired the intercourse of the men of genius and talent who flourished at this time, but this was with me\" 'duke': 6 hit(s) in ['The Adventures of Sherlock Holmes.txt'] \u2014 SPOT-READ: 'The Adventures of Sherlock Holmes.txt' ord 4: \"Lord Robert Walsingham de Vere St. Simon, second son of the Duke of Balmoral.\u2019 Hum! \u2018Arms: Azure, three caltrops in chief over a fess sable. Born in 1846.\u2019 He\u2019s forty-one years of\" | 'The Adventures of Sherlock Holmes.txt' ord 4: \"rkable man, is young John Clay. His grandfather was a royal duke, and he himself has been to Eton and Oxford. His brain is as cunning as his fingers, and though we meet signs of hi\" | 'The Adventures of Sherlock Holmes.txt' ord 5: \"ake place, between Lord Robert St. Simon, second son of the Duke of Balmoral, and Miss Hatty Doran, the only daughter of Aloysius Doran. Esq., of San Francisco, Cal., U.S.A.\u2019 That\" 'name': 129 hit(s) in [\"Alice's Adventures in Wonderland.txt\", 'Die Verwandlung.txt', 'Don Quijote.txt', 'Frankenstein.txt', 'Madame Bovary.txt', 'Noli Me Tangere.txt', 'Pride and Prejudice.txt', 'The Adventures of Sherlock Holmes.txt', 'The Time Machine.txt', '\u7f85\u751f\u9580.txt', '\u897f\u904a\u8a18.txt'] \u2014 SPOT-READ: \"Alice's Adventures in Wonderland.txt\" ord 0: \"patiently; and, turning to Alice, she went on, \u201cWhat\u2019s your name, child?\u201d  \u201cMy name is Alice, so please your Majesty,\u201d said Alice very politely; but she added, to herself, \u201cWhy, th\" | \"Alice's Adventures in Wonderland.txt\" ord 2: \"\u201cI didn\u2019t write it, and they can\u2019t prove I did: there\u2019s no name signed at the end.\u201d  \u201cIf you didn\u2019t sign it,\u201d said the King, \u201cthat only makes the matter worse. You _must_ have mea\" | \"Alice's Adventures in Wonderland.txt\" ord 3: \"midly, as she did not at all know whether it would like the name: however, it only grinned a little wider. \u201cCome, it\u2019s pleased so far,\u201d thought Alice, and she went on. \u201cWould you t\" 'don': 1709 hit(s) in [\"Alice's Adventures in Wonderland.txt\", 'Don Quijote.txt', 'Noli Me Tangere.txt', 'Pride and Prejudice.txt', 'The Adventures of Sherlock Holmes.txt', 'The Time Machine.txt'] \u2014 SPOT-READ: \"Alice's Adventures in Wonderland.txt\" ord 0: \"ll round the table, but there was nothing on it but tea. \u201cI don\u2019t see any wine,\u201d she remarked.  \u201cThere isn\u2019t any,\u201d said the March Hare.  \u201cThen it wasn\u2019t very civil of you to offer\" | \"Alice's Adventures in Wonderland.txt\" ord 0: \"\u201cHave you seen the Mock Turtle yet?\u201d  \u201cNo,\u201d said Alice. \u201cI don\u2019t even know what a Mock Turtle is.\u201d  \u201cIt\u2019s the thing Mock Turtle Soup is made from,\u201d said the Queen.  \u201cI never saw o\" | \"Alice's Adventures in Wonderland.txt\" ord 0: \"obstacle that came between     Him, and ourselves, and it.  Don\u2019t let him know she liked them best,     For this must ever be A secret, kept from all the rest,     Between yourself\"",
+      "spot_read": "The flagged term 'duke' is attested only in Sherlock passages (a different Duke). Spot-read 2026-10-27 by SELECT over the books corpus: the churchman at the Duke's table in Don Quijote is only 'el eclesi\u00e1stico'; no passage names him or says where he studied."
+    },
+    {
+      "id": "deep-unseen2-alice-conger-eel",
+      "expect": "not_in_sources",
+      "hits": 3,
+      "ok": false,
+      "findings": [
+        {
+          "code": "abstain_false_hit",
+          "detail": "the question's most corpus-specific term 'drawling' is attested in 1 passage(s) of [\"Alice's Adventures in Wonderland.txt\"]. Spot-read before trusting the label."
+        }
+      ],
+      "proof": "Audited by scripts/audit_labels.py over all 10704 passages the test user can retrieve. Expect not_in_sources, so every content term must be absent (or spot-read and named as a false hit). Question 'What was the name of the old conger-eel who taught the Mock Turtle Drawling, and from which town did he come?' 'drawling': 1 hit(s) in [\"Alice's Adventures in Wonderland.txt\"] \u2014 SPOT-READ: \"Alice's Adventures in Wonderland.txt\" ord 5: \"ppers, \u201c\u2014Mystery, ancient and modern, with Seaography: then Drawling\u2014the Drawling-master was an old conger-eel, that used to come once a week: _he_ taught us Drawling, Stretching,\" 'conger': 1 hit(s) in [\"Alice's Adventures in Wonderland.txt\"] \u2014 SPOT-READ: \"Alice's Adventures in Wonderland.txt\" ord 5: \"th Seaography: then Drawling\u2014the Drawling-master was an old conger-eel, that used to come once a week: _he_ taught us Drawling, Stretching, and Fainting in Coils.\u201d  \u201cWhat was _that\" 'taught': 20 hit(s) in [\"Alice's Adventures in Wonderland.txt\", 'Frankenstein.txt', 'Pride and Prejudice.txt', 'The Time Machine.txt'] \u2014 SPOT-READ: \"Alice's Adventures in Wonderland.txt\" ord 0: \"hey _would_ not remember the simple rules their friends had taught them: such as, that a red-hot poker will burn you if you hold it too long; and that if you cut your finger _very_\" | \"Alice's Adventures in Wonderland.txt\" ord 3: \"sn\u2019t one?\u201d Alice asked.  \u201cWe called him Tortoise because he taught us,\u201d said the Mock Turtle angrily: \u201creally you are very dull!\u201d  \u201cYou ought to be ashamed of yourself for asking s\" | \"Alice's Adventures in Wonderland.txt\" ord 5: \"was an old conger-eel, that used to come once a week: _he_ taught us Drawling, Stretching, and Fainting in Coils.\u201d  \u201cWhat was _that_ like?\u201d said Alice.  \u201cWell, I can\u2019t show it you\" 'turtle': 20 hit(s) in [\"Alice's Adventures in Wonderland.txt\"] \u2014 SPOT-READ: \"Alice's Adventures in Wonderland.txt\" ord 0: \"e out of breath, and said to Alice, \u201cHave you seen the Mock Turtle yet?\u201d  \u201cNo,\u201d said Alice. \u201cI don\u2019t even know what a Mock Turtle is.\u201d  \u201cIt\u2019s the thing Mock Turtle Soup is made fro\" | \"Alice's Adventures in Wonderland.txt\" ord 0: \"o a line along the sea-shore\u2014\u201d  \u201cTwo lines!\u201d cried the Mock Turtle. \u201cSeals, turtles, salmon, and so on; then, when you\u2019ve cleared all the jelly-fish out of the way\u2014\u201d  \u201c_That_ gener\" | \"Alice's Adventures in Wonderland.txt\" ord 0: \"VIII.  The Queen\u2019s Croquet-Ground  CHAPTER IX.    The Mock Turtle\u2019s Story  CHAPTER X.     The Lobster Quadrille  CHAPTER XI.    Who Stole the Tarts?  CHAPTER XII.   Alice\u2019s Eviden\" 'come': 353 hit(s) in [\"Alice's Adventures in Wonderland.txt\", 'Die Verwandlung.txt', 'Don Quijote.txt', 'Frankenstein.txt', 'Madame Bovary.txt', 'Noli Me Tangere.txt', 'Pride and Prejudice.txt', 'The Adventures of Sherlock Holmes.txt', 'The Time Machine.txt', '\u7f85\u751f\u9580.txt', '\u897f\u904a\u8a18.txt'] \u2014 SPOT-READ: \"Alice's Adventures in Wonderland.txt\" ord 0: \"e Queen.  \u201cI never saw one, or heard of one,\u201d said Alice.  \u201cCome on, then,\u201d said the Queen, \u201cand he shall tell you his history.\u201d  As they walked off together, Alice heard the King\" | \"Alice's Adventures in Wonderland.txt\" ord 0: \"igging for apples, indeed!\u201d said the Rabbit angrily. \u201cHere! Come and help me out of _this!_\u201d (Sounds of more broken glass.)  \u201cNow tell me, Pat, what\u2019s that in the window?\u201d  \u201cSure,\" | \"Alice's Adventures in Wonderland.txt\" ord 0: \"the beginning,\u201d the King said gravely, \u201cand go on till you come to the end: then stop.\u201d \u201cThey told me you had been to her,     And mentioned me to him: She gave me a good characte\" 'mock': 24 hit(s) in [\"Alice's Adventures in Wonderland.txt\", 'Frankenstein.txt'] \u2014 SPOT-READ: \"Alice's Adventures in Wonderland.txt\" ord 0: \"quite out of breath, and said to Alice, \u201cHave you seen the Mock Turtle yet?\u201d  \u201cNo,\u201d said Alice. \u201cI don\u2019t even know what a Mock Turtle is.\u201d  \u201cIt\u2019s the thing Mock Turtle Soup is mad\" | \"Alice's Adventures in Wonderland.txt\" ord 0: \"m into a line along the sea-shore\u2014\u201d  \u201cTwo lines!\u201d cried the Mock Turtle. \u201cSeals, turtles, salmon, and so on; then, when you\u2019ve cleared all the jelly-fish out of the way\u2014\u201d  \u201c_That_\" | \"Alice's Adventures in Wonderland.txt\" ord 0: \"APTER VIII.  The Queen\u2019s Croquet-Ground  CHAPTER IX.    The Mock Turtle\u2019s Story  CHAPTER X.     The Lobster Quadrille  CHAPTER XI.    Who Stole the Tarts?  CHAPTER XII.   Alice\u2019s E\" 'name': 129 hit(s) in [\"Alice's Adventures in Wonderland.txt\", 'Die Verwandlung.txt', 'Don Quijote.txt', 'Frankenstein.txt', 'Madame Bovary.txt', 'Noli Me Tangere.txt', 'Pride and Prejudice.txt', 'The Adventures of Sherlock Holmes.txt', 'The Time Machine.txt', '\u7f85\u751f\u9580.txt', '\u897f\u904a\u8a18.txt'] \u2014 SPOT-READ: \"Alice's Adventures in Wonderland.txt\" ord 0: \"patiently; and, turning to Alice, she went on, \u201cWhat\u2019s your name, child?\u201d  \u201cMy name is Alice, so please your Majesty,\u201d said Alice very politely; but she added, to herself, \u201cWhy, th\" | \"Alice's Adventures in Wonderland.txt\" ord 2: \"\u201cI didn\u2019t write it, and they can\u2019t prove I did: there\u2019s no name signed at the end.\u201d  \u201cIf you didn\u2019t sign it,\u201d said the King, \u201cthat only makes the matter worse. You _must_ have mea\" | \"Alice's Adventures in Wonderland.txt\" ord 3: \"midly, as she did not at all know whether it would like the name: however, it only grinned a little wider. \u201cCome, it\u2019s pleased so far,\u201d thought Alice, and she went on. \u201cWould you t\" 'town': 107 hit(s) in ['Frankenstein.txt', 'Pride and Prejudice.txt', 'The Adventures of Sherlock Holmes.txt'] \u2014 SPOT-READ: 'Frankenstein.txt' ord 0: \"f extreme debility, I resolved to sail directly towards the town, as a place where I could most easily procure nourishment. Fortunately I had money with me. As I turned the promont\" | 'Frankenstein.txt' ord 0: \"when I arrived in the environs of Geneva; the gates of the town were already shut; and I was obliged to pass the night at Secheron, a village at the distance of half a league from\" | 'Frankenstein.txt' ord 1: \"said I, \u201cwill you be so kind as to tell me the name of this town and inform me where I am?\u201d  \u201cYou will know that soon enough,\u201d replied a man with a hoarse voice. \u201cMaybe you are com\" 'eel': 2 hit(s) in [\"Alice's Adventures in Wonderland.txt\"] \u2014 SPOT-READ: \"Alice's Adventures in Wonderland.txt\" ord 1: \"That your eye was as steady as ever; Yet you balanced an eel on the end of your nose\u2014     What made you so awfully clever?\u201d  \u201cI have answered three questions, and that is enough\" | \"Alice's Adventures in Wonderland.txt\" ord 5: \"what to uglify is, you _are_ a simpleton.\u201d  Alice did not feel encouraged to ask any more questions about it, so she turned to the Mock Turtle, and said \u201cWhat else had you to lear\" 'old': 178 hit(s) in [\"Alice's Adventures in Wonderland.txt\", 'Die Verwandlung.txt', 'Don Quijote.txt', 'Frankenstein.txt', 'Madame Bovary.txt', 'Noli Me Tangere.txt', 'Pride and Prejudice.txt', 'The Adventures of Sherlock Holmes.txt', 'The Time Machine.txt', '\u7f85\u751f\u9580.txt', '\u897f\u904a\u8a18.txt'] \u2014 SPOT-READ: \"Alice's Adventures in Wonderland.txt\" ord 0: \"\u201cRepeat, \u2018_You are old, Father William_,\u2019\u201d said the Caterpillar. \u201cYou are old, Father William,\u201d the young man said,     \u201cAnd your hair has become very white; And yet you incessantl\" | \"Alice's Adventures in Wonderland.txt\" ord 0: \"ghed the Lory, as soon as it was quite out of sight; and an old Crab took the opportunity of saying to her daughter \u201cAh, my dear! Let this be a lesson to you never to lose _your_ t\" | \"Alice's Adventures in Wonderland.txt\" ord 0: \"e Lory, who at last turned sulky, and would only say, \u201cI am older than you, and must know better;\u201d and this Alice would not allow without knowing how old it was, and, as the Lory p\"",
+      "spot_read": "Spot-read 2026-10-27 by SELECT: the one flagged passage (Alice ch. IX) says 'the Drawling-master was an old conger-eel, that used to come once a week'; it gives no name and no town."
+    },
+    {
+      "id": "deep-unseen2-bovary-homais-wife",
+      "expect": "not_in_sources",
+      "hits": 3,
+      "ok": false,
+      "findings": [
+        {
+          "code": "abstain_false_hit",
+          "detail": "the question's most corpus-specific term 'marry' is attested in 46 passage(s) of ['Pride and Prejudice.txt', 'The Adventures of Sherlock Holmes.txt']. Spot-read before trusting the label."
+        }
+      ],
+      "proof": "Audited by scripts/audit_labels.py over all 10704 passages the test user can retrieve. Expect not_in_sources, so every content term must be absent (or spot-read and named as a false hit). Question \"What is the first name of the pharmacist Homais's wife, and in which year did they marry?\" 'pharmacist': 0 hits 'homais': 138 hit(s) in ['Madame Bovary.txt'] \u2014 SPOT-READ: 'Madame Bovary.txt' ord 0: \"joie qu\u2019elle aper\u00e7ut, en arrivant \u00e0 la Croix rouge, ce bon Homais qui regardait charger sur l\u2019Hirondelle une grande bo\u00eete pleine de provisions pharmaceutiques. Il tenait \u00e0 sa main\" | 'Madame Bovary.txt' ord 0: \"endent\u00e9 qu\u2019un cannibale. Puis elle se d\u00e9gagea de la famille Homais, cong\u00e9dia successivement toutes les autres visites et m\u00eame fr\u00e9quenta l\u2019\u00e9glise avec moins d\u2019assiduit\u00e9, \u00e0 la grande\" | 'Madame Bovary.txt' ord 0: \"\u2019eccl\u00e9siastique passa le goupillon \u00e0 son voisin. C\u2019\u00e9tait M. Homais. Il le secoua gravement, puis le tendit \u00e0 Charles, qui s\u2019affaissa jusqu\u2019aux genoux dans la terre, et il en jetait\" 'first': 406 hit(s) in [\"Alice's Adventures in Wonderland.txt\", 'Frankenstein.txt', 'Pride and Prejudice.txt', 'The Adventures of Sherlock Holmes.txt', 'The Time Machine.txt'] \u2014 SPOT-READ: \"Alice's Adventures in Wonderland.txt\" ord 0: \"Alice for some time with great curiosity, and this was his first speech.  \u201cYou should learn not to make personal remarks,\u201d Alice said with some severity; \u201cit\u2019s very rude.\u201d  The Ha\" | \"Alice's Adventures in Wonderland.txt\" ord 0: \"What sort of a dance is it?\u201d  \u201cWhy,\u201d said the Gryphon, \u201cyou first form into a line along the sea-shore\u2014\u201d  \u201cTwo lines!\u201d cried the Mock Turtle. \u201cSeals, turtles, salmon, and so on; th\" | \"Alice's Adventures in Wonderland.txt\" ord 0: \"she was beginning to grow larger again, and she thought at first she would get up and leave the court; but on second thoughts she decided to remain where she was as long as there\" 'marry': 46 hit(s) in ['Pride and Prejudice.txt', 'The Adventures of Sherlock Holmes.txt'] \u2014 SPOT-READ: 'Pride and Prejudice.txt' ord 0: \"ery much surprised, so lately as Mr. Collins was wishing to marry you. But when you have had time to think it all over, I hope you will be satisfied with what I have done. I am not\" | 'Pride and Prejudice.txt' ord 0: \"ell such a story? Do not you know that Mr. Collins wants to marry Lizzy?\u201d  Nothing less than the complaisance of a courtier could have borne without anger such treatment: but Sir W\" | 'Pride and Prejudice.txt' ord 0: \"re he has found them. Who is to fight Wickham, and make him marry her, if he comes away?\u201d  As Mrs. Gardiner began to wish to be at home, it was settled that she and her children sh\" 'name': 129 hit(s) in [\"Alice's Adventures in Wonderland.txt\", 'Die Verwandlung.txt', 'Don Quijote.txt', 'Frankenstein.txt', 'Madame Bovary.txt', 'Noli Me Tangere.txt', 'Pride and Prejudice.txt', 'The Adventures of Sherlock Holmes.txt', 'The Time Machine.txt', '\u7f85\u751f\u9580.txt', '\u897f\u904a\u8a18.txt'] \u2014 SPOT-READ: \"Alice's Adventures in Wonderland.txt\" ord 0: \"patiently; and, turning to Alice, she went on, \u201cWhat\u2019s your name, child?\u201d  \u201cMy name is Alice, so please your Majesty,\u201d said Alice very politely; but she added, to herself, \u201cWhy, th\" | \"Alice's Adventures in Wonderland.txt\" ord 2: \"\u201cI didn\u2019t write it, and they can\u2019t prove I did: there\u2019s no name signed at the end.\u201d  \u201cIf you didn\u2019t sign it,\u201d said the King, \u201cthat only makes the matter worse. You _must_ have mea\" | \"Alice's Adventures in Wonderland.txt\" ord 3: \"midly, as she did not at all know whether it would like the name: however, it only grinned a little wider. \u201cCome, it\u2019s pleased so far,\u201d thought Alice, and she went on. \u201cWould you t\" 'wife': 110 hit(s) in [\"Alice's Adventures in Wonderland.txt\", 'Frankenstein.txt', 'Pride and Prejudice.txt', 'The Adventures of Sherlock Holmes.txt'] \u2014 SPOT-READ: \"Alice's Adventures in Wonderland.txt\" ord 0: \"ather, \u201cI took to the law,     And argued each case with my wife; And the muscular strength, which it gave to my jaw,     Has lasted the rest of my life.\u201d\" | \"Alice's Adventures in Wonderland.txt\" ord 1: \"ather, \u201cI took to the law,     And argued each case with my wife; And the muscular strength, which it gave to my jaw,     Has lasted the rest of my life.\u201d  \u201cYou are old,\u201d said the\" | 'Frankenstein.txt' ord 1: \"rful the combat which I momentarily expected would be to my wife, and I earnestly entreated her to retire, resolving not to join her until I had obtained some knowledge as to the s\" 'year': 72 hit(s) in [\"Alice's Adventures in Wonderland.txt\", 'Frankenstein.txt', 'Pride and Prejudice.txt', 'The Adventures of Sherlock Holmes.txt', 'The Time Machine.txt'] \u2014 SPOT-READ: \"Alice's Adventures in Wonderland.txt\" ord 2: \"it?\u201d muttered the Hatter. \u201cDoes _your_ watch tell you what year it is?\u201d\" | \"Alice's Adventures in Wonderland.txt\" ord 3: \"it?\u201d muttered the Hatter. \u201cDoes _your_ watch tell you what year it is?\u201d  \u201cOf course not,\u201d Alice replied very readily: \u201cbut that\u2019s because it stays the same year for such a long ti\" | 'Frankenstein.txt' ord 0: \"ccurred in the beginning of the month of August of the same year.  \u201cOne night during my accustomed visit to the neighbouring wood where I collected my own food and brought home fir\"",
+      "spot_read": "Spot-read 2026-10-27 by SELECT: the flagged 'marry' passages are Pride and Prejudice and Sherlock. Madame Bovary calls her only 'madame Homais'; zero chunks pair Homais with \u00e9pous*/mari\u00e9/mariage/n\u00e9e, and no first name or marriage year is given."
+    },
+    {
+      "id": "deep-unseen2-verwandlung-chiefclerk",
+      "expect": "not_in_sources",
+      "hits": 3,
+      "ok": false,
+      "findings": [
+        {
+          "code": "abstain_false_hit",
+          "detail": "the question's most corpus-specific term 'clerk' is attested in 3 passage(s) of ['Pride and Prejudice.txt', 'The Adventures of Sherlock Holmes.txt']. Spot-read before trusting the label."
+        }
+      ],
+      "proof": "Audited by scripts/audit_labels.py over all 10704 passages the test user can retrieve. Expect not_in_sources, so every content term must be absent (or spot-read and named as a false hit). Question \"What is the surname of the chief clerk who comes to Gregor Samsa's door, and what is the name of the firm they both work for?\" 'surname': 0 hits 'gregor': 99 hit(s) in ['Die Verwandlung.txt'] \u2014 SPOT-READ: 'Die Verwandlung.txt' ord 0: \"mit dem Zeigefinger auf den langsam sich vorw\u00e4rtsbewegenden Gregor. Die Violine verstummte, der mittlere Zimmerherr l\u00e4chelte erst einmal kopfsch\u00fcttelnd seinen Freunden zu und sah d\" | 'Die Verwandlung.txt' ord 0: \"\u00bbMutter, Mutter,\u00ab sagte Gregor leise und sah zu ihr hinauf. Der Prokurist war ihm f\u00fcr einen Augenblick ganz aus dem Sinn gekommen; dagegen konnte er sich nicht versagen, im Anblick\" | 'Die Verwandlung.txt' ord 0: \"ngen des Vaters waren zum Teil das erste Erfreuliche, was Gregor seit seiner Gefangenschaft zu h\u00f6ren bekam. Er war der Meinung gewesen, da\u00df dem Vater von jenem Gesch\u00e4ft her nicht d\" 'chief': 24 hit(s) in [\"Alice's Adventures in Wonderland.txt\", 'Frankenstein.txt', 'Pride and Prejudice.txt', 'The Adventures of Sherlock Holmes.txt'] \u2014 SPOT-READ: \"Alice's Adventures in Wonderland.txt\" ord 4: \"The chief difficulty Alice found at first was in managing her flamingo: she succeeded in getting its body tucked away, comfortably enough, under her arm, with its legs hanging down\" | 'Frankenstein.txt' ord 0: \"d no fish could be procured; and thus I was cut off from my chief article of maintenance.  The triumph of my enemy increased with the difficulty of my labours. One inscription that\" | 'Frankenstein.txt' ord 1: \"my conformation for the endurance of cold than heat. But my chief delights were the sight of the flowers, the birds, and all the gay apparel of summer; when those deserted me, I tu\" 'clerk': 3 hit(s) in ['Pride and Prejudice.txt', 'The Adventures of Sherlock Holmes.txt'] \u2014 SPOT-READ: 'Pride and Prejudice.txt' ord 0: \"She had a sister married to a Mr. Philips, who had been a clerk to their father and succeeded him in the business, and a brother settled in London in a respectable line of trade.\" | 'Pride and Prejudice.txt' ord 1: \"She had a sister married to a Mr. Philips, who had been a clerk to their father and succeeded him in the business, and a brother settled in London in a respectable line of trade.\" | 'The Adventures of Sherlock Holmes.txt' ord 2: \", however, just as I was thinking of leaving the office, my clerk entered to say there was a gentleman waiting who wished to see me upon business. He brought up a card, too, with t\" 'comes': 44 hit(s) in [\"Alice's Adventures in Wonderland.txt\", 'Frankenstein.txt', 'Pride and Prejudice.txt', 'The Adventures of Sherlock Holmes.txt', 'The Time Machine.txt'] \u2014 SPOT-READ: \"Alice's Adventures in Wonderland.txt\" ord 3: \"m a deal too flustered to tell you\u2014all I know is, something comes at me like a Jack-in-the-box, and up I goes like a sky-rocket!\u201d\" | \"Alice's Adventures in Wonderland.txt\" ord 5: \"you know. So you see, Miss, we\u2019re doing our best, afore she comes, to\u2014\u201d At this moment Five, who had been anxiously looking across the garden, called out \u201cThe Queen! The Queen!\u201d an\" | 'Frankenstein.txt' ord 1: \"Again there is a sound as of a human voice, but hoarser; it comes from the cabin where the remains of Frankenstein still lie. I must arise and examine. Good night, my sister.  Grea\" 'samsa': 16 hit(s) in ['Die Verwandlung.txt'] \u2014 SPOT-READ: 'Die Verwandlung.txt' ord 0: \"\u00bbHerr Samsa!\u00ab rief der mittlere Herr dem Vater zu und zeigte, ohne ein weiteres Wort zu verlieren, mit dem Zeigefinger auf den langsam sich vorw\u00e4rtsbewegenden Gregor. Die Violine v\" | 'Die Verwandlung.txt' ord 0: \"\u00bbVerlassen Sie sofort meine Wohnung!\u00ab sagte Herr Samsa und zeigte auf die T\u00fcr, ohne die Frauen von sich zu lassen. \u00bbWie meinen Sie das?\u00ab sagte der mittlere der Herren etwas best\u00fcrz\" | 'Die Verwandlung.txt' ord 0: \"zu entschuldigen schon die G\u00fcte haben.\u00ab \u00bbGuten Morgen, Herr Samsa,\u00ab rief der Prokurist freundlich dazwischen. \u00bbIhm ist nicht wohl,\u00ab sagte die Mutter zum Prokuristen, w\u00e4hrend der Va\" 'door': 193 hit(s) in [\"Alice's Adventures in Wonderland.txt\", 'Frankenstein.txt', 'Pride and Prejudice.txt', 'The Adventures of Sherlock Holmes.txt', 'The Time Machine.txt'] \u2014 SPOT-READ: \"Alice's Adventures in Wonderland.txt\" ord 0: \"uncommonly fat; Yet you turned a back-somersault in at the door\u2014     Pray, what is the reason of that?\u201d  \u201cIn my youth,\u201d said the sage, as he shook his grey locks,     \u201cI kept all\" | \"Alice's Adventures in Wonderland.txt\" ord 0: \"There seemed to be no use in waiting by the little door, so she went back to the table, half hoping she might find another key on it, or at any rate a book of rules for shutting pe\" | \"Alice's Adventures in Wonderland.txt\" ord 1: \"hat she was now the right size for going through the little door into that lovely garden. First, however, she waited for a few minutes to see if she was going to shrink any further\" 'firm': 21 hit(s) in ['Frankenstein.txt', 'Pride and Prejudice.txt', 'The Adventures of Sherlock Holmes.txt'] \u2014 SPOT-READ: 'Frankenstein.txt' ord 2: \"not have a more kind and attentive nurse than himself; and, firm in the hope he felt of my recovery, he did not doubt that, instead of doing harm, he performed the kindest action t\" | 'Frankenstein.txt' ord 3: \"l lives of my protectors caused these impressions to take a firm hold on my mind; perhaps, if my first introduction to humanity had been made by a young soldier, burning for glory\" | 'Frankenstein.txt' ord 3: \"Be men, or be more than men. Be steady to your purposes and firm as a rock. This ice is not made of such stuff as your hearts may be; it is mutable and cannot withstand you if you\" 'name': 129 hit(s) in [\"Alice's Adventures in Wonderland.txt\", 'Die Verwandlung.txt', 'Don Quijote.txt', 'Frankenstein.txt', 'Madame Bovary.txt', 'Noli Me Tangere.txt', 'Pride and Prejudice.txt', 'The Adventures of Sherlock Holmes.txt', 'The Time Machine.txt', '\u7f85\u751f\u9580.txt', '\u897f\u904a\u8a18.txt'] \u2014 SPOT-READ: \"Alice's Adventures in Wonderland.txt\" ord 0: \"patiently; and, turning to Alice, she went on, \u201cWhat\u2019s your name, child?\u201d  \u201cMy name is Alice, so please your Majesty,\u201d said Alice very politely; but she added, to herself, \u201cWhy, th\" | \"Alice's Adventures in Wonderland.txt\" ord 2: \"\u201cI didn\u2019t write it, and they can\u2019t prove I did: there\u2019s no name signed at the end.\u201d  \u201cIf you didn\u2019t sign it,\u201d said the King, \u201cthat only makes the matter worse. You _must_ have mea\" | \"Alice's Adventures in Wonderland.txt\" ord 3: \"midly, as she did not at all know whether it would like the name: however, it only grinned a little wider. \u201cCome, it\u2019s pleased so far,\u201d thought Alice, and she went on. \u201cWould you t\" 'work': 180 hit(s) in [\"Alice's Adventures in Wonderland.txt\", 'Die Verwandlung.txt', 'Don Quijote.txt', 'Frankenstein.txt', 'Madame Bovary.txt', 'Noli Me Tangere.txt', 'Pride and Prejudice.txt', 'The Adventures of Sherlock Holmes.txt', 'The Time Machine.txt', '\u7f85\u751f\u9580.txt', '\u897f\u904a\u8a18.txt'] \u2014 SPOT-READ: \"Alice's Adventures in Wonderland.txt\" ord 0: \"ll held the pieces of mushroom in her hands, and she set to work very carefully, nibbling first at one and then at the other, and growing sometimes taller and sometimes shorter, un\" | \"Alice's Adventures in Wonderland.txt\" ord 3: \"stupid for life to go on in the common way.  So she set to work, and very soon finished off the cake.  *      *      *      *      *      *      *  *      *      *      *      *\" | \"Alice's Adventures in Wonderland.txt\" ord 3: \"ime to be lost, as she was shrinking rapidly; so she set to work at once to eat some of the other bit. Her chin was pressed so closely against her foot, that there was hardly room\"",
+      "spot_read": "Spot-read 2026-10-27 by SELECT: the flagged 'clerk' passages are English books. In Die Verwandlung the chief clerk is only 'der Prokurist' and the firm is only 'eine Firma'; neither is named."
+    },
+    {
+      "id": "deep-unseen2-timemachine-psychologist",
+      "expect": "not_in_sources",
+      "hits": 3,
+      "ok": false,
+      "findings": [
+        {
+          "code": "abstain_false_hit",
+          "detail": "the question's most corpus-specific term 'dinners' is attested in 2 passage(s) of ['Pride and Prejudice.txt']. Spot-read before trusting the label."
+        }
+      ],
+      "proof": "Audited by scripts/audit_labels.py over all 10704 passages the test user can retrieve. Expect not_in_sources, so every content term must be absent (or spot-read and named as a false hit). Question \"What is the Psychologist's name at the Time Traveller's dinners, and at which university does he teach?\" 'psychologist': 12 hit(s) in ['The Time Machine.txt'] \u2014 SPOT-READ: 'The Time Machine.txt' ord 0: \"\u201cIt would be remarkably convenient for the historian,\u201d the Psychologist suggested. \u201cOne might travel back and verify the accepted account of the Battle of Hastings, for instance!\u201d\" | 'The Time Machine.txt' ord 0: \"this business of the Time Machine,\u201d I said, and took up the Psychologist\u2019s account of our previous meeting. The new guests were frankly incredulous. The Editor raised objections. \u201c\" | 'The Time Machine.txt' ord 1: \"ings are mere abstractions.\u201d  \u201cThat is all right,\u201d said the Psychologist.  \u201cNor, having only length, breadth, and thickness, can a cube have a real existence.\u201d  \u201cThere I object,\u201d s\" 'university': 7 hit(s) in ['Frankenstein.txt'] \u2014 SPOT-READ: 'Frankenstein.txt' ord 0: \"y was to introduce Clerval to the several professors of the university. In doing this, I underwent a kind of rough usage, ill befitting the wounds that my mind had sustained. Ever\" | 'Frankenstein.txt' ord 0: \"nd cultivated the acquaintance of the men of science of the university, and I found even in M. Krempe a great deal of sound sense and real information, combined, it is true, with a\" | 'Frankenstein.txt' ord 0: \"n my parents resolved that I should become a student at the university of Ingolstadt. I had hitherto attended the schools of Geneva, but my father thought it necessary for the comp\" 'traveller': 44 hit(s) in ['Frankenstein.txt', 'The Adventures of Sherlock Holmes.txt', 'The Time Machine.txt'] \u2014 SPOT-READ: 'Frankenstein.txt' ord 0: \"e and guided the dogs. We watched the rapid progress of the traveller with our telescopes until he was lost among the distant inequalities of the ice.\" | 'Frankenstein.txt' ord 2: \"re persuading to enter the vessel. He was not, as the other traveller seemed to be, a savage inhabitant of some undiscovered island, but a European. When I appeared on deck the mas\" | 'Frankenstein.txt' ord 3: \"in.\u2019  \u201cI entered. \u2018Pardon this intrusion,\u2019 said I; \u2018I am a traveller in want of a little rest; you would greatly oblige me if you would allow me to remain a few minutes before the\" 'dinners': 2 hit(s) in ['Pride and Prejudice.txt'] \u2014 SPOT-READ: 'Pride and Prejudice.txt' ord 0: \"ch the attentions of the officers, to whom her uncle\u2019s good dinners and her own easy manners recommended her, had increased into assurance. She was very equal, therefore, to addres\" | 'Pride and Prejudice.txt' ord 0: \"s Charlotte Lucas should happen to call in; and I hope _my_ dinners are good enough for her. I do not believe she often sees such at home.\u201d  \u201cThe person of whom I speak is a gentle\" 'teach': 7 hit(s) in ['Frankenstein.txt', 'Pride and Prejudice.txt', 'The Adventures of Sherlock Holmes.txt'] \u2014 SPOT-READ: 'Frankenstein.txt' ord 4: \"of that devoted and wondrous nature that the worldly-minded teach us to look for only in the imagination. But even human sympathies were not sufficient to satisfy his eager mind. T\" | 'Pride and Prejudice.txt' ord 0: \"know how to answer. We all love to instruct, though we can teach only what is not worth knowing. Forgive me; and if you persist in indifference, do not make _me_ your confidante.\u201d\" | 'Pride and Prejudice.txt' ord 1: \"ess, and _that_, if he marry _prudently_, his      wife may teach him. I thought him very sly; he hardly ever      mentioned your name. But slyness seems the fashion. Pray forgive\" 'name': 129 hit(s) in [\"Alice's Adventures in Wonderland.txt\", 'Die Verwandlung.txt', 'Don Quijote.txt', 'Frankenstein.txt', 'Madame Bovary.txt', 'Noli Me Tangere.txt', 'Pride and Prejudice.txt', 'The Adventures of Sherlock Holmes.txt', 'The Time Machine.txt', '\u7f85\u751f\u9580.txt', '\u897f\u904a\u8a18.txt'] \u2014 SPOT-READ: \"Alice's Adventures in Wonderland.txt\" ord 0: \"patiently; and, turning to Alice, she went on, \u201cWhat\u2019s your name, child?\u201d  \u201cMy name is Alice, so please your Majesty,\u201d said Alice very politely; but she added, to herself, \u201cWhy, th\" | \"Alice's Adventures in Wonderland.txt\" ord 2: \"\u201cI didn\u2019t write it, and they can\u2019t prove I did: there\u2019s no name signed at the end.\u201d  \u201cIf you didn\u2019t sign it,\u201d said the King, \u201cthat only makes the matter worse. You _must_ have mea\" | \"Alice's Adventures in Wonderland.txt\" ord 3: \"midly, as she did not at all know whether it would like the name: however, it only grinned a little wider. \u201cCome, it\u2019s pleased so far,\u201d thought Alice, and she went on. \u201cWould you t\" 'time': 566 hit(s) in [\"Alice's Adventures in Wonderland.txt\", 'Frankenstein.txt', 'Pride and Prejudice.txt', 'The Adventures of Sherlock Holmes.txt', 'The Time Machine.txt'] \u2014 SPOT-READ: \"Alice's Adventures in Wonderland.txt\" ord 0: \"ng,\u201d said the Hatter. He had been looking at Alice for some time with great curiosity, and this was his first speech.  \u201cYou should learn not to make personal remarks,\u201d Alice said w\" | \"Alice's Adventures in Wonderland.txt\" ord 0: \"All the time they were playing the Queen never left off quarrelling with the other players, and shouting \u201cOff with his head!\u201d or \u201cOff with her head!\u201d Those whom she sentenced were\" | \"Alice's Adventures in Wonderland.txt\" ord 0: \"ng in a helpless sort of way to fly up into a tree.  By the time she had caught the flamingo and brought it back, the fight was over, and both the hedgehogs were out of sight: \u201cbut\"",
+      "spot_read": "Spot-read 2026-10-27 by SELECT: the flagged 'dinners' passages are Pride and Prejudice. In The Time Machine the guests are titles (Psychologist, Medical Man, Provincial Mayor, Very Young Man) plus Filby; zero chunks give a Psychologist's name, and 'University' and 'college' have zero hits in the book."
+    },
+    {
+      "id": "deep-unseen2-pride-fitzwilliam-brother",
+      "expect": "not_in_sources",
+      "hits": 3,
+      "ok": false,
+      "findings": [
+        {
+          "code": "abstain_false_hit",
+          "detail": "the question's most corpus-specific term 'inherit' is attested in 2 passage(s) of ['Pride and Prejudice.txt', 'The Adventures of Sherlock Holmes.txt']. Spot-read before trusting the label."
+        }
+      ],
+      "proof": "Audited by scripts/audit_labels.py over all 10704 passages the test user can retrieve. Expect not_in_sources, so every content term must be absent (or spot-read and named as a false hit). Question \"What is the name of Colonel Fitzwilliam's elder brother, and what is the name of the estate that brother will inherit?\" 'fitzwilliam': 28 hit(s) in ['Pride and Prejudice.txt'] \u2014 SPOT-READ: 'Pride and Prejudice.txt' ord 0: \"s confident, at last, that she recollected having heard Mr. Fitzwilliam Darcy formerly spoken of as a very proud, ill-natured boy.  [Illustration:  \u201cWill you come and see me?\u201d ]\" | 'Pride and Prejudice.txt' ord 0: \"[Illustration:  \u201cAt Church\u201d ] [Illustration]  Colonel Fitzwilliam\u2019s manners were very much admired at the Parsonage, and the ladies all felt that he must add considerably to the pl\" | 'Pride and Prejudice.txt' ord 0: \"e_ too. His words seemed to imply it. Could he have Colonel Fitzwilliam in his thoughts?\" 'brother': 104 hit(s) in [\"Alice's Adventures in Wonderland.txt\", 'Frankenstein.txt', 'Pride and Prejudice.txt', 'The Adventures of Sherlock Holmes.txt', 'The Time Machine.txt'] \u2014 SPOT-READ: \"Alice's Adventures in Wonderland.txt\" ord 4: \"such a thing before, but she remembered having seen in her brother\u2019s Latin Grammar, \u201cA mouse\u2014of a mouse\u2014to a mouse\u2014a mouse\u2014O mouse!\u201d) The Mouse looked at her rather inquisitively,\" | 'Frankenstein.txt' ord 0: \"t he had been out fishing the night before with his son and brother-in-law, Daniel Nugent, when, about ten o\u2019clock, they observed a strong northerly blast rising, and they accordin\" | 'Frankenstein.txt' ord 0: \"ans. How would such a friend repair the faults of your poor brother! I am too ardent in execution and too impatient of difficulties. But it is a still greater evil to me that I am\" 'colonel': 73 hit(s) in ['Madame Bovary.txt', 'Pride and Prejudice.txt', 'The Adventures of Sherlock Holmes.txt'] \u2014 SPOT-READ: 'Madame Bovary.txt' ord 0: \"nt. Comme une rivalit\u00e9 subsistait entre le percepteur et le colonel, l\u2019un et l\u2019autre, pour montrer leurs talents, faisaient \u00e0 part man\u0153uvrer leurs hommes. On voyait alternativement\" | 'Madame Bovary.txt' ord 2: \"lanc. Binet n\u2019eut que le temps de crier: \u00abAux armes!\u00bb et le colonel de l\u2019imiter. On courut vers les faisceaux. On se pr\u00e9cipita. Quelques-uns m\u00eame oubli\u00e8rent leur col. Mais l\u2019\u00e9quipa\" | 'Pride and Prejudice.txt' ord 0: \"ded, \u201cI shall insist on their giving one also. I shall tell Colonel Forster it will be quite a shame if he does not.\u201d\" 'inherit': 2 hit(s) in ['Pride and Prejudice.txt', 'The Adventures of Sherlock Holmes.txt'] \u2014 SPOT-READ: 'Pride and Prejudice.txt' ord 4: \"iable young women. But the fact is, that being, as I am, to inherit this estate after the death of your honoured father (who, however, may live many years longer), I could not sati\" | 'The Adventures of Sherlock Holmes.txt' ord 4: \"father, was at one time Secretary for Foreign Affairs. They inherit Plantagenet blood by direct descent, and Tudor on the distaff side. Ha! Well, there is nothing very instructive\" 'estate': 27 hit(s) in ['Pride and Prejudice.txt', 'The Adventures of Sherlock Holmes.txt'] \u2014 SPOT-READ: 'Pride and Prejudice.txt' ord 0: \"ion]  Mr. Bennet\u2019s property consisted almost entirely in an estate of two thousand a year, which, unfortunately for his daughters, was entailed, in default of heirs male, on a dist\" | 'Pride and Prejudice.txt' ord 0: \"\u201cYou allude, perhaps, to the entail of this estate.\u201d \u201cAh, sir, I do indeed. It is a grievous affair to my poor girls, you must confess. Not that I mean to find fault with _you_, fo\" | 'Pride and Prejudice.txt' ord 0: \"re.  \u201cI cannot bear to think that they should have all this estate. If it was not for the entail, I should not mind it.\u201d  \u201cWhat should not you mind?\u201d  \u201cI should not mind anything a\" 'elder': 13 hit(s) in ['Frankenstein.txt', 'Pride and Prejudice.txt', 'The Adventures of Sherlock Holmes.txt'] \u2014 SPOT-READ: 'Frankenstein.txt' ord 1: \"gn service, but we cannot part with him, at least until his elder brother returns to us. My uncle is not pleased with the idea of a military career in a distant country, but Ernest\" | 'Frankenstein.txt' ord 3: \"ich they might be supposed to have inhabited. The spirit of elder days found a dwelling here, and we delighted to trace its footsteps. If these feelings had not found an imaginary\" | 'Pride and Prejudice.txt' ord 0: \"ere drooping apace. The dejection was almost universal. The elder Miss Bennets alone were still able to eat, drink, and sleep, and pursue the usual course of their employments. Ver\" 'name': 129 hit(s) in [\"Alice's Adventures in Wonderland.txt\", 'Die Verwandlung.txt', 'Don Quijote.txt', 'Frankenstein.txt', 'Madame Bovary.txt', 'Noli Me Tangere.txt', 'Pride and Prejudice.txt', 'The Adventures of Sherlock Holmes.txt', 'The Time Machine.txt', '\u7f85\u751f\u9580.txt', '\u897f\u904a\u8a18.txt'] \u2014 SPOT-READ: \"Alice's Adventures in Wonderland.txt\" ord 0: \"patiently; and, turning to Alice, she went on, \u201cWhat\u2019s your name, child?\u201d  \u201cMy name is Alice, so please your Majesty,\u201d said Alice very politely; but she added, to herself, \u201cWhy, th\" | \"Alice's Adventures in Wonderland.txt\" ord 2: \"\u201cI didn\u2019t write it, and they can\u2019t prove I did: there\u2019s no name signed at the end.\u201d  \u201cIf you didn\u2019t sign it,\u201d said the King, \u201cthat only makes the matter worse. You _must_ have mea\" | \"Alice's Adventures in Wonderland.txt\" ord 3: \"midly, as she did not at all know whether it would like the name: however, it only grinned a little wider. \u201cCome, it\u2019s pleased so far,\u201d thought Alice, and she went on. \u201cWould you t\"",
+      "spot_read": "Spot-read 2026-10-27 by SELECT: the flagged 'inherit' passages are the Bennet entail and a Sherlock story. Zero chunks of Pride and Prejudice link Colonel Fitzwilliam to a brother, an estate, a father or an earl, and 'Viscount' has zero hits ('Matlock' is only a Derbyshire sight-seeing place)."
+    }
+  ]
+}
