@@ -99,8 +99,8 @@
       ],
       "expect": "answer",
       "cite": ["羅生門"],
-      "mention": ["老婆"],
-      "proof": "Label written before the corpus was reopened: the old woman plucks hair from the dead woman's head to sell as a wig; the servant no longer hesitates and strips her clothes. The Japanese Gutenberg text (1982) is in the corpus, so the answer is Japanese; 老婆 is the old woman's recurring word."
+      "mention_all": ["wig", "cloth"],
+      "proof": "Label written before the corpus was reopened: the old woman plucks hair from the dead woman's head to sell as a wig; the servant no longer hesitates and strips her clothes. The Japanese Gutenberg text (1982) is in the corpus, the question is English and so is the answer, so the label requires the two facts in English (2026-10-27, disclosed exception: the first label required the Japanese string 老婆, which an English answer cannot contain)."
     },
     {
       "id": "deep-sherlock-eurus",
