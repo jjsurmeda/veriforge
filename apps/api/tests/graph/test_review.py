@@ -1006,4 +1006,5 @@ class TestCitedSourceWindow:
         claim = ExtractedClaim(claim_id="c1", text="the claim", citation_ids=[1], is_factual=True)
         prompt = _claim_question(claim, [ExpandedContext(chunk, text)]).prompt
         assert "THE DECISIVE PHRASE" in prompt
-        assert "z" * (SOURCE_MAX_CHARS - 2519 + 1) not in prompt  # still capped at the generator window
+        # still capped at the generator window
+        assert "z" * (SOURCE_MAX_CHARS - 2519 + 1) not in prompt
