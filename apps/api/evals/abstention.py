@@ -44,6 +44,14 @@ NOT_IN_SOURCES = tuple(
         # still needs the sources (or "I") as its subject within 80 characters.
         r"(?:find|have|contain|cover|see|show|answer|determine|tell|say|"
         r"name|give|state|provide|specify|identify|mention|list|spell out)\b",
+        # "they never give the eel's name" (unseen2 draw 1, alice-conger-eel). Same
+        # subject rule as above: the sources (or "I") within 80 characters.
+        r"(?:\bI\b|\b(?:the |these |your |my )?"
+        r"(?:sources?|documents?|passages?|texts?|context|excerpts?)\b)"
+        r"[^.\n]{0,80}?\bnever (?:give|state|name|say|mention|specify|provide)\b",
+        # "not explicitly named in the provided sources" (unseen2 draw 2, chiefclerk).
+        r"\bnot (?:\w+ )?(?:named|stated|given|mentioned|specified|provided) in (?:the |these )?"
+        r"(?:provided |given )?(?:sources?|passages?|texts?|documents?|excerpts?|context)\b",
         r"(?:isn'?t|is not|aren'?t|are not|wasn'?t) (?:in|among|covered|included)\b",
         r"no (?:matching|relevant|such) ",
         r"not part of ",
@@ -51,9 +59,9 @@ NOT_IN_SOURCES = tuple(
         # Deep draw 1, frankenstein-degree). Both halves and the sources noun
         # are required, so a story sentence using "neither ... nor" stays an answer.
         r"\bneither\b[^.\n]{0,100}?\bnor\b[^.\n]{0,100}?"
-        r"\b(?:is|are|was|were)\s+(?:mentioned|stated|given|named|specified|provided|found)\s+"
-        r"(?:in|by)\s+(?:the|these|your|my)\s+"
-        r"(?:sources?|passages?|texts?|documents?|excerpts?|context)\b",
+        r"\b(?:is|are|was|were)\s+(?:mentioned|stated|given|named|specified|provided|found)"
+        r"(?:\s+(?:in|by)\s+(?:the|these|your|my)\s+"
+        r"(?:sources?|passages?|texts?|documents?|excerpts?|context)\b|\s*(?:[.!?]|$))",
         r"outside (?:the|my|your) ",
         # The reply is in the language of the question (books set: es fr de zh
         # ja tl), so the shape has to be recognised there too.
@@ -85,7 +93,7 @@ _ASSERTS = re.compile(r"\d|[$€£¥]|\[\d{1,2}\]")
 # A contrast that goes straight on to deny ("though neither matches your
 # question") is still the decline, not an answer: outside-holmes-boston.
 _NEGATED = re.compile(
-    r"\s*(?:\w+\s+){0,2}?(?:neither|none|nor|nothing|never|no|not|\w+n't)\b", re.IGNORECASE
+    r"[\s,]*(?:\w+\s+){0,2}?(?:neither|none|nor|nothing|never|no|not|\w+n't)\b", re.IGNORECASE
 )
 
 
