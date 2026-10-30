@@ -20,7 +20,7 @@ Rules (`docs/conventions/agents.md`, "Finish lines and measurement"):
 | closed 2026-10-25 | KI-96 | web sources showed no title or URL anywhere; retrieval, citations and the UI now carry both (`1e1f7d1`) |
 | closed 2026-10-25 | KI-88 | the decision fallback has one deadline over its retries and failover, `llm_timeout_seconds` = 90 s (`2b92d0c`); a tighter ceiling would break the slow judge-only rerank |
 | closed 2026-10-26 | KI-93 | Deep runs Auto's conflict check and its trace matches Auto's stages (`da72a48`, `60d3214`) |
-| R3 (Deep) | KI-97 | Deep false abstentions: replay found entity-guard stops (locator words, a starved second clause) and IsUse stops that look like the 2048-token generator budget used up by reasoning; the controller-grade change is merged but unverified |
+| R3 (Deep) | KI-97 | Deep false abstentions: replay found entity-guard stops (locator words, a starved second clause) and IsUse stops that look like the 2048-token generator budget used up by reasoning; controller, window and merge changes are merged; fresh unseen set 2 drew 19/20 and 18/20 with 0 real wrong answers; entity-guard false stops open |
 | post-beta | KI-98 | Tesseract OCR (beta) reads text pages but not ruled tables (1 of 18 cells in the bake-off); no accuracy number on real scans yet |
 | UI redesign | KI-92 | UI pass leftovers: duplicate Escape handlers, sub-44 px mobile targets, F-34 tiny text, live specs not run, F-25/F-26 checked on mocks only, two README nits |
 | closed 2026-10-25 | KI-91 | usage recording selects only the run's aggregate ledger row (`781714a`) |
@@ -801,9 +801,42 @@ Logged 2026-10-12 (phase 1, `make check-work` on `beta/phase1-check-work`).
 - **Still open:** (3) partial answers (answer the supported clauses, name the missing one) with 0 confident
   wrong kept; (4) entity-guard locator wording is a Jev question text change, not a threshold change: leave it
   until a draw shows what (1) and (2) fixed.
+- **Window change merged in `57dcc2a`:** IsUse and the claim verdict read each source up to `SOURCE_MAX_CHARS` (6000)
+  instead of 1200 and 2000 characters. Same three frozen splits, same current scoring (decline rule, rashomon and apple
+  labels): draw 2 (old windows) **31/38**, draw 3 (6000-character windows) **36/38**; only first-and-clerval and
+  noli-ibarra fail. This reversed an earlier "drop the window" recommendation.
+- **Entity guard, no safe fix:** a $0 replay of the 15 stopped runs found that rescuing a guard stop on a literal
+  surname hit would also lift correct stops (lambton-inn, timemachine-housekeeper, janeeyre-coachman), so nothing was
+  built. False stops now total 5 (carbuncle "Countess" 0.46, norton-adler "King" 0.44, noli 0.41 and 0.47, twisted-lip
+  0.49, dormouse-palace 0.45) against a 0.50 floor. Open.
+- **Unseen set 1 drawn once (2026-10-27), now tainted** because its failures were diagnosed: 15/20 as scored, 16/20 after
+  the neither-nor fix (`483bc32`), $0.5755. Failures: frankenstein-degree (scorer, fixed), copper-beeches-dress
+  (2000-character verifier window, fixed by `57dcc2a`), twisted-lip and dormouse-palace (entity guard),
+  alice-caterpillar-arithmetic (IsUse 0.44 vs 0.47).
+- **Unseen set 2 frozen (`d487eb2`) and drawn twice, no code change between draws** (served commit `d487eb2`):
+  `evals/deep/unseen2_items.json` and `unseen2_audit.json`, registered as `deep_unseen2`, SHA-256 items
+  `270bb8966c2c83cf4b5e051ce7ca77cb2291978a1b080d529827211d4536ab45`, audit
+  `e17adc3063909bdcabaf5bf6ad52099d3dd7226c87924529b3c3e1a788aeef6b`. Pre-declared bars: at least 16/20 per draw,
+  0 confident wrong over both draws (flagged items hand-checked), p50 at most 45 s and p95 at most 90 s, at most $1.50.
+  **Draw 1 19/20** (answerable 14/14, should-abstain 5/6, p50 24.4 s, p95 58.2 s, max 116.9 s, $0.6813);
+  **draw 2 18/20** (14/14, 4/6, p50 37.5 s, p95 56.4 s, $0.6775). Total $1.3588. Draw 2 had 4 transient `run_error`s
+  after two idle days, retried by the harness after 70 s, all passed. No false abstention on an answerable item in
+  40 runs. The gate flagged 3 items as confident wrong; hand-checked, none asserts a wrong fact:
+  alice-conger-eel and verwandlung-chiefclerk are correct declines in wordings the scorer missed;
+  timemachine-psychologist names no one but never says the university is missing (a weak decline, left failing).
+  The bars hold, B only through the hand-check. Caveats: one 20-item set written by an agent over the same book
+  corpus, possibly easier than set 1; no deployment or real traffic yet.
+- **KI-87 scorer exception #3 (`5448d95`, owner approved 2026-10-30, disclosed):** the decline list now knows
+  "<sources> ... never give/state/name...", "not (explicitly) named in the (provided) sources", a neither-nor sentence that
+  ends without the sources noun, and a comma before a negated contrast. All 1579 stored replies rescored: exactly 2
+  flips (conger-eel, chiefclerk), both intended; story-sentence negatives pinned in
+  `tests/evals/test_abstention_unseen2_shapes.py`. Scored draws become 20/20 and 19/20 under the new scorer; report both.
+  No further scorer widening is approved.
 - **Phase:** R3 (Deep); post-deploy unless the owner moves it earlier.
 - **Done when:** a new frozen unseen Deep set (about 20 items) passes at least 80% of answerable items with
-  0 confident wrong over 2 draws.
+  0 confident wrong over 2 draws. **Met on unseen set 2 (2026-10-29), with the hand-check caveat above.** Remaining
+  open: entity guard false stops, IsUse near-threshold stops, first-and-clerval, and a third unseen set if any fix
+  is made after these diagnoses.
 
 ## KI-96: web sources showed no title or URL (closed 2026-10-25)
 
